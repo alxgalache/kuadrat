@@ -1,0 +1,48 @@
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: kuadrat-api
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+    env_file:
+      - ./api/.env
+    volumes:
+      - ./api:/app
+      - api_node_modules:/app/node_modules
+    command: npm run dev
+    networks:
+      - kuadrat-network
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: kuadrat-client
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:3001/api
+    volumes:
+      - ./client:/app
+      - client_node_modules:/app/node_modules
+      - client_next:/app/.next
+    command: npm run dev
+    depends_on:
+      - api
+    networks:
+      - kuadrat-network
+
+networks:
+  kuadrat-network:
+    driver: bridge
+
+volumes:
+  api_node_modules:
+  client_node_modules:
+  client_next:
