@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { adminAPI, getAuthorImageUrl, getProductImageUrl } from '@/lib/api'
+import { adminAPI, getAuthorImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 
 function AuthorProfilePageContent({ params }) {
@@ -181,8 +181,8 @@ function AuthorProfilePageContent({ params }) {
                           <td className="px-3 py-4 text-sm whitespace-nowrap text-gray-500">
                             €{product.price.toFixed(2)}
                           </td>
-                          <td className="px-3 py-4 text-sm whitespace-nowrap text-gray-500 capitalize">
-                            {product.type === 'physical' ? 'Físico' : 'Digital'}
+                          <td className="px-3 py-4 text-sm whitespace-nowrap text-gray-500">
+                            {product.type}
                           </td>
                           <td className="px-3 py-4 text-sm whitespace-nowrap text-gray-500 capitalize">
                             {product.status}

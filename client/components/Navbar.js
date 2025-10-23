@@ -60,7 +60,7 @@ export default function Navbar() {
 
         <div className="flex flex-1 justify-end">
           {isAuthenticated && (
-            <div className="flex items-center gap-x-6">
+            <div className="hidden lg:flex lg:items-center lg:gap-x-6">
               {isAdmin ? (
                 <Link
                   href="/admin"
@@ -80,7 +80,7 @@ export default function Navbar() {
                     href="#"
                     className="text-sm/6 font-semibold text-gray-900 hover:text-gray-600"
                   >
-                    Cuenta
+                    Pedidos
                   </Link>
                 </>
               ) : null}
@@ -88,7 +88,7 @@ export default function Navbar() {
                 onClick={handleLogout}
                 className="text-sm/6 font-semibold text-gray-900 hover:text-gray-600"
               >
-                Cerrar sesión
+                Salir
               </button>
             </div>
           )}
@@ -154,7 +154,7 @@ export default function Navbar() {
                       onClick={() => setMobileMenuOpen(false)}
                       className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                     >
-                      Cuenta
+                      Pedidos
                     </Link>
                   </>
                 ) : null}
@@ -165,7 +165,7 @@ export default function Navbar() {
                   }}
                   className="-mx-3 block w-full text-left rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                 >
-                  Cerrar sesión
+                  Salir
                 </button>
               </>
             )}

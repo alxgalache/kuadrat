@@ -3,6 +3,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 // Helper to build product image URL by basename
 export const getProductImageUrl = (basename) => `${API_URL}/products/images/${encodeURIComponent(basename)}`;
 
+// Helper to build art product image URL by basename
+export const getArtImageUrl = (basename) => `${API_URL}/art/images/${encodeURIComponent(basename)}`;
+
+// Helper to build others product image URL by basename
+export const getOthersImageUrl = (basename) => `${API_URL}/others/images/${encodeURIComponent(basename)}`;
+
 // Helper to build author profile image URL by filename
 export const getAuthorImageUrl = (filename) => `${API_URL}/users/authors/images/${encodeURIComponent(filename)}`;
 
@@ -101,7 +107,7 @@ export const authAPI = {
   },
 };
 
-// Products API
+// Products API (legacy - keep for backward compatibility)
 export const productsAPI = {
   getAll: async (page = 1, limit = 12, authorSlug = null, category = null) => {
     const params = new URLSearchParams({
@@ -147,6 +153,90 @@ export const productsAPI = {
   },
 };
 
+// Art API
+export const artAPI = {
+  getAll: async (page = 1, limit = 12, authorSlug = null) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+
+    if (authorSlug) {
+      params.append('author_slug', authorSlug);
+    }
+
+    return apiRequest(`/art?${params.toString()}`);
+  },
+
+  getById: async (id) => {
+    return apiRequest(`/art/${id}`);
+  },
+
+  getByAuthorSlug: async (slug) => {
+    return apiRequest(`/art/author/${slug}`);
+  },
+
+  create: async (artData) => {
+    const isFormData = typeof FormData !== 'undefined' && artData instanceof FormData;
+    return apiRequest('/art', {
+      method: 'POST',
+      body: isFormData ? artData : JSON.stringify(artData),
+    });
+  },
+
+  delete: async (id) => {
+    return apiRequest(`/art/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getSellerArt: async () => {
+    return apiRequest('/art/seller/me');
+  },
+};
+
+// Others API
+export const othersAPI = {
+  getAll: async (page = 1, limit = 12, authorSlug = null) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+
+    if (authorSlug) {
+      params.append('author_slug', authorSlug);
+    }
+
+    return apiRequest(`/others?${params.toString()}`);
+  },
+
+  getById: async (id) => {
+    return apiRequest(`/others/${id}`);
+  },
+
+  getByAuthorSlug: async (slug) => {
+    return apiRequest(`/others/author/${slug}`);
+  },
+
+  create: async (otherData) => {
+    const isFormData = typeof FormData !== 'undefined' && otherData instanceof FormData;
+    return apiRequest('/others', {
+      method: 'POST',
+      body: isFormData ? otherData : JSON.stringify(otherData),
+    });
+  },
+
+  delete: async (id) => {
+    return apiRequest(`/others/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getSellerOthers: async () => {
+    return apiRequest('/others/seller/me');
+  },
+};
+
 // Authors API
 export const authorsAPI = {
   getVisible: async (category = null) => {
@@ -167,10 +257,11 @@ export const authorsAPI = {
 
 // Orders API
 export const ordersAPI = {
-  create: async (productIds) => {
+  create: async (items) => {
+    // items should be array of { type: 'art' | 'other', id, variantId? }
     return apiRequest('/orders', {
       method: 'POST',
-      body: JSON.stringify({ productIds }),
+      body: JSON.stringify({ items }),
     });
   },
 

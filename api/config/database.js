@@ -30,7 +30,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // Create products table
+    // Create products table (legacy - keep for backward compatibility)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +49,55 @@ async function initializeDatabase() {
       )
     `);
 
+    // Create art table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS art (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        price REAL NOT NULL,
+        type TEXT NOT NULL,
+        basename TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        visible INTEGER NOT NULL DEFAULT 1,
+        is_sold INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL CHECK(status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (seller_id) REFERENCES users(id)
+      )
+    `);
+
+    // Create others table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS others (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        price REAL NOT NULL,
+        basename TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        visible INTEGER NOT NULL DEFAULT 1,
+        is_sold INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL CHECK(status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (seller_id) REFERENCES users(id)
+      )
+    `);
+
+    // Create other_vars table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS other_vars (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        other_id INTEGER NOT NULL,
+        key TEXT,
+        value TEXT,
+        stock INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (other_id) REFERENCES others(id) ON DELETE CASCADE
+      )
+    `);
+
     // Create orders table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS orders (
@@ -61,7 +110,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // Create order_items table
+    // Create order_items table (legacy - keep for backward compatibility)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS order_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,6 +119,32 @@ async function initializeDatabase() {
         price_at_purchase REAL NOT NULL,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (product_id) REFERENCES products(id)
+      )
+    `);
+
+    // Create art_order_items table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS art_order_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        art_id INTEGER NOT NULL,
+        price_at_purchase REAL NOT NULL,
+        FOREIGN KEY (order_id) REFERENCES orders(id),
+        FOREIGN KEY (art_id) REFERENCES art(id)
+      )
+    `);
+
+    // Create other_order_items table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS other_order_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        other_id INTEGER NOT NULL,
+        other_var_id INTEGER NOT NULL,
+        price_at_purchase REAL NOT NULL,
+        FOREIGN KEY (order_id) REFERENCES orders(id),
+        FOREIGN KEY (other_id) REFERENCES others(id),
+        FOREIGN KEY (other_var_id) REFERENCES other_vars(id)
       )
     `);
 
@@ -133,6 +208,26 @@ async function initializeDatabase() {
     } catch (err) {
       if (!err.message.includes('duplicate column')) {
         console.log('status column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      // Add stockable to products if it doesn't exist
+      await db.execute(`ALTER TABLE products ADD COLUMN stockable INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added stockable column to products table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('stockable column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      // Add stock to products if it doesn't exist (NULL for non-stockable products)
+      await db.execute(`ALTER TABLE products ADD COLUMN stock INTEGER`);
+      console.log('Added stock column to products table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('stock column already exists or error:', err.message);
       }
     }
 

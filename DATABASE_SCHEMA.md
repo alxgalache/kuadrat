@@ -21,9 +21,11 @@ Stores all the art pieces available for sale.
 | `name`        | TEXT    | NOT NULL                           | Name of the artwork.                      |
 | `description` | TEXT    | NOT NULL                           | Detailed description of the artwork.      |
 | `price`       | REAL    | NOT NULL                           | Price in a standard currency (e.g., EUR). |
-| `type`        | TEXT    | NOT NULL, CHECK(type IN ('physical', 'digital')) | Type of the art piece.                    |
+| `type`        | TEXT    | NOT NULL                           | Medium/support of the art piece (e.g., "Óleo sobre lienzo", "Lámina ilustrada"). |
 | `image_url`   | TEXT    | NOT NULL                           | URL to the single product image.          |
 | `is_sold`     | INTEGER | NOT NULL, DEFAULT 0                | Boolean (0 or 1) if the product is sold.  |
+| `stockable`   | INTEGER | NOT NULL, DEFAULT 0                | Boolean (0 or 1) if product has stock.    |
+| `stock`       | INTEGER | NULL                               | Number of units available. NULL for art.  |
 | `created_at`  | DATETIME| NOT NULL, DEFAULT CURRENT_TIMESTAMP | Timestamp of product creation.            |
 
 ### `orders` table

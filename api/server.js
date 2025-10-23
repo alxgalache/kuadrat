@@ -15,6 +15,8 @@ const { verifyTransporter } = require('./services/emailService');
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const productsRoutes = require('./routes/productsRoutes');
+const artRoutes = require('./routes/artRoutes');
+const othersRoutes = require('./routes/othersRoutes');
 const ordersRoutes = require('./routes/ordersRoutes');
 const usersRoutes = require('./routes/usersRoutes');
 const adminRoutes = require('./routes/admin');
@@ -84,7 +86,9 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/products', productsRoutes);
+app.use('/api/products', productsRoutes); // Keep old routes for backward compatibility temporarily
+app.use('/api/art', artRoutes);
+app.use('/api/others', othersRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);

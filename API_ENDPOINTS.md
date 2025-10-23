@@ -22,7 +22,7 @@ All endpoints are prefixed with `/api`.
 - **`POST /products`**
     - **Description:** Creates a new product listing.
     - **Auth:** Seller only.
-    - **Body:** `{ "name": "Artwork", "description": "...", "price": 100.0, "type": "physical", "image_url": "..." }`
+    - **Body:** `{ "name": "Artwork", "description": "...", "price": 100.0, "type": "Óleo sobre lienzo", "image_url": "..." }`
     - **Response:** `201 Created` with `{ new_product }`
 - **`DELETE /products/:id`**
     - **Description:** Deletes a product. A seller can only delete their own product.

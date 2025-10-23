@@ -17,7 +17,7 @@ function ProductEditPageContent({ params }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('')
-  const [type, setType] = useState('physical')
+  const [type, setType] = useState('')
   const [visible, setVisible] = useState(true)
   const [isSold, setIsSold] = useState(false)
   const [status, setStatus] = useState('pending')
@@ -58,7 +58,7 @@ function ProductEditPageContent({ params }) {
       setName(product.name || '')
       setDescription(product.description || '')
       setPrice(product.price?.toString() || '')
-      setType(product.type || 'physical')
+      setType(product.type || '')
       setVisible(product.visible === 1)
       setIsSold(product.is_sold === 1)
       setStatus(product.status || 'pending')
@@ -169,7 +169,7 @@ function ProductEditPageContent({ params }) {
       formData.append('name', name.trim())
       formData.append('description', description)
       formData.append('price', parseFloat(price).toString())
-      formData.append('type', type)
+      formData.append('type', type.trim())
       formData.append('visible', visible ? '1' : '0')
       formData.append('is_sold', isSold ? '1' : '0')
       formData.append('status', status)
@@ -263,22 +263,21 @@ function ProductEditPageContent({ params }) {
 
                     <div>
                       <label htmlFor="type" className="block text-sm/6 font-medium text-gray-900">
-                        Tipo
+                        Soporte
                       </label>
-                      <div className="mt-2 grid grid-cols-1">
-                        <select
+                      <label className="block text-sm/6 font-medium text-gray-400">
+                        Ej: "Óleo sobre tabla", "Lámina ilustrada"
+                      </label>
+                      <div className="mt-2">
+                        <input
                           id="type"
                           name="type"
+                          type="text"
+                          required
                           value={type}
                           onChange={(e) => setType(e.target.value)}
-                          className="col-start-1 row-start-1 w-full appearance-none rounded-md border border-gray-300 bg-white py-1.5 pr-8 pl-3 text-base text-gray-900 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
-                        >
-                          <option value="physical">Físico</option>
-                          <option value="digital">Digital</option>
-                        </select>
-                        <ChevronDownIcon
-                          aria-hidden="true"
-                          className="pointer-events-none col-start-1 row-start-1 mr-2 size-5 self-center justify-self-end text-gray-500 sm:size-4"
+                          placeholder="Introduce el tipo de soporte"
+                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
                         />
                       </div>
                     </div>

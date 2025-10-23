@@ -6,33 +6,26 @@ const { randomUUID } = require('crypto');
 const sizeOf = require('image-size');
 const slugify = require('slugify');
 
-// Get all products (public) with pagination and optional author/category filtering
-const getAllProducts = async (req, res, next) => {
+// Get all art products (public) with pagination and optional author filtering
+const getAllArtProducts = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 12;
     const authorSlug = req.query.author_slug;
-    const category = req.query.category; // 'art' or 'other'
     const offset = (page - 1) * limit;
 
     // Build the query with optional filters
     let query = `
       SELECT
-        p.*,
+        a.*,
         u.email as seller_email,
         u.full_name as seller_full_name,
         u.slug as seller_slug
-      FROM products p
-      LEFT JOIN users u ON p.seller_id = u.id
-      WHERE p.visible = 1 AND p.is_sold = 0
+      FROM art a
+      LEFT JOIN users u ON a.seller_id = u.id
+      WHERE a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved'
     `;
     const args = [];
-
-    // Add category filter if provided
-    if (category) {
-      query += ` AND p.category = ?`;
-      args.push(category);
-    }
 
     // Add author filter if provided
     if (authorSlug) {
@@ -40,7 +33,7 @@ const getAllProducts = async (req, res, next) => {
       args.push(authorSlug);
     }
 
-    query += ` ORDER BY p.created_at DESC LIMIT ? OFFSET ?`;
+    query += ` ORDER BY a.created_at DESC LIMIT ? OFFSET ?`;
     args.push(limit + 1, offset); // Fetch one extra to check if there are more
 
     const result = await db.execute({ sql: query, args });
@@ -60,8 +53,8 @@ const getAllProducts = async (req, res, next) => {
   }
 };
 
-// Get single product by ID or slug (public)
-const getProductById = async (req, res, next) => {
+// Get single art product by ID or slug (public)
+const getArtProductById = async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -74,12 +67,13 @@ const getProductById = async (req, res, next) => {
       result = await db.execute({
         sql: `
           SELECT
-            p.*,
+            a.*,
             u.email as seller_email,
-            u.full_name as seller_full_name
-          FROM products p
-          LEFT JOIN users u ON p.seller_id = u.id
-          WHERE p.id = ? AND p.visible = 1
+            u.full_name as seller_full_name,
+            u.slug as seller_slug
+          FROM art a
+          LEFT JOIN users u ON a.seller_id = u.id
+          WHERE a.id = ? AND a.visible = 1 AND a.status = 'approved'
         `,
         args: [parseInt(id, 10)],
       });
@@ -88,12 +82,13 @@ const getProductById = async (req, res, next) => {
       result = await db.execute({
         sql: `
           SELECT
-            p.*,
+            a.*,
             u.email as seller_email,
-            u.full_name as seller_full_name
-          FROM products p
-          LEFT JOIN users u ON p.seller_id = u.id
-          WHERE p.slug = ? AND p.visible = 1
+            u.full_name as seller_full_name,
+            u.slug as seller_slug
+          FROM art a
+          LEFT JOIN users u ON a.seller_id = u.id
+          WHERE a.slug = ? AND a.visible = 1 AND a.status = 'approved'
         `,
         args: [id],
       });
@@ -112,12 +107,12 @@ const getProductById = async (req, res, next) => {
   }
 };
 
-// Create new product (seller only)
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'products');
+// Create new art product (seller only)
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'art');
 
-const createProduct = async (req, res, next) => {
+const createArtProduct = async (req, res, next) => {
   try {
-    const { name, description, price, type, stockable, stock } = req.body;
+    const { name, description, price, type } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -155,29 +150,13 @@ const createProduct = async (req, res, next) => {
       }
     }
 
-    // Validate type
-    if (!type) {
-      validationErrors.push({ field: 'type', message: 'El tipo es obligatorio' });
+    // Validate type (soporte/media)
+    if (!type || typeof type !== 'string') {
+      validationErrors.push({ field: 'type', message: 'El soporte es obligatorio' });
     } else if (type.trim().length < 3) {
       validationErrors.push({ field: 'type', message: 'El soporte debe tener al menos 3 caracteres' });
     } else if (type.trim().length > 100) {
       validationErrors.push({ field: 'type', message: 'El soporte no debe exceder 100 caracteres' });
-    }
-
-    // Validate stockable and stock
-    const isStockable = stockable === 'true' || stockable === true;
-    let stockNum = null;
-    if (isStockable) {
-      if (!stock) {
-        validationErrors.push({ field: 'stock', message: 'El stock es obligatorio para productos con inventario' });
-      } else {
-        stockNum = parseInt(stock, 10);
-        if (!Number.isInteger(stockNum) || stockNum < 1) {
-          validationErrors.push({ field: 'stock', message: 'El stock debe ser un número entero positivo' });
-        } else if (stockNum > 10000) {
-          validationErrors.push({ field: 'stock', message: 'El stock no debe exceder 10,000 unidades' });
-        }
-      }
     }
 
     // Validate image file
@@ -205,7 +184,7 @@ const createProduct = async (req, res, next) => {
 
     // Check if slug already exists
     const existingSlug = await db.execute({
-      sql: 'SELECT id FROM products WHERE slug = ?',
+      sql: 'SELECT id FROM art WHERE slug = ?',
       args: [slug],
     });
 
@@ -263,7 +242,7 @@ const createProduct = async (req, res, next) => {
     while (true) {
       basename = `${randomUUID()}.${fileExtension}`;
       const existing = await db.execute({
-        sql: 'SELECT id FROM products WHERE basename = ?',
+        sql: 'SELECT id FROM art WHERE basename = ?',
         args: [basename],
       });
       if (existing.rows.length === 0) break;
@@ -272,18 +251,18 @@ const createProduct = async (req, res, next) => {
     const filePath = path.join(UPLOADS_DIR, basename);
     await fs.promises.writeFile(filePath, req.file.buffer);
 
-    // Insert product with slug, stockable, and stock
+    // Insert art product
     const result = await db.execute({
       sql: `
-        INSERT INTO products (seller_id, name, description, price, type, basename, slug, stockable, stock)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO art (seller_id, name, description, price, type, basename, slug)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, type, basename, slug, isStockable ? 1 : 0, stockNum],
+      args: [seller_id, name, description, priceNum, type, basename, slug],
     });
 
     // Get the created product
     const productResult = await db.execute({
-      sql: 'SELECT * FROM products WHERE id = ?',
+      sql: 'SELECT * FROM art WHERE id = ?',
       args: [result.lastInsertRowid],
     });
 
@@ -296,8 +275,8 @@ const createProduct = async (req, res, next) => {
   }
 };
 
-// Serve product image by basename
-const getProductImage = async (req, res, next) => {
+// Serve art product image by basename
+const getArtProductImage = async (req, res, next) => {
   try {
     const { basename } = req.params;
     if (!/^[A-Za-z0-9_-]+\.(png|jpg|jpeg|webp)$/.test(basename)) {
@@ -313,15 +292,15 @@ const getProductImage = async (req, res, next) => {
   }
 };
 
-// Delete product (seller only, own products)
-const deleteProduct = async (req, res, next) => {
+// Delete art product (seller only, own products)
+const deleteArtProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
     // Check if product exists and belongs to the user
     const productResult = await db.execute({
-      sql: 'SELECT * FROM products WHERE id = ?',
+      sql: 'SELECT * FROM art WHERE id = ?',
       args: [id],
     });
 
@@ -341,7 +320,7 @@ const deleteProduct = async (req, res, next) => {
 
     // Delete product
     await db.execute({
-      sql: 'DELETE FROM products WHERE id = ?',
+      sql: 'DELETE FROM art WHERE id = ?',
       args: [id],
     });
 
@@ -351,13 +330,13 @@ const deleteProduct = async (req, res, next) => {
   }
 };
 
-// Get all products for logged-in seller
-const getSellerProducts = async (req, res, next) => {
+// Get all art products for logged-in seller
+const getSellerArtProducts = async (req, res, next) => {
   try {
     const seller_id = req.user.id;
 
     const result = await db.execute({
-      sql: 'SELECT * FROM products WHERE seller_id = ? AND visible = 1 ORDER BY created_at DESC',
+      sql: 'SELECT * FROM art WHERE seller_id = ? AND visible = 1 ORDER BY created_at DESC',
       args: [seller_id],
     });
 
@@ -370,8 +349,8 @@ const getSellerProducts = async (req, res, next) => {
   }
 };
 
-// Get all products by author slug (public)
-const getProductsByAuthorSlug = async (req, res, next) => {
+// Get all art products by author slug (public)
+const getArtProductsByAuthorSlug = async (req, res, next) => {
   try {
     const { slug } = req.params;
 
@@ -387,17 +366,17 @@ const getProductsByAuthorSlug = async (req, res, next) => {
 
     const author = userResult.rows[0];
 
-    // Get all visible products for this author
+    // Get all visible art products for this author
     const productsResult = await db.execute({
       sql: `
         SELECT
-          p.*,
+          a.*,
           u.email as seller_email,
           u.full_name as seller_name
-        FROM products p
-        LEFT JOIN users u ON p.seller_id = u.id
-        WHERE p.seller_id = ? AND p.visible = 1 AND p.is_sold = 0
-        ORDER BY p.created_at DESC
+        FROM art a
+        LEFT JOIN users u ON a.seller_id = u.id
+        WHERE a.seller_id = ? AND a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved'
+        ORDER BY a.created_at DESC
       `,
       args: [author.id],
     });
@@ -413,11 +392,11 @@ const getProductsByAuthorSlug = async (req, res, next) => {
 };
 
 module.exports = {
-  getAllProducts,
-  getProductById,
-  createProduct,
-  deleteProduct,
-  getSellerProducts,
-  getProductImage,
-  getProductsByAuthorSlug,
+  getAllArtProducts,
+  getArtProductById,
+  createArtProduct,
+  deleteArtProduct,
+  getSellerArtProducts,
+  getArtProductImage,
+  getArtProductsByAuthorSlug,
 };

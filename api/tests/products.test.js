@@ -53,7 +53,7 @@ describe('Products API Endpoints', () => {
           name: 'Test Artwork',
           description: 'A beautiful test painting',
           price: 500,
-          type: 'physical',
+          type: 'Óleo sobre lienzo',
           image_url: 'https://example.com/image.jpg',
         });
 
@@ -72,7 +72,7 @@ describe('Products API Endpoints', () => {
           name: 'Test Artwork',
           description: 'A beautiful test painting',
           price: 500,
-          type: 'physical',
+          type: 'Óleo sobre lienzo',
           image_url: 'https://example.com/image.jpg',
         });
 
@@ -87,7 +87,7 @@ describe('Products API Endpoints', () => {
           name: 'Test Artwork',
           description: 'A beautiful test painting',
           price: 500,
-          type: 'physical',
+          type: 'Óleo sobre lienzo',
           image_url: 'https://example.com/image.jpg',
         });
 
@@ -171,7 +171,7 @@ describe('Products API Endpoints', () => {
           name: 'Delete Test',
           description: 'To be deleted',
           price: 100,
-          type: 'digital',
+          type: 'Impresión digital',
           image_url: 'https://example.com/delete.jpg',
         });
 

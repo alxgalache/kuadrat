@@ -5,35 +5,100 @@ const { sendPurchaseConfirmation } = require('../services/emailService');
 // Create new order
 const createOrder = async (req, res, next) => {
   try {
-    const { productIds } = req.body;
+    const { items } = req.body;
     const buyer_id = req.user.id;
 
-    // Validate input
-    if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
-      throw new ApiError(400, 'productIds debe ser un array no vacío', 'Solicitud inválida');
+    // Validate input - items should be array of { type: 'art' | 'other', id, variantId? }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      throw new ApiError(400, 'items debe ser un array no vacío', 'Solicitud inválida');
     }
 
-    // Get products and verify they're available
-    const placeholders = productIds.map(() => '?').join(',');
-    const productsResult = await db.execute({
-      sql: `SELECT * FROM products WHERE id IN (${placeholders})`,
-      args: productIds,
-    });
+    // Separate art and others items
+    const artItems = items.filter(item => item.type === 'art');
+    const othersItems = items.filter(item => item.type === 'other');
 
-    if (productsResult.rows.length !== productIds.length) {
-      throw new ApiError(404, 'Una o más obras no fueron encontradas', 'Obras no encontradas');
+    // Fetch art products
+    const artProducts = [];
+    if (artItems.length > 0) {
+      const artPlaceholders = artItems.map(() => '?').join(',');
+      const artIds = artItems.map(item => item.id);
+      const artResult = await db.execute({
+        sql: `SELECT * FROM art WHERE id IN (${artPlaceholders})`,
+        args: artIds,
+      });
+
+      if (artResult.rows.length !== artItems.length) {
+        throw new ApiError(404, 'Una o más obras de arte no fueron encontradas', 'Obras no encontradas');
+      }
+
+      artProducts.push(...artResult.rows);
+
+      // Check if any art is already sold
+      const soldArt = artProducts.filter(p => p.is_sold === 1);
+      if (soldArt.length > 0) {
+        throw new ApiError(400, `La obra ${soldArt[0].name} ya ha sido vendida`, 'Obra no disponible');
+      }
     }
 
-    // Check if any product is already sold
-    const soldProducts = productsResult.rows.filter(p => p.is_sold === 1);
-    if (soldProducts.length > 0) {
-      throw new ApiError(400, `La obra ${soldProducts[0].name} ya ha sido vendida`, 'Obra no disponible');
+    // Fetch others products and their variations
+    const othersProducts = [];
+    const othersVariations = [];
+    if (othersItems.length > 0) {
+      const othersPlaceholders = othersItems.map(() => '?').join(',');
+      const othersIds = othersItems.map(item => item.id);
+      const othersResult = await db.execute({
+        sql: `SELECT * FROM others WHERE id IN (${othersPlaceholders})`,
+        args: othersIds,
+      });
+
+      if (othersResult.rows.length !== othersItems.length) {
+        throw new ApiError(404, 'Uno o más productos no fueron encontrados', 'Productos no encontrados');
+      }
+
+      othersProducts.push(...othersResult.rows);
+
+      // Check if any other product is sold
+      const soldOthers = othersProducts.filter(p => p.is_sold === 1);
+      if (soldOthers.length > 0) {
+        throw new ApiError(400, `El producto ${soldOthers[0].name} ya ha sido vendido`, 'Producto no disponible');
+      }
+
+      // Fetch variations and validate stock
+      for (const item of othersItems) {
+        const varResult = await db.execute({
+          sql: 'SELECT * FROM other_vars WHERE id = ? AND other_id = ?',
+          args: [item.variantId, item.id],
+        });
+
+        if (varResult.rows.length === 0) {
+          throw new ApiError(404, 'Variación no encontrada', 'Variación no encontrada');
+        }
+
+        const variant = varResult.rows[0];
+
+        // Count how many times this variant is in the order
+        const variantQuantity = othersItems.filter(
+          i => i.id === item.id && i.variantId === item.variantId
+        ).length;
+
+        if (variant.stock < variantQuantity) {
+          const product = othersProducts.find(p => p.id === item.id);
+          throw new ApiError(
+            400,
+            `Stock insuficiente para ${product.name}. Disponible: ${variant.stock}, solicitado: ${variantQuantity}`,
+            'Stock insuficiente'
+          );
+        }
+
+        othersVariations.push(variant);
+      }
     }
 
     // Calculate total price
-    const totalPrice = productsResult.rows.reduce((sum, product) => sum + product.price, 0);
+    let totalPrice = 0;
+    totalPrice += artProducts.reduce((sum, product) => sum + product.price, 0);
+    totalPrice += othersProducts.reduce((sum, product) => sum + product.price, 0);
 
-    // Begin transaction-like operations
     // Create order
     const orderResult = await db.execute({
       sql: 'INSERT INTO orders (buyer_id, total_price, status) VALUES (?, ?, ?)',
@@ -42,19 +107,69 @@ const createOrder = async (req, res, next) => {
 
     const orderId = orderResult.lastInsertRowid;
 
-    // Create order items and mark products as sold
-    for (const product of productsResult.rows) {
-      // Insert order item
+    // Create art order items and mark as sold
+    const processedArt = {};
+    for (const item of artItems) {
+      const product = artProducts.find(p => p.id === item.id);
+
+      // Insert art order item
       await db.execute({
-        sql: 'INSERT INTO order_items (order_id, product_id, price_at_purchase) VALUES (?, ?, ?)',
+        sql: 'INSERT INTO art_order_items (order_id, art_id, price_at_purchase) VALUES (?, ?, ?)',
         args: [orderId, product.id, product.price],
       });
 
-      // Mark product as sold
+      // Mark as sold (once per unique art product)
+      if (!processedArt[product.id]) {
+        processedArt[product.id] = true;
+        await db.execute({
+          sql: 'UPDATE art SET is_sold = 1 WHERE id = ?',
+          args: [product.id],
+        });
+      }
+    }
+
+    // Create others order items and update stock
+    const processedOthersVariants = {};
+    for (const item of othersItems) {
+      const product = othersProducts.find(p => p.id === item.id);
+      const variant = othersVariations.find(v => v.id === item.variantId);
+
+      // Insert other order item
       await db.execute({
-        sql: 'UPDATE products SET is_sold = 1 WHERE id = ?',
-        args: [product.id],
+        sql: 'INSERT INTO other_order_items (order_id, other_id, other_var_id, price_at_purchase) VALUES (?, ?, ?, ?)',
+        args: [orderId, product.id, variant.id, product.price],
       });
+
+      // Track variant stock updates
+      if (!processedOthersVariants[variant.id]) {
+        processedOthersVariants[variant.id] = 0;
+      }
+      processedOthersVariants[variant.id]++;
+    }
+
+    // Update stock for each variant
+    for (const [variantId, quantity] of Object.entries(processedOthersVariants)) {
+      const variant = othersVariations.find(v => v.id === parseInt(variantId));
+      const newStock = variant.stock - quantity;
+
+      await db.execute({
+        sql: 'UPDATE other_vars SET stock = ? WHERE id = ?',
+        args: [newStock, variantId],
+      });
+
+      // Check if all variants for this product are out of stock
+      const allVariantsResult = await db.execute({
+        sql: 'SELECT SUM(stock) as total_stock FROM other_vars WHERE other_id = ?',
+        args: [variant.other_id],
+      });
+
+      if (allVariantsResult.rows[0]?.total_stock === 0) {
+        // Mark product as sold
+        await db.execute({
+          sql: 'UPDATE others SET is_sold = 1 WHERE id = ?',
+          args: [variant.other_id],
+        });
+      }
     }
 
     // Get complete order details
@@ -70,28 +185,47 @@ const createOrder = async (req, res, next) => {
       args: [orderId],
     });
 
-    const orderItemsResult = await db.execute({
+    // Get art order items
+    const artOrderItemsResult = await db.execute({
       sql: `
         SELECT
-          oi.*,
-          p.name,
-          p.type,
-          p.basename
-        FROM order_items oi
-        LEFT JOIN products p ON oi.product_id = p.id
-        WHERE oi.order_id = ?
+          aoi.*,
+          a.name,
+          a.type,
+          a.basename,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ?
+      `,
+      args: [orderId],
+    });
+
+    // Get others order items
+    const othersOrderItemsResult = await db.execute({
+      sql: `
+        SELECT
+          ooi.*,
+          o.name,
+          o.basename,
+          ov.key as variant_key,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ?
       `,
       args: [orderId],
     });
 
     const order = orderDetailsResult.rows[0];
-    order.items = orderItemsResult.rows;
+    order.items = [...artOrderItemsResult.rows, ...othersOrderItemsResult.rows];
 
     // Send purchase confirmation email
     try {
       await sendPurchaseConfirmation(req.user.email, {
         orderId,
-        items: orderItemsResult.rows,
+        items: order.items,
         totalPrice,
         buyerEmail: req.user.email,
       });
@@ -122,23 +256,42 @@ const getUserOrders = async (req, res, next) => {
     // Get items for each order
     const orders = [];
     for (const order of ordersResult.rows) {
-      const itemsResult = await db.execute({
+      // Get art order items
+      const artItemsResult = await db.execute({
         sql: `
           SELECT
-            oi.*,
-            p.name,
-            p.type,
-            p.basename
-          FROM order_items oi
-          LEFT JOIN products p ON oi.product_id = p.id
-          WHERE oi.order_id = ?
+            aoi.*,
+            a.name,
+            a.type,
+            a.basename,
+            'art' as product_type
+          FROM art_order_items aoi
+          LEFT JOIN art a ON aoi.art_id = a.id
+          WHERE aoi.order_id = ?
+        `,
+        args: [order.id],
+      });
+
+      // Get others order items
+      const othersItemsResult = await db.execute({
+        sql: `
+          SELECT
+            ooi.*,
+            o.name,
+            o.basename,
+            ov.key as variant_key,
+            'other' as product_type
+          FROM other_order_items ooi
+          LEFT JOIN others o ON ooi.other_id = o.id
+          LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+          WHERE ooi.order_id = ?
         `,
         args: [order.id],
       });
 
       orders.push({
         ...order,
-        items: itemsResult.rows,
+        items: [...artItemsResult.rows, ...othersItemsResult.rows],
       });
     }
 
@@ -173,23 +326,42 @@ const getOrderById = async (req, res, next) => {
       throw new ApiError(403, 'Solo puedes ver tus propios pedidos', 'Acceso denegado');
     }
 
-    // Get order items
-    const itemsResult = await db.execute({
+    // Get art order items
+    const artItemsResult = await db.execute({
       sql: `
         SELECT
-          oi.*,
-          p.name,
-          p.description,
-          p.type,
-          p.basename
-        FROM order_items oi
-        LEFT JOIN products p ON oi.product_id = p.id
-        WHERE oi.order_id = ?
+          aoi.*,
+          a.name,
+          a.description,
+          a.type,
+          a.basename,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ?
       `,
       args: [id],
     });
 
-    order.items = itemsResult.rows;
+    // Get others order items
+    const othersItemsResult = await db.execute({
+      sql: `
+        SELECT
+          ooi.*,
+          o.name,
+          o.description,
+          o.basename,
+          ov.key as variant_key,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ?
+      `,
+      args: [id],
+    });
+
+    order.items = [...artItemsResult.rows, ...othersItemsResult.rows];
 
     res.status(200).json({
       success: true,

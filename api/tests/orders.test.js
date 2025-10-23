@@ -52,7 +52,7 @@ describe('Orders API Endpoints', () => {
         name: 'Order Test Product 1',
         description: 'Test product for orders',
         price: 200,
-        type: 'physical',
+        type: 'Acrílico sobre papel',
         image_url: 'https://example.com/order1.jpg',
       });
 
@@ -65,7 +65,7 @@ describe('Orders API Endpoints', () => {
         name: 'Order Test Product 2',
         description: 'Test product for orders',
         price: 150,
-        type: 'digital',
+        type: 'Lámina ilustrada',
         image_url: 'https://example.com/order2.jpg',
       });
 
@@ -97,7 +97,7 @@ describe('Orders API Endpoints', () => {
           name: 'Multi Order Product',
           description: 'For multi product order',
           price: 100,
-          type: 'digital',
+          type: 'Lámina ilustrada',
           image_url: 'https://example.com/multi.jpg',
         });
 
@@ -177,7 +177,7 @@ describe('Orders API Endpoints', () => {
           name: 'Get Order Test',
           description: 'For get order test',
           price: 250,
-          type: 'physical',
+          type: 'Acrílico sobre papel',
           image_url: 'https://example.com/getorder.jpg',
         });
 

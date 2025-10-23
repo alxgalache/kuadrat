@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ordersAPI, getProductImageUrl } from '@/lib/api'
+import { ordersAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 
 function OrderDetailPageContent({ params }) {
@@ -36,7 +36,7 @@ function OrderDetailPageContent({ params }) {
   if (error || !order) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
-        <p className="text-red-500">{error || 'Pedido no encontrado'}
+        <p className="text-red-500">{error || 'Pedido no encontrado'}</p>
       </div>
     )
   }
@@ -79,32 +79,48 @@ function OrderDetailPageContent({ params }) {
         <div className="mt-12">
           <h2 className="text-lg font-medium text-gray-900">Artículos adquiridos</h2>
           <div className="mt-6 divide-y divide-gray-200 border-t border-gray-200">
-            {order.items.map((item) => (
-              <div key={item.id} className="py-6 flex items-center">
-                <div className="size-24 shrink-0 overflow-hidden rounded-lg bg-gray-200">
-                  <img
-                    alt={item.name}
-                    src={getProductImageUrl(item.basename)}
-                    className="size-full object-cover"
-                  />
-                </div>
-                <div className="ml-6 flex-1">
-                  <div className="flex justify-between">
-                    <div>
-                      <h3 className="text-base font-medium text-gray-900">{item.name}</h3>
-                      <div
-                        className="mt-1 text-sm text-gray-500 prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: item.description }}
-                      />
-                      <p className="mt-1 text-sm text-gray-500 capitalize">Tipo: {item.type}</p>
+            {order.items.map((item) => {
+              // Determine image URL based on product type
+              const imageUrl = item.product_type === 'art'
+                ? getArtImageUrl(item.basename)
+                : getOthersImageUrl(item.basename);
+
+              return (
+                <div key={item.id} className="py-6 flex items-center">
+                  <div className="size-24 shrink-0 overflow-hidden rounded-lg bg-gray-200">
+                    <img
+                      alt={item.name}
+                      src={imageUrl}
+                      className="size-full object-cover"
+                    />
+                  </div>
+                  <div className="ml-6 flex-1">
+                    <div className="flex justify-between">
+                      <div>
+                        <h3 className="text-base font-medium text-gray-900">{item.name}</h3>
+                        <div
+                          className="mt-1 text-sm text-gray-500 prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ __html: item.description }}
+                        />
+                        {item.product_type === 'art' && item.type && (
+                          <p className="mt-1 text-sm text-gray-500">
+                            Soporte: {item.type}
+                          </p>
+                        )}
+                        {item.product_type === 'other' && item.variant_key && (
+                          <p className="mt-1 text-sm text-gray-500">
+                            Variación: {item.variant_key}
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-base font-medium text-gray-900">
+                        €{item.price_at_purchase.toFixed(2)}
+                      </p>
                     </div>
-                    <p className="text-base font-medium text-gray-900">
-                      €{item.price_at_purchase.toFixed(2)}
-                    </p>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

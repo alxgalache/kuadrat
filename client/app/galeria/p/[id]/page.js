@@ -2,15 +2,18 @@
 
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { productsAPI, ordersAPI, authAPI, getProductImageUrl } from '@/lib/api'
+import { artAPI, ordersAPI, authAPI, authorsAPI, getArtImageUrl } from '@/lib/api'
+import AuthorModal from '@/components/AuthorModal'
 
-export default function ProductDetailPage({ params }) {
+export default function ArtProductDetailPage({ params }) {
   const unwrappedParams = use(params)
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [purchasing, setPurchasing] = useState(false)
   const [user, setUser] = useState(null)
+  const [selectedAuthor, setSelectedAuthor] = useState(null)
+  const [modalOpen, setModalOpen] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -21,7 +24,7 @@ export default function ProductDetailPage({ params }) {
 
   const loadProduct = async () => {
     try {
-      const data = await productsAPI.getById(unwrappedParams.id)
+      const data = await artAPI.getById(unwrappedParams.id)
       setProduct(data.product)
     } catch (err) {
       setError('No se pudo cargar la obra')
@@ -38,7 +41,8 @@ export default function ProductDetailPage({ params }) {
 
     setPurchasing(true)
     try {
-      await ordersAPI.create([product.id])
+      // Create order with art product
+      await ordersAPI.create([{ type: 'art', id: product.id }])
       alert('¡Compra exitosa! Revisa tu correo electrónico para confirmación.')
       router.push('/orders')
     } catch (err) {
@@ -48,17 +52,15 @@ export default function ProductDetailPage({ params }) {
     }
   }
 
-  const handleDelete = async () => {
-    if (!confirm('¿Estás seguro de que quieres eliminar esta obra?')) {
-      return
-    }
+  const handleViewAuthorBio = async () => {
+    if (!product.seller_slug) return
 
     try {
-      await productsAPI.delete(product.id)
-      alert('Obra eliminada exitosamente')
-      router.push('/seller/products')
+      const authorData = await authorsAPI.getBySlug(product.seller_slug)
+      setSelectedAuthor(authorData.author)
+      setModalOpen(true)
     } catch (err) {
-      alert(err.message || 'No se pudo eliminar la obra')
+      console.error('Failed to load author:', err)
     }
   }
 
@@ -78,7 +80,7 @@ export default function ProductDetailPage({ params }) {
     )
   }
 
-  const isOwnProduct = user && product.seller_id === user.id
+  const isSoldOut = product.is_sold === 1
 
   return (
     <div className="bg-white">
@@ -88,7 +90,7 @@ export default function ProductDetailPage({ params }) {
           <div className="w-full rounded-lg bg-gray-200">
             <img
               alt={product.name}
-              src={getProductImageUrl(product.basename)}
+              src={getArtImageUrl(product.basename)}
               className="w-full h-auto object-contain rounded-lg"
             />
           </div>
@@ -111,42 +113,51 @@ export default function ProductDetailPage({ params }) {
             </div>
 
             <div className="mt-6">
-              <p className="text-sm text-gray-500">
+              <p className="text-lg text-gray-400">
                   <span className="font-medium">Soporte:</span>{' '}
-                  {product.type === 'physical' ? 'Físico' : product.type === 'digital' ? 'Digital' : product.type}
+                  {product.type}
               </p>
-              {product.seller_email && (
-                <p className="text-sm text-gray-500 mt-1">
-                  <span className="font-medium">Artista:</span> {product.seller_email}
+              {product.seller_full_name && (
+                <p className="text-lg text-gray-400 mt-1">
+                  <span className="font-medium">Autor:</span>{' '}
+                  <button
+                    onClick={handleViewAuthorBio}
+                    className="text-gray-400 hover:text-gray-500 hover:underline"
+                  >
+                    {product.seller_full_name}
+                  </button>
                 </p>
               )}
             </div>
 
-            <div className="mt-10 flex gap-x-4">
-              {isOwnProduct ? (
+            <div className="mt-10 flex flex-col gap-4">
+              {isSoldOut ? (
                 <button
-                  onClick={handleDelete}
-                  className="flex max-w-xs flex-1 items-center justify-center rounded-md border border-transparent bg-red-600 px-8 py-3 text-base font-medium text-white hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-gray-50 focus:outline-hidden sm:w-full"
+                  disabled
+                  className="flex max-w-xs flex-1 items-center justify-center rounded-md border border-transparent bg-gray-400 px-8 py-3 text-base font-medium text-white cursor-not-allowed sm:w-full"
                 >
-                  Eliminar obra
+                  Temporalmente no disponible
                 </button>
               ) : (
                 <button
                   onClick={handlePurchase}
-                  disabled={purchasing || product.is_sold === 1}
+                  disabled={purchasing}
                   className="flex max-w-xs flex-1 items-center justify-center rounded-md border border-transparent bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-50 focus:outline-hidden sm:w-full disabled:opacity-50"
                 >
-                  {product.is_sold === 1
-                    ? 'Vendida'
-                    : purchasing
-                    ? 'Procesando...'
-                    : 'Comprar'}
+                  {purchasing ? 'Procesando...' : 'Comprar'}
                 </button>
               )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Author bio modal */}
+      <AuthorModal
+        author={selectedAuthor}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
     </div>
   )
 }

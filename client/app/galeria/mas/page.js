@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { productsAPI, authorsAPI, getProductImageUrl } from '@/lib/api'
-import { EyeIcon, InformationCircleIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { othersAPI, authorsAPI, getOthersImageUrl } from '@/lib/api'
+import { InformationCircleIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import AuthorModal from '@/components/AuthorModal'
 
 function classNames(...classes) {
@@ -12,8 +12,6 @@ function classNames(...classes) {
 }
 
 export default function GalleryMasPage() {
-  const CATEGORY = 'other' // Filter for other products only
-
   const router = useRouter()
   const searchParams = useSearchParams()
   const [products, setProducts] = useState([])
@@ -69,7 +67,7 @@ export default function GalleryMasPage() {
 
   const loadAuthors = async () => {
     try {
-      const authorsData = await authorsAPI.getVisible(CATEGORY)
+      const authorsData = await authorsAPI.getVisible('other')
       setAuthors(authorsData.authors)
     } catch (err) {
       console.error('Failed to load authors:', err)
@@ -87,7 +85,7 @@ export default function GalleryMasPage() {
 
         // Load new products while still faded out
         setPage(1)
-        const productsData = await productsAPI.getAll(1, 12, selectedAuthorSlug, CATEGORY)
+        const productsData = await othersAPI.getAll(1, 12, selectedAuthorSlug)
         setProducts(productsData.products)
         setHasMore(productsData.hasMore)
 
@@ -95,8 +93,8 @@ export default function GalleryMasPage() {
         setLoading(false)
 
         // Scroll to top instantly (no smooth scroll to avoid layout shift)
-        if (productListRef.current && !isInitialLoad) {
-          productListRef.current.scrollIntoView({ behavior: 'instant', block: 'start' })
+        if (!isInitialLoad) {
+          window.scrollTo({ top: 0, behavior: 'instant' })
         }
 
         // Small delay to ensure DOM has rendered with products at opacity 0
@@ -109,7 +107,7 @@ export default function GalleryMasPage() {
         // Infinite scroll - load more
         setIsLoadingMore(true)
         const nextPage = page + 1
-        const productsData = await productsAPI.getAll(nextPage, 12, selectedAuthorSlug, CATEGORY)
+        const productsData = await othersAPI.getAll(nextPage, 12, selectedAuthorSlug)
         setProducts(prev => [...prev, ...productsData.products])
         setHasMore(productsData.hasMore)
         setPage(nextPage)
@@ -188,37 +186,27 @@ export default function GalleryMasPage() {
       <div className="lg:hidden border-b border-gray-200 py-4 px-6">
         <div className="text-xs font-semibold text-gray-400 mb-3">Autores</div>
         <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide">
-          <button
-            onClick={handleClearFilter}
-            className={classNames(
-              selectedAuthorSlug === null
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-              'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap shrink-0'
-            )}
-          >
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-current text-[0.625rem] font-medium">
-              ∗
-            </span>
-            Todos
-          </button>
           {authors.map((author) => (
             <div
               key={author.id}
               className={classNames(
                 selectedAuthorSlug === author.slug
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-gray-100 text-gray-700',
-                'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap shrink-0'
+                  ? 'bg-gray-200 text-gray-900'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-50 hover:text-gray-900',
+                'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold whitespace-nowrap shrink-0'
               )}
             >
               <button
-                onClick={() => handleFilterByAuthor(author.slug)}
-                className="flex items-center gap-2 hover:opacity-80"
+                type="button"
+                onClick={() => handleViewAuthorBio(author)}
+                className="hover:opacity-80"
               >
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-current text-[0.625rem] font-medium">
-                  {author.full_name ? author.full_name.charAt(0).toUpperCase() : '?'}
-                </span>
+                <InformationCircleIcon className="size-4" />
+              </button>
+              <button
+                onClick={() => handleFilterByAuthor(author.slug)}
+                className="hover:opacity-80"
+              >
                 {author.full_name}
               </button>
               {selectedAuthorSlug === author.slug && (
@@ -231,13 +219,6 @@ export default function GalleryMasPage() {
                   <XMarkIcon className="size-4" />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => handleViewAuthorBio(author)}
-                className="ml-1 hover:opacity-80"
-              >
-                <EyeIcon className="size-4" />
-              </button>
             </div>
           ))}
         </div>
@@ -315,13 +296,13 @@ export default function GalleryMasPage() {
                         <div className="group relative">
                           <img
                             alt={product.name}
-                            src={getProductImageUrl(product.basename)}
+                            src={getOthersImageUrl(product.basename)}
                             className="aspect-square w-full rounded-md bg-gray-200 object-cover group-hover:opacity-75"
                           />
                           <div className="mt-6">
                             <p className="text-sm text-gray-500">{product.seller_full_name}</p>
                             <h3 className="mt-1 font-semibold text-gray-900">
-                              <Link href={`/galeria/${product.slug}`}>
+                              <Link href={`/galeria/mas/p/${product.slug}`}>
                                 <span className="absolute inset-0" />
                                 {product.name}
                               </Link>

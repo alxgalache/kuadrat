@@ -10,23 +10,11 @@ const getVisibleAuthors = async (req, res, next) => {
   try {
     const category = req.query.category; // 'art' or 'other'
 
-    let query = `
-      SELECT DISTINCT
-        u.id,
-        u.email,
-        u.full_name,
-        u.slug,
-        u.profile_img,
-        u.location,
-        u.bio,
-        u.visible
-      FROM users u
-      WHERE u.visible = 1
-    `;
+    let query;
     const args = [];
 
-    // If category is specified, only include authors with at least one visible product in that category
-    if (category) {
+    // If no category specified, return all visible authors
+    if (!category) {
       query = `
         SELECT DISTINCT
           u.id,
@@ -38,13 +26,46 @@ const getVisibleAuthors = async (req, res, next) => {
           u.bio,
           u.visible
         FROM users u
-        INNER JOIN products p ON u.id = p.seller_id
-        WHERE u.visible = 1 AND p.visible = 1 AND p.sold = 0 AND p.category = ?
+        WHERE u.visible = 1
+        ORDER BY u.full_name ASC
       `;
-      args.push(category);
+    } else if (category === 'art') {
+      // Only include authors with at least one visible art product
+      query = `
+        SELECT DISTINCT
+          u.id,
+          u.email,
+          u.full_name,
+          u.slug,
+          u.profile_img,
+          u.location,
+          u.bio,
+          u.visible
+        FROM users u
+        INNER JOIN art a ON u.id = a.seller_id
+        WHERE u.visible = 1 AND a.visible = 1 AND a.is_sold = 0
+        ORDER BY u.full_name ASC
+      `;
+    } else if (category === 'other') {
+      // Only include authors with at least one visible others product
+      query = `
+        SELECT DISTINCT
+          u.id,
+          u.email,
+          u.full_name,
+          u.slug,
+          u.profile_img,
+          u.location,
+          u.bio,
+          u.visible
+        FROM users u
+        INNER JOIN others o ON u.id = o.seller_id
+        WHERE u.visible = 1 AND o.visible = 1 AND o.is_sold = 0
+        ORDER BY u.full_name ASC
+      `;
+    } else {
+      throw new ApiError(400, 'Categoría inválida', 'Categoría debe ser "art" o "other"');
     }
-
-    query += ` ORDER BY u.full_name ASC`;
 
     const result = await db.execute({
       sql: query,

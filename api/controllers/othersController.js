@@ -6,33 +6,26 @@ const { randomUUID } = require('crypto');
 const sizeOf = require('image-size');
 const slugify = require('slugify');
 
-// Get all products (public) with pagination and optional author/category filtering
-const getAllProducts = async (req, res, next) => {
+// Get all others products (public) with pagination and optional author filtering
+const getAllOthersProducts = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 12;
     const authorSlug = req.query.author_slug;
-    const category = req.query.category; // 'art' or 'other'
     const offset = (page - 1) * limit;
 
     // Build the query with optional filters
     let query = `
       SELECT
-        p.*,
+        o.*,
         u.email as seller_email,
         u.full_name as seller_full_name,
         u.slug as seller_slug
-      FROM products p
-      LEFT JOIN users u ON p.seller_id = u.id
-      WHERE p.visible = 1 AND p.is_sold = 0
+      FROM others o
+      LEFT JOIN users u ON o.seller_id = u.id
+      WHERE o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved'
     `;
     const args = [];
-
-    // Add category filter if provided
-    if (category) {
-      query += ` AND p.category = ?`;
-      args.push(category);
-    }
 
     // Add author filter if provided
     if (authorSlug) {
@@ -40,7 +33,7 @@ const getAllProducts = async (req, res, next) => {
       args.push(authorSlug);
     }
 
-    query += ` ORDER BY p.created_at DESC LIMIT ? OFFSET ?`;
+    query += ` ORDER BY o.created_at DESC LIMIT ? OFFSET ?`;
     args.push(limit + 1, offset); // Fetch one extra to check if there are more
 
     const result = await db.execute({ sql: query, args });
@@ -48,6 +41,15 @@ const getAllProducts = async (req, res, next) => {
     // Check if there are more products
     const hasMore = result.rows.length > limit;
     const products = hasMore ? result.rows.slice(0, limit) : result.rows;
+
+    // For each product, get the total stock from all variations
+    for (const product of products) {
+      const stockResult = await db.execute({
+        sql: 'SELECT SUM(stock) as total_stock FROM other_vars WHERE other_id = ?',
+        args: [product.id],
+      });
+      product.stock = stockResult.rows[0]?.total_stock || 0;
+    }
 
     res.status(200).json({
       success: true,
@@ -60,8 +62,8 @@ const getAllProducts = async (req, res, next) => {
   }
 };
 
-// Get single product by ID or slug (public)
-const getProductById = async (req, res, next) => {
+// Get single others product by ID or slug (public)
+const getOthersProductById = async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -74,12 +76,13 @@ const getProductById = async (req, res, next) => {
       result = await db.execute({
         sql: `
           SELECT
-            p.*,
+            o.*,
             u.email as seller_email,
-            u.full_name as seller_full_name
-          FROM products p
-          LEFT JOIN users u ON p.seller_id = u.id
-          WHERE p.id = ? AND p.visible = 1
+            u.full_name as seller_full_name,
+            u.slug as seller_slug
+          FROM others o
+          LEFT JOIN users u ON o.seller_id = u.id
+          WHERE o.id = ? AND o.visible = 1 AND o.status = 'approved'
         `,
         args: [parseInt(id, 10)],
       });
@@ -88,36 +91,51 @@ const getProductById = async (req, res, next) => {
       result = await db.execute({
         sql: `
           SELECT
-            p.*,
+            o.*,
             u.email as seller_email,
-            u.full_name as seller_full_name
-          FROM products p
-          LEFT JOIN users u ON p.seller_id = u.id
-          WHERE p.slug = ? AND p.visible = 1
+            u.full_name as seller_full_name,
+            u.slug as seller_slug
+          FROM others o
+          LEFT JOIN users u ON o.seller_id = u.id
+          WHERE o.slug = ? AND o.visible = 1 AND o.status = 'approved'
         `,
         args: [id],
       });
     }
 
     if (result.rows.length === 0) {
-      throw new ApiError(404, 'Obra no encontrada', 'Obra no encontrada');
+      throw new ApiError(404, 'Producto no encontrado', 'Producto no encontrado');
     }
+
+    const product = result.rows[0];
+
+    // Get all variations for this product
+    const variationsResult = await db.execute({
+      sql: 'SELECT * FROM other_vars WHERE other_id = ? ORDER BY id ASC',
+      args: [product.id],
+    });
+
+    product.variations = variationsResult.rows;
+
+    // Calculate total stock
+    const totalStock = variationsResult.rows.reduce((sum, v) => sum + (v.stock || 0), 0);
+    product.stock = totalStock;
 
     res.status(200).json({
       success: true,
-      product: result.rows[0],
+      product: product,
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Create new product (seller only)
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'products');
+// Create new others product (seller only)
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'others');
 
-const createProduct = async (req, res, next) => {
+const createOthersProduct = async (req, res, next) => {
   try {
-    const { name, description, price, type, stockable, stock } = req.body;
+    const { name, description, price, variations } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -155,29 +173,31 @@ const createProduct = async (req, res, next) => {
       }
     }
 
-    // Validate type
-    if (!type) {
-      validationErrors.push({ field: 'type', message: 'El tipo es obligatorio' });
-    } else if (type.trim().length < 3) {
-      validationErrors.push({ field: 'type', message: 'El soporte debe tener al menos 3 caracteres' });
-    } else if (type.trim().length > 100) {
-      validationErrors.push({ field: 'type', message: 'El soporte no debe exceder 100 caracteres' });
-    }
+    // Validate variations
+    let parsedVariations = [];
+    if (variations) {
+      try {
+        parsedVariations = typeof variations === 'string' ? JSON.parse(variations) : variations;
 
-    // Validate stockable and stock
-    const isStockable = stockable === 'true' || stockable === true;
-    let stockNum = null;
-    if (isStockable) {
-      if (!stock) {
-        validationErrors.push({ field: 'stock', message: 'El stock es obligatorio para productos con inventario' });
-      } else {
-        stockNum = parseInt(stock, 10);
-        if (!Number.isInteger(stockNum) || stockNum < 1) {
-          validationErrors.push({ field: 'stock', message: 'El stock debe ser un número entero positivo' });
-        } else if (stockNum > 10000) {
-          validationErrors.push({ field: 'stock', message: 'El stock no debe exceder 10,000 unidades' });
+        if (!Array.isArray(parsedVariations) || parsedVariations.length === 0) {
+          validationErrors.push({ field: 'variations', message: 'Debe proporcionar al menos una variación o stock global' });
+        } else {
+          // Validate each variation
+          parsedVariations.forEach((v, index) => {
+            if (v.key !== null && (!v.key || typeof v.key !== 'string')) {
+              validationErrors.push({ field: `variations[${index}].key`, message: 'La clave de variación debe ser una cadena válida' });
+            }
+            const stock = parseInt(v.stock, 10);
+            if (!Number.isInteger(stock) || stock < 0) {
+              validationErrors.push({ field: `variations[${index}].stock`, message: 'El stock debe ser un número entero positivo o cero' });
+            }
+          });
         }
+      } catch (e) {
+        validationErrors.push({ field: 'variations', message: 'Formato de variaciones inválido' });
       }
+    } else {
+      validationErrors.push({ field: 'variations', message: 'Debe proporcionar variaciones o stock global' });
     }
 
     // Validate image file
@@ -200,17 +220,17 @@ const createProduct = async (req, res, next) => {
     });
 
     if (!slug) {
-      throw new ApiError(400, 'El nombre de la obra debe contener caracteres válidos', 'Nombre de obra inválido');
+      throw new ApiError(400, 'El nombre del producto debe contener caracteres válidos', 'Nombre de producto inválido');
     }
 
     // Check if slug already exists
     const existingSlug = await db.execute({
-      sql: 'SELECT id FROM products WHERE slug = ?',
+      sql: 'SELECT id FROM others WHERE slug = ?',
       args: [slug],
     });
 
     if (existingSlug.rows.length > 0) {
-      throw new ApiError(400, 'Ya existe una obra con este nombre. Por favor, elige un nombre diferente.', 'Nombre de obra duplicado');
+      throw new ApiError(400, 'Ya existe un producto con este nombre. Por favor, elige un nombre diferente.', 'Nombre de producto duplicado');
     }
 
     // File validation (additional checks beyond multer)
@@ -263,7 +283,7 @@ const createProduct = async (req, res, next) => {
     while (true) {
       basename = `${randomUUID()}.${fileExtension}`;
       const existing = await db.execute({
-        sql: 'SELECT id FROM products WHERE basename = ?',
+        sql: 'SELECT id FROM others WHERE basename = ?',
         args: [basename],
       });
       if (existing.rows.length === 0) break;
@@ -272,32 +292,57 @@ const createProduct = async (req, res, next) => {
     const filePath = path.join(UPLOADS_DIR, basename);
     await fs.promises.writeFile(filePath, req.file.buffer);
 
-    // Insert product with slug, stockable, and stock
+    // Insert others product
     const result = await db.execute({
       sql: `
-        INSERT INTO products (seller_id, name, description, price, type, basename, slug, stockable, stock)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO others (seller_id, name, description, price, basename, slug)
+        VALUES (?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, type, basename, slug, isStockable ? 1 : 0, stockNum],
+      args: [seller_id, name, description, priceNum, basename, slug],
     });
 
-    // Get the created product
+    const productId = result.lastInsertRowid;
+
+    // Insert variations
+    for (const variation of parsedVariations) {
+      await db.execute({
+        sql: `
+          INSERT INTO other_vars (other_id, key, stock)
+          VALUES (?, ?, ?)
+        `,
+        args: [
+          productId,
+          variation.key || null,
+          parseInt(variation.stock, 10),
+        ],
+      });
+    }
+
+    // Get the created product with variations
     const productResult = await db.execute({
-      sql: 'SELECT * FROM products WHERE id = ?',
-      args: [result.lastInsertRowid],
+      sql: 'SELECT * FROM others WHERE id = ?',
+      args: [productId],
     });
+
+    const variationsResult = await db.execute({
+      sql: 'SELECT * FROM other_vars WHERE other_id = ?',
+      args: [productId],
+    });
+
+    const product = productResult.rows[0];
+    product.variations = variationsResult.rows;
 
     res.status(201).json({
       success: true,
-      product: productResult.rows[0],
+      product: product,
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Serve product image by basename
-const getProductImage = async (req, res, next) => {
+// Serve others product image by basename
+const getOthersProductImage = async (req, res, next) => {
   try {
     const { basename } = req.params;
     if (!/^[A-Za-z0-9_-]+\.(png|jpg|jpeg|webp)$/.test(basename)) {
@@ -313,35 +358,41 @@ const getProductImage = async (req, res, next) => {
   }
 };
 
-// Delete product (seller only, own products)
-const deleteProduct = async (req, res, next) => {
+// Delete others product (seller only, own products)
+const deleteOthersProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
     // Check if product exists and belongs to the user
     const productResult = await db.execute({
-      sql: 'SELECT * FROM products WHERE id = ?',
+      sql: 'SELECT * FROM others WHERE id = ?',
       args: [id],
     });
 
     if (productResult.rows.length === 0) {
-      throw new ApiError(404, 'Obra no encontrada', 'Obra no encontrada');
+      throw new ApiError(404, 'Producto no encontrado', 'Producto no encontrado');
     }
 
     const product = productResult.rows[0];
 
     if (product.seller_id !== userId) {
-      throw new ApiError(403, 'Solo puedes eliminar tus propias obras', 'Acceso denegado');
+      throw new ApiError(403, 'Solo puedes eliminar tus propios productos', 'Acceso denegado');
     }
 
     if (product.is_sold === 1) {
-      throw new ApiError(400, 'No se puede eliminar una obra vendida', 'No se puede eliminar la obra');
+      throw new ApiError(400, 'No se puede eliminar un producto vendido', 'No se puede eliminar el producto');
     }
+
+    // Delete variations (CASCADE should handle this, but being explicit)
+    await db.execute({
+      sql: 'DELETE FROM other_vars WHERE other_id = ?',
+      args: [id],
+    });
 
     // Delete product
     await db.execute({
-      sql: 'DELETE FROM products WHERE id = ?',
+      sql: 'DELETE FROM others WHERE id = ?',
       args: [id],
     });
 
@@ -351,27 +402,38 @@ const deleteProduct = async (req, res, next) => {
   }
 };
 
-// Get all products for logged-in seller
-const getSellerProducts = async (req, res, next) => {
+// Get all others products for logged-in seller
+const getSellerOthersProducts = async (req, res, next) => {
   try {
     const seller_id = req.user.id;
 
     const result = await db.execute({
-      sql: 'SELECT * FROM products WHERE seller_id = ? AND visible = 1 ORDER BY created_at DESC',
+      sql: 'SELECT * FROM others WHERE seller_id = ? AND visible = 1 ORDER BY created_at DESC',
       args: [seller_id],
     });
 
+    // For each product, get variations
+    const products = [];
+    for (const product of result.rows) {
+      const variationsResult = await db.execute({
+        sql: 'SELECT * FROM other_vars WHERE other_id = ?',
+        args: [product.id],
+      });
+      product.variations = variationsResult.rows;
+      products.push(product);
+    }
+
     res.status(200).json({
       success: true,
-      products: result.rows,
+      products: products,
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Get all products by author slug (public)
-const getProductsByAuthorSlug = async (req, res, next) => {
+// Get all others products by author slug (public)
+const getOthersProductsByAuthorSlug = async (req, res, next) => {
   try {
     const { slug } = req.params;
 
@@ -387,17 +449,17 @@ const getProductsByAuthorSlug = async (req, res, next) => {
 
     const author = userResult.rows[0];
 
-    // Get all visible products for this author
+    // Get all visible others products for this author
     const productsResult = await db.execute({
       sql: `
         SELECT
-          p.*,
+          o.*,
           u.email as seller_email,
           u.full_name as seller_name
-        FROM products p
-        LEFT JOIN users u ON p.seller_id = u.id
-        WHERE p.seller_id = ? AND p.visible = 1 AND p.is_sold = 0
-        ORDER BY p.created_at DESC
+        FROM others o
+        LEFT JOIN users u ON o.seller_id = u.id
+        WHERE o.seller_id = ? AND o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved'
+        ORDER BY o.created_at DESC
       `,
       args: [author.id],
     });
@@ -413,11 +475,11 @@ const getProductsByAuthorSlug = async (req, res, next) => {
 };
 
 module.exports = {
-  getAllProducts,
-  getProductById,
-  createProduct,
-  deleteProduct,
-  getSellerProducts,
-  getProductImage,
-  getProductsByAuthorSlug,
+  getAllOthersProducts,
+  getOthersProductById,
+  createOthersProduct,
+  deleteOthersProduct,
+  getSellerOthersProducts,
+  getOthersProductImage,
+  getOthersProductsByAuthorSlug,
 };
