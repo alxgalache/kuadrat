@@ -231,6 +231,102 @@ async function initializeDatabase() {
       }
     }
 
+    try {
+      // Add guest_email to orders for guest checkout support
+      await db.execute(`ALTER TABLE orders ADD COLUMN guest_email TEXT`);
+      console.log('Added guest_email column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('guest_email column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      // Add contact_type to orders (email or whatsapp)
+      await db.execute(`ALTER TABLE orders ADD COLUMN contact_type TEXT CHECK(contact_type IN ('email', 'whatsapp'))`);
+      console.log('Added contact_type column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('contact_type column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      // Add contact to orders (email address or phone number)
+      await db.execute(`ALTER TABLE orders ADD COLUMN contact TEXT`);
+      console.log('Added contact column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('contact column already exists or error:', err.message);
+      }
+    }
+
+    // Add pickup address fields to users table
+    try {
+      await db.execute(`ALTER TABLE users ADD COLUMN pickup_address TEXT`);
+      console.log('Added pickup_address column to users table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('pickup_address column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE users ADD COLUMN pickup_city TEXT`);
+      console.log('Added pickup_city column to users table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('pickup_city column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE users ADD COLUMN pickup_postal_code TEXT`);
+      console.log('Added pickup_postal_code column to users table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('pickup_postal_code column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE users ADD COLUMN pickup_country TEXT`);
+      console.log('Added pickup_country column to users table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('pickup_country column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE users ADD COLUMN pickup_instructions TEXT`);
+      console.log('Added pickup_instructions column to users table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('pickup_instructions column already exists or error:', err.message);
+      }
+    }
+
+    // Add removed column to art table
+    try {
+      await db.execute(`ALTER TABLE art ADD COLUMN removed INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added removed column to art table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('removed column already exists in art table or error:', err.message);
+      }
+    }
+
+    // Add removed column to others table
+    try {
+      await db.execute(`ALTER TABLE others ADD COLUMN removed INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added removed column to others table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('removed column already exists in others table or error:', err.message);
+      }
+    }
+
     console.log('Database schema initialized successfully!');
   } catch (error) {
     console.error('Error initializing database:', error);

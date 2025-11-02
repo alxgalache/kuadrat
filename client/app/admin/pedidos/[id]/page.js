@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ordersAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
+import { adminAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { ArrowLeftIcon } from '@heroicons/react/20/solid'
 
@@ -22,7 +22,7 @@ function OrderDetailContent() {
 
   const loadOrder = async () => {
     try {
-      const data = await ordersAPI.getById(params.id)
+      const data = await adminAPI.orders.getById(params.id)
       setOrder(data.order)
     } catch (err) {
       setError(err.message || 'No se pudo cargar el pedido')
@@ -86,7 +86,7 @@ function OrderDetailContent() {
       <div className="bg-white min-h-screen">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <Link
-            href="/orders"
+            href="/admin/pedidos"
             className="inline-flex items-center gap-x-2 text-sm font-semibold text-gray-900 hover:text-gray-600 mb-8"
           >
             <ArrowLeftIcon className="h-5 w-5" />
@@ -107,7 +107,7 @@ function OrderDetailContent() {
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         {/* Back button */}
         <Link
-          href="/orders"
+          href="/admin/pedidos"
           className="inline-flex items-center gap-x-2 text-sm font-semibold text-gray-900 hover:text-gray-600 mb-8"
         >
           <ArrowLeftIcon className="h-5 w-5" />
@@ -136,7 +136,7 @@ function OrderDetailContent() {
           <div className="lg:col-span-2">
             <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden">
               <div className="px-4 py-5 sm:p-6">
-                <h2 className="text-lg font-medium text-gray-900 mb-4">Tus productos en este pedido</h2>
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Productos</h2>
                 <ul role="list" className="divide-y divide-gray-200">
                   {order.items.map((item, index) => (
                     <li key={index} className="py-6 flex">
@@ -158,6 +158,11 @@ function OrderDetailContent() {
                             Tipo: {item.product_type === 'art' ? item.type : 'Otro'}
                             {item.variant_key && ` · ${item.variant_key}`}
                           </p>
+                          {item.seller_name && (
+                            <p className="mt-1 text-sm text-gray-500">
+                              Vendedor: {item.seller_name}
+                            </p>
+                          )}
                         </div>
                         {item.shipping_method_name && (
                           <div className="mt-2 text-sm text-gray-600">
@@ -183,12 +188,43 @@ function OrderDetailContent() {
             </div>
           </div>
 
-          {/* Sidebar - Order summary */}
+          {/* Sidebar - Order summary and buyer info */}
           <div className="lg:col-span-1">
+            {/* Buyer information */}
+            <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden mb-6">
+              <div className="px-4 py-5 sm:p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Información del comprador</h2>
+                <dl className="space-y-3">
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Nombre</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {order.buyer_name || order.guest_email || 'Invitado'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Email</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {order.guest_email || order.buyer_email}
+                    </dd>
+                  </div>
+                  {order.guest_email && (
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">Tipo</dt>
+                      <dd className="mt-1 text-sm text-gray-900">
+                        <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">
+                          Compra como invitado
+                        </span>
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            </div>
+
             {/* Order summary */}
             <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden">
               <div className="px-4 py-5 sm:p-6">
-                <h2 className="text-lg font-medium text-gray-900 mb-4">Resumen (tus productos)</h2>
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Resumen del pedido</h2>
                 <dl className="space-y-3">
                   <div className="flex justify-between text-sm">
                     <dt className="text-gray-500">Subtotal productos</dt>
@@ -214,7 +250,7 @@ function OrderDetailContent() {
 
 export default function OrderDetailPage() {
   return (
-    <AuthGuard>
+    <AuthGuard requireRole="admin">
       <OrderDetailContent />
     </AuthGuard>
   )

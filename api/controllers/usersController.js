@@ -30,7 +30,7 @@ const getVisibleAuthors = async (req, res, next) => {
         ORDER BY u.full_name ASC
       `;
     } else if (category === 'art') {
-      // Only include authors with at least one visible art product
+      // Only include authors with at least one visible and approved art product
       query = `
         SELECT DISTINCT
           u.id,
@@ -43,11 +43,11 @@ const getVisibleAuthors = async (req, res, next) => {
           u.visible
         FROM users u
         INNER JOIN art a ON u.id = a.seller_id
-        WHERE u.visible = 1 AND a.visible = 1 AND a.is_sold = 0
+        WHERE u.visible = 1 AND a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved'
         ORDER BY u.full_name ASC
       `;
     } else if (category === 'other') {
-      // Only include authors with at least one visible others product
+      // Only include authors with at least one visible and approved others product
       query = `
         SELECT DISTINCT
           u.id,
@@ -60,7 +60,7 @@ const getVisibleAuthors = async (req, res, next) => {
           u.visible
         FROM users u
         INNER JOIN others o ON u.id = o.seller_id
-        WHERE u.visible = 1 AND o.visible = 1 AND o.is_sold = 0
+        WHERE u.visible = 1 AND o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved'
         ORDER BY u.full_name ASC
       `;
     } else {

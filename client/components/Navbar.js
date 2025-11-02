@@ -1,19 +1,25 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Dialog, DialogPanel } from '@headlessui/react'
-import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline'
+import { Dialog, DialogPanel, Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
+import { Bars3Icon, XMarkIcon, ShoppingCartIcon, UserCircleIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/contexts/AuthContext'
+import { useCart } from '@/contexts/CartContext'
+import ShoppingCartDrawer from '@/components/ShoppingCartDrawer'
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [cartOpen, setCartOpen] = useState(false)
+  const [isAnimating, setIsAnimating] = useState(false)
   const { isAuthenticated, logout, user } = useAuth()
+  const { getTotalItems, animationTrigger } = useCart()
   const router = useRouter()
 
   const isAdmin = user?.role === 'admin'
   const isSeller = user?.role === 'seller'
+  const totalCartItems = getTotalItems()
 
   const navigation = [
       { name: 'Galería', href: '/galeria' },
@@ -25,6 +31,17 @@ export default function Navbar() {
     router.push('/')
     router.refresh()
   }
+
+  // Trigger animation when cart changes
+  useEffect(() => {
+    if (animationTrigger > 0) {
+      setIsAnimating(true)
+      const timer = setTimeout(() => {
+        setIsAnimating(false)
+      }, 600) // Animation duration
+      return () => clearTimeout(timer)
+    }
+  }, [animationTrigger])
 
   return (
     <header className="bg-white">
@@ -58,40 +75,192 @@ export default function Navbar() {
           />
         </Link>
 
-        <div className="flex flex-1 justify-end">
-          {isAuthenticated && (
-            <div className="hidden lg:flex lg:items-center lg:gap-x-6">
-              {isAdmin ? (
-                <Link
-                  href="/admin"
-                  className="text-sm/6 font-semibold text-gray-900 hover:text-gray-600"
-                >
-                  Admin
-                </Link>
-              ) : isSeller ? (
+        <div className="flex flex-1 justify-end items-center gap-x-2">
+          {/* Admin profile menu */}
+          {isAuthenticated && isAdmin && (
+            <Popover className="relative hidden lg:block transition-all duration-[600ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]">
+              {({ open, close }) => (
                 <>
-                  <Link
-                    href="/seller/publish"
-                    className="text-sm/6 font-semibold text-gray-900 hover:text-gray-600"
+                  <PopoverButton className="inline-flex items-center justify-center rounded-xl p-2.5 text-gray-900 hover:text-gray-600 bg-white transition-all duration-200 focus-visible:outline-none">
+                    <span className="sr-only">Abrir menú de administrador</span>
+                    <UserCircleIcon aria-hidden="true" className="size-6" />
+                  </PopoverButton>
+
+                  {open && (
+                    <div
+                      className="fixed inset-0 z-[5]"
+                      onClick={() => close()}
+                      aria-hidden="true"
+                    />
+                  )}
+
+                  <PopoverPanel
+                    transition
+                    className="absolute right-0 z-10 mt-2 flex w-screen max-w-min transition data-closed:translate-y-1 data-closed:opacity-0 data-enter:duration-200 data-enter:ease-out data-leave:duration-150 data-leave:ease-in"
                   >
-                    Subir
+                    <div className="w-56 shrink rounded-xl bg-white p-4 text-sm/6 font-semibold text-gray-900 shadow-lg ring-1 ring-gray-900/10">
+                      <Link
+                        href="/admin/autores"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        Autores
+                      </Link>
+                      <Link
+                        href="/admin/pedidos"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        Pedidos
+                      </Link>
+                      <Link
+                        href="/admin/envios"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        Envíos
+                      </Link>
+                      <button
+                        onClick={() => {
+                          close()
+                          handleLogout()
+                        }}
+                        className="block w-full text-left p-2 hover:text-gray-600"
+                      >
+                        Cerrar sesión
+                      </button>
+                    </div>
+                  </PopoverPanel>
+                </>
+              )}
+            </Popover>
+          )}
+          {/* Seller profile menu */}
+          {isAuthenticated && isSeller && (
+            <Popover className="relative hidden lg:block transition-all duration-[600ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]">
+              {({ open, close }) => (
+                <>
+                  <PopoverButton className="inline-flex items-center justify-center rounded-xl p-2.5 text-gray-900 hover:text-gray-600 bg-white transition-all duration-200 focus-visible:outline-none">
+                    <span className="sr-only">Abrir menú de perfil</span>
+                    <UserCircleIcon aria-hidden="true" className="size-6" />
+                  </PopoverButton>
+
+                  {open && (
+                    <div
+                      className="fixed inset-0 z-[5]"
+                      onClick={() => close()}
+                      aria-hidden="true"
+                    />
+                  )}
+
+                  <PopoverPanel
+                    transition
+                    className="absolute right-0 z-10 mt-2 flex w-screen max-w-min transition data-closed:translate-y-1 data-closed:opacity-0 data-enter:duration-200 data-enter:ease-out data-leave:duration-150 data-leave:ease-in"
+                  >
+                <div className="w-56 shrink rounded-xl bg-white p-4 text-sm/6 font-semibold text-gray-900 shadow-lg ring-1 ring-gray-900/10">
+                  <Link
+                    href="/seller/products"
+                    onClick={() => close()}
+                    className="block p-2 hover:text-gray-600"
+                  >
+                    Artículos
                   </Link>
                   <Link
-                    href="#"
-                    className="text-sm/6 font-semibold text-gray-900 hover:text-gray-600"
+                    href="/orders"
+                    onClick={() => close()}
+                    className="block p-2 hover:text-gray-600"
                   >
                     Pedidos
                   </Link>
+                  <button
+                    onClick={() => {
+                      close()
+                      handleLogout()
+                    }}
+                    className="block w-full text-left p-2 hover:text-gray-600"
+                  >
+                    Salir
+                  </button>
+                </div>
+              </PopoverPanel>
                 </>
-              ) : null}
-              <button
-                onClick={handleLogout}
-                className="text-sm/6 font-semibold text-gray-900 hover:text-gray-600"
-              >
-                Salir
-              </button>
-            </div>
+              )}
+            </Popover>
           )}
+          {/* Shopping cart icon - far right */}
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            className="relative -m-2.5 inline-flex items-center justify-center rounded-md p-2.5 text-gray-900 hover:text-gray-600"
+          >
+            <span className="sr-only">Abrir carrito</span>
+            <ShoppingCartIcon
+              aria-hidden="true"
+              className={`size-6 ${isAnimating ? 'cart-icon-bounce' : ''}`}
+            />
+            {totalCartItems > 0 && (
+              <span className={`ml-2 text-sm font-semibold ${isAnimating ? 'cart-number-bounce' : ''}`}>
+                {totalCartItems}
+              </span>
+            )}
+          </button>
+          <style jsx>{`
+            @keyframes cartIconBounce {
+              0% {
+                transform: translateX(0);
+              }
+              30% {
+                transform: translateX(-8px);
+              }
+              50% {
+                transform: translateX(-10px);
+              }
+              70% {
+                transform: translateX(2px);
+              }
+              85% {
+                transform: translateX(-1px);
+              }
+              100% {
+                transform: translateX(0);
+              }
+            }
+
+            @keyframes cartNumberBounce {
+              0% {
+                transform: translateX(0);
+                opacity: 0.5;
+              }
+              30% {
+                transform: translateX(12px);
+                opacity: 1;
+              }
+              50% {
+                transform: translateX(14px);
+                opacity: 1;
+              }
+              70% {
+                transform: translateX(-2px);
+                opacity: 1;
+              }
+              85% {
+                transform: translateX(1px);
+                opacity: 1;
+              }
+              100% {
+                transform: translateX(0);
+                opacity: 1;
+              }
+            }
+
+            :global(.cart-icon-bounce) {
+              animation: cartIconBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            }
+
+            :global(.cart-number-bounce) {
+              animation: cartNumberBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            }
+          `}</style>
         </div>
       </nav>
 
@@ -99,7 +268,7 @@ export default function Navbar() {
         <div className="fixed inset-0 z-10" />
         <DialogPanel className="fixed inset-y-0 left-0 z-10 w-full overflow-y-auto bg-white px-6 py-6">
           <div className="flex items-center justify-between">
-            <div className="flex flex-1">
+            <div className="flex flex-1 items-center gap-x-4">
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
@@ -107,6 +276,20 @@ export default function Navbar() {
               >
                 <span className="sr-only">Cerrar menú</span>
                 <XMarkIcon aria-hidden="true" className="size-6" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false)
+                  setCartOpen(true)
+                }}
+                className="relative -m-2.5 inline-flex items-center justify-center rounded-md p-2.5 text-gray-900 hover:text-gray-600"
+              >
+                <span className="sr-only">Abrir carrito</span>
+                <ShoppingCartIcon aria-hidden="true" className="size-6" />
+                {totalCartItems > 0 && (
+                  <span className="ml-2 text-sm font-semibold">{totalCartItems}</span>
+                )}
               </button>
             </div>
             <Link href="/" className="-m-1.5 p-1.5">
@@ -133,24 +316,40 @@ export default function Navbar() {
             {isAuthenticated && (
               <>
                 {isAdmin ? (
-                  <Link
-                    href="/admin"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
-                  >
-                    Admin
-                  </Link>
-                ) : isSeller ? (
                   <>
                     <Link
-                      href="/seller/publish"
+                      href="/admin/autores"
                       onClick={() => setMobileMenuOpen(false)}
                       className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                     >
-                      Subir
+                      Autores
                     </Link>
                     <Link
-                      href="#"
+                      href="/admin/pedidos"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Pedidos
+                    </Link>
+                    <Link
+                      href="/admin/envios"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Envíos
+                    </Link>
+                  </>
+                ) : isSeller ? (
+                  <>
+                    <Link
+                      href="/seller/products"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Artículos
+                    </Link>
+                    <Link
+                      href="/orders"
                       onClick={() => setMobileMenuOpen(false)}
                       className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                     >
@@ -172,6 +371,9 @@ export default function Navbar() {
           </div>
         </DialogPanel>
       </Dialog>
+
+      {/* Shopping Cart Drawer */}
+      <ShoppingCartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
     </header>
   )
 }

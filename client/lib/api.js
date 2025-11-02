@@ -257,20 +257,58 @@ export const authorsAPI = {
 
 // Orders API
 export const ordersAPI = {
-  create: async (items) => {
+  create: async (items, guestEmail = null) => {
     // items should be array of { type: 'art' | 'other', id, variantId? }
+    // guestEmail is optional for guest checkout
+    const requestBody = { items };
+
+    if (guestEmail) {
+      requestBody.guest_email = guestEmail;
+    }
+
     return apiRequest('/orders', {
       method: 'POST',
-      body: JSON.stringify({ items }),
+      body: JSON.stringify(requestBody),
     });
   },
 
-  getAll: async () => {
-    return apiRequest('/orders');
+  getAll: async (params = {}) => {
+    const queryParams = new URLSearchParams();
+
+    if (params.page) {
+      queryParams.append('page', params.page.toString());
+    }
+
+    if (params.limit) {
+      queryParams.append('limit', params.limit.toString());
+    }
+
+    const queryString = queryParams.toString();
+    return apiRequest(`/orders${queryString ? '?' + queryString : ''}`);
   },
 
   getById: async (id) => {
     return apiRequest(`/orders/${id}`);
+  },
+};
+
+// Shipping API (public)
+export const shippingAPI = {
+  getAvailableForProduct: async (productId, productType, country = null, postalCode = null) => {
+    const params = new URLSearchParams({
+      productId: productId.toString(),
+      productType,
+    });
+
+    if (country) {
+      params.append('country', country);
+    }
+
+    if (postalCode) {
+      params.append('postalCode', postalCode);
+    }
+
+    return apiRequest(`/shipping/available?${params.toString()}`);
   },
 };
 
@@ -284,6 +322,13 @@ export const adminAPI = {
 
     getById: async (id) => {
       return apiRequest(`/admin/authors/${id}`);
+    },
+
+    create: async (authorData) => {
+      return apiRequest('/admin/authors', {
+        method: 'POST',
+        body: JSON.stringify(authorData),
+      });
     },
 
     update: async (id, authorData) => {
@@ -321,5 +366,102 @@ export const adminAPI = {
         body: isFormData ? productData : JSON.stringify(productData),
       });
     },
+  },
+
+  // Orders management
+  orders: {
+    getAll: async () => {
+      return apiRequest('/admin/orders');
+    },
+
+    getById: async (id) => {
+      return apiRequest(`/admin/orders/${id}`);
+    },
+  },
+
+  // Shipping management
+  shipping: {
+    // Shipping methods
+    getAllMethods: async () => {
+      return apiRequest('/admin/shipping/methods');
+    },
+
+    getMethodById: async (id) => {
+      return apiRequest(`/admin/shipping/methods/${id}`);
+    },
+
+    createMethod: async (methodData) => {
+      return apiRequest('/admin/shipping/methods', {
+        method: 'POST',
+        body: JSON.stringify(methodData),
+      });
+    },
+
+    updateMethod: async (id, methodData) => {
+      return apiRequest(`/admin/shipping/methods/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(methodData),
+      });
+    },
+
+    deleteMethod: async (id) => {
+      return apiRequest(`/admin/shipping/methods/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    // Shipping zones
+    getZones: async (methodId) => {
+      return apiRequest(`/admin/shipping/methods/${methodId}/zones`);
+    },
+
+    createZone: async (methodId, zoneData) => {
+      return apiRequest(`/admin/shipping/methods/${methodId}/zones`, {
+        method: 'POST',
+        body: JSON.stringify(zoneData),
+      });
+    },
+
+    updateZone: async (zoneId, zoneData) => {
+      return apiRequest(`/admin/shipping/zones/${zoneId}`, {
+        method: 'PUT',
+        body: JSON.stringify(zoneData),
+      });
+    },
+
+    deleteZone: async (zoneId) => {
+      return apiRequest(`/admin/shipping/zones/${zoneId}`, {
+        method: 'DELETE',
+      });
+    },
+  },
+};
+
+// Seller API (requires seller role)
+export const sellerAPI = {
+  // Product management
+  getProducts: async () => {
+    return apiRequest('/seller/products');
+  },
+
+  updateVariations: async (productId, variations) => {
+    return apiRequest(`/seller/others/${productId}/variations`, {
+      method: 'PUT',
+      body: JSON.stringify({ variations }),
+    });
+  },
+
+  toggleVisibility: async (productId, productType, visible) => {
+    return apiRequest(`/seller/products/${productId}/visibility`, {
+      method: 'PUT',
+      body: JSON.stringify({ product_type: productType, visible }),
+    });
+  },
+
+  deleteProduct: async (productId, productType) => {
+    return apiRequest(`/seller/products/${productId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ product_type: productType }),
+    });
   },
 };

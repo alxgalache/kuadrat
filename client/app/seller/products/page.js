@@ -2,13 +2,22 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { productsAPI, getProductImageUrl } from '@/lib/api'
+import { sellerAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
+import ConfirmDialog from '@/components/ConfirmDialog'
+import VariationEditModal from '@/components/VariationEditModal'
+import { useNotification } from '@/contexts/NotificationContext'
+import { PencilIcon, EyeIcon, EyeSlashIcon, TrashIcon } from '@heroicons/react/24/outline'
 
 function SellerProductsPageContent() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const { showSuccess, showApiError, showError: showErrorNotif } = useNotification()
+
+  // Modal states
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, type: '', product: null })
+  const [variationModal, setVariationModal] = useState({ open: false, product: null })
 
   useEffect(() => {
     loadProducts()
@@ -16,89 +25,293 @@ function SellerProductsPageContent() {
 
   const loadProducts = async () => {
     try {
-      const data = await productsAPI.getSellerProducts()
+      const data = await sellerAPI.getProducts()
       setProducts(data.products)
     } catch (err) {
-      setError('No se pudieron cargar tus obras')
+      setError('No se pudieron cargar tus productos')
+      showApiError(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const getImageUrl = (product) => {
+    return product.product_type === 'art'
+      ? getArtImageUrl(product.basename)
+      : getOthersImageUrl(product.basename)
+  }
+
+  const getStatusBadge = (status) => {
+    const badges = {
+      pending: { text: 'Pendiente', className: 'bg-yellow-50 text-yellow-700 ring-yellow-600/20' },
+      approved: { text: 'Aprobado', className: 'bg-green-50 text-green-700 ring-green-600/20' },
+      rejected: { text: 'Rechazado', className: 'bg-red-50 text-red-700 ring-red-600/20' }
+    }
+    const badge = badges[status] || badges.pending
+    return (
+      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${badge.className}`}>
+        {badge.text}
+      </span>
+    )
+  }
+
+  const getVisibleBadge = (visible) => {
+    return visible ? (
+      <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-green-50 text-green-700 ring-green-600/20">
+        Visible
+      </span>
+    ) : (
+      <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-gray-50 text-gray-600 ring-gray-500/10">
+        Oculto
+      </span>
+    )
+  }
+
+  const handleToggleVisibility = (product) => {
+    setConfirmDialog({
+      open: true,
+      type: 'visibility',
+      product
+    })
+  }
+
+  const handleDelete = (product) => {
+    setConfirmDialog({
+      open: true,
+      type: 'delete',
+      product
+    })
+  }
+
+  const handleEditVariations = (product) => {
+    setVariationModal({
+      open: true,
+      product
+    })
+  }
+
+  const executeConfirmAction = async () => {
+    const { type, product } = confirmDialog
+
+    try {
+      if (type === 'visibility') {
+        await sellerAPI.toggleVisibility(product.id, product.product_type, !product.visible)
+        showSuccess(
+          product.visible ? 'Producto oculto' : 'Producto visible',
+          product.visible
+            ? 'El producto ya no es visible en la galería'
+            : 'El producto ahora es visible en la galería'
+        )
+      } else if (type === 'delete') {
+        await sellerAPI.deleteProduct(product.id, product.product_type)
+        showSuccess('Producto eliminado', 'El producto ha sido eliminado permanentemente')
+      }
+
+      // Reload products
+      await loadProducts()
+    } catch (err) {
+      showApiError(err)
+    } finally {
+      setConfirmDialog({ open: false, type: '', product: null })
+    }
+  }
+
+  const handleSaveVariations = async (variations) => {
+    try {
+      await sellerAPI.updateVariations(variationModal.product.id, variations)
+      showSuccess('Variaciones actualizadas', 'Las variaciones se han actualizado correctamente')
+      await loadProducts()
+      setVariationModal({ open: false, product: null })
+    } catch (err) {
+      showApiError(err)
+      throw err // Re-throw to keep modal open
     }
   }
 
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Cargando tus obras...</p>
+        <p className="text-gray-500">Cargando productos...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white min-h-screen flex items-center justify-center">
+        <p className="text-red-500">{error}</p>
       </div>
     )
   }
 
   return (
     <div className="bg-white">
-      <div className="py-16 sm:py-24 lg:mx-auto lg:max-w-7xl lg:px-8">
-        <div className="flex items-center justify-between px-4 sm:px-6 lg:px-0">
-          <h2 className="text-2xl font-bold tracking-tight text-gray-900">Mis obras</h2>
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">Mis productos</h1>
+            <p className="mt-2 text-sm text-gray-700">
+              Gestiona tus obras de arte y otros productos
+            </p>
+          </div>
           <Link
             href="/seller/publish"
             className="rounded-md bg-black px-3.5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-gray-800"
           >
-            Publicar nueva obra
+            Publicar producto
           </Link>
         </div>
 
-        {error && (
-          <div className="mt-4 mx-4 sm:mx-6 lg:mx-0 rounded-md bg-red-50 p-4">
-            <p className="text-sm text-red-800">{error}</p>
-          </div>
-        )}
-
         {products.length === 0 ? (
-          <div className="mt-8 px-4 sm:px-6 lg:px-0">
-            <p className="text-gray-500 text-center">Aún no has publicado ninguna obra.</p>
-            {/*<div className="mt-4 text-center">*/}
-            {/*  <Link*/}
-            {/*    href="/seller/publish"*/}
-            {/*    className="text-indigo-600 hover:text-indigo-500 font-semibold"*/}
-            {/*  >*/}
-            {/*    Publica tu primera obra*/}
-            {/*  </Link>*/}
-            {/*</div>*/}
+          <div className="text-center py-12">
+            <p className="text-gray-500">Aún no has publicado ningún producto</p>
+            <div className="mt-4">
+              <Link
+                href="/seller/publish"
+                className="text-black hover:text-gray-700 font-semibold"
+              >
+                Publica tu primer producto
+              </Link>
+            </div>
           </div>
         ) : (
-          <div className="relative mt-8">
-            <div className="relative w-full">
-              <ul
-                role="list"
-                className="mx-4 grid grid-cols-1 gap-8 sm:mx-6 sm:grid-cols-2 lg:mx-0 lg:grid-cols-4"
-              >
-                {products.map((product) => (
-                  <li key={product.id} className="inline-flex w-full flex-col text-center">
-                    <div className="group relative">
-                      <img
-                        alt={product.name}
-                        src={getProductImageUrl(product.basename)}
-                        className="aspect-square w-full rounded-md bg-gray-200 object-cover group-hover:opacity-75"
-                      />
-                      <div className="mt-6">
-                        <p className="text-sm text-gray-500">
-                          {product.type} - {product.is_sold ? 'VENDIDA' : 'Disponible'}
-                        </p>
-                        <h3 className="mt-1 font-semibold text-gray-900">
-                          <Link href={`/galeria/${product.slug}`}>
-                            <span className="absolute inset-0" />
-                            {product.name}
-                          </Link>
-                        </h3>
-                        <p className="mt-1 text-gray-900">€{product.price.toFixed(2)}</p>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+          <div className="mt-8 flow-root">
+            <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+              <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+                <table className="min-w-full divide-y divide-gray-300">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0">
+                        Producto
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Tipo
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Precio
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Stock
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Estado
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Visible
+                      </th>
+                      <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0">
+                        <span className="sr-only">Acciones</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {products.map((product) => (
+                      <tr key={`${product.product_type}-${product.id}`}>
+                        <td className="py-4 pl-4 pr-3 sm:pl-0">
+                          <div className="flex items-center">
+                            <div className="size-16 shrink-0">
+                              <img
+                                alt={product.name}
+                                src={getImageUrl(product)}
+                                className="size-16 rounded-md object-cover"
+                              />
+                            </div>
+                            <div className="ml-4">
+                              <div className="font-medium text-gray-900">{product.name}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          <span className="capitalize">{product.product_type === 'art' ? 'Arte' : 'Otro'}</span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">
+                          €{product.price.toFixed(2)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {product.total_stock}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          {getStatusBadge(product.status)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          {getVisibleBadge(product.visible)}
+                        </td>
+                        <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
+                          <div className="flex justify-end gap-2">
+                            {/* Edit button - only for 'others' products */}
+                            {product.product_type === 'others' && (
+                              <button
+                                onClick={() => handleEditVariations(product)}
+                                className="text-indigo-600 hover:text-indigo-900"
+                                title="Editar variaciones"
+                              >
+                                <PencilIcon className="size-5" />
+                              </button>
+                            )}
+
+                            {/* Toggle visibility button */}
+                            <button
+                              onClick={() => handleToggleVisibility(product)}
+                              className="text-blue-600 hover:text-blue-900"
+                              title={product.visible ? 'Ocultar' : 'Mostrar'}
+                            >
+                              {product.visible ? (
+                                <EyeSlashIcon className="size-5" />
+                              ) : (
+                                <EyeIcon className="size-5" />
+                              )}
+                            </button>
+
+                            {/* Delete button */}
+                            <button
+                              onClick={() => handleDelete(product)}
+                              className="text-red-600 hover:text-red-900"
+                              title="Eliminar"
+                            >
+                              <TrashIcon className="size-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false, type: '', product: null })}
+        onConfirm={executeConfirmAction}
+        title={
+          confirmDialog.type === 'delete'
+            ? 'Eliminar producto'
+            : confirmDialog.product?.visible
+            ? 'Ocultar producto'
+            : 'Mostrar producto'
+        }
+        message={
+          confirmDialog.type === 'delete'
+            ? 'Esta acción no se puede deshacer. El producto dejará de ser visible en la galería y no podrás recuperarlo.'
+            : confirmDialog.product?.visible
+            ? '¿Estás seguro de que deseas ocultar este producto de la galería?'
+            : '¿Estás seguro de que deseas hacer visible este producto en la galería?'
+        }
+        confirmText={confirmDialog.type === 'delete' ? 'Eliminar' : 'Confirmar'}
+        type={confirmDialog.type === 'delete' ? 'danger' : 'warning'}
+      />
+
+      {/* Variation Edit Modal */}
+      <VariationEditModal
+        open={variationModal.open}
+        onClose={() => setVariationModal({ open: false, product: null })}
+        product={variationModal.product}
+        onSave={handleSaveVariations}
+      />
     </div>
   )
 }

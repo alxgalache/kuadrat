@@ -23,7 +23,7 @@ const getAllArtProducts = async (req, res, next) => {
         u.slug as seller_slug
       FROM art a
       LEFT JOIN users u ON a.seller_id = u.id
-      WHERE a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved'
+      WHERE a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved' AND a.removed = 0
     `;
     const args = [];
 
@@ -73,7 +73,7 @@ const getArtProductById = async (req, res, next) => {
             u.slug as seller_slug
           FROM art a
           LEFT JOIN users u ON a.seller_id = u.id
-          WHERE a.id = ? AND a.visible = 1 AND a.status = 'approved'
+          WHERE a.id = ? AND a.visible = 1 AND a.status = 'approved' AND a.removed = 0
         `,
         args: [parseInt(id, 10)],
       });
@@ -88,7 +88,7 @@ const getArtProductById = async (req, res, next) => {
             u.slug as seller_slug
           FROM art a
           LEFT JOIN users u ON a.seller_id = u.id
-          WHERE a.slug = ? AND a.visible = 1 AND a.status = 'approved'
+          WHERE a.slug = ? AND a.visible = 1 AND a.status = 'approved' AND a.removed = 0
         `,
         args: [id],
       });
@@ -112,7 +112,7 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'art');
 
 const createArtProduct = async (req, res, next) => {
   try {
-    const { name, description, price, type } = req.body;
+    const { name, description, price, type, weight, dimensions } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -157,6 +157,22 @@ const createArtProduct = async (req, res, next) => {
       validationErrors.push({ field: 'type', message: 'El soporte debe tener al menos 3 caracteres' });
     } else if (type.trim().length > 100) {
       validationErrors.push({ field: 'type', message: 'El soporte no debe exceder 100 caracteres' });
+    }
+
+    // Validate weight (optional, but if provided must be > 0)
+    if (weight) {
+      const weightNum = parseInt(weight, 10);
+      if (!Number.isInteger(weightNum) || weightNum <= 0) {
+        validationErrors.push({ field: 'weight', message: 'El peso debe ser un número entero mayor que 0' });
+      }
+    }
+
+    // Validate dimensions (optional, but if provided must follow format WxLxH)
+    if (dimensions && typeof dimensions === 'string') {
+      const dimensionsRegex = /^\d+x\d+x\d+$/;
+      if (!dimensionsRegex.test(dimensions.trim())) {
+        validationErrors.push({ field: 'dimensions', message: 'Las dimensiones deben estar en formato "LxWxH" (ej: 30x20x10)' });
+      }
     }
 
     // Validate image file
@@ -251,13 +267,17 @@ const createArtProduct = async (req, res, next) => {
     const filePath = path.join(UPLOADS_DIR, basename);
     await fs.promises.writeFile(filePath, req.file.buffer);
 
+    // Prepare weight and dimensions values
+    const weightValue = weight ? parseInt(weight, 10) : null;
+    const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
+
     // Insert art product
     const result = await db.execute({
       sql: `
-        INSERT INTO art (seller_id, name, description, price, type, basename, slug)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO art (seller_id, name, description, price, type, basename, slug, weight, dimensions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, type, basename, slug],
+      args: [seller_id, name, description, priceNum, type, basename, slug, weightValue, dimensionsValue],
     });
 
     // Get the created product
@@ -336,7 +356,7 @@ const getSellerArtProducts = async (req, res, next) => {
     const seller_id = req.user.id;
 
     const result = await db.execute({
-      sql: 'SELECT * FROM art WHERE seller_id = ? AND visible = 1 ORDER BY created_at DESC',
+      sql: 'SELECT * FROM art WHERE seller_id = ? AND visible = 1 AND removed = 0 ORDER BY created_at DESC',
       args: [seller_id],
     });
 
@@ -375,7 +395,7 @@ const getArtProductsByAuthorSlug = async (req, res, next) => {
           u.full_name as seller_name
         FROM art a
         LEFT JOIN users u ON a.seller_id = u.id
-        WHERE a.seller_id = ? AND a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved'
+        WHERE a.seller_id = ? AND a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved' AND a.removed = 0
         ORDER BY a.created_at DESC
       `,
       args: [author.id],

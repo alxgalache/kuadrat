@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { adminAPI, getAuthorImageUrl } from '@/lib/api'
 import { PhotoIcon } from '@heroicons/react/24/solid'
@@ -10,14 +10,13 @@ import { useNotification } from '@/contexts/NotificationContext'
 import QuillEditor from '@/components/QuillEditor'
 import 'quill/dist/quill.snow.css'
 
-function AuthorEditPageContent({ params }) {
-  const unwrappedParams = use(params)
-  const [author, setAuthor] = useState(null)
+function NewAuthorPageContent() {
   const [fullName, setFullName] = useState('')
   const [slug, setSlug] = useState('')
   const [bio, setBio] = useState('')
   const [location, setLocation] = useState('')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [emailContact, setEmailContact] = useState('')
   const [visible, setVisible] = useState(true)
   const [pickupAddress, setPickupAddress] = useState('')
@@ -27,7 +26,6 @@ function AuthorEditPageContent({ params }) {
   const [pickupInstructions, setPickupInstructions] = useState('')
   const [avatarFile, setAvatarFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const router = useRouter()
   const { showError, showApiError, showSuccess } = useNotification()
@@ -49,38 +47,6 @@ function AuthorEditPageContent({ params }) {
     'list',
     'link'
   ]
-
-  useEffect(() => {
-    loadAuthor()
-  }, [])
-
-  const loadAuthor = async () => {
-    try {
-      const data = await adminAPI.authors.getById(unwrappedParams.id)
-      const author = data.author
-      setAuthor(author)
-      setFullName(author.full_name || '')
-      setSlug(author.slug || '')
-      setBio(author.bio || '')
-      setLocation(author.location || '')
-      setEmail(author.email || '')
-      setEmailContact(author.email_contact || '')
-      setVisible(author.visible === 1)
-      setPickupAddress(author.pickup_address || '')
-      setPickupCity(author.pickup_city || '')
-      setPickupPostalCode(author.pickup_postal_code || '')
-      setPickupCountry(author.pickup_country || '')
-      setPickupInstructions(author.pickup_instructions || '')
-      if (author.profile_img) {
-        setPreviewUrl(getAuthorImageUrl(author.profile_img))
-      }
-    } catch (err) {
-      showApiError(err)
-      router.push('/admin')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const validateAndSetAvatar = async (file) => {
     // Reset previous state
@@ -141,16 +107,6 @@ function AuthorEditPageContent({ params }) {
     multiple: false
   })
 
-  useEffect(() => {
-    return () => {
-      if (previewUrl && avatarFile) {
-        try {
-          URL.revokeObjectURL(previewUrl)
-        } catch {}
-      }
-    }
-  }, [previewUrl, avatarFile])
-
   const handleSubmit = async (e) => {
     e.preventDefault()
 
@@ -177,21 +133,27 @@ function AuthorEditPageContent({ params }) {
       return
     }
 
+    if (!password.trim()) {
+      showError('Error de validación', 'La contraseña es obligatoria')
+      return
+    }
+
+    if (password.length < 6) {
+      showError('Error de validación', 'La contraseña debe tener al menos 6 caracteres')
+      return
+    }
+
     setSaving(true)
 
     try {
-      // First, upload avatar if changed
-      if (avatarFile) {
-        await adminAPI.authors.uploadAvatar(unwrappedParams.id, avatarFile)
-      }
-
-      // Then, update author data
-      await adminAPI.authors.update(unwrappedParams.id, {
+      // Create author
+      const result = await adminAPI.authors.create({
         full_name: fullName.trim(),
         slug: slug.trim(),
         bio: bio,
         location: location.trim(),
         email: email.trim(),
+        password: password,
         email_contact: emailContact.trim(),
         visible: visible,
         pickup_address: pickupAddress.trim(),
@@ -201,21 +163,20 @@ function AuthorEditPageContent({ params }) {
         pickup_instructions: pickupInstructions.trim()
       })
 
-      showSuccess('Actualizado', 'Autor actualizado correctamente')
-      router.push(`/admin/authors/${unwrappedParams.id}`)
+      const newAuthorId = result.author.id
+
+      // Upload avatar if provided
+      if (avatarFile && newAuthorId) {
+        await adminAPI.authors.uploadAvatar(newAuthorId, avatarFile)
+      }
+
+      showSuccess('Creado', 'Autor creado correctamente')
+      router.push(`/admin/authors/${newAuthorId}`)
     } catch (err) {
       showApiError(err)
     } finally {
       setSaving(false)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="bg-white min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Cargando...</p>
-      </div>
-    )
   }
 
   return (
@@ -224,9 +185,9 @@ function AuthorEditPageContent({ params }) {
         <form onSubmit={handleSubmit}>
           <div className="space-y-12">
             <div className="border-b border-gray-900/10 pb-12">
-              <h2 className="text-base/7 font-semibold text-gray-900">Editar Autor</h2>
+              <h2 className="text-base/7 font-semibold text-gray-900">Nuevo Autor</h2>
               <p className="mt-1 text-sm/6 text-gray-600">
-                Edita la información del autor
+                Crea un nuevo usuario con rol de vendedor (seller)
               </p>
 
               <div className="mt-10 grid grid-cols-1 lg:grid-cols-5 gap-x-8 gap-y-8">
@@ -269,6 +230,41 @@ function AuthorEditPageContent({ params }) {
                   </div>
 
                   <div>
+                    <label htmlFor="email" className="block text-sm/6 font-medium text-gray-900">
+                      Email
+                    </label>
+                    <div className="mt-2">
+                      <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="password" className="block text-sm/6 font-medium text-gray-900">
+                      Contraseña
+                    </label>
+                    <div className="mt-2">
+                      <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Mínimo 6 caracteres</p>
+                    </div>
+                  </div>
+
+                  <div>
                     <label htmlFor="bio" className="block text-sm/6 font-medium text-gray-900">
                       Biografía
                     </label>
@@ -294,23 +290,6 @@ function AuthorEditPageContent({ params }) {
                         type="text"
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="email" className="block text-sm/6 font-medium text-gray-900">
-                      Email
-                    </label>
-                    <div className="mt-2">
-                      <input
-                        id="email"
-                        name="email"
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
                       />
                     </div>
@@ -447,7 +426,7 @@ function AuthorEditPageContent({ params }) {
                   {/* Avatar Upload */}
                   <div>
                     <label className="block text-sm/6 font-medium text-gray-900">
-                      Avatar
+                      Avatar (opcional)
                     </label>
                     <div
                       {...getRootProps()}
@@ -493,7 +472,7 @@ function AuthorEditPageContent({ params }) {
           <div className="mt-6 flex items-center justify-end gap-x-6">
             <button
               type="button"
-              onClick={() => router.back()}
+              onClick={() => router.push('/admin/autores')}
               className="text-sm/6 font-semibold text-gray-900"
             >
               Cancelar
@@ -503,7 +482,7 @@ function AuthorEditPageContent({ params }) {
               disabled={saving}
               className="rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
             >
-              {saving ? 'Guardando...' : 'Guardar cambios'}
+              {saving ? 'Creando...' : 'Crear autor'}
             </button>
           </div>
         </form>
@@ -512,10 +491,10 @@ function AuthorEditPageContent({ params }) {
   )
 }
 
-export default function AuthorEditPage({ params }) {
+export default function NewAuthorPage() {
   return (
     <AuthGuard requireRole="admin">
-      <AuthorEditPageContent params={params} />
+      <NewAuthorPageContent />
     </AuthGuard>
   )
 }

@@ -23,7 +23,7 @@ const getAllOthersProducts = async (req, res, next) => {
         u.slug as seller_slug
       FROM others o
       LEFT JOIN users u ON o.seller_id = u.id
-      WHERE o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved'
+      WHERE o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved' AND o.removed = 0
     `;
     const args = [];
 
@@ -82,7 +82,7 @@ const getOthersProductById = async (req, res, next) => {
             u.slug as seller_slug
           FROM others o
           LEFT JOIN users u ON o.seller_id = u.id
-          WHERE o.id = ? AND o.visible = 1 AND o.status = 'approved'
+          WHERE o.id = ? AND o.visible = 1 AND o.status = 'approved' AND o.removed = 0
         `,
         args: [parseInt(id, 10)],
       });
@@ -97,7 +97,7 @@ const getOthersProductById = async (req, res, next) => {
             u.slug as seller_slug
           FROM others o
           LEFT JOIN users u ON o.seller_id = u.id
-          WHERE o.slug = ? AND o.visible = 1 AND o.status = 'approved'
+          WHERE o.slug = ? AND o.visible = 1 AND o.status = 'approved' AND o.removed = 0
         `,
         args: [id],
       });
@@ -135,7 +135,7 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'others');
 
 const createOthersProduct = async (req, res, next) => {
   try {
-    const { name, description, price, variations } = req.body;
+    const { name, description, price, variations, weight, dimensions } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -170,6 +170,22 @@ const createOthersProduct = async (req, res, next) => {
         validationErrors.push({ field: 'price', message: 'El precio debe ser al menos €10' });
       } else if (priceNum > 10000) {
         validationErrors.push({ field: 'price', message: 'El precio no debe exceder €10,000' });
+      }
+    }
+
+    // Validate weight (optional, but if provided must be > 0)
+    if (weight) {
+      const weightNum = parseInt(weight, 10);
+      if (!Number.isInteger(weightNum) || weightNum <= 0) {
+        validationErrors.push({ field: 'weight', message: 'El peso debe ser un número entero mayor que 0' });
+      }
+    }
+
+    // Validate dimensions (optional, but if provided must follow format WxLxH)
+    if (dimensions && typeof dimensions === 'string') {
+      const dimensionsRegex = /^\d+x\d+x\d+$/;
+      if (!dimensionsRegex.test(dimensions.trim())) {
+        validationErrors.push({ field: 'dimensions', message: 'Las dimensiones deben estar en formato "LxWxH" (ej: 30x20x10)' });
       }
     }
 
@@ -292,13 +308,17 @@ const createOthersProduct = async (req, res, next) => {
     const filePath = path.join(UPLOADS_DIR, basename);
     await fs.promises.writeFile(filePath, req.file.buffer);
 
+    // Prepare weight and dimensions values
+    const weightValue = weight ? parseInt(weight, 10) : null;
+    const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
+
     // Insert others product
     const result = await db.execute({
       sql: `
-        INSERT INTO others (seller_id, name, description, price, basename, slug)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, basename, slug],
+      args: [seller_id, name, description, priceNum, basename, slug, weightValue, dimensionsValue],
     });
 
     const productId = result.lastInsertRowid;
@@ -408,7 +428,7 @@ const getSellerOthersProducts = async (req, res, next) => {
     const seller_id = req.user.id;
 
     const result = await db.execute({
-      sql: 'SELECT * FROM others WHERE seller_id = ? AND visible = 1 ORDER BY created_at DESC',
+      sql: 'SELECT * FROM others WHERE seller_id = ? AND visible = 1 AND removed = 0 ORDER BY created_at DESC',
       args: [seller_id],
     });
 
@@ -458,7 +478,7 @@ const getOthersProductsByAuthorSlug = async (req, res, next) => {
           u.full_name as seller_name
         FROM others o
         LEFT JOIN users u ON o.seller_id = u.id
-        WHERE o.seller_id = ? AND o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved'
+        WHERE o.seller_id = ? AND o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved' AND o.removed = 0
         ORDER BY o.created_at DESC
       `,
       args: [author.id],

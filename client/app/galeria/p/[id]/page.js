@@ -3,7 +3,11 @@
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { artAPI, ordersAPI, authAPI, authorsAPI, getArtImageUrl } from '@/lib/api'
+import { useCart } from '@/contexts/CartContext'
+import { useNotification } from '@/contexts/NotificationContext'
+import { useBannerNotification } from '@/contexts/BannerNotificationContext'
 import AuthorModal from '@/components/AuthorModal'
+import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 
 export default function ArtProductDetailPage({ params }) {
   const unwrappedParams = use(params)
@@ -14,6 +18,11 @@ export default function ArtProductDetailPage({ params }) {
   const [user, setUser] = useState(null)
   const [selectedAuthor, setSelectedAuthor] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [shippingModalOpen, setShippingModalOpen] = useState(false)
+  const [isHoveringCart, setIsHoveringCart] = useState(false)
+  const { isInCart, addToCart, removeFromCart, isSellerInCart, getSellerShipping } = useCart()
+  const { showSuccess } = useNotification()
+  const { showBanner } = useBannerNotification()
   const router = useRouter()
 
   useEffect(() => {
@@ -34,33 +43,131 @@ export default function ArtProductDetailPage({ params }) {
   }
 
   const handlePurchase = async () => {
+    let guestEmail = null
+
+    // If user is not logged in, prompt for email (guest checkout)
     if (!user) {
-      router.push('/autores')
-      return
+      guestEmail = window.prompt('Introduce tu email para recibir la confirmación de compra:')
+
+      if (!guestEmail) {
+        // User cancelled
+        return
+      }
+
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(guestEmail)) {
+        showBanner('Por favor, introduce un email válido.')
+        return
+      }
     }
 
     setPurchasing(true)
     try {
       // Create order with art product
-      await ordersAPI.create([{ type: 'art', id: product.id }])
-      alert('¡Compra exitosa! Revisa tu correo electrónico para confirmación.')
-      router.push('/orders')
+      await ordersAPI.create([{ type: 'art', id: product.id }], guestEmail)
+      showBanner('¡Compra exitosa! Revisa tu correo electrónico para confirmación.')
+
+      if (user) {
+        router.push('/orders')
+      } else {
+        // For guest checkout, redirect to home or gallery
+        router.push('/galeria')
+      }
     } catch (err) {
-      alert(err.message || 'Compra fallida. Por favor, inténtalo de nuevo.')
+      showBanner(err.message || 'Compra fallida. Por favor, inténtalo de nuevo.')
     } finally {
       setPurchasing(false)
     }
   }
 
   const handleViewAuthorBio = async () => {
-    if (!product.seller_slug) return
+    if (!product?.seller_slug) {
+      console.warn('No seller_slug available for this product')
+      return
+    }
 
     try {
       const authorData = await authorsAPI.getBySlug(product.seller_slug)
-      setSelectedAuthor(authorData.author)
-      setModalOpen(true)
+      if (authorData?.author) {
+        setSelectedAuthor(authorData.author)
+        setModalOpen(true)
+      } else {
+        console.error('No author data received')
+      }
     } catch (err) {
       console.error('Failed to load author:', err)
+      // Still try to show some error to the user
+      showBanner('No se pudo cargar la información del autor')
+    }
+  }
+
+  const handleAddToCart = () => {
+    // Check if seller already has products in cart
+    if (isSellerInCart(product.seller_id)) {
+      // Get existing shipping and auto-apply
+      const existingShipping = getSellerShipping(product.seller_id)
+
+      // Add to cart with existing shipping
+      addToCart({
+        productId: product.id,
+        productType: 'art',
+        name: product.name,
+        price: product.price,
+        basename: product.basename,
+        slug: product.slug,
+        sellerId: product.seller_id,
+        sellerName: product.seller_full_name,
+        quantity: 1,
+        shipping: existingShipping,
+      })
+
+      // Show banner notification
+      showBanner('Producto añadido')
+
+      // Scroll to top to show cart animation
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } else {
+      // Open shipping selection modal for first product from this seller
+      setShippingModalOpen(true)
+    }
+  }
+
+  const handleShippingSelected = (shipping) => {
+    // Add to cart with shipping info
+    addToCart({
+      productId: product.id,
+      productType: 'art',
+      name: product.name,
+      price: product.price,
+      basename: product.basename,
+      slug: product.slug,
+      sellerId: product.seller_id,
+      sellerName: product.seller_full_name,
+      quantity: 1,
+      shipping,
+    })
+
+    // Show banner notification
+    showBanner('Producto añadido')
+
+    // Scroll to top to show cart animation
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleRemoveFromCart = () => {
+    removeFromCart(product.id, 'art')
+  }
+
+  const handleCartButtonClick = () => {
+    if (!product) return
+
+    if (isInCart(product.id, 'art')) {
+      // Scroll to top smoothly to show cart animation
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      handleRemoveFromCart()
+    } else {
+      handleAddToCart()
     }
   }
 
@@ -140,11 +247,22 @@ export default function ArtProductDetailPage({ params }) {
                 </button>
               ) : (
                 <button
-                  onClick={handlePurchase}
-                  disabled={purchasing}
-                  className="flex max-w-xs flex-1 items-center justify-center rounded-md border border-transparent bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-50 focus:outline-hidden sm:w-full disabled:opacity-50"
+                  onClick={handleCartButtonClick}
+                  onMouseEnter={() => setIsHoveringCart(true)}
+                  onMouseLeave={() => setIsHoveringCart(false)}
+                  className={`flex max-w-xs flex-1 items-center justify-center rounded-md border border-transparent px-8 py-3 text-base font-medium focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-50 focus:outline-hidden sm:w-full transition-colors ${
+                    isInCart(product.id, 'art')
+                      ? isHoveringCart
+                        ? 'bg-red-100 text-red-900'
+                        : 'bg-gray-200 text-gray-900'
+                      : 'bg-black text-white hover:bg-gray-900'
+                  }`}
                 >
-                  {purchasing ? 'Procesando...' : 'Comprar'}
+                  {isInCart(product.id, 'art')
+                    ? isHoveringCart
+                      ? 'Eliminar de la cesta'
+                      : 'En la cesta'
+                    : 'Añadir a la cesta'}
                 </button>
               )}
             </div>
@@ -158,6 +276,21 @@ export default function ArtProductDetailPage({ params }) {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
       />
+
+      {/* Shipping selection modal */}
+      {product && (
+        <ShippingSelectionModal
+          open={shippingModalOpen}
+          onClose={() => setShippingModalOpen(false)}
+          onSelect={handleShippingSelected}
+          product={{
+            id: product.id,
+            type: 'art',
+            seller_id: product.seller_id,
+            seller_name: product.seller_full_name,
+          }}
+        />
+      )}
     </div>
   )
 }

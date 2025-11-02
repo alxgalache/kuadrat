@@ -4,6 +4,20 @@ const { ApiError } = require('./errorHandler');
 // Middleware to authenticate user using JWT
 const authenticate = passport.authenticate('jwt', { session: false });
 
+// Middleware for optional authentication (doesn't fail if no token provided)
+const optionalAuthenticate = (req, res, next) => {
+  passport.authenticate('jwt', { session: false }, (err, user, info) => {
+    if (err) {
+      return next(err);
+    }
+    if (user) {
+      req.user = user;
+    }
+    // Continue regardless of authentication status
+    next();
+  })(req, res, next);
+};
+
 // Middleware to check if user is a seller
 const requireSeller = (req, res, next) => {
   if (!req.user) {
@@ -41,6 +55,7 @@ const requireAuth = (req, res, next) => {
 
 module.exports = {
   authenticate,
+  optionalAuthenticate,
   requireSeller,
   requireBuyer,
   requireAuth,

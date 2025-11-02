@@ -1,9 +1,13 @@
 import './globals.css'
+// import ShippingBanner from '@/components/ShippingBanner'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { CartProvider } from '@/contexts/CartContext'
 import { NotificationProvider } from '@/contexts/NotificationContext'
+import { BannerNotificationProvider } from '@/contexts/BannerNotificationContext'
 import NotificationContainer from '@/components/Notification'
+import BannerNotification from '@/components/BannerNotification'
 
 export const metadata = {
   title: '140d - Galería de Arte',
@@ -20,12 +24,18 @@ export default function RootLayout({ children }) {
     <html lang="en" className="h-full">
       <body className="h-full flex flex-col">
         <NotificationProvider>
-          <AuthProvider>
-            <Navbar />
-            <main className="flex-grow">{children}</main>
-            <Footer />
-            <NotificationContainer />
-          </AuthProvider>
+          <BannerNotificationProvider>
+            <AuthProvider>
+              <CartProvider>
+                {/* <ShippingBanner /> */}
+                <Navbar />
+                <main className="flex-grow">{children}</main>
+                <Footer />
+                <NotificationContainer />
+                <BannerNotification />
+              </CartProvider>
+            </AuthProvider>
+          </BannerNotificationProvider>
         </NotificationProvider>
       </body>
     </html>

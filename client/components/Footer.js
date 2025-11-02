@@ -62,7 +62,7 @@ export default function Footer() {
           ))}
         </div>
         <p className="mt-8 text-center text-sm/6 text-gray-600 md:order-1 md:mt-0">
-          &copy; 2024 Kuadrat Gallery. Todos los derechos reservados.
+          &copy; 2026 140d Galería de Arte. Todos los derechos reservados.
         </p>
       </div>
     </footer>

@@ -5,12 +5,92 @@ const { sendPurchaseConfirmation } = require('../services/emailService');
 // Create new order
 const createOrder = async (req, res, next) => {
   try {
-    const { items } = req.body;
-    const buyer_id = req.user.id;
+    const { items, guest_email, contact, contact_type } = req.body;
 
-    // Validate input - items should be array of { type: 'art' | 'other', id, variantId? }
+    // Check if user is authenticated or guest
+    const isAuthenticated = req.user && req.user.id;
+    const isGuest = !isAuthenticated;
+
+    // Validate contact info (new flow) or guest_email (legacy)
+    if (isGuest) {
+      // Check for new contact flow
+      if (contact && contact_type) {
+        // Validate contact based on type
+        if (contact_type === 'email') {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(contact)) {
+            throw new ApiError(400, 'Formato de email inválido', 'Email inválido');
+          }
+        } else if (contact_type === 'whatsapp') {
+          // Phone should be in format: +34600123456
+          const phoneRegex = /^\+\d{1,4}\d{6,15}$/;
+          if (!phoneRegex.test(contact)) {
+            throw new ApiError(400, 'Formato de teléfono inválido', 'Teléfono inválido');
+          }
+        } else {
+          throw new ApiError(400, 'Tipo de contacto inválido', 'Tipo de contacto inválido');
+        }
+      } else if (guest_email) {
+        // Legacy flow - validate guest email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(guest_email)) {
+          throw new ApiError(400, 'Formato de email inválido', 'Email inválido');
+        }
+      } else {
+        throw new ApiError(400, 'Se requiere información de contacto para compra como invitado', 'Contacto requerido');
+      }
+    }
+
+    // Get buyer_id (authenticated user or system guest user)
+    let buyer_id;
+    let buyer_email;
+    let buyer_contact;
+    let buyer_contact_type;
+
+    if (isAuthenticated) {
+      buyer_id = req.user.id;
+      buyer_email = req.user.email;
+      // For authenticated users, contact defaults to email
+      buyer_contact = contact || req.user.email;
+      buyer_contact_type = contact_type || 'email';
+    } else {
+      // Get system GUEST user
+      const guestUserResult = await db.execute({
+        sql: 'SELECT id FROM users WHERE email = ?',
+        args: ['SYSTEM_GUEST@kuadrat.internal'],
+      });
+
+      if (guestUserResult.rows.length === 0) {
+        throw new ApiError(500, 'Sistema de invitados no configurado', 'Error del servidor');
+      }
+
+      buyer_id = guestUserResult.rows[0].id;
+
+      // Use new contact flow if available, otherwise legacy guest_email
+      if (contact && contact_type) {
+        buyer_contact = contact;
+        buyer_contact_type = contact_type;
+        // If contact is email, also set buyer_email for email sending
+        if (contact_type === 'email') {
+          buyer_email = contact;
+        }
+      } else {
+        // Legacy flow
+        buyer_email = guest_email;
+        buyer_contact = guest_email;
+        buyer_contact_type = 'email';
+      }
+    }
+
+    // Validate input - items should be array of { type: 'art' | 'other', id, variantId?, shipping? }
     if (!items || !Array.isArray(items) || items.length === 0) {
       throw new ApiError(400, 'items debe ser un array no vacío', 'Solicitud inválida');
+    }
+
+    // Validate that all items have shipping info
+    const itemsWithoutShipping = items.filter(item => !item.shipping);
+    if (itemsWithoutShipping.length > 0) {
+      throw new ApiError(400, 'Todos los productos deben tener información de envío', 'Información de envío faltante');
     }
 
     // Separate art and others items
@@ -44,14 +124,16 @@ const createOrder = async (req, res, next) => {
     const othersProducts = [];
     const othersVariations = [];
     if (othersItems.length > 0) {
-      const othersPlaceholders = othersItems.map(() => '?').join(',');
-      const othersIds = othersItems.map(item => item.id);
+      // Get unique product IDs to avoid duplicate queries
+      const uniqueOthersIds = [...new Set(othersItems.map(item => item.id))];
+      const othersPlaceholders = uniqueOthersIds.map(() => '?').join(',');
       const othersResult = await db.execute({
         sql: `SELECT * FROM others WHERE id IN (${othersPlaceholders})`,
-        args: othersIds,
+        args: uniqueOthersIds,
       });
 
-      if (othersResult.rows.length !== othersItems.length) {
+      // Check if all unique products were found
+      if (othersResult.rows.length !== uniqueOthersIds.length) {
         throw new ApiError(404, 'Uno o más productos no fueron encontrados', 'Productos no encontrados');
       }
 
@@ -101,8 +183,15 @@ const createOrder = async (req, res, next) => {
 
     // Create order
     const orderResult = await db.execute({
-      sql: 'INSERT INTO orders (buyer_id, total_price, status) VALUES (?, ?, ?)',
-      args: [buyer_id, totalPrice, 'completed'],
+      sql: 'INSERT INTO orders (buyer_id, total_price, status, guest_email, contact, contact_type) VALUES (?, ?, ?, ?, ?, ?)',
+      args: [
+        buyer_id,
+        totalPrice,
+        'completed',
+        isGuest ? guest_email : null, // Keep for backward compatibility
+        buyer_contact,
+        buyer_contact_type,
+      ],
     });
 
     const orderId = orderResult.lastInsertRowid;
@@ -112,10 +201,26 @@ const createOrder = async (req, res, next) => {
     for (const item of artItems) {
       const product = artProducts.find(p => p.id === item.id);
 
-      // Insert art order item
+      // Insert art order item with shipping info
       await db.execute({
-        sql: 'INSERT INTO art_order_items (order_id, art_id, price_at_purchase) VALUES (?, ?, ?)',
-        args: [orderId, product.id, product.price],
+        sql: `INSERT INTO art_order_items (
+          order_id,
+          art_id,
+          price_at_purchase,
+          shipping_method_id,
+          shipping_cost,
+          shipping_method_name,
+          shipping_method_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          orderId,
+          product.id,
+          product.price,
+          item.shipping?.methodId || null,
+          item.shipping?.cost || 0,
+          item.shipping?.methodName || null,
+          item.shipping?.methodType || null,
+        ],
       });
 
       // Mark as sold (once per unique art product)
@@ -134,10 +239,28 @@ const createOrder = async (req, res, next) => {
       const product = othersProducts.find(p => p.id === item.id);
       const variant = othersVariations.find(v => v.id === item.variantId);
 
-      // Insert other order item
+      // Insert other order item with shipping info
       await db.execute({
-        sql: 'INSERT INTO other_order_items (order_id, other_id, other_var_id, price_at_purchase) VALUES (?, ?, ?, ?)',
-        args: [orderId, product.id, variant.id, product.price],
+        sql: `INSERT INTO other_order_items (
+          order_id,
+          other_id,
+          other_var_id,
+          price_at_purchase,
+          shipping_method_id,
+          shipping_cost,
+          shipping_method_name,
+          shipping_method_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          orderId,
+          product.id,
+          variant.id,
+          product.price,
+          item.shipping?.methodId || null,
+          item.shipping?.cost || 0,
+          item.shipping?.methodName || null,
+          item.shipping?.methodType || null,
+        ],
       });
 
       // Track variant stock updates
@@ -185,7 +308,7 @@ const createOrder = async (req, res, next) => {
       args: [orderId],
     });
 
-    // Get art order items
+    // Get art order items with seller info
     const artOrderItemsResult = await db.execute({
       sql: `
         SELECT
@@ -193,6 +316,7 @@ const createOrder = async (req, res, next) => {
           a.name,
           a.type,
           a.basename,
+          a.seller_id,
           'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
@@ -201,13 +325,14 @@ const createOrder = async (req, res, next) => {
       args: [orderId],
     });
 
-    // Get others order items
+    // Get others order items with seller info
     const othersOrderItemsResult = await db.execute({
       sql: `
         SELECT
           ooi.*,
           o.name,
           o.basename,
+          o.seller_id,
           ov.key as variant_key,
           'other' as product_type
         FROM other_order_items ooi
@@ -221,17 +346,42 @@ const createOrder = async (req, res, next) => {
     const order = orderDetailsResult.rows[0];
     order.items = [...artOrderItemsResult.rows, ...othersOrderItemsResult.rows];
 
-    // Send purchase confirmation email
-    try {
-      await sendPurchaseConfirmation(req.user.email, {
-        orderId,
-        items: order.items,
-        totalPrice,
-        buyerEmail: req.user.email,
-      });
-    } catch (emailError) {
-      console.error('Failed to send purchase confirmation email:', emailError);
-      // Don't fail the order if email fails
+    // Send purchase confirmation email (only if contact_type is email)
+    if (buyer_contact_type === 'email') {
+      try {
+        // Get unique seller information from items
+        const sellersInfo = [];
+        for (const item of order.items) {
+          if (item.seller_id && !sellersInfo.find(s => s.id === item.seller_id)) {
+            const sellerResult = await db.execute({
+              sql: 'SELECT email, full_name FROM users WHERE id = ?',
+              args: [item.seller_id],
+            });
+
+            if (sellerResult.rows.length > 0) {
+              const seller = sellerResult.rows[0];
+              sellersInfo.push({
+                email: seller.email,
+                name: seller.full_name,
+                id: item.seller_id,
+              });
+            }
+          }
+        }
+
+        await sendPurchaseConfirmation({
+          orderId,
+          items: order.items,
+          totalPrice,
+          buyerEmail: buyer_email,
+          buyerContact: buyer_contact,
+          contactType: buyer_contact_type,
+          sellers: sellersInfo,
+        });
+      } catch (emailError) {
+        console.error('Failed to send purchase confirmation email:', emailError);
+        // Don't fail the order if email fails
+      }
     }
 
     res.status(201).json({
@@ -243,20 +393,63 @@ const createOrder = async (req, res, next) => {
   }
 };
 
-// Get all orders for logged-in user
+// Get all orders for logged-in user (seller view - shows only their products)
 const getUserOrders = async (req, res, next) => {
   try {
     const userId = req.user.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const offset = (page - 1) * limit;
 
-    const ordersResult = await db.execute({
-      sql: 'SELECT * FROM orders WHERE buyer_id = ? ORDER BY created_at DESC',
+    // Check if user is a seller
+    const userResult = await db.execute({
+      sql: 'SELECT role FROM users WHERE id = ?',
       args: [userId],
     });
 
-    // Get items for each order
+    if (userResult.rows.length === 0) {
+      throw new ApiError(404, 'Usuario no encontrado', 'Usuario no encontrado');
+    }
+
+    const userRole = userResult.rows[0].role;
+
+    // Get all orders that contain at least one item from this seller
+    // We need to find orders where either art items or other items belong to this seller
+    const ordersWithSellerItemsResult = await db.execute({
+      sql: `
+        SELECT DISTINCT o.id, o.buyer_id, o.total_price, o.status, o.created_at, o.guest_email
+        FROM orders o
+        LEFT JOIN art_order_items aoi ON o.id = aoi.order_id
+        LEFT JOIN art a ON aoi.art_id = a.id
+        LEFT JOIN other_order_items ooi ON o.id = ooi.order_id
+        LEFT JOIN others ot ON ooi.other_id = ot.id
+        WHERE a.seller_id = ? OR ot.seller_id = ?
+        ORDER BY o.created_at DESC
+        LIMIT ? OFFSET ?
+      `,
+      args: [userId, userId, limit, offset],
+    });
+
+    // Get total count for pagination
+    const countResult = await db.execute({
+      sql: `
+        SELECT COUNT(DISTINCT o.id) as total
+        FROM orders o
+        LEFT JOIN art_order_items aoi ON o.id = aoi.order_id
+        LEFT JOIN art a ON aoi.art_id = a.id
+        LEFT JOIN other_order_items ooi ON o.id = ooi.order_id
+        LEFT JOIN others ot ON ooi.other_id = ot.id
+        WHERE a.seller_id = ? OR ot.seller_id = ?
+      `,
+      args: [userId, userId],
+    });
+
+    const totalOrders = countResult.rows[0].total;
+
+    // Get items for each order (only seller's items)
     const orders = [];
-    for (const order of ordersResult.rows) {
-      // Get art order items
+    for (const order of ordersWithSellerItemsResult.rows) {
+      // Get art order items belonging to this seller
       const artItemsResult = await db.execute({
         sql: `
           SELECT
@@ -267,12 +460,12 @@ const getUserOrders = async (req, res, next) => {
             'art' as product_type
           FROM art_order_items aoi
           LEFT JOIN art a ON aoi.art_id = a.id
-          WHERE aoi.order_id = ?
+          WHERE aoi.order_id = ? AND a.seller_id = ?
         `,
-        args: [order.id],
+        args: [order.id, userId],
       });
 
-      // Get others order items
+      // Get others order items belonging to this seller
       const othersItemsResult = await db.execute({
         sql: `
           SELECT
@@ -284,6 +477,189 @@ const getUserOrders = async (req, res, next) => {
           FROM other_order_items ooi
           LEFT JOIN others o ON ooi.other_id = o.id
           LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+          WHERE ooi.order_id = ? AND o.seller_id = ?
+        `,
+        args: [order.id, userId],
+      });
+
+      const sellerItems = [...artItemsResult.rows, ...othersItemsResult.rows];
+
+      // Calculate seller's portion of the order
+      const sellerTotal = sellerItems.reduce((sum, item) => {
+        return sum + item.price_at_purchase + (item.shipping_cost || 0);
+      }, 0);
+
+      orders.push({
+        ...order,
+        items: sellerItems,
+        total_price: sellerTotal, // Override with seller's portion
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      orders,
+      pagination: {
+        page,
+        limit,
+        total: totalOrders,
+        totalPages: Math.ceil(totalOrders / limit),
+        hasMore: page < Math.ceil(totalOrders / limit),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get single order by ID (seller view - shows only seller's products)
+const getOrderById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE id = ?',
+      args: [id],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const order = orderResult.rows[0];
+
+    // Check if this order contains any items from this seller
+    const sellerItemCheckResult = await db.execute({
+      sql: `
+        SELECT COUNT(*) as count
+        FROM (
+          SELECT aoi.id
+          FROM art_order_items aoi
+          LEFT JOIN art a ON aoi.art_id = a.id
+          WHERE aoi.order_id = ? AND a.seller_id = ?
+          UNION
+          SELECT ooi.id
+          FROM other_order_items ooi
+          LEFT JOIN others o ON ooi.other_id = o.id
+          WHERE ooi.order_id = ? AND o.seller_id = ?
+        )
+      `,
+      args: [id, userId, id, userId],
+    });
+
+    if (sellerItemCheckResult.rows[0].count === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    // Get art order items (only seller's items)
+    const artItemsResult = await db.execute({
+      sql: `
+        SELECT
+          aoi.*,
+          a.name,
+          a.description,
+          a.type,
+          a.basename,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ? AND a.seller_id = ?
+      `,
+      args: [id, userId],
+    });
+
+    // Get others order items (only seller's items)
+    const othersItemsResult = await db.execute({
+      sql: `
+        SELECT
+          ooi.*,
+          o.name,
+          o.description,
+          o.basename,
+          ov.key as variant_key,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ? AND o.seller_id = ?
+      `,
+      args: [id, userId],
+    });
+
+    const sellerItems = [...artItemsResult.rows, ...othersItemsResult.rows];
+
+    // Calculate seller's portion of the order
+    const sellerTotal = sellerItems.reduce((sum, item) => {
+      return sum + item.price_at_purchase + (item.shipping_cost || 0);
+    }, 0);
+
+    order.items = sellerItems;
+    order.total_price = sellerTotal; // Override with seller's portion
+
+    res.status(200).json({
+      success: true,
+      order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get all orders (admin only)
+const getAllOrdersAdmin = async (req, res, next) => {
+  try {
+    // Get all orders with buyer info
+    const ordersResult = await db.execute({
+      sql: `
+        SELECT
+          o.*,
+          u.email as buyer_email,
+          u.full_name as buyer_name
+        FROM orders o
+        LEFT JOIN users u ON o.buyer_id = u.id
+        ORDER BY o.created_at DESC
+      `,
+      args: [],
+    });
+
+    // Get items for each order with seller info
+    const orders = [];
+    for (const order of ordersResult.rows) {
+      // Get art order items with seller info
+      const artItemsResult = await db.execute({
+        sql: `
+          SELECT
+            aoi.*,
+            a.name,
+            a.type,
+            a.basename,
+            a.seller_id,
+            u.full_name as seller_name,
+            'art' as product_type
+          FROM art_order_items aoi
+          LEFT JOIN art a ON aoi.art_id = a.id
+          LEFT JOIN users u ON a.seller_id = u.id
+          WHERE aoi.order_id = ?
+        `,
+        args: [order.id],
+      });
+
+      // Get others order items with seller info
+      const othersItemsResult = await db.execute({
+        sql: `
+          SELECT
+            ooi.*,
+            o.name,
+            o.basename,
+            o.seller_id,
+            ov.key as variant_key,
+            u.full_name as seller_name,
+            'other' as product_type
+          FROM other_order_items ooi
+          LEFT JOIN others o ON ooi.other_id = o.id
+          LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+          LEFT JOIN users u ON o.seller_id = u.id
           WHERE ooi.order_id = ?
         `,
         args: [order.id],
@@ -304,14 +680,21 @@ const getUserOrders = async (req, res, next) => {
   }
 };
 
-// Get single order by ID (must be the buyer)
-const getOrderById = async (req, res, next) => {
+// Get single order by ID (admin only)
+const getOrderByIdAdmin = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const userId = req.user.id;
 
     const orderResult = await db.execute({
-      sql: 'SELECT * FROM orders WHERE id = ?',
+      sql: `
+        SELECT
+          o.*,
+          u.email as buyer_email,
+          u.full_name as buyer_name
+        FROM orders o
+        LEFT JOIN users u ON o.buyer_id = u.id
+        WHERE o.id = ?
+      `,
       args: [id],
     });
 
@@ -321,12 +704,7 @@ const getOrderById = async (req, res, next) => {
 
     const order = orderResult.rows[0];
 
-    // Check if user is the buyer
-    if (order.buyer_id !== userId) {
-      throw new ApiError(403, 'Solo puedes ver tus propios pedidos', 'Acceso denegado');
-    }
-
-    // Get art order items
+    // Get art order items with seller info
     const artItemsResult = await db.execute({
       sql: `
         SELECT
@@ -335,15 +713,19 @@ const getOrderById = async (req, res, next) => {
           a.description,
           a.type,
           a.basename,
+          a.seller_id,
+          u.full_name as seller_name,
+          u.email as seller_email,
           'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
+        LEFT JOIN users u ON a.seller_id = u.id
         WHERE aoi.order_id = ?
       `,
       args: [id],
     });
 
-    // Get others order items
+    // Get others order items with seller info
     const othersItemsResult = await db.execute({
       sql: `
         SELECT
@@ -351,11 +733,15 @@ const getOrderById = async (req, res, next) => {
           o.name,
           o.description,
           o.basename,
+          o.seller_id,
           ov.key as variant_key,
+          u.full_name as seller_name,
+          u.email as seller_email,
           'other' as product_type
         FROM other_order_items ooi
         LEFT JOIN others o ON ooi.other_id = o.id
         LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        LEFT JOIN users u ON o.seller_id = u.id
         WHERE ooi.order_id = ?
       `,
       args: [id],
@@ -376,4 +762,6 @@ module.exports = {
   createOrder,
   getUserOrders,
   getOrderById,
+  getAllOrdersAdmin,
+  getOrderByIdAdmin,
 };

@@ -72,13 +72,94 @@ router.use(authenticate, adminAuth)
 // ===== AUTHOR ROUTES =====
 
 /**
+ * POST /api/admin/authors
+ * Create a new author (seller user)
+ */
+router.post('/authors', async (req, res) => {
+  try {
+    const {
+      email, password, full_name, bio, location, email_contact, visible,
+      pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
+    } = req.body
+    const bcrypt = require('bcrypt')
+
+    // Validate required fields
+    if (!email || !password || !full_name) {
+      return res.status(400).json({
+        title: 'Error de validación',
+        message: 'El email, contraseña y nombre completo son obligatorios'
+      })
+    }
+
+    // Check if email already exists
+    const checkEmail = await db.execute({
+      sql: 'SELECT id FROM users WHERE email = ?',
+      args: [email]
+    })
+
+    if (checkEmail.rows.length > 0) {
+      return res.status(400).json({
+        title: 'Error de validación',
+        message: 'Este email ya está registrado'
+      })
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10)
+
+    // Create user with role 'seller'
+    const result = await db.execute({
+      sql: `INSERT INTO users (email, password_hash, full_name, bio, location, email_contact, role, visible,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions)
+            VALUES (?, ?, ?, ?, ?, ?, 'seller', ?, ?, ?, ?, ?, ?)`,
+      args: [
+        email,
+        hashedPassword,
+        full_name,
+        bio || '',
+        location || '',
+        email_contact || '',
+        visible ? 1 : 0,
+        pickup_address || '',
+        pickup_city || '',
+        pickup_postal_code || '',
+        pickup_country || '',
+        pickup_instructions || ''
+      ]
+    })
+
+    // Fetch created user
+    const newUser = await db.execute({
+      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
+            FROM users
+            WHERE id = ?`,
+      args: [result.lastInsertRowid]
+    })
+
+    res.status(201).json({
+      title: 'Creado',
+      message: 'Autor creado correctamente',
+      author: newUser.rows[0]
+    })
+  } catch (error) {
+    console.error('Error creating author:', error)
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudo crear el autor'
+    })
+  }
+})
+
+/**
  * GET /api/admin/authors
  * Get all authors (users with role='seller')
  */
 router.get('/authors', async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at
+      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
             FROM users
             WHERE role = 'seller'
             ORDER BY created_at DESC`,
@@ -102,7 +183,8 @@ router.get('/authors', async (req, res) => {
 router.get('/authors/:id', async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at
+      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
             FROM users
             WHERE id = ? AND role = 'seller'`,
       args: [req.params.id]
@@ -131,7 +213,10 @@ router.get('/authors/:id', async (req, res) => {
  */
 router.put('/authors/:id', async (req, res) => {
   try {
-    const { full_name, bio, location, email, email_contact, visible } = req.body
+    const {
+      full_name, bio, location, email, email_contact, visible,
+      pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
+    } = req.body
     const authorId = req.params.id
 
     // Verify author exists and is a seller
@@ -150,14 +235,20 @@ router.put('/authors/:id', async (req, res) => {
     // Update author
     await db.execute({
       sql: `UPDATE users
-            SET full_name = ?, bio = ?, location = ?, email = ?, email_contact = ?, visible = ?
+            SET full_name = ?, bio = ?, location = ?, email = ?, email_contact = ?, visible = ?,
+            pickup_address = ?, pickup_city = ?, pickup_postal_code = ?, pickup_country = ?, pickup_instructions = ?
             WHERE id = ?`,
-      args: [full_name, bio, location, email, email_contact, visible ? 1 : 0, authorId]
+      args: [
+        full_name, bio, location, email, email_contact, visible ? 1 : 0,
+        pickup_address || '', pickup_city || '', pickup_postal_code || '', pickup_country || '', pickup_instructions || '',
+        authorId
+      ]
     })
 
     // Fetch updated author
     const updatedResult = await db.execute({
-      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at
+      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
             FROM users
             WHERE id = ?`,
       args: [authorId]
@@ -377,5 +468,92 @@ router.put('/products/:id', productUpload.single('image'), async (req, res) => {
     })
   }
 })
+
+// ===== ORDER ROUTES =====
+
+const {
+  getAllOrdersAdmin,
+  getOrderByIdAdmin,
+} = require('../controllers/ordersController');
+
+/**
+ * GET /api/admin/orders
+ * Get all orders
+ */
+router.get('/orders', getAllOrdersAdmin);
+
+/**
+ * GET /api/admin/orders/:id
+ * Get order details by ID
+ */
+router.get('/orders/:id', getOrderByIdAdmin);
+
+// ===== SHIPPING ROUTES =====
+
+const {
+  getAllShippingMethods,
+  getShippingMethodById,
+  createShippingMethod,
+  updateShippingMethod,
+  deleteShippingMethod,
+  getShippingZones,
+  createShippingZone,
+  updateShippingZone,
+  deleteShippingZone,
+} = require('../controllers/shippingController');
+
+/**
+ * GET /api/admin/shipping/methods
+ * Get all shipping methods
+ */
+router.get('/shipping/methods', getAllShippingMethods);
+
+/**
+ * GET /api/admin/shipping/methods/:id
+ * Get shipping method by ID
+ */
+router.get('/shipping/methods/:id', getShippingMethodById);
+
+/**
+ * POST /api/admin/shipping/methods
+ * Create a new shipping method
+ */
+router.post('/shipping/methods', createShippingMethod);
+
+/**
+ * PUT /api/admin/shipping/methods/:id
+ * Update a shipping method
+ */
+router.put('/shipping/methods/:id', updateShippingMethod);
+
+/**
+ * DELETE /api/admin/shipping/methods/:id
+ * Delete a shipping method
+ */
+router.delete('/shipping/methods/:id', deleteShippingMethod);
+
+/**
+ * GET /api/admin/shipping/methods/:methodId/zones
+ * Get all zones for a shipping method
+ */
+router.get('/shipping/methods/:methodId/zones', getShippingZones);
+
+/**
+ * POST /api/admin/shipping/methods/:methodId/zones
+ * Create a new zone for a shipping method
+ */
+router.post('/shipping/methods/:methodId/zones', createShippingZone);
+
+/**
+ * PUT /api/admin/shipping/zones/:zoneId
+ * Update a shipping zone
+ */
+router.put('/shipping/zones/:zoneId', updateShippingZone);
+
+/**
+ * DELETE /api/admin/shipping/zones/:zoneId
+ * Delete a shipping zone
+ */
+router.delete('/shipping/zones/:zoneId', deleteShippingZone);
 
 module.exports = router

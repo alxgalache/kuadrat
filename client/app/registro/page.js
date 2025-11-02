@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useNotification } from '@/contexts/NotificationContext'
+import { useBannerNotification } from '@/contexts/BannerNotificationContext'
 
 export default function RegistroPage() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
-  const { showSuccess, showApiError } = useNotification()
+  const { showBanner } = useBannerNotification()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -30,10 +30,10 @@ export default function RegistroPage() {
         throw error
       }
 
-      showSuccess('¡Solicitud enviada!', 'Te contactaremos pronto con los detalles de registro.')
+      showBanner('¡Solicitud enviada! Te contactaremos pronto con los detalles de registro.')
       setEmail('')
     } catch (error) {
-      showApiError(error)
+      showBanner('Error al enviar solicitud. Por favor, inténtalo de nuevo.')
     } finally {
       setLoading(false)
     }
