@@ -1,144 +1,226 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { ordersAPI, getProductImageUrl } from '@/lib/api'
-import { CheckCircleIcon } from '@heroicons/react/20/solid'
+import { ordersAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
+import { EyeIcon } from '@heroicons/react/20/solid'
 
 function OrdersPageContent() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
+  const observerRef = useRef(null)
+  const loadMoreRef = useRef(null)
 
   useEffect(() => {
-    loadOrders()
+    loadOrders(1)
   }, [])
 
-  const loadOrders = async () => {
+  const loadOrders = async (pageNum) => {
     try {
-      const data = await ordersAPI.getAll()
-      setOrders(data.orders)
+      if (pageNum === 1) {
+        setLoading(true)
+      } else {
+        setLoadingMore(true)
+      }
+
+      const data = await ordersAPI.getAll({ page: pageNum, limit: 5 })
+
+      if (pageNum === 1) {
+        setOrders(data.orders)
+      } else {
+        setOrders(prev => [...prev, ...data.orders])
+      }
+
+      setHasMore(data.pagination.hasMore)
+      setPage(pageNum)
     } catch (err) {
       setError('No se pudieron cargar los pedidos')
+      console.error('Error loading orders:', err)
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
+  }
+
+  // Infinite scroll observer
+  const lastOrderRef = useCallback(
+    (node) => {
+      if (loading || loadingMore) return
+      if (observerRef.current) observerRef.current.disconnect()
+
+      observerRef.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadOrders(page + 1)
+        }
+      })
+
+      if (node) observerRef.current.observe(node)
+    },
+    [loading, loadingMore, hasMore, page]
+  )
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+
+  const getImageUrl = (item) => {
+    return item.product_type === 'art'
+      ? getArtImageUrl(item.basename)
+      : getOthersImageUrl(item.basename)
+  }
+
+  const getItemsSummary = (items) => {
+    if (items.length === 0) return 'Sin items'
+    if (items.length === 1) return items[0].name
+    return `${items[0].name} +${items.length - 1} más`
+  }
+
+  const getTotalShipping = (items) => {
+    return items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0)
+  }
+
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      pending: { label: 'Pendiente', class: 'bg-yellow-100 text-yellow-800' },
+      completed: { label: 'Completado', class: 'bg-green-100 text-green-800' },
+      cancelled: { label: 'Cancelado', class: 'bg-red-100 text-red-800' },
+      processing: { label: 'Procesando', class: 'bg-blue-100 text-blue-800' },
+    }
+
+    const config = statusConfig[status] || { label: status, class: 'bg-gray-100 text-gray-800' }
+
+    return (
+      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${config.class}`}>
+        {config.label}
+      </span>
+    )
   }
 
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Cargando tus pedidos...</p>
+        <p className="text-gray-500">Cargando pedidos...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white min-h-screen flex items-center justify-center">
+        <p className="text-red-500">{error}</p>
       </div>
     )
   }
 
   return (
     <div className="bg-white">
-      <div className="py-16 sm:py-24">
-        <div className="mx-auto max-w-7xl sm:px-2 lg:px-8">
-          <div className="mx-auto max-w-2xl px-4 lg:max-w-4xl lg:px-0">
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-              Historial de pedidos
-            </h1>
-            <p className="mt-2 text-sm text-gray-500">
-              Consulta el estado de pedidos recientes y ve los detalles.
-            </p>
-          </div>
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Mis Pedidos</h1>
+          <p className="mt-2 text-sm text-gray-700">
+            Consulta los pedidos que contienen tus productos
+          </p>
         </div>
 
-        {error && (
-          <div className="mt-4 mx-auto max-w-7xl sm:px-2 lg:px-8">
-            <div className="mx-auto max-w-2xl px-4 lg:max-w-4xl lg:px-0">
-              <div className="rounded-md bg-red-50 p-4">
-                <p className="text-sm text-red-800">{error}</p>
+        {orders.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500">No hay pedidos disponibles</p>
+          </div>
+        ) : (
+          <div className="mt-8 flow-root">
+            <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+              <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+                <table className="min-w-full divide-y divide-gray-300">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0">
+                        ID
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Fecha
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Productos
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Envío
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Total
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Estado
+                      </th>
+                      <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0">
+                        <span className="sr-only">Ver</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {orders.map((order, index) => {
+                      const isLastOrder = index === orders.length - 1
+                      return (
+                        <tr key={order.id} ref={isLastOrder ? lastOrderRef : null}>
+                          <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
+                            #{order.id}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {formatDate(order.created_at)}
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-500">
+                            <div>{getItemsSummary(order.items)}</div>
+                            <div className="text-xs text-gray-400">{order.items.length} item(s)</div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            €{getTotalShipping(order.items).toFixed(2)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
+                            €{order.total_price.toFixed(2)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm">
+                            {getStatusBadge(order.status)}
+                          </td>
+                          <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
+                            <Link
+                              href={`/orders/${order.id}`}
+                              className="inline-flex items-center gap-x-1.5 text-gray-900 hover:text-gray-600"
+                            >
+                              <EyeIcon className="h-5 w-5" />
+                              Ver
+                            </Link>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+
+                {loadingMore && (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500">Cargando más pedidos...</p>
+                  </div>
+                )}
+
+                {!hasMore && orders.length > 0 && (
+                  <div className="text-center py-4">
+                    <p className="text-gray-400 text-sm">No hay más pedidos</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
-
-        <div className="mt-16">
-          <h2 className="sr-only">Pedidos recientes</h2>
-          <div className="mx-auto max-w-7xl sm:px-2 lg:px-8">
-            <div className="mx-auto max-w-2xl space-y-8 sm:px-4 lg:max-w-4xl lg:px-0">
-              {orders.length === 0 ? (
-                <p className="text-center text-gray-500">Aún no hay pedidos</p>
-              ) : (
-                orders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="border-t border-b border-gray-200 bg-white shadow-xs sm:rounded-lg sm:border"
-                  >
-                    <div className="flex items-center border-b border-gray-200 p-4 sm:grid sm:grid-cols-4 sm:gap-x-6 sm:p-6">
-                      <dl className="grid flex-1 grid-cols-2 gap-x-6 text-sm sm:col-span-3 sm:grid-cols-3 lg:col-span-2">
-                        <div>
-                          <dt className="font-medium text-gray-900">Número de pedido</dt>
-                          <dd className="mt-1 text-gray-500">#{order.id}</dd>
-                        </div>
-                        <div className="hidden sm:block">
-                          <dt className="font-medium text-gray-900">Fecha de pedido</dt>
-                          <dd className="mt-1 text-gray-500">
-                            {new Date(order.created_at).toLocaleDateString('es-ES')}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="font-medium text-gray-900">Monto total</dt>
-                          <dd className="mt-1 font-medium text-gray-900">
-                            €{order.total_price.toFixed(2)}
-                          </dd>
-                        </div>
-                      </dl>
-
-                      <div className="hidden lg:flex lg:items-center lg:justify-end lg:space-x-4 lg:col-span-2">
-                        <Link
-                          href={`/orders/${order.id}`}
-                          className="flex items-center justify-center rounded-md border border-gray-300 bg-white px-2.5 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50"
-                        >
-                          Ver pedido
-                        </Link>
-                      </div>
-                    </div>
-
-                    {/* Products */}
-                    <h4 className="sr-only">Artículos</h4>
-                    <ul role="list" className="divide-y divide-gray-200">
-                      {order.items.map((item) => (
-                        <li key={item.id} className="p-4 sm:p-6">
-                          <div className="flex items-center sm:items-start">
-                            <div className="size-20 shrink-0 overflow-hidden rounded-lg bg-gray-200 sm:size-40">
-                              <img
-                                alt={item.name}
-                                src={getProductImageUrl(item.basename)}
-                                className="size-full object-cover"
-                              />
-                            </div>
-                            <div className="ml-6 flex-1 text-sm">
-                              <div className="font-medium text-gray-900 sm:flex sm:justify-between">
-                                <h5>{item.name}</h5>
-                                <p className="mt-2 sm:mt-0">€{item.price_at_purchase.toFixed(2)}</p>
-                              </div>
-                              <p className="mt-2 text-gray-500">{item.type}</p>
-                            </div>
-                          </div>
-
-                          <div className="mt-6 sm:flex sm:justify-between">
-                            <div className="flex items-center">
-                              <CheckCircleIcon aria-hidden="true" className="size-5 text-green-500" />
-                              <p className="ml-2 text-sm font-medium text-gray-500">
-                                Pedido completado
-                              </p>
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   )

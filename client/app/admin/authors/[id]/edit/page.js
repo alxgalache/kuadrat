@@ -14,11 +14,17 @@ function AuthorEditPageContent({ params }) {
   const unwrappedParams = use(params)
   const [author, setAuthor] = useState(null)
   const [fullName, setFullName] = useState('')
+  const [slug, setSlug] = useState('')
   const [bio, setBio] = useState('')
   const [location, setLocation] = useState('')
   const [email, setEmail] = useState('')
   const [emailContact, setEmailContact] = useState('')
   const [visible, setVisible] = useState(true)
+  const [pickupAddress, setPickupAddress] = useState('')
+  const [pickupCity, setPickupCity] = useState('')
+  const [pickupPostalCode, setPickupPostalCode] = useState('')
+  const [pickupCountry, setPickupCountry] = useState('')
+  const [pickupInstructions, setPickupInstructions] = useState('')
   const [avatarFile, setAvatarFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [loading, setLoading] = useState(true)
@@ -54,11 +60,17 @@ function AuthorEditPageContent({ params }) {
       const author = data.author
       setAuthor(author)
       setFullName(author.full_name || '')
+      setSlug(author.slug || '')
       setBio(author.bio || '')
       setLocation(author.location || '')
       setEmail(author.email || '')
       setEmailContact(author.email_contact || '')
       setVisible(author.visible === 1)
+      setPickupAddress(author.pickup_address || '')
+      setPickupCity(author.pickup_city || '')
+      setPickupPostalCode(author.pickup_postal_code || '')
+      setPickupCountry(author.pickup_country || '')
+      setPickupInstructions(author.pickup_instructions || '')
       if (author.profile_img) {
         setPreviewUrl(getAuthorImageUrl(author.profile_img))
       }
@@ -148,6 +160,18 @@ function AuthorEditPageContent({ params }) {
       return
     }
 
+    if (!slug.trim()) {
+      showError('Error de validación', 'El slug es obligatorio')
+      return
+    }
+
+    // Validate slug format (lowercase, alphanumeric with hyphens)
+    const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+    if (!slugRegex.test(slug.trim())) {
+      showError('Error de validación', 'El slug debe ser en minúsculas, sin espacios, solo letras, números y guiones (ej: "john-doe")')
+      return
+    }
+
     if (!email.trim()) {
       showError('Error de validación', 'El email es obligatorio')
       return
@@ -164,11 +188,17 @@ function AuthorEditPageContent({ params }) {
       // Then, update author data
       await adminAPI.authors.update(unwrappedParams.id, {
         full_name: fullName.trim(),
+        slug: slug.trim(),
         bio: bio,
         location: location.trim(),
         email: email.trim(),
         email_contact: emailContact.trim(),
-        visible: visible
+        visible: visible,
+        pickup_address: pickupAddress.trim(),
+        pickup_city: pickupCity.trim(),
+        pickup_postal_code: pickupPostalCode.trim(),
+        pickup_country: pickupCountry.trim(),
+        pickup_instructions: pickupInstructions.trim()
       })
 
       showSuccess('Actualizado', 'Autor actualizado correctamente')
@@ -216,6 +246,25 @@ function AuthorEditPageContent({ params }) {
                         onChange={(e) => setFullName(e.target.value)}
                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
                       />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="slug" className="block text-sm/6 font-medium text-gray-900">
+                      Slug
+                    </label>
+                    <div className="mt-2">
+                      <input
+                        id="slug"
+                        name="slug"
+                        type="text"
+                        required
+                        value={slug}
+                        onChange={(e) => setSlug(e.target.value)}
+                        placeholder="ej: john-doe"
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">URL-friendly: minúsculas, sin espacios, solo letras, números y guiones</p>
                     </div>
                   </div>
 
@@ -280,6 +329,99 @@ function AuthorEditPageContent({ params }) {
                         onChange={(e) => setEmailContact(e.target.value)}
                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
                       />
+                    </div>
+                  </div>
+
+                  {/* Pickup Address Section */}
+                  <div className="pt-8 border-t border-gray-200">
+                    <h3 className="text-base font-semibold text-gray-900 mb-4">Dirección de recogida</h3>
+                    <p className="text-sm text-gray-600 mb-6">
+                      Información para la recogida presencial de productos
+                    </p>
+
+                    <div className="space-y-6">
+                      <div>
+                        <label htmlFor="pickupAddress" className="block text-sm/6 font-medium text-gray-900">
+                          Dirección
+                        </label>
+                        <div className="mt-2">
+                          <input
+                            id="pickupAddress"
+                            name="pickupAddress"
+                            type="text"
+                            value={pickupAddress}
+                            onChange={(e) => setPickupAddress(e.target.value)}
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        <div>
+                          <label htmlFor="pickupCity" className="block text-sm/6 font-medium text-gray-900">
+                            Ciudad
+                          </label>
+                          <div className="mt-2">
+                            <input
+                              id="pickupCity"
+                              name="pickupCity"
+                              type="text"
+                              value={pickupCity}
+                              onChange={(e) => setPickupCity(e.target.value)}
+                              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label htmlFor="pickupPostalCode" className="block text-sm/6 font-medium text-gray-900">
+                            Código postal
+                          </label>
+                          <div className="mt-2">
+                            <input
+                              id="pickupPostalCode"
+                              name="pickupPostalCode"
+                              type="text"
+                              value={pickupPostalCode}
+                              onChange={(e) => setPickupPostalCode(e.target.value)}
+                              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="pickupCountry" className="block text-sm/6 font-medium text-gray-900">
+                          País
+                        </label>
+                        <div className="mt-2">
+                          <input
+                            id="pickupCountry"
+                            name="pickupCountry"
+                            type="text"
+                            value={pickupCountry}
+                            onChange={(e) => setPickupCountry(e.target.value)}
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="pickupInstructions" className="block text-sm/6 font-medium text-gray-900">
+                          Instrucciones de recogida
+                        </label>
+                        <div className="mt-2">
+                          <textarea
+                            id="pickupInstructions"
+                            name="pickupInstructions"
+                            rows={3}
+                            value={pickupInstructions}
+                            onChange={(e) => setPickupInstructions(e.target.value)}
+                            placeholder="Ej: Llamar al timbre, horario de recogida, etc."
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
 

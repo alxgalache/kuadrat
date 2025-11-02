@@ -1,143 +1,221 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ordersAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
+import { ArrowLeftIcon } from '@heroicons/react/20/solid'
 
-function OrderDetailPageContent({ params }) {
+function OrderDetailContent() {
+  const params = useParams()
+  const router = useRouter()
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    loadOrder()
-  }, [])
+    if (params.id) {
+      loadOrder()
+    }
+  }, [params.id])
 
   const loadOrder = async () => {
     try {
       const data = await ordersAPI.getById(params.id)
       setOrder(data.order)
     } catch (err) {
-      setError('No se pudieron cargar los detalles del pedido')
+      setError(err.message || 'No se pudo cargar el pedido')
+      console.error('Error loading order:', err)
     } finally {
       setLoading(false)
     }
   }
 
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+
+  const getImageUrl = (item) => {
+    return item.product_type === 'art'
+      ? getArtImageUrl(item.basename)
+      : getOthersImageUrl(item.basename)
+  }
+
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      pending: { label: 'Pendiente', class: 'bg-yellow-100 text-yellow-800' },
+      completed: { label: 'Completado', class: 'bg-green-100 text-green-800' },
+      cancelled: { label: 'Cancelado', class: 'bg-red-100 text-red-800' },
+      processing: { label: 'Procesando', class: 'bg-blue-100 text-blue-800' },
+    }
+
+    const config = statusConfig[status] || { label: status, class: 'bg-gray-100 text-gray-800' }
+
+    return (
+      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${config.class}`}>
+        {config.label}
+      </span>
+    )
+  }
+
+  const getSubtotal = () => {
+    return order.items.reduce((sum, item) => sum + item.price_at_purchase, 0)
+  }
+
+  const getTotalShipping = () => {
+    return order.items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0)
+  }
+
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Cargando detalles del pedido...</p>
+        <p className="text-gray-500">Cargando pedido...</p>
       </div>
     )
   }
 
-  if (error || !order) {
+  if (error) {
     return (
-      <div className="bg-white min-h-screen flex items-center justify-center">
-        <p className="text-red-500">{error || 'Pedido no encontrado'}</p>
+      <div className="bg-white min-h-screen">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <Link
+            href="/orders"
+            className="inline-flex items-center gap-x-2 text-sm font-semibold text-gray-900 hover:text-gray-600 mb-8"
+          >
+            <ArrowLeftIcon className="h-5 w-5" />
+            Volver a pedidos
+          </Link>
+          <p className="text-red-500 mt-4">{error}</p>
+        </div>
       </div>
     )
+  }
+
+  if (!order) {
+    return null
   }
 
   return (
-    <div className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+    <div className="bg-white min-h-screen">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        {/* Back button */}
+        <Link
+          href="/orders"
+          className="inline-flex items-center gap-x-2 text-sm font-semibold text-gray-900 hover:text-gray-600 mb-8"
+        >
+          <ArrowLeftIcon className="h-5 w-5" />
+          Volver a pedidos
+        </Link>
+
+        {/* Order header */}
         <div className="mb-8">
-          <Link href="/orders" className="text-sm font-semibold text-indigo-600 hover:text-indigo-500">
-            &larr; Volver a pedidos
-          </Link>
-        </div>
-
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-          Pedido #{order.id}
-        </h1>
-
-        <div className="mt-6 border-t border-gray-200 pt-6">
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2">
+          <div className="flex items-center justify-between">
             <div>
-              <dt className="text-sm font-medium text-gray-900">Fecha de pedido</dt>
-              <dd className="mt-1 text-sm text-gray-500">
-                {new Date(order.created_at).toLocaleDateString('es-ES')} a las{' '}
-                {new Date(order.created_at).toLocaleTimeString('es-ES')}
-              </dd>
+              <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+                Pedido #{order.id}
+              </h1>
+              <p className="mt-2 text-sm text-gray-500">
+                Realizado el {formatDate(order.created_at)}
+              </p>
             </div>
             <div>
-              <dt className="text-sm font-medium text-gray-900">Estado</dt>
-              <dd className="mt-1 text-sm text-gray-500 capitalize">{order.status}</dd>
+              {getStatusBadge(order.status)}
             </div>
-            <div>
-              <dt className="text-sm font-medium text-gray-900">Monto total</dt>
-              <dd className="mt-1 text-lg font-semibold text-gray-900">
-                €{order.total_price.toFixed(2)}
-              </dd>
-            </div>
-          </dl>
-        </div>
-
-        <div className="mt-12">
-          <h2 className="text-lg font-medium text-gray-900">Artículos adquiridos</h2>
-          <div className="mt-6 divide-y divide-gray-200 border-t border-gray-200">
-            {order.items.map((item) => {
-              // Determine image URL based on product type
-              const imageUrl = item.product_type === 'art'
-                ? getArtImageUrl(item.basename)
-                : getOthersImageUrl(item.basename);
-
-              return (
-                <div key={item.id} className="py-6 flex items-center">
-                  <div className="size-24 shrink-0 overflow-hidden rounded-lg bg-gray-200">
-                    <img
-                      alt={item.name}
-                      src={imageUrl}
-                      className="size-full object-cover"
-                    />
-                  </div>
-                  <div className="ml-6 flex-1">
-                    <div className="flex justify-between">
-                      <div>
-                        <h3 className="text-base font-medium text-gray-900">{item.name}</h3>
-                        <div
-                          className="mt-1 text-sm text-gray-500 prose prose-sm max-w-none"
-                          dangerouslySetInnerHTML={{ __html: item.description }}
-                        />
-                        {item.product_type === 'art' && item.type && (
-                          <p className="mt-1 text-sm text-gray-500">
-                            Soporte: {item.type}
-                          </p>
-                        )}
-                        {item.product_type === 'other' && item.variant_key && (
-                          <p className="mt-1 text-sm text-gray-500">
-                            Variación: {item.variant_key}
-                          </p>
-                        )}
-                      </div>
-                      <p className="text-base font-medium text-gray-900">
-                        €{item.price_at_purchase.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
 
-        <div className="mt-8 border-t border-gray-200 pt-8">
-          <p className="text-sm text-gray-500">
-            Se ha enviado un correo de confirmación a tu dirección de correo electrónico con los detalles de tu pedido.
-          </p>
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+          {/* Main content - Order items */}
+          <div className="lg:col-span-2">
+            <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden">
+              <div className="px-4 py-5 sm:p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Tus productos en este pedido</h2>
+                <ul role="list" className="divide-y divide-gray-200">
+                  {order.items.map((item, index) => (
+                    <li key={index} className="py-6 flex">
+                      <div className="h-24 w-24 shrink-0 overflow-hidden rounded-md border border-gray-200">
+                        <img
+                          src={getImageUrl(item)}
+                          alt={item.name}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+
+                      <div className="ml-4 flex flex-1 flex-col">
+                        <div>
+                          <div className="flex justify-between text-base font-medium text-gray-900">
+                            <h3>{item.name}</h3>
+                            <p className="ml-4">€{item.price_at_purchase.toFixed(2)}</p>
+                          </div>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Tipo: {item.product_type === 'art' ? item.type : 'Otro'}
+                            {item.variant_key && ` · ${item.variant_key}`}
+                          </p>
+                        </div>
+                        {item.shipping_method_name && (
+                          <div className="mt-2 text-sm text-gray-600">
+                            <p className="font-medium">Envío:</p>
+                            <p>
+                              {item.shipping_method_name}
+                              {item.shipping_method_type === 'pickup' && ' (Recogida)'}
+                              {' · '}€{(item.shipping_cost || 0).toFixed(2)}
+                            </p>
+                          </div>
+                        )}
+                        {item.description && (
+                          <div
+                            className="mt-2 text-sm text-gray-500 line-clamp-2"
+                            dangerouslySetInnerHTML={{ __html: item.description }}
+                          />
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar - Order summary */}
+          <div className="lg:col-span-1">
+            {/* Order summary */}
+            <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden">
+              <div className="px-4 py-5 sm:p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Resumen (tus productos)</h2>
+                <dl className="space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <dt className="text-gray-500">Subtotal productos</dt>
+                    <dd className="font-medium text-gray-900">€{getSubtotal().toFixed(2)}</dd>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <dt className="text-gray-500">Envío</dt>
+                    <dd className="font-medium text-gray-900">€{getTotalShipping().toFixed(2)}</dd>
+                  </div>
+                  <div className="flex justify-between border-t border-gray-200 pt-3 text-base font-medium">
+                    <dt className="text-gray-900">Total</dt>
+                    <dd className="text-gray-900">€{order.total_price.toFixed(2)}</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-export default function OrderDetailPage({ params }) {
+export default function OrderDetailPage() {
   return (
     <AuthGuard>
-      <OrderDetailPageContent params={params} />
+      <OrderDetailContent />
     </AuthGuard>
   )
 }

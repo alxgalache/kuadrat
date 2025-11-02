@@ -17,6 +17,8 @@ function PublishProductPageContent() {
     const [description, setDescription] = useState('')
     const [price, setPrice] = useState('')
     const [type, setType] = useState('')
+    const [weight, setWeight] = useState('')
+    const [dimensions, setDimensions] = useState('')
     const [imageFile, setImageFile] = useState(null)
     const [previewUrl, setPreviewUrl] = useState('')
     const [loading, setLoading] = useState(false)
@@ -192,6 +194,22 @@ function PublishProductPageContent() {
             }
         }
 
+        // Validate weight (optional, but if provided must be > 0)
+        if (weight && weight.trim()) {
+            const weightNum = parseInt(weight, 10)
+            if (isNaN(weightNum) || weightNum <= 0) {
+                validationErrors.push({ field: 'weight', message: 'El peso debe ser un número válido mayor que 0' })
+            }
+        }
+
+        // Validate dimensions (optional, but if provided must follow format WxLxH)
+        if (dimensions && dimensions.trim()) {
+            const dimensionsRegex = /^\d+x\d+x\d+$/
+            if (!dimensionsRegex.test(dimensions.trim())) {
+                validationErrors.push({ field: 'dimensions', message: 'Las dimensiones deben estar en formato "LxWxH" (ej: 30x20x10)' })
+            }
+        }
+
         // Validate image
         if (!imageFile) {
             validationErrors.push({ field: 'image', message: 'El archivo de imagen es obligatorio' })
@@ -241,6 +259,14 @@ function PublishProductPageContent() {
             formData.append('description', description)
             formData.append('price', priceNum.toString())
             formData.append('image', imageFile)
+
+            // Add weight and dimensions if provided
+            if (weight && weight.trim()) {
+                formData.append('weight', parseInt(weight, 10).toString())
+            }
+            if (dimensions && dimensions.trim()) {
+                formData.append('dimensions', dimensions.trim())
+            }
 
             if (productCategory === 'art') {
                 // Submit to art API
@@ -413,6 +439,50 @@ function PublishProductPageContent() {
                                                 </div>
                                             </div>
                                         )}
+                                    </div>
+
+                                    {/* Weight and Dimensions - for both art and others */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-8">
+                                        <div>
+                                            <label htmlFor="weight" className="block text-sm/6 font-medium text-gray-900">
+                                                Peso (gramos) <span className="text-gray-400">(opcional)</span>
+                                            </label>
+                                            <label className="block text-sm/6 font-medium text-gray-400">
+                                                Necesario para calcular costos de envío
+                                            </label>
+                                            <div className="mt-2">
+                                                <input
+                                                    id="weight"
+                                                    name="weight"
+                                                    type="number"
+                                                    min="1"
+                                                    value={weight}
+                                                    onChange={(e) => setWeight(e.target.value)}
+                                                    placeholder="Ej: 500"
+                                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label htmlFor="dimensions" className="block text-sm/6 font-medium text-gray-900">
+                                                Dimensiones (cm) <span className="text-gray-400">(opcional)</span>
+                                            </label>
+                                            <label className="block text-sm/6 font-medium text-gray-400">
+                                                Formato: LxWxH. Ej: "30x20x10"
+                                            </label>
+                                            <div className="mt-2">
+                                                <input
+                                                    id="dimensions"
+                                                    name="dimensions"
+                                                    type="text"
+                                                    value={dimensions}
+                                                    onChange={(e) => setDimensions(e.target.value)}
+                                                    placeholder="Ej: 30x20x10"
+                                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Stock/Variations for Others */}

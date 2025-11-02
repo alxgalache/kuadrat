@@ -20,6 +20,8 @@ const othersRoutes = require('./routes/othersRoutes');
 const ordersRoutes = require('./routes/ordersRoutes');
 const usersRoutes = require('./routes/usersRoutes');
 const adminRoutes = require('./routes/admin');
+const sellerRoutes = require('./routes/sellerRoutes');
+const shippingRoutes = require('./routes/shippingRoutes');
 
 // Initialize Express app
 const app = express();
@@ -92,6 +94,8 @@ app.use('/api/others', othersRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/seller', sellerRoutes);
+app.use('/api/shipping', shippingRoutes);
 
 // 404 handler
 app.use(notFound);

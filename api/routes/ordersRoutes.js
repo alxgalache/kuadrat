@@ -5,10 +5,12 @@ const {
   getUserOrders,
   getOrderById,
 } = require('../controllers/ordersController');
-const { authenticate, requireAuth } = require('../middleware/authorization');
+const { authenticate, optionalAuthenticate, requireAuth } = require('../middleware/authorization');
 
-// All order routes require authentication
-router.post('/', authenticate, requireAuth, createOrder);
+// Create order - optional authentication (supports guest checkout)
+router.post('/', optionalAuthenticate, createOrder);
+
+// Get orders - requires authentication
 router.get('/', authenticate, requireAuth, getUserOrders);
 router.get('/:id', authenticate, requireAuth, getOrderById);
 

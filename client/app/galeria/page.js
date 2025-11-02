@@ -190,7 +190,7 @@ export default function GalleryPage() {
             <div
               key={author.id}
               className={classNames(
-                selectedAuthorSlug === author.slug
+                selectedAuthorSlug && selectedAuthorSlug === author.slug
                   ? 'bg-gray-200 text-gray-900'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-50 hover:text-gray-900',
                 'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold whitespace-nowrap shrink-0'
@@ -209,7 +209,7 @@ export default function GalleryPage() {
               >
                 {author.full_name}
               </button>
-              {selectedAuthorSlug === author.slug && (
+              {selectedAuthorSlug && selectedAuthorSlug === author.slug && (
                 <button
                   type="button"
                   onClick={handleClearFilter}
@@ -239,7 +239,7 @@ export default function GalleryPage() {
                         <li key={author.id}>
                           <div
                             className={classNames(
-                              selectedAuthorSlug === author.slug
+                              selectedAuthorSlug && selectedAuthorSlug === author.slug
                                 ? 'bg-gray-200 text-gray-900'
                                 : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900',
                               'group flex gap-x-3 rounded-md p-2 text-sm font-semibold items-center w-full'
@@ -259,7 +259,7 @@ export default function GalleryPage() {
                               <span className="truncate">{author.full_name}</span>
                             </button>
                             <div className="w-6 flex-shrink-0 flex items-center justify-center">
-                              {selectedAuthorSlug === author.slug && (
+                              {selectedAuthorSlug && selectedAuthorSlug === author.slug && (
                                 <button
                                   type="button"
                                   onClick={handleClearFilter}
