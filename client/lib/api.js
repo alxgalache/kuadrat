@@ -257,13 +257,25 @@ export const authorsAPI = {
 
 // Orders API
 export const ordersAPI = {
-  create: async (items, guestEmail = null) => {
-    // items should be array of { type: 'art' | 'other', id, variantId? }
-    // guestEmail is optional for guest checkout
+  create: async (items, contact = null, contactType = null, deliveryAddress = null, invoicingAddress = null) => {
+    // items should be array of { type: 'art' | 'other', id, variantId?, shipping }
+    // contact is the email or phone number for order updates
+    // contactType is 'email' or 'whatsapp'
+    // deliveryAddress is optional { line1, line2, postalCode, city, province, country, lat, lng }
+    // invoicingAddress is optional { line1, line2, postalCode, city, province, country }
     const requestBody = { items };
 
-    if (guestEmail) {
-      requestBody.guest_email = guestEmail;
+    if (contact && contactType) {
+      requestBody.contact = contact;
+      requestBody.contact_type = contactType;
+    }
+
+    if (deliveryAddress) {
+      requestBody.delivery_address = deliveryAddress;
+    }
+
+    if (invoicingAddress) {
+      requestBody.invoicing_address = invoicingAddress;
     }
 
     return apiRequest('/orders', {

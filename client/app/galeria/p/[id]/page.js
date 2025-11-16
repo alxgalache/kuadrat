@@ -103,34 +103,9 @@ export default function ArtProductDetailPage({ params }) {
   }
 
   const handleAddToCart = () => {
-    // Check if seller already has products in cart
-    if (isSellerInCart(product.seller_id)) {
-      // Get existing shipping and auto-apply
-      const existingShipping = getSellerShipping(product.seller_id)
-
-      // Add to cart with existing shipping
-      addToCart({
-        productId: product.id,
-        productType: 'art',
-        name: product.name,
-        price: product.price,
-        basename: product.basename,
-        slug: product.slug,
-        sellerId: product.seller_id,
-        sellerName: product.seller_full_name,
-        quantity: 1,
-        shipping: existingShipping,
-      })
-
-      // Show banner notification
-      showBanner('Producto añadido')
-
-      // Scroll to top to show cart animation
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    } else {
-      // Open shipping selection modal for first product from this seller
-      setShippingModalOpen(true)
-    }
+    // Art products ALWAYS require shipping selection (no auto-apply)
+    // Each art product has its own specific shipping method and costs
+    setShippingModalOpen(true)
   }
 
   const handleShippingSelected = (shipping) => {

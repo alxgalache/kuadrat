@@ -22,7 +22,7 @@ export default function OthersProductDetailPage({ params }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [shippingModalOpen, setShippingModalOpen] = useState(false)
   const [isHoveringCart, setIsHoveringCart] = useState(false)
-  const { isInCart, addToCart, removeFromCart, getCartItem, isSellerInCart, getSellerShipping } = useCart()
+  const { isInCart, addToCart, removeFromCart, getCartItem, getSellerOthersShipping } = useCart()
   const { showSuccess } = useNotification()
   const { showBanner } = useBannerNotification()
   const router = useRouter()
@@ -127,12 +127,12 @@ export default function OthersProductDetailPage({ params }) {
   const handleAddToCart = () => {
     if (!selectedVariant) return
 
-    // Check if seller already has products in cart
-    if (isSellerInCart(product.seller_id)) {
-      // Get existing shipping and auto-apply
-      const existingShipping = getSellerShipping(product.seller_id)
+    // Check if seller already has OTHER 'others' products in cart
+    // (Art products do NOT share shipping with 'others' products)
+    const existingOthersShipping = getSellerOthersShipping(product.seller_id)
 
-      // Add to cart with existing shipping
+    if (existingOthersShipping) {
+      // Auto-apply existing shipping from other 'others' products
       addToCart({
         productId: product.id,
         productType: 'other',
@@ -145,7 +145,7 @@ export default function OthersProductDetailPage({ params }) {
         quantity: quantity,
         variantId: selectedVariant.id,
         variantKey: selectedVariant.key || 'Opción estándar',
-        shipping: existingShipping,
+        shipping: existingOthersShipping,
       })
 
       // Show banner notification
@@ -154,7 +154,7 @@ export default function OthersProductDetailPage({ params }) {
       // Scroll to top to show cart animation
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } else {
-      // Open shipping selection modal for first product from this seller
+      // Open shipping selection modal (first 'others' product from this seller)
       setShippingModalOpen(true)
     }
   }

@@ -110,6 +110,24 @@ async function initializeDatabase() {
       )
     `);
 
+    // Set orders table auto-increment to start from 1000
+    try {
+      // Check if there are any orders already
+      const ordersCountResult = await db.execute('SELECT COUNT(*) as count FROM orders');
+      const ordersCount = ordersCountResult.rows[0].count;
+
+      if (ordersCount === 0) {
+        // Only set starting ID if table is empty
+        // Insert a dummy row at 999 and delete it to set the next ID to 1000
+        await db.execute(`INSERT INTO orders (id, buyer_id, total_price, status) VALUES (999, 1, 0, 'completed')`);
+        await db.execute(`DELETE FROM orders WHERE id = 999`);
+        console.log('Set orders table to start from ID 1000');
+      }
+    } catch (err) {
+      // If it fails (e.g., table already has data), just continue
+      console.log('Orders table already has data, skipping ID initialization');
+    }
+
     // Create order_items table (legacy - keep for backward compatibility)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS order_items (
@@ -324,6 +342,134 @@ async function initializeDatabase() {
     } catch (err) {
       if (!err.message.includes('duplicate column')) {
         console.log('removed column already exists in others table or error:', err.message);
+      }
+    }
+
+    // Add delivery address fields to orders table
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN delivery_address_line_1 TEXT`);
+      console.log('Added delivery_address_line_1 column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('delivery_address_line_1 column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN delivery_address_line_2 TEXT`);
+      console.log('Added delivery_address_line_2 column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('delivery_address_line_2 column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN delivery_postal_code TEXT`);
+      console.log('Added delivery_postal_code column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('delivery_postal_code column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN delivery_city TEXT`);
+      console.log('Added delivery_city column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('delivery_city column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN delivery_province TEXT`);
+      console.log('Added delivery_province column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('delivery_province column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN delivery_country TEXT`);
+      console.log('Added delivery_country column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('delivery_country column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN delivery_lat REAL`);
+      console.log('Added delivery_lat column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('delivery_lat column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN delivery_lng REAL`);
+      console.log('Added delivery_lng column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('delivery_lng column already exists or error:', err.message);
+      }
+    }
+
+    // Add invoicing address fields to orders table
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN invoicing_address_line_1 TEXT`);
+      console.log('Added invoicing_address_line_1 column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('invoicing_address_line_1 column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN invoicing_address_line_2 TEXT`);
+      console.log('Added invoicing_address_line_2 column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('invoicing_address_line_2 column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN invoicing_postal_code TEXT`);
+      console.log('Added invoicing_postal_code column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('invoicing_postal_code column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN invoicing_city TEXT`);
+      console.log('Added invoicing_city column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('invoicing_city column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN invoicing_province TEXT`);
+      console.log('Added invoicing_province column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('invoicing_province column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN invoicing_country TEXT`);
+      console.log('Added invoicing_country column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('invoicing_country column already exists or error:', err.message);
       }
     }
 

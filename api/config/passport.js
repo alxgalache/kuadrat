@@ -38,6 +38,7 @@ passport.use(
           id: user.id,
           email: user.email,
           role: user.role,
+          full_name: user.full_name,
           created_at: user.created_at,
         };
 
@@ -75,6 +76,7 @@ passport.use(
         id: user.id,
         email: user.email,
         role: user.role,
+        full_name: user.full_name,
         created_at: user.created_at,
       };
 

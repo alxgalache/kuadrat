@@ -20,6 +20,7 @@ export default function Navbar() {
   const isAdmin = user?.role === 'admin'
   const isSeller = user?.role === 'seller'
   const totalCartItems = getTotalItems()
+  const displayName = user?.full_name || ''
 
   const navigation = [
       { name: 'Galería', href: '/galeria' },
@@ -99,6 +100,11 @@ export default function Navbar() {
                     className="absolute right-0 z-10 mt-2 flex w-screen max-w-min transition data-closed:translate-y-1 data-closed:opacity-0 data-enter:duration-200 data-enter:ease-out data-leave:duration-150 data-leave:ease-in"
                   >
                     <div className="w-56 shrink rounded-xl bg-white p-4 text-sm/6 font-semibold text-gray-900 shadow-lg ring-1 ring-gray-900/10">
+                      {displayName && (
+                        <div className="mb-2 px-2 italic text-gray-400 font-normal truncate" title={displayName}>
+                          {displayName}
+                        </div>
+                      )}
                       <Link
                         href="/admin/autores"
                         onClick={() => close()}
@@ -158,6 +164,11 @@ export default function Navbar() {
                     className="absolute right-0 z-10 mt-2 flex w-screen max-w-min transition data-closed:translate-y-1 data-closed:opacity-0 data-enter:duration-200 data-enter:ease-out data-leave:duration-150 data-leave:ease-in"
                   >
                 <div className="w-56 shrink rounded-xl bg-white p-4 text-sm/6 font-semibold text-gray-900 shadow-lg ring-1 ring-gray-900/10">
+                  {displayName && (
+                    <div className="mb-2 px-2 italic text-gray-400 font-normal truncate" title={displayName}>
+                      {displayName}
+                    </div>
+                  )}
                   <Link
                     href="/seller/products"
                     onClick={() => close()}

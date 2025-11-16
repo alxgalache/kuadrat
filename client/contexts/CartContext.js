@@ -222,6 +222,15 @@ export function CartProvider({ children }) {
     return sellerItem?.shipping || null
   }
 
+  // Get existing shipping method for 'others' products from a seller
+  // This is used to auto-apply shipping only for 'others' products from the same seller
+  const getSellerOthersShipping = (sellerId) => {
+    const sellerOthersItem = cart.find(
+      item => item.sellerId === sellerId && item.productType === 'other'
+    )
+    return sellerOthersItem?.shipping || null
+  }
+
   const value = {
     cart,
     isInCart,
@@ -239,6 +248,7 @@ export function CartProvider({ children }) {
     updateSellerShipping,
     isSellerInCart,
     getSellerShipping,
+    getSellerOthersShipping,
     animationTrigger,
   }
 

@@ -5,7 +5,7 @@ const { sendPurchaseConfirmation } = require('../services/emailService');
 // Create new order
 const createOrder = async (req, res, next) => {
   try {
-    const { items, guest_email, contact, contact_type } = req.body;
+    const { items, guest_email, contact, contact_type, delivery_address, invoicing_address } = req.body;
 
     // Check if user is authenticated or guest
     const isAuthenticated = req.user && req.user.id;
@@ -181,9 +181,30 @@ const createOrder = async (req, res, next) => {
     totalPrice += artProducts.reduce((sum, product) => sum + product.price, 0);
     totalPrice += othersProducts.reduce((sum, product) => sum + product.price, 0);
 
-    // Create order
+    // Create order with address information
     const orderResult = await db.execute({
-      sql: 'INSERT INTO orders (buyer_id, total_price, status, guest_email, contact, contact_type) VALUES (?, ?, ?, ?, ?, ?)',
+      sql: `INSERT INTO orders (
+        buyer_id,
+        total_price,
+        status,
+        guest_email,
+        contact,
+        contact_type,
+        delivery_address_line_1,
+        delivery_address_line_2,
+        delivery_postal_code,
+        delivery_city,
+        delivery_province,
+        delivery_country,
+        delivery_lat,
+        delivery_lng,
+        invoicing_address_line_1,
+        invoicing_address_line_2,
+        invoicing_postal_code,
+        invoicing_city,
+        invoicing_province,
+        invoicing_country
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         buyer_id,
         totalPrice,
@@ -191,6 +212,22 @@ const createOrder = async (req, res, next) => {
         isGuest ? guest_email : null, // Keep for backward compatibility
         buyer_contact,
         buyer_contact_type,
+        // Delivery address
+        delivery_address?.line1 || null,
+        delivery_address?.line2 || null,
+        delivery_address?.postalCode || null,
+        delivery_address?.city || null,
+        delivery_address?.province || null,
+        delivery_address?.country || null,
+        delivery_address?.lat || null,
+        delivery_address?.lng || null,
+        // Invoicing address
+        invoicing_address?.line1 || null,
+        invoicing_address?.line2 || null,
+        invoicing_address?.postalCode || null,
+        invoicing_address?.city || null,
+        invoicing_address?.province || null,
+        invoicing_address?.country || null,
       ],
     });
 
