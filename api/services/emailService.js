@@ -62,7 +62,7 @@ const generateBuyerEmailHTML = (orderDetails) => {
           <!-- Logo Header -->
           <tr>
             <td align="center" style="padding: 40px 40px 20px;">
-              <img src="${LOGO_PNG_DATA_URL}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+              <img src="${LOGO_PNG_DATA_URL}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
             </td>
           </tr>
 
@@ -501,8 +501,45 @@ Sistema Kuadrat Gallery
   }
 };
 
+// --- Payment confirmation (buyer) ---
+// Minimal email to notify successful payment. Keep API shape consistent with other functions.
+const sendPaymentConfirmation = async ({ orderId, buyerEmail, totalPrice }) => {
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Pago recibido</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f9fafb; padding: 24px;">
+  <div style="max-width: 640px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px;">
+    <h1 style="margin: 0 0 12px; font-size: 22px; color: #111827;">Pago recibido</h1>
+    <p style="margin: 0 0 12px; color: #374151;">Hemos recibido correctamente el pago de tu pedido.</p>
+    <p style="margin: 0 0 12px; color: #374151;"><strong>Nº de pedido:</strong> #${orderId}</p>
+    ${typeof totalPrice === 'number' ? `<p style=\"margin: 0 0 12px; color: #374151;\"><strong>Importe:</strong> €${totalPrice.toFixed(2)}</p>` : ''}
+    <p style="margin: 12px 0 0; color: #6b7280;">Pronto recibirás actualizaciones sobre envío o recogida.</p>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || 'noreply@kuadrat.com',
+    to: buyerEmail,
+    subject: `Pago recibido - Pedido #${orderId}`,
+    html,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✓ Email de pago recibido enviado al comprador (${buyerEmail}):`, info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('✗ Error enviando email de pago recibido:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
   sendRegistrationRequest,
+  sendPaymentConfirmation,
 };

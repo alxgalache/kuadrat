@@ -56,6 +56,9 @@ async function apiRequest(endpoint, options = {}) {
         }
       }
 
+      console.log('API Error:', data);
+      console.log('API Response:', response.status);
+
       // Create a structured error object
       const error = new Error(data.message || 'Solicitud a la API fallida');
       error.status = data.status || response.status;
@@ -284,6 +287,19 @@ export const ordersAPI = {
     });
   },
 
+  // Confirm payment / update order status
+  updatePayment: async ({ orderId, revolutOrderId = null, paymentId = null }) => {
+    const body = {
+      order_id: orderId,
+      ...(revolutOrderId ? { revolut_order_id: revolutOrderId } : {}),
+      ...(paymentId ? { payment_id: paymentId } : {}),
+    };
+    return apiRequest('/orders', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+
   getAll: async (params = {}) => {
     const queryParams = new URLSearchParams();
 
@@ -301,6 +317,29 @@ export const ordersAPI = {
 
   getById: async (id) => {
     return apiRequest(`/orders/${id}`);
+  },
+};
+
+// Payments API
+export const paymentsAPI = {
+  // Create a Revolut order and get the widget token
+  createRevolutOrder: async (payloadOrItems, currency = 'EUR', description = 'Pedido realizado en 140d.art') => {
+    // Backward compatibility: if first arg is an array, use old signature
+    const body = Array.isArray(payloadOrItems)
+      ? { items: payloadOrItems, currency, description }
+      : payloadOrItems;
+
+    return apiRequest('/payments/revolut/order', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  // Resolve the latest payment for a Revolut order (to get payment_id after popup)
+  getLatestRevolutPayment: async (revolutOrderId) => {
+    return apiRequest(`/payments/revolut/order/${encodeURIComponent(revolutOrderId)}/payments/latest`, {
+      method: 'GET',
+    });
   },
 };
 

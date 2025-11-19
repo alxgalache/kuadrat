@@ -228,12 +228,22 @@ export default function ShippingSelectionModal({
                   {pickupMethods.map((method) => (
                     <label
                       key={method.id}
-                      className={`group relative flex rounded-lg border p-4 cursor-pointer ${
+                      onClick={() => handleSelectPickup(method)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          handleSelectPickup(method)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className={`group relative flex items-center justify-between gap-4 rounded-lg p-4 cursor-pointer ${
                         selectedType === 'pickup' && selectedMethod === method.id
-                          ? 'border-gray-900 bg-gray-50'
-                          : 'border-gray-300 bg-white hover:bg-gray-50'
+                          ? 'border border-black bg-gray-50'
+                          : 'border border-gray-300 bg-white hover:bg-gray-50'
                       }`}
                     >
+                      {/* Keep a hidden input only for form semantics; visually no radio shown */}
                       <input
                         type="radio"
                         name="shipping-method"
@@ -241,152 +251,154 @@ export default function ShippingSelectionModal({
                         checked={selectedType === 'pickup' && selectedMethod === method.id}
                         onChange={() => handleSelectPickup(method)}
                         className="sr-only"
+                        tabIndex={-1}
                       />
+                      {/* Left column: content */}
                       <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <span className="block text-sm font-medium text-gray-900">
-                            {method.name}
-                          </span>
-                          <span className="text-sm font-semibold text-gray-900">
-                            Gratis
-                          </span>
-                        </div>
+                        <span className="block text-sm font-medium text-gray-900">
+                          {method.name}
+                        </span>
                         {method.description && (
                           <span className="mt-1 block text-sm text-gray-500">
                             {method.description}
                           </span>
                         )}
                         {method.pickup_address && (
-                          <div className="mt-2 text-sm text-gray-600">
+                          <div className="mt-2 text-sm text-gray-700">
                             <p className="font-medium">Dirección de recogida:</p>
                             <p>{method.pickup_address}</p>
-                            <p>{method.pickup_city} {method.pickup_postal_code}</p>
+                            <p>
+                              {method.pickup_city} {method.pickup_postal_code}
+                            </p>
                             {method.pickup_instructions && (
-                              <p className="mt-1 text-xs text-gray-500">{method.pickup_instructions}</p>
+                              <p className="mt-1 text-xs text-gray-600">{method.pickup_instructions}</p>
                             )}
                           </div>
                         )}
                       </div>
-                      <CheckCircleIcon
-                        className={`h-5 w-5 ml-3 flex-shrink-0 ${
-                          selectedType === 'pickup' && selectedMethod === method.id
-                            ? 'text-gray-900'
-                            : 'invisible'
-                        }`}
-                      />
+                      {/* Right column: cost + check icon */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-900">Gratis</span>
+                        <CheckCircleIcon
+                          className={`h-5 w-5 ${
+                            selectedType === 'pickup' && selectedMethod === method.id
+                              ? 'text-black'
+                              : 'invisible'
+                          }`}
+                        />
+                      </div>
                     </label>
                   ))}
 
                   {/* Delivery option */}
-                  {pickupMethods.length > 0 && (
-                    <label
-                      className={`group relative flex flex-col rounded-lg border p-4 cursor-pointer ${
+                  <label
+                      onClick={handleSelectDelivery}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          handleSelectDelivery()
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className={`group relative flex flex-col rounded-lg p-4 cursor-pointer ${
                         selectedType === 'delivery'
-                          ? 'border-gray-900 bg-gray-50'
-                          : 'border-gray-300 bg-white hover:bg-gray-50'
+                          ? 'border border-black bg-gray-50'
+                          : 'border border-gray-300 bg-white hover:bg-gray-50'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center flex-1">
-                          <input
-                            type="radio"
-                            name="shipping-type"
-                            value="delivery"
-                            checked={selectedType === 'delivery'}
-                            onChange={handleSelectDelivery}
-                            className="h-4 w-4 border-gray-300 text-gray-900 focus:ring-gray-900"
-                          />
-                          <span className="ml-3 block text-sm font-medium text-gray-900">
-                            Envío a domicilio
-                          </span>
-                        </div>
-                      </div>
-
-                      {selectedType === 'delivery' && (
-                        <div className="mt-4 ml-7 space-y-4">
-                          {/* Postal code input */}
-                          <div>
+                      {/* Header row: two columns */}
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="block text-sm font-medium text-gray-900">Envío a domicilio</span>
+                        {selectedType === 'delivery' && (
+                          <div className="flex items-center gap-2 sm:justify-end">
                             <label htmlFor="postal-code" className="block text-sm font-medium text-gray-700">
                               Código postal
                             </label>
-                            <div className="mt-1 flex gap-2">
                               <input
-                                type="text"
-                                id="postal-code"
-                                value={postalCode}
-                                onChange={handlePostalCodeChange}
-                                onBlur={handlePostalCodeBlur}
+                                  id="postal-code"
+                                  name="postal-code"
+                                  type="text"
+                                  autoComplete="postal-code"
+                                  value={postalCode}
+                                  onChange={handlePostalCodeChange}
+                                  placeholder="28001"
+                                  className="block rounded-md border border-gray-300 bg-white px-2 py-1.5 text-base text-gray-900 placeholder:text-gray-400 sm:text-sm/6 outline-none"
+                                  onClick={(e) => e.stopPropagation()}
+                              />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                loadDeliveryMethods()
+                              }}
+                              disabled={!postalCode || loadingDelivery}
+                              className="rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {loadingDelivery ? 'Buscando...' : 'Buscar'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Errors related to postal code */}
+                      {selectedType === 'delivery' && postalCodeError && (
+                        <p className="mt-2 text-sm text-red-600">{postalCodeError}</p>
+                      )}
+
+                      {/* Delivery methods */}
+                      {selectedType === 'delivery' && deliveryMethods.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {deliveryMethods.map((method) => {
+                            const isSelected = selectedMethod === method.id
+                            return (
+                              <div
+                                key={method.id}
+                                className={`flex items-center justify-between rounded-md p-3 cursor-pointer ${
+                                  isSelected
+                                    ? 'border border-black bg-white'
+                                    : 'border border-gray-200 bg-white hover:border-gray-300'
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleSelectDeliveryMethod(method)
+                                }}
+                                role="button"
+                                tabIndex={0}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
+                                  if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault()
-                                    loadDeliveryMethods()
+                                    handleSelectDeliveryMethod(method)
                                   }
                                 }}
-                                placeholder="28001"
-                                className="block w-32 rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
-                              />
-                              <button
-                                type="button"
-                                onClick={loadDeliveryMethods}
-                                disabled={!postalCode || loadingDelivery}
-                                className="rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                {loadingDelivery ? 'Buscando...' : 'Buscar'}
-                              </button>
-                            </div>
-                            {postalCodeError && (
-                              <p className="mt-1 text-sm text-red-600">{postalCodeError}</p>
-                            )}
-                          </div>
-
-                          {/* Delivery methods */}
-                          {deliveryMethods.length > 0 && (
-                            <div className="space-y-2">
-                              {deliveryMethods.map((method) => (
-                                <label
-                                  key={method.id}
-                                  className={`flex items-center justify-between rounded-md border p-3 cursor-pointer ${
-                                    selectedMethod === method.id
-                                      ? 'border-gray-900 bg-white'
-                                      : 'border-gray-200 bg-white hover:border-gray-300'
-                                  }`}
-                                >
-                                  <div className="flex items-center flex-1">
-                                    <input
-                                      type="radio"
-                                      name="delivery-method"
-                                      value={method.id}
-                                      checked={selectedMethod === method.id}
-                                      onChange={() => handleSelectDeliveryMethod(method)}
-                                      className="h-4 w-4 border-gray-300 text-gray-900 focus:ring-gray-900"
-                                    />
-                                    <div className="ml-3 flex-1">
-                                      <span className="block text-sm font-medium text-gray-900">
-                                        {method.name}
-                                      </span>
-                                      {method.description && (
-                                        <span className="block text-sm text-gray-500">
-                                          {method.description}
-                                        </span>
-                                      )}
-                                      {method.estimated_delivery_days && (
-                                        <span className="block text-xs text-gray-500">
-                                          Entrega en {method.estimated_delivery_days} días
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span className="ml-3 text-sm font-semibold text-gray-900">
+                                <div className="flex-1">
+                                  <span className="block text-sm font-medium text-gray-900">
+                                    {method.name}
+                                  </span>
+                                  {method.description && (
+                                    <span className="block text-sm text-gray-500">
+                                      {method.description}
+                                    </span>
+                                  )}
+                                  {method.estimated_delivery_days && (
+                                    <span className="block text-xs text-gray-500">
+                                      Entrega en {method.estimated_delivery_days} días
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="ml-3 flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-gray-900">
                                     €{method.cost.toFixed(2)}
                                   </span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
+                                  <CheckCircleIcon className={`h-5 w-5 ${isSelected ? 'text-black' : 'invisible'}`} />
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </label>
-                  )}
                 </div>
               </fieldset>
 
@@ -403,9 +415,9 @@ export default function ShippingSelectionModal({
                   type="button"
                   onClick={handleConfirm}
                   disabled={!selectedMethod}
-                  className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded-md bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Añadir al carrito
+                  Añadir a la cesta
                 </button>
               </div>
             </div>

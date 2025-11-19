@@ -355,6 +355,25 @@ async function initializeDatabase() {
       }
     }
 
+    // Add Revolut linkage columns to orders table
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN revolut_order_id TEXT`);
+      console.log('Added revolut_order_id column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('revolut_order_id column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN revolut_payment_id TEXT`);
+      console.log('Added revolut_payment_id column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('revolut_payment_id column already exists or error:', err.message);
+      }
+    }
+
     try {
       await db.execute(`ALTER TABLE orders ADD COLUMN delivery_address_line_2 TEXT`);
       console.log('Added delivery_address_line_2 column to orders table');

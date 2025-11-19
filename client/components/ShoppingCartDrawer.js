@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
-import { XMarkIcon } from '@heroicons/react/24/outline'
+import { XMarkIcon, CreditCardIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { useCart } from '@/contexts/CartContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
-import { getArtImageUrl, getOthersImageUrl, ordersAPI } from '@/lib/api'
-import CountryCodeSelector from './CountryCodeSelector'
+import { getArtImageUrl, getOthersImageUrl, ordersAPI, paymentsAPI } from '@/lib/api'
+// Removed CountryCodeSelector; phone will be collected as a single field in the address step
 import AddressAutocomplete from './AddressAutocomplete'
 import AddressManualInput from './AddressManualInput'
 
@@ -20,27 +20,27 @@ export default function ShoppingCartDrawer({ open, onClose }) {
   const googlePayEnv = process.env.NEXT_PUBLIC_GOOGLE_PAY_ENV || 'TEST'
   const googlePayMerchantId = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_ID || 'BCR2DN4T6D4YQ3XXXXXX' // placeholder
   const googlePayMerchantName = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_NAME || 'Kuadrat (Sandbox)'
+  const googlePayLocale = process.env.NEXT_PUBLIC_GOOGLE_PAY_LOCALE || ''
   const { cart, removeFromCart, updateQuantity, getTotalPrice, getSubtotal, getTotalShipping, clearCart } = useCart()
   const { user } = useAuth()
   const { showBanner } = useBannerNotification()
   const router = useRouter()
   const [isProcessing, setIsProcessing] = useState(false)
-  const [showContactSelection, setShowContactSelection] = useState(false)
   const [showAddressInput, setShowAddressInput] = useState(false)
-  const [contactMethod, setContactMethod] = useState('email')
-  const [contactEmail, setContactEmail] = useState('')
-  const [contactCountryCode, setContactCountryCode] = useState('+34')
-  const [contactPhone, setContactPhone] = useState('')
+  const [personalInfo, setPersonalInfo] = useState({ fullName: '', email: '', phone: '' })
   const [deliveryAddress, setDeliveryAddress] = useState({})
   const [invoicingAddress, setInvoicingAddress] = useState({})
   const [useSameAddressForInvoicing, setUseSameAddressForInvoicing] = useState(true)
   const [addressError, setAddressError] = useState('')
+  // Revolut pop-up SDK reference
+  const revolutModuleRef = useRef(null)
 
   // Google Pay integration state
   const [gpayReady, setGpayReady] = useState(false)
   const [gpayLoading, setGpayLoading] = useState(false)
   const gpayBtnContainerRef = useRef(null)
-  const gpayBtnRenderedRef = useRef(false)
+  // When the drawer section unmounts, the DOM node holding the button is removed.
+  // Do NOT guard rendering with a persistent flag; always (re)render the button when eligible.
 
   const getImageUrl = (item) => {
     return item.productType === 'art'
@@ -66,22 +66,21 @@ export default function ShoppingCartDrawer({ open, onClose }) {
   }
 
   const handleCheckout = () => {
-    // Pre-fill email if user is logged in
-    if (user?.email) {
-      setContactEmail(user.email)
-    }
-    // Show contact selection
-    setShowContactSelection(true)
+    // Pre-fill personal info if user is logged in
+    setPersonalInfo((prev) => ({
+      ...prev,
+      fullName: user?.full_name || user?.name || prev.fullName,
+      email: user?.email || prev.email,
+      phone: user?.phone || prev.phone,
+    }))
+    setShowAddressInput(true)
   }
 
   const handleBackToCart = () => {
-    setShowContactSelection(false)
     setShowAddressInput(false)
   }
 
-  const handleBackToContact = () => {
-    setShowAddressInput(false)
-  }
+  // Contact selection step removed
 
   // Check if cart has any delivery shipping methods
   const hasDeliveryShipping = () => {
@@ -93,28 +92,16 @@ export default function ShoppingCartDrawer({ open, onClose }) {
     return cart.length > 0 && cart.every(item => item.shipping?.methodType === 'pickup')
   }
 
-  const isContactValid = () => {
-    if (contactMethod === 'email') {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      return emailRegex.test(contactEmail.trim())
-    } else if (contactMethod === 'whatsapp') {
-      // Phone must be digits only and between 6-15 characters
-      const phoneRegex = /^\d{6,15}$/
-      return phoneRegex.test(contactPhone.trim())
-    }
-    return false
+  const isPersonalInfoValid = () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const phoneRegex = /^\+\d{7,15}$/ // E.164-like: + followed by 7-15 digits
+    if (!personalInfo.fullName || personalInfo.fullName.trim().length < 2) return false
+    if (!emailRegex.test((personalInfo.email || '').trim())) return false
+    if (!phoneRegex.test((personalInfo.phone || '').trim())) return false
+    return true
   }
 
-  const handleContinueToAddress = () => {
-    if (!isContactValid()) {
-      showBanner('Por favor, introduce un contacto válido')
-      return
-    }
-
-    // Move to address input step
-    setShowContactSelection(false)
-    setShowAddressInput(true)
-  }
+  // Removed: no separate contact step
 
   const isAddressValid = () => {
     const needsDelivery = hasDeliveryShipping()
@@ -159,71 +146,156 @@ export default function ShoppingCartDrawer({ open, onClose }) {
   }
 
   const handleProceedToPayment = async () => {
+    // Validate personal data and addresses first
+    if (!isPersonalInfoValid()) {
+      showBanner('Por favor, completa la información personal con datos válidos')
+      return
+    }
     if (!isAddressValid()) {
       return
     }
 
     setIsProcessing(true)
     try {
-      // Convert cart items to order items format
+      // Prepare items in the format expected by our backend payments endpoint
       const orderItems = cart.flatMap(item => {
         const baseItem = {
           type: item.productType === 'art' ? 'art' : 'other',
           id: item.productId,
           shipping: item.shipping,
         }
-
-        if (item.productType === 'other') {
-          baseItem.variantId = item.variantId
-        }
-
-        // Create multiple items for quantity > 1
+        if (item.productType === 'other') baseItem.variantId = item.variantId
         return Array(item.quantity).fill(baseItem)
       })
 
-      // Prepare contact data
-      const contactData = contactMethod === 'email'
-        ? contactEmail.trim()
-        : `${contactCountryCode}${contactPhone.trim()}`
+      if (orderItems.length === 0) {
+        showBanner('El carrito está vacío')
+        setIsProcessing(false)
+        return
+      }
 
-      // Prepare address data
+      // Build compact items with quantity for Revolut order creation
+      const compactItems = cart.map(item => ({
+        type: item.productType === 'art' ? 'art' : 'other',
+        id: item.productId,
+        ...(item.productType === 'other' ? { variantId: item.variantId } : {}),
+        quantity: item.quantity,
+        shipping: item.shipping,
+      }))
+
       const finalDeliveryAddress = hasDeliveryShipping() ? deliveryAddress : null
       const finalInvoicingAddress = useSameAddressForInvoicing ? deliveryAddress : invoicingAddress
 
-      const response = await ordersAPI.create(
+      // 1) Create our internal order first (pending_payment)
+      const created = await ordersAPI.create(
         orderItems,
-        contactData,
-        contactMethod,
+        personalInfo.email,
+        'email',
         finalDeliveryAddress,
         finalInvoicingAddress
       )
 
-      const token = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+      const createdOrderId = created?.order?.id
+      if (!createdOrderId) {
+        throw new Error('No se pudo crear el pedido')
+      }
 
-      sessionStorage.setItem(`order_token_${token}`, JSON.stringify({
-        orderId: response.order.id,
-        contact: contactData,
-        contactType: contactMethod,
-      }))
+      // 2) Create Revolut order in our API to get token (send full context for payload build)
+      const { token, revolut_order_id } = await paymentsAPI.createRevolutOrder({
+        items: compactItems,
+        currency: 'EUR',
+        description: 'Pedido realizado en 140d Galería de Arte',
+        customer: {
+          full_name: personalInfo.fullName,
+          email: personalInfo.email,
+          phone: personalInfo.phone,
+        },
+        delivery_address: finalDeliveryAddress,
+        invoicing_address: finalInvoicingAddress,
+      })
 
-      clearCart()
+      // Load Revolut Checkout SDK and open Card pop-up
+      if (!revolutModuleRef.current) {
+        const mod = await import('@revolut/checkout')
+        revolutModuleRef.current = mod && (mod.default || mod)
+      }
+      const envMode = (process.env.NEXT_PUBLIC_REVOLUT_MODE || 'sandbox').toLowerCase()
+      const { payWithPopup } = await revolutModuleRef.current(token, envMode === 'production' ? undefined : 'sandbox')
 
-      setShowContactSelection(false)
-      setShowAddressInput(false)
-      setContactEmail('')
-      setContactPhone('')
-      setContactMethod('email')
-      setDeliveryAddress({})
-      setInvoicingAddress({})
-      setUseSameAddressForInvoicing(true)
+      payWithPopup({
+        email: personalInfo.email,
+        onSuccess: async () => {
+          try {
+            // The Revolut SDK does not return a result payload on onSuccess.
+            // Poll our backend to resolve the latest payment for this order and obtain payment_id.
+            let paymentId = null
+            const maxAttempts = 10
+            let attempt = 0
+            let delay = 400 // ms
+            while (attempt < maxAttempts && !paymentId) {
+              try {
+                const resp = await paymentsAPI.getLatestRevolutPayment(revolut_order_id)
+                if (resp && resp.payment_id) {
+                  paymentId = resp.payment_id
+                  break
+                }
+              } catch (e) {
+                // 404 means not ready yet; keep polling. Other errors bubble up.
+                if (e?.status !== 404) {
+                  throw e
+                }
+              }
+              await new Promise((r) => setTimeout(r, delay))
+              attempt++
+              delay = Math.min(1500, Math.floor(delay * 1.5))
+            }
 
-      setTimeout(() => {
-        router.push(`/order-confirmation?token=${token}`)
-        onClose()
-      }, 50)
+            if (!paymentId) {
+              throw new Error('No se pudo obtener el identificador del pago de Revolut. Por favor, inténtalo de nuevo.')
+            }
+
+            // 3) Confirm payment on our API (mark as paid)
+            await ordersAPI.updatePayment({
+              orderId: createdOrderId,
+              revolutOrderId: revolut_order_id,
+              paymentId,
+            })
+
+            const tokenKey = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+            sessionStorage.setItem(`order_token_${tokenKey}`, JSON.stringify({
+              orderId: createdOrderId,
+              contact: personalInfo.email,
+              contactType: 'email',
+            }))
+
+            clearCart()
+            setShowAddressInput(false)
+            setPersonalInfo({ fullName: '', email: '', phone: '' })
+            setDeliveryAddress({})
+            setInvoicingAddress({})
+            setUseSameAddressForInvoicing(true)
+
+            setTimeout(() => {
+              router.push(`/pedido-completado?token=${tokenKey}`)
+              onClose()
+            }, 50)
+          } catch (err) {
+            console.error('Order creation after payment failed:', err)
+            showBanner(err.message || 'No se pudo registrar el pedido tras el pago.')
+          } finally {
+            setIsProcessing(false)
+          }
+        },
+        onError: (error) => {
+          console.error('Revolut pop-up error:', error)
+          showBanner(error?.message || 'Error en el pago')
+          setIsProcessing(false)
+        },
+      })
     } catch (err) {
-      showBanner(err.message || 'Compra fallida. Por favor, inténtalo de nuevo.')
-    } finally {
+      console.error('Checkout init error:', err)
+      // If failure happened before opening the pop-up (e.g., order creation), show general message
+      showBanner('Ha ocurrido un error al procesar el pedido. Inténtalo de nuevo más tarde')
       setIsProcessing(false)
     }
   }
@@ -318,16 +390,21 @@ export default function ShoppingCartDrawer({ open, onClose }) {
       const { result } = await client.isReadyToPay(isReadyToPayRequest)
       if (result) {
         setGpayReady(true)
-        // Render the official button if not already
-        if (gpayBtnContainerRef.current && !gpayBtnRenderedRef.current) {
-          const button = client.createButton({
+        // Always render (or re-render) the official button to avoid disappearing after unmounts
+        if (gpayBtnContainerRef.current) {
+          const buttonOptions = {
             onClick: onGooglePayButtonClicked,
             buttonColor: 'black',
             buttonType: 'long',
-          })
+            buttonSizeMode: 'fill', // make it fill its container (so it matches the grid cell width)
+          }
+          if (googlePayLocale) {
+            // Try to force button locale if configured (falls back to browser locale otherwise)
+            buttonOptions.buttonLocale = googlePayLocale
+          }
+          const button = client.createButton(buttonOptions)
           gpayBtnContainerRef.current.innerHTML = ''
           gpayBtnContainerRef.current.appendChild(button)
-          gpayBtnRenderedRef.current = true
         }
       } else {
         setGpayReady(false)
@@ -342,13 +419,15 @@ export default function ShoppingCartDrawer({ open, onClose }) {
 
   // Initialize Google Pay when drawer opens on the first step and shipping is selected
   useEffect(() => {
-    const onFirstStep = !showContactSelection && !showAddressInput
+    const onFirstStep = !showAddressInput
     const allHaveShipping = cart.length > 0 && cart.every(item => !!item.shipping)
     if (open && googlePayEnabled && onFirstStep && allHaveShipping) {
       initGooglePay()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, googlePayEnabled, showContactSelection, showAddressInput, cart])
+  }, [open, googlePayEnabled, showAddressInput, cart])
+
+  // Removed inline card field initialization; Revolut pop-up is opened on demand
 
   const onGooglePayButtonClicked = async () => {
     try {
@@ -421,17 +500,14 @@ export default function ShoppingCartDrawer({ open, onClose }) {
       }))
 
       clearCart()
-      setShowContactSelection(false)
       setShowAddressInput(false)
-      setContactEmail('')
-      setContactPhone('')
-      setContactMethod('email')
+      setPersonalInfo({ fullName: '', email: '', phone: '' })
       setDeliveryAddress({})
       setInvoicingAddress({})
       setUseSameAddressForInvoicing(true)
 
       setTimeout(() => {
-        router.push(`/order-confirmation?token=${token}`)
+        router.push(`/pedido-completado?token=${token}`)
         onClose()
       }, 50)
     } catch (err) {
@@ -458,7 +534,7 @@ export default function ShoppingCartDrawer({ open, onClose }) {
           <div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10 sm:pl-16">
             <DialogPanel
               transition
-              className="pointer-events-auto w-screen max-w-md lg:max-w-2xl transform transition duration-500 ease-in-out data-[closed]:translate-x-full sm:duration-700"
+              className="pointer-events-auto w-screen max-w-md lg:max-w-xl transform transition duration-500 ease-in-out data-[closed]:translate-x-full sm:duration-700"
             >
               <div className="flex h-full flex-col overflow-y-auto bg-white shadow-xl">
                 {/* Make the entire drawer content share a single scroll. Remove inner overflow to avoid nested scrolls. */}
@@ -532,38 +608,38 @@ export default function ShoppingCartDrawer({ open, onClose }) {
                                       ⚠ Método de envío no seleccionado
                                     </p>
                                   )}
-                                </div>
-                                <div className="flex flex-1 items-end justify-between text-sm">
-                                  {item.productType === 'art' ? (
-                                    <p className="text-gray-500">Cantidad: {item.quantity}</p>
-                                  ) : (
-                                    <div className="flex items-center gap-2">
-                                      <label htmlFor={`quantity-${item.id}`} className="text-gray-500">
-                                        Cantidad:
-                                      </label>
-                                      <select
-                                        id={`quantity-${item.id}`}
-                                        value={item.quantity}
-                                        onChange={(e) => handleQuantityChange(item, e.target.value)}
-                                        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-black focus:ring-1 focus:ring-black"
+                                  {/* Quantity and remove controls moved just below shipping info */}
+                                  <div className="mt-3 flex items-center justify-between text-sm">
+                                    {item.productType === 'art' ? (
+                                      <p className="text-gray-500">Cantidad: {item.quantity}</p>
+                                    ) : (
+                                      <div className="flex items-center gap-2">
+                                        <label htmlFor={`quantity-${item.id}`} className="text-gray-500">
+                                          Cantidad:
+                                        </label>
+                                        <select
+                                          id={`quantity-${item.id}`}
+                                          value={item.quantity}
+                                          onChange={(e) => handleQuantityChange(item, e.target.value)}
+                                          className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-black focus:ring-1 focus:ring-black"
+                                        >
+                                          {[...Array(10)].map((_, i) => (
+                                            <option key={i + 1} value={i + 1}>
+                                              {i + 1}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
+                                    <div className="flex">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemove(item)}
+                                        className="font-medium text-red-900 hover:bg-red-100 rounded px-2 py-1 transition-colors"
                                       >
-                                        {[...Array(10)].map((_, i) => (
-                                          <option key={i + 1} value={i + 1}>
-                                            {i + 1}
-                                          </option>
-                                        ))}
-                                      </select>
+                                        Eliminar
+                                      </button>
                                     </div>
-                                  )}
-
-                                  <div className="flex">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemove(item)}
-                                      className="font-medium text-black hover:text-gray-600"
-                                    >
-                                      Eliminar
-                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -577,7 +653,7 @@ export default function ShoppingCartDrawer({ open, onClose }) {
 
                 {cart.length > 0 && (
                   <div className="border-t border-gray-200 px-4 py-6 sm:px-6">
-                    {/* Address Input Step - Shows after contact selection */}
+                    {/* Address Input Step */}
                     {showAddressInput && (
                       <div className="mb-6 space-y-6">
                         {addressError && (
@@ -595,6 +671,9 @@ export default function ShoppingCartDrawer({ open, onClose }) {
                               label="Dirección de entrega"
                               defaultCountry="ES"
                               showMap={true}
+                              personalInfo={personalInfo}
+                              onPersonalInfoChange={setPersonalInfo}
+                              showPersonalSection={true}
                             />
                           ) : (
                             <AddressManualInput
@@ -602,6 +681,9 @@ export default function ShoppingCartDrawer({ open, onClose }) {
                               onChange={setDeliveryAddress}
                               label="Dirección de entrega"
                               defaultCountry="ES"
+                              personalInfo={personalInfo}
+                              onPersonalInfoChange={setPersonalInfo}
+                              showPersonalSection={true}
                             />
                           )
                         )}
@@ -631,6 +713,9 @@ export default function ShoppingCartDrawer({ open, onClose }) {
                               label="Dirección de facturación"
                               defaultCountry="ES"
                               showMap={false}
+                              personalInfo={personalInfo}
+                              onPersonalInfoChange={setPersonalInfo}
+                              showPersonalSection={!hasDeliveryShipping()}
                             />
                           ) : (
                             <AddressManualInput
@@ -638,96 +723,18 @@ export default function ShoppingCartDrawer({ open, onClose }) {
                               onChange={setInvoicingAddress}
                               label="Dirección de facturación"
                               defaultCountry="ES"
+                              personalInfo={personalInfo}
+                              onPersonalInfoChange={setPersonalInfo}
+                              showPersonalSection={!hasDeliveryShipping()}
                             />
                           )
                         )}
+
+                        {/* Método de pago eliminado: usamos el pop-up de Revolut al pulsar "Pagar" */}
                       </div>
                     )}
 
-                    {/* Contact Selection - Shows when user clicks "Completar compra" */}
-                    {showContactSelection && (
-                      <div className="mb-6">
-                        <h3 className="text-sm font-medium text-gray-900 mb-3">
-                          Elige el medio de contacto y actualizaciones para este pedido
-                        </h3>
-                        <fieldset aria-label="Contact method" className="-space-y-px rounded-md bg-white">
-                          {/* Email Option */}
-                          <label
-                            className="group flex border border-gray-200 p-4 first:rounded-tl-md first:rounded-tr-md last:rounded-br-md last:rounded-bl-md focus:outline-hidden has-[:checked]:relative has-[:checked]:border-gray-400 has-[:checked]:bg-gray-50"
-                          >
-                            <input
-                              type="radio"
-                              name="contact-method"
-                              value="email"
-                              checked={contactMethod === 'email'}
-                              onChange={(e) => setContactMethod(e.target.value)}
-                              className="relative mt-0.5 size-4 shrink-0 appearance-none rounded-full border border-gray-300 bg-white before:absolute before:inset-1 before:rounded-full before:bg-white not-checked:before:hidden checked:border-gray-900 checked:bg-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
-                            />
-                            <span className="ml-3 flex flex-col flex-1">
-                              <span className="block text-sm font-medium text-gray-900 group-has-[:checked]:text-gray-900">
-                                Correo electrónico
-                              </span>
-                              <span className="block text-sm text-gray-500 group-has-[:checked]:text-gray-700">
-                                Recibirás la confirmación por email
-                              </span>
-                                {contactMethod === 'email' && (
-                                <div className="mt-3">
-                                  <input
-                                    type="email"
-                                    placeholder="tu@email.com"
-                                    value={contactEmail}
-                                    onChange={(e) => setContactEmail(e.target.value)}
-                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black"
-                                  />
-                                </div>
-                                )}
-                            </span>
-                          </label>
-
-                          {/* WhatsApp Option */}
-                          <label
-                            className="group flex border border-gray-200 p-4 first:rounded-tl-md first:rounded-tr-md last:rounded-br-md last:rounded-bl-md focus:outline-hidden has-[:checked]:relative has-[:checked]:border-gray-400 has-[:checked]:bg-gray-50"
-                          >
-                            <input
-                              type="radio"
-                              name="contact-method"
-                              value="whatsapp"
-                              checked={contactMethod === 'whatsapp'}
-                              onChange={(e) => setContactMethod(e.target.value)}
-                              className="relative mt-0.5 size-4 shrink-0 appearance-none rounded-full border border-gray-300 bg-white before:absolute before:inset-1 before:rounded-full before:bg-white not-checked:before:hidden checked:border-gray-900 checked:bg-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
-                            />
-                            <span className="ml-3 flex flex-col flex-1">
-                              <span className="block text-sm font-medium text-gray-900 group-has-[:checked]:text-gray-900">
-                                WhatsApp
-                              </span>
-                              <span className="block text-sm text-gray-500 group-has-[:checked]:text-gray-700">
-                                Recibirás actualizaciones por WhatsApp
-                              </span>
-                                {contactMethod === 'whatsapp' && (
-                                <div className="mt-3 flex gap-2">
-                                  <CountryCodeSelector
-                                    value={contactCountryCode}
-                                    onChange={setContactCountryCode}
-                                  />
-                                  <input
-                                    type="tel"
-                                    placeholder="600123456"
-                                    value={contactPhone}
-                                    onChange={(e) => {
-                                      // Only allow digits
-                                      const value = e.target.value.replace(/\D/g, '')
-                                      setContactPhone(value)
-                                    }}
-                                    maxLength="15"
-                                    className="block flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black"
-                                  />
-                                </div>
-                                )}
-                            </span>
-                          </label>
-                        </fieldset>
-                      </div>
-                    )}
+                    {/* Paso de selección de contacto eliminado: datos personales se recopilan en el bloque de dirección */}
 
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm text-gray-600">
@@ -745,51 +752,57 @@ export default function ShoppingCartDrawer({ open, onClose }) {
                     </div>
                     <p className="mt-2 text-xs text-gray-500">Los impuestos se calcularán según tu ubicación.</p>
                     <div className="mt-6">
-                      {!showContactSelection && !showAddressInput ? (
-                        // Step 1: Cart view - Show "Completar compra"
-                        <button
-                          onClick={handleCheckout}
-                          disabled={isProcessing || cart.some(item => !item.shipping)}
-                          className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isProcessing ? 'Procesando...' : 'Completar compra'}
-                        </button>
-                      ) : showContactSelection ? (
-                        // Step 2: Contact selection - Show "Continuar"
-                        <button
-                          onClick={handleContinueToAddress}
-                          disabled={isProcessing || !isContactValid()}
-                          className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isProcessing ? 'Procesando...' : 'Continuar'}
-                        </button>
+                      {!showAddressInput ? (
+                        // Step 1: Cart view - Show "Pagar pedido"
+                        <>
+                          <button
+                            onClick={handleCheckout}
+                            disabled={isProcessing || cart.some(item => !item.shipping)}
+                            className="flex w-full items-center justify-center gap-2 rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <CreditCardIcon aria-hidden="true" className="size-5" />
+                            {isProcessing ? 'Procesando...' : 'Pagar pedido'}
+                          </button>
+                          {/* Payment buttons row */}
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            {/* Google Pay Express Checkout */}
+                            {googlePayEnabled && (
+                              <div className="col-span-1">
+                                {/* Official Google Pay button will render here */}
+                                <div ref={gpayBtnContainerRef} className="flex justify-center w-full min-h-[48px]"></div>
+                                {!gpayReady && !gpayLoading && (
+                                  <button
+                                    onClick={initGooglePay}
+                                    disabled={isProcessing || cart.some(item => !item.shipping)}
+                                    className="mt-0 flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {isProcessing ? 'Procesando...' : 'Pagar con Google Pay'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {/* Apple Pay placeholder (no functionality yet) */}
+                            <div className="col-span-1">
+                              <button
+                                type="button"
+                                className="flex w-full items-center justify-center rounded-md border border-gray-300 bg-black px-4 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-50"
+                              >
+                                Apple Pay
+                              </button>
+                            </div>
+                          </div>
+                        </>
                       ) : (
-                        // Step 3: Address input - Show "Ir al pago"
+                        // Step 3: Address input - Show "Pagar"
                         <button
                           onClick={handleProceedToPayment}
                           disabled={isProcessing}
                           className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {isProcessing ? 'Procesando...' : 'Ir al pago'}
+                          {isProcessing ? 'Procesando...' : 'Pagar'}
                         </button>
                       )}
-                      {/* Google Pay Express Checkout */}
-                      {!showContactSelection && !showAddressInput && googlePayEnabled && (
-                        <div className="mt-3">
-                          {/* Official Google Pay button will render here */}
-                          <div ref={gpayBtnContainerRef} className="flex justify-center"></div>
-                          {!gpayReady && !gpayLoading && (
-                            <button
-                              onClick={initGooglePay}
-                              disabled={isProcessing || cart.some(item => !item.shipping)}
-                              className="mt-2 flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-6 py-3 text-base font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {isProcessing ? 'Procesando...' : 'Pagar con Google Pay'}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {cart.some(item => !item.shipping) && !showContactSelection && !showAddressInput && (
+                      {cart.some(item => !item.shipping) && !showAddressInput && (
                         <p className="mt-2 text-xs text-center text-amber-600">
                           Algunos productos no tienen método de envío seleccionado
                         </p>
@@ -798,15 +811,6 @@ export default function ShoppingCartDrawer({ open, onClose }) {
                     <div className="mt-6 flex justify-center text-center text-sm text-gray-500">
                       <p>
                         {showAddressInput ? (
-                          <button
-                            type="button"
-                            onClick={handleBackToContact}
-                            className="font-medium text-black hover:text-gray-600"
-                          >
-                            <span aria-hidden="true">&larr; </span>
-                            Volver al carrito
-                          </button>
-                        ) : showContactSelection ? (
                           <button
                             type="button"
                             onClick={handleBackToCart}

@@ -1,6 +1,6 @@
 const { db } = require('../config/database');
 const { ApiError } = require('../middleware/errorHandler');
-const { sendPurchaseConfirmation } = require('../services/emailService');
+const { sendPurchaseConfirmation, sendPaymentConfirmation } = require('../services/emailService');
 
 // Create new order
 const createOrder = async (req, res, next) => {
@@ -206,34 +206,34 @@ const createOrder = async (req, res, next) => {
         invoicing_country
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        buyer_id,
-        totalPrice,
-        'completed',
-        isGuest ? guest_email : null, // Keep for backward compatibility
-        buyer_contact,
-        buyer_contact_type,
+        buyer_id ?? null,
+        totalPrice ?? 0,
+        'pending_payment',
+        isGuest ? (guest_email || null) : null, // Ensure null, not undefined
+        buyer_contact ?? null,
+        buyer_contact_type ?? null,
         // Delivery address
-        delivery_address?.line1 || null,
-        delivery_address?.line2 || null,
-        delivery_address?.postalCode || null,
-        delivery_address?.city || null,
-        delivery_address?.province || null,
-        delivery_address?.country || null,
-        delivery_address?.lat || null,
-        delivery_address?.lng || null,
+        delivery_address?.line1 ?? null,
+        delivery_address?.line2 ?? null,
+        delivery_address?.postalCode ?? null,
+        delivery_address?.city ?? null,
+        delivery_address?.province ?? null,
+        delivery_address?.country ?? null,
+        delivery_address?.lat ?? null,
+        delivery_address?.lng ?? null,
         // Invoicing address
-        invoicing_address?.line1 || null,
-        invoicing_address?.line2 || null,
-        invoicing_address?.postalCode || null,
-        invoicing_address?.city || null,
-        invoicing_address?.province || null,
-        invoicing_address?.country || null,
+        invoicing_address?.line1 ?? null,
+        invoicing_address?.line2 ?? null,
+        invoicing_address?.postalCode ?? null,
+        invoicing_address?.city ?? null,
+        invoicing_address?.province ?? null,
+        invoicing_address?.country ?? null,
       ],
     });
 
-    const orderId = orderResult.lastInsertRowid;
+    const orderId = Number(orderResult.lastInsertRowid);
 
-    // Create art order items and mark as sold
+    // Create art order items (do NOT mark as sold yet; this will be done after payment confirmation)
     const processedArt = {};
     for (const item of artItems) {
       const product = artProducts.find(p => p.id === item.id);
@@ -260,17 +260,10 @@ const createOrder = async (req, res, next) => {
         ],
       });
 
-      // Mark as sold (once per unique art product)
-      if (!processedArt[product.id]) {
-        processedArt[product.id] = true;
-        await db.execute({
-          sql: 'UPDATE art SET is_sold = 1 WHERE id = ?',
-          args: [product.id],
-        });
-      }
+      // Do not mark as sold at this stage
     }
 
-    // Create others order items and update stock
+    // Create others order items (do NOT update stock yet; this will be done after payment confirmation)
     const processedOthersVariants = {};
     for (const item of othersItems) {
       const product = othersProducts.find(p => p.id === item.id);
@@ -307,30 +300,7 @@ const createOrder = async (req, res, next) => {
       processedOthersVariants[variant.id]++;
     }
 
-    // Update stock for each variant
-    for (const [variantId, quantity] of Object.entries(processedOthersVariants)) {
-      const variant = othersVariations.find(v => v.id === parseInt(variantId));
-      const newStock = variant.stock - quantity;
-
-      await db.execute({
-        sql: 'UPDATE other_vars SET stock = ? WHERE id = ?',
-        args: [newStock, variantId],
-      });
-
-      // Check if all variants for this product are out of stock
-      const allVariantsResult = await db.execute({
-        sql: 'SELECT SUM(stock) as total_stock FROM other_vars WHERE other_id = ?',
-        args: [variant.other_id],
-      });
-
-      if (allVariantsResult.rows[0]?.total_stock === 0) {
-        // Mark product as sold
-        await db.execute({
-          sql: 'UPDATE others SET is_sold = 1 WHERE id = ?',
-          args: [variant.other_id],
-        });
-      }
-    }
+    // Stock updates will be performed after payment confirmation
 
     // Get complete order details
     const orderDetailsResult = await db.execute({
@@ -797,8 +767,96 @@ const getOrderByIdAdmin = async (req, res, next) => {
 
 module.exports = {
   createOrder,
+  confirmOrderPayment,
   getUserOrders,
   getOrderById,
   getAllOrdersAdmin,
   getOrderByIdAdmin,
 };
+
+// Confirm order payment (PUT /api/orders)
+// Body: { order_id: number, revolut_order_id: string, payment_id: string }
+async function confirmOrderPayment(req, res, next) {
+  try {
+    const { order_id, revolut_order_id, payment_id } = req.body || {};
+
+    // Require all fields explicitly
+    if (!order_id || !revolut_order_id || !payment_id) {
+      throw new ApiError(400, 'Faltan parámetros requeridos: order_id, revolut_order_id y payment_id son obligatorios', 'Solicitud inválida');
+    }
+
+    // Load order
+    const orderRes = await db.execute({ sql: 'SELECT * FROM orders WHERE id = ?', args: [order_id] });
+    if (orderRes.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+    const order = orderRes.rows[0];
+
+    // If already paid, validate idempotency: IDs must match
+    if (order.status === 'paid') {
+      if (order.revolut_order_id && order.revolut_order_id !== revolut_order_id) {
+        throw new ApiError(409, 'El pedido ya está pagado con otro identificador de orden de Revolut', 'Conflicto de pago');
+      }
+      if (order.revolut_payment_id && order.revolut_payment_id !== payment_id) {
+        throw new ApiError(409, 'El pedido ya está pagado con otro identificador de pago de Revolut', 'Conflicto de pago');
+      }
+      // Ensure IDs are persisted if they were null previously
+      await db.execute({
+        sql: 'UPDATE orders SET revolut_order_id = COALESCE(revolut_order_id, ?), revolut_payment_id = COALESCE(revolut_payment_id, ?) WHERE id = ?',
+        args: [revolut_order_id, payment_id, order_id],
+      });
+      return res.status(200).json({ success: true, order: { id: order_id, status: 'paid' } });
+    }
+
+    // Store Revolut ids and mark as paid (no remote verification per spec)
+    await db.execute({
+      sql: 'UPDATE orders SET status = ?, revolut_order_id = ?, revolut_payment_id = ? WHERE id = ?',
+      args: ['paid', revolut_order_id, payment_id, order_id],
+    });
+
+    // Inventory updates
+    // 1) Mark art items as sold
+    const artItemsRes = await db.execute({
+      sql: 'SELECT aoi.art_id FROM art_order_items aoi WHERE aoi.order_id = ?',
+      args: [order_id],
+    });
+    const uniqueArtIds = [...new Set(artItemsRes.rows.map(r => r.art_id))];
+    for (const artId of uniqueArtIds) {
+      await db.execute({ sql: 'UPDATE art SET is_sold = 1 WHERE id = ?', args: [artId] });
+    }
+
+    // 2) Decrement others variants stock and mark product as sold if out of stock
+    const otherItemsRes = await db.execute({
+      sql: 'SELECT other_var_id FROM other_order_items WHERE order_id = ?',
+      args: [order_id],
+    });
+    const counts = new Map();
+    for (const row of otherItemsRes.rows) {
+      counts.set(row.other_var_id, (counts.get(row.other_var_id) || 0) + 1);
+    }
+    for (const [variantId, qty] of counts.entries()) {
+      // Get current stock and other_id
+      const varRes = await db.execute({ sql: 'SELECT id, stock, other_id FROM other_vars WHERE id = ?', args: [variantId] });
+      if (varRes.rows.length) {
+        const v = varRes.rows[0];
+        const newStock = Math.max(0, (v.stock || 0) - qty);
+        await db.execute({ sql: 'UPDATE other_vars SET stock = ? WHERE id = ?', args: [newStock, variantId] });
+        // Check if total stock for this product is zero
+        const totalRes = await db.execute({ sql: 'SELECT SUM(stock) as total_stock FROM other_vars WHERE other_id = ?', args: [v.other_id] });
+        if ((totalRes.rows[0]?.total_stock || 0) <= 0) {
+          await db.execute({ sql: 'UPDATE others SET is_sold = 1 WHERE id = ?', args: [v.other_id] });
+        }
+      }
+    }
+
+    // Email buyer about payment success if we have email
+    const buyerEmail = order.guest_email || (order.contact_type === 'email' ? order.contact : null);
+    if (buyerEmail) {
+      await sendPaymentConfirmation({ orderId: order_id, buyerEmail, totalPrice: order.total_price });
+    }
+
+    return res.status(200).json({ success: true, order: { id: order_id, status: 'paid' } });
+  } catch (error) {
+    next(error);
+  }
+}

@@ -11,6 +11,7 @@
   "dependencies": {
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
+    "@revolut/checkout": "^1.1.23",
     "next": "15.1.4",
     "postcode-validator": "^3.10.5",
     "quill": "^2.0.2",

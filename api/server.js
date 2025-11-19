@@ -18,6 +18,7 @@ const productsRoutes = require('./routes/productsRoutes');
 const artRoutes = require('./routes/artRoutes');
 const othersRoutes = require('./routes/othersRoutes');
 const ordersRoutes = require('./routes/ordersRoutes');
+const paymentsRoutes = require('./routes/paymentsRoutes');
 const usersRoutes = require('./routes/usersRoutes');
 const adminRoutes = require('./routes/admin');
 const sellerRoutes = require('./routes/sellerRoutes');
@@ -92,6 +93,7 @@ app.use('/api/products', productsRoutes); // Keep old routes for backward compat
 app.use('/api/art', artRoutes);
 app.use('/api/others', othersRoutes);
 app.use('/api/orders', ordersRoutes);
+app.use('/api/payments', paymentsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/seller', sellerRoutes);
