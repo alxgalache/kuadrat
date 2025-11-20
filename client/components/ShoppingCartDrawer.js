@@ -32,8 +32,14 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const [invoicingAddress, setInvoicingAddress] = useState({})
     const [useSameAddressForInvoicing, setUseSameAddressForInvoicing] = useState(true)
     const [addressError, setAddressError] = useState('')
-    // Revolut pop-up SDK reference
+    const [revolutOrderId, setRevolutOrderId] = useState(null)
+    const [revolutOrderToken, setRevolutOrderToken] = useState(null)
+    // Revolut Checkout SDK and Card Field refs
     const revolutModuleRef = useRef(null)
+    const cardFieldContainerRef = useRef(null)
+    const cardFieldInstanceRef = useRef(null)
+    const currentOrderIdRef = useRef(null)
+    const currentRevolutOrderIdRef = useRef(null)
 
     // Google Pay integration state
     const [gpayReady, setGpayReady] = useState(false)
@@ -65,15 +71,52 @@ export default function ShoppingCartDrawer({open, onClose}) {
         removeFromCart(item.productId, item.productType, item.variantId)
     }
 
-    const handleCheckout = () => {
-        // Pre-fill personal info if user is logged in
-        setPersonalInfo((prev) => ({
-            ...prev,
-            fullName: user?.full_name || user?.name || prev.fullName,
-            email: user?.email || prev.email,
-            phone: user?.phone || prev.phone,
-        }))
-        setShowAddressInput(true)
+    const handleCheckout = async () => {
+        if (cart.length === 0) {
+            showBanner('El carrito está vacío')
+            return
+        }
+        if (cart.some(item => !item.shipping)) {
+            showBanner('Todos los productos deben tener un método de envío seleccionado')
+            return
+        }
+
+        setIsProcessing(true)
+        try {
+            // Build compact items with quantity for Revolut order initialisation
+            const compactItems = cart.map(item => ({
+                type: item.productType === 'art' ? 'art' : 'other',
+                id: item.productId,
+                ...(item.productType === 'other' ? {variantId: item.variantId} : {}),
+                quantity: item.quantity,
+                shipping: item.shipping,
+            }))
+
+            const resp = await paymentsAPI.initRevolutOrder(compactItems)
+
+            if (!resp || !resp.revolut_order_id || !resp.token) {
+                throw new Error('No se pudo inicializar el pago con Revolut. Por favor, inténtalo de nuevo.')
+            }
+
+            setRevolutOrderId(resp.revolut_order_id)
+            setRevolutOrderToken(resp.token)
+            currentRevolutOrderIdRef.current = resp.revolut_order_id
+
+            // Pre-fill personal info if user is logged in
+            setPersonalInfo((prev) => ({
+                ...prev,
+                fullName: user?.full_name || user?.name || prev.fullName,
+                email: user?.email || prev.email,
+                phone: user?.phone || prev.phone,
+            }))
+
+            setShowAddressInput(true)
+        } catch (err) {
+            console.error('Error inicializando la orden de Revolut:', err)
+            showBanner(err.message || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
+        } finally {
+            setIsProcessing(false)
+        }
     }
 
     const handleBackToCart = () => {
@@ -155,9 +198,19 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return
         }
 
+        if (!revolutOrderId || !revolutOrderToken) {
+            showBanner('No se ha podido inicializar el pago. Vuelve al paso anterior e inténtalo de nuevo.')
+            return
+        }
+
+        if (!cardFieldInstanceRef.current || !cardFieldContainerRef.current) {
+            showBanner('No se ha podido cargar el formulario de tarjeta. Actualiza la página o vuelve a intentarlo.')
+            return
+        }
+
         setIsProcessing(true)
         try {
-            // Prepare items in the format expected by our backend payments endpoint
+            // Prepare items in the expanded format expected by orders API
             const orderItems = cart.flatMap(item => {
                 const baseItem = {
                     type: item.productType === 'art' ? 'art' : 'other',
@@ -174,129 +227,237 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 return
             }
 
-            // Build compact items with quantity for Revolut order creation
-            const compactItems = cart.map(item => ({
-                type: item.productType === 'art' ? 'art' : 'other',
-                id: item.productId,
-                ...(item.productType === 'other' ? {variantId: item.variantId} : {}),
-                quantity: item.quantity,
-                shipping: item.shipping,
-            }))
-
             const finalDeliveryAddress = hasDeliveryShipping() ? deliveryAddress : null
             const finalInvoicingAddress = useSameAddressForInvoicing ? deliveryAddress : invoicingAddress
 
-            // 1) Create our internal order first (pending_payment) and also create Revolut order inside API
-            const created = await ordersAPI.create(
-                orderItems,
-                personalInfo.email,
-                'email',
-                finalDeliveryAddress,
-                finalInvoicingAddress,
-                {
+            // 1) Persist order in our DB with status 'pending' and PATCH Revolut order with full details
+            const placed = await ordersAPI.placeOrder({
+                items: orderItems,
+                contact: personalInfo.email,
+                contact_type: 'email',
+                delivery_address: finalDeliveryAddress,
+                invoicing_address: finalInvoicingAddress,
+                customer: {
                     full_name: personalInfo.fullName,
                     email: personalInfo.email,
                     phone: personalInfo.phone,
-                }
-            )
-
-            const createdOrderId = created?.order?.id
-            const revolutOrderId = created?.order?.revolut_order_id
-            const revolutToken = created?.revolut?.token
-            if (!createdOrderId || !revolutOrderId || !revolutToken) {
-                throw new Error('No se pudo preparar el pago. Por favor, inténtalo de nuevo.')
-            }
-
-            // Load Revolut Checkout SDK and open Card pop-up
-            if (!revolutModuleRef.current) {
-                const mod = await import('@revolut/checkout')
-                revolutModuleRef.current = mod && (mod.default || mod)
-            }
-            const envMode = (process.env.NEXT_PUBLIC_REVOLUT_MODE || 'sandbox').toLowerCase()
-            const {payWithPopup} = await revolutModuleRef.current(revolutToken, envMode === 'production' ? undefined : 'sandbox')
-            const revLocale = process.env.NEXT_PUBLIC_REVOLUT_LOCALE || 'auto'
-
-            payWithPopup({
-                email: personalInfo.email,
-                ...(revLocale ? {locale: revLocale} : {}),
-                onCancel: async () => {
-                    // TODO - Maybe call a revolut 'cancel order' endpoint here?
-                    setIsProcessing(false)
                 },
-                onSuccess: async () => {
-                    try {
-                        // The Revolut SDK does not return a result payload on onSuccess.
-                        // Poll our backend to resolve the latest payment for this order and obtain payment_id.
-                        let paymentId = null
-                        const maxAttempts = 10
-                        let attempt = 0
-                        let delay = 400 // ms
-                        while (attempt < maxAttempts && !paymentId) {
-                            try {
-                                const resp = await paymentsAPI.getLatestRevolutPayment(revolutOrderId)
-                                if (resp && resp.payment_id) {
-                                    paymentId = resp.payment_id
-                                    break
-                                }
-                            } catch (e) {
-                                // 404 means not ready yet; keep polling. Other errors bubble up.
-                                if (e?.status !== 404) {
-                                    throw e
-                                }
-                            }
-                            await new Promise((r) => setTimeout(r, delay))
-                            attempt++
-                            delay = Math.min(1500, Math.floor(delay * 1.5))
-                        }
-
-                        if (!paymentId) {
-                            throw new Error('No se pudo obtener el identificador del pago de Revolut. Por favor, inténtalo de nuevo.')
-                        }
-
-                        // 3) Confirm payment on our API (mark as paid)
-                        await ordersAPI.updatePayment({
-                            orderId: createdOrderId,
-                            paymentId,
-                        })
-
-                        const tokenKey = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
-                        sessionStorage.setItem(`order_token_${tokenKey}`, JSON.stringify({
-                            orderId: createdOrderId,
-                            contact: personalInfo.email,
-                            contactType: 'email',
-                        }))
-
-                        clearCart()
-                        setShowAddressInput(false)
-                        setPersonalInfo({fullName: '', email: '', phone: ''})
-                        setDeliveryAddress({})
-                        setInvoicingAddress({})
-                        setUseSameAddressForInvoicing(true)
-
-                        setTimeout(() => {
-                            router.push(`/pedido-completado?token=${tokenKey}`)
-                            onClose()
-                        }, 50)
-                    } catch (err) {
-                        console.error('Order creation after payment failed:', err)
-                        showBanner(err.message || 'No se pudo registrar el pedido tras el pago.')
-                    } finally {
-                        setIsProcessing(false)
-                    }
-                },
-                onError: (error) => {
-                    console.error('Revolut pop-up error:', error)
-                    showBanner(error?.message || 'Error en el pago')
-                    setIsProcessing(false)
-                },
+                revolut_order_id: revolutOrderId,
             })
+
+            const createdOrderId = placed?.order?.id
+            if (!createdOrderId) {
+                throw new Error('No se pudo registrar el pedido. Por favor, inténtalo de nuevo.')
+            }
+
+            currentOrderIdRef.current = createdOrderId
+
+            // 2) Enviar el pago a Revolut usando Card Field
+            const billing = finalInvoicingAddress || finalDeliveryAddress || {}
+            const shipping = finalDeliveryAddress || null
+
+            const meta = {
+                name: personalInfo.fullName,
+                email: personalInfo.email,
+                phone: personalInfo.phone,
+                cardholderName: personalInfo.fullName,
+                billingAddress: {
+                    countryCode: (billing.country || 'ES').toUpperCase(),
+                    region: billing.province || '',
+                    city: billing.city || '',
+                    postcode: billing.postalCode || '',
+                    streetLine1: billing.line1 || '',
+                    streetLine2: billing.line2 || '',
+                },
+                ...(shipping ? {
+                    shippingAddress: {
+                        countryCode: (shipping.country || 'ES').toUpperCase(),
+                        region: shipping.province || '',
+                        city: shipping.city || '',
+                        postcode: shipping.postalCode || '',
+                        streetLine1: shipping.line1 || '',
+                        streetLine2: shipping.line2 || '',
+                    },
+                } : {}),
+            }
+
+            try {
+                cardFieldInstanceRef.current.submit(meta)
+                // We keep isProcessing=true; it will be cleared in the Card Field onSuccess/onError handlers
+            } catch (submitErr) {
+                console.error('Revolut Card Field submit error:', submitErr)
+                showBanner(submitErr.message || 'No se pudo procesar el pago con tarjeta.')
+                setIsProcessing(false)
+            }
         } catch (err) {
-            console.error('Checkout init error:', err)
-            // If failure happened before opening the pop-up (e.g., order creation), show general message
-            showBanner('Ha ocurrido un error al procesar el pedido. Inténtalo de nuevo más tarde')
+            console.error('Error al colocar el pedido:', err)
+            showBanner(err.message || 'Ha ocurrido un error al registrar el pedido. Inténtalo de nuevo.')
             setIsProcessing(false)
         }
     }
+
+    const handleRevolutCardSuccess = async () => {
+        try {
+            const createdOrderId = currentOrderIdRef.current
+            const revolutId = currentRevolutOrderIdRef.current || revolutOrderId
+
+            if (!createdOrderId || !revolutId) {
+                throw new Error('No se pudo confirmar el pago: falta información del pedido.')
+            }
+
+            // Poll backend to resolve latest payment for this Revolut order
+            let paymentId = null
+            const maxAttempts = 10
+            let attempt = 0
+            let delay = 400 // ms
+            while (attempt < maxAttempts && !paymentId) {
+                try {
+                    const resp = await paymentsAPI.getLatestRevolutPayment(revolutId)
+                    if (resp && resp.payment_id) {
+                        paymentId = resp.payment_id
+                        break
+                    }
+                } catch (e) {
+                    if (e?.status !== 404) {
+                        throw e
+                    }
+                }
+                await new Promise((r) => setTimeout(r, delay))
+                attempt++
+                delay = Math.min(1500, Math.floor(delay * 1.5))
+            }
+
+            if (!paymentId) {
+                throw new Error('No se pudo obtener el identificador del pago de Revolut. Por favor, inténtalo de nuevo.')
+            }
+
+            // Confirm payment on our API (mark as paid)
+            await ordersAPI.updatePayment({
+                orderId: createdOrderId,
+                paymentId,
+            })
+
+            const tokenKey = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+            if (typeof window !== 'undefined') {
+                sessionStorage.setItem(`order_token_${tokenKey}`, JSON.stringify({
+                    orderId: createdOrderId,
+                    contact: personalInfo.email,
+                    contactType: 'email',
+                }))
+            }
+
+            clearCart()
+            setShowAddressInput(false)
+            setPersonalInfo({fullName: '', email: '', phone: ''})
+            setDeliveryAddress({})
+            setInvoicingAddress({})
+            setUseSameAddressForInvoicing(true)
+            setRevolutOrderId(null)
+            setRevolutOrderToken(null)
+            currentOrderIdRef.current = null
+            currentRevolutOrderIdRef.current = null
+
+            if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
+                try {
+                    cardFieldInstanceRef.current.destroy()
+                } catch (e) {
+                    // ignore
+                }
+            }
+            cardFieldInstanceRef.current = null
+
+            setTimeout(() => {
+                router.push(`/pedido-completado?token=${tokenKey}`)
+                onClose()
+            }, 50)
+        } catch (err) {
+            console.error('Order creation after payment failed:', err)
+            showBanner(err.message || 'No se pudo registrar el pedido tras el pago.')
+        } finally {
+            setIsProcessing(false)
+        }
+    }
+
+    // ------------------------
+    // Revolut Card Field initialisation
+    // ------------------------
+
+    useEffect(() => {
+        // Only initialise Card Field when we are on the address/payment step and have a valid token
+        if (!showAddressInput || !revolutOrderToken || !cardFieldContainerRef.current) {
+            return
+        }
+
+        let isMounted = true
+
+        const initCardField = async () => {
+            try {
+                if (!revolutModuleRef.current) {
+                    const mod = await import('@revolut/checkout')
+                    revolutModuleRef.current = mod && (mod.default || mod)
+                }
+
+                if (!isMounted) return
+
+                const envMode = (process.env.NEXT_PUBLIC_REVOLUT_MODE || 'sandbox').toLowerCase()
+                const checkoutInstance = await revolutModuleRef.current(
+                    revolutOrderToken,
+                    envMode === 'production' ? undefined : 'sandbox'
+                )
+
+                if (!isMounted) return
+
+                const {createCardField} = checkoutInstance || {}
+                if (!createCardField) {
+                    throw new Error('No se pudo inicializar el formulario de tarjeta de Revolut')
+                }
+
+                // Destroy any previous instance before creating a new one
+                if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
+                    try {
+                        cardFieldInstanceRef.current.destroy()
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+
+                const revLocale = process.env.NEXT_PUBLIC_REVOLUT_LOCALE || 'auto'
+
+                const instance = createCardField({
+                    target: cardFieldContainerRef.current,
+                    ...(revLocale ? {locale: revLocale} : {}),
+                    onSuccess: () => {
+                        // Let the dedicated handler orchestrate payment confirmation and redirect
+                        handleRevolutCardSuccess()
+                    },
+                    onError: (error) => {
+                        console.error('Revolut Card Field error:', error)
+                        showBanner(error?.message || 'Error en el pago con tarjeta. Por favor, inténtalo de nuevo.')
+                        setIsProcessing(false)
+                    },
+                })
+
+                cardFieldInstanceRef.current = instance
+            } catch (err) {
+                console.error('Error inicializando el formulario de tarjeta de Revolut:', err)
+                showBanner(err.message || 'No se pudo cargar el formulario de tarjeta. Inténtalo de nuevo.')
+            }
+        }
+
+        initCardField()
+
+        return () => {
+            isMounted = false
+            if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
+                try {
+                    cardFieldInstanceRef.current.destroy()
+                } catch (e) {
+                    // ignore
+                }
+            }
+            cardFieldInstanceRef.current = null
+        }
+    }, [showAddressInput, revolutOrderToken, open])
 
     // ------------------------
     // Google Pay Express Checkout
@@ -521,7 +682,19 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     return (
-        <Dialog open={open} onClose={onClose} className="relative z-10">
+        <>
+            {/* Full-screen loading overlay to block all interactions during critical payment steps */}
+            {isProcessing && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/70">
+                    <div className="flex flex-col items-center gap-3">
+                        <div
+                            className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
+                        <p className="text-sm text-gray-700">Procesando tu pedido...</p>
+                    </div>
+                </div>
+            )}
+
+            <Dialog open={open} onClose={onClose} className="relative z-10">
             <DialogBackdrop
                 transition
                 className="fixed inset-0 bg-gray-500/75 transition-opacity duration-500 ease-in-out data-[closed]:opacity-0"
@@ -737,7 +910,15 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                     )
                                                 )}
 
-                                                {/* Método de pago eliminado: usamos el pop-up de Revolut al pulsar "Pagar" */}
+                                                {/* Revolut Card Field container */}
+                                                <div className="mt-4">
+                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pago con tarjeta</h3>
+                                                    <div
+                                                        ref={cardFieldContainerRef}
+                                                        id="card-field"
+                                                        className="rounded-md border border-gray-300 bg-white px-3 py-3"
+                                                    />
+                                                </div>
                                             </div>
                                         )}
 
@@ -849,5 +1030,6 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 </div>
             </div>
         </Dialog>
+        </>
     )
 }

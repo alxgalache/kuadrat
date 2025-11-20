@@ -42,44 +42,8 @@ export default function ArtProductDetailPage({ params }) {
     }
   }
 
-  const handlePurchase = async () => {
-    let guestEmail = null
-
-    // If user is not logged in, prompt for email (guest checkout)
-    if (!user) {
-      guestEmail = window.prompt('Introduce tu email para recibir la confirmación de compra:')
-
-      if (!guestEmail) {
-        // User cancelled
-        return
-      }
-
-      // Basic email validation
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(guestEmail)) {
-        showBanner('Por favor, introduce un email válido.')
-        return
-      }
-    }
-
-    setPurchasing(true)
-    try {
-      // Create order with art product
-      await ordersAPI.create([{ type: 'art', id: product.id }], guestEmail)
-      showBanner('¡Compra exitosa! Revisa tu correo electrónico para confirmación.')
-
-      if (user) {
-        router.push('/orders')
-      } else {
-        // For guest checkout, redirect to home or gallery
-        router.push('/galeria')
-      }
-    } catch (err) {
-      showBanner(err.message || 'Compra fallida. Por favor, inténtalo de nuevo.')
-    } finally {
-      setPurchasing(false)
-    }
-  }
+  // NOTE: Legacy direct purchase flow (without Revolut) has been removed.
+  // The gallery page now relies solely on the cart + checkout drawer flow.
 
   const handleViewAuthorBio = async () => {
     if (!product?.seller_slug) {

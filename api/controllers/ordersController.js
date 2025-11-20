@@ -1,13 +1,13 @@
 const { db } = require('../config/database');
 const { ApiError } = require('../middleware/errorHandler');
 const { sendPurchaseConfirmation, sendPaymentConfirmation } = require('../services/emailService');
-const { createRevolutOrder } = require('../services/revolutService');
+const { createRevolutOrder, updateRevolutOrder } = require('../services/revolutService');
 
 // Public site base URL used for product images/links in Revolut payload
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
 const REV_LOCATION_ID = process.env.REVOLUT_LOCATION_ID || null;
 
-// Create new order (new flow: creates Revolut order first, then persists DB order)
+// Create new order (legacy popup flow: creates Revolut order first, then persists DB order)
 const createOrder = async (req, res, next) => {
   try {
     const { items, guest_email, contact, contact_type, delivery_address, invoicing_address, customer } = req.body;
@@ -524,6 +524,464 @@ const createOrder = async (req, res, next) => {
   }
 };
 
+// New flow: persist order in DB with status 'pending' for an existing Revolut order
+// and PATCH the Revolut order with full details (customer, line_items, shipping).
+// POST /api/orders/placeOrder
+const placeOrder = async (req, res, next) => {
+  try {
+    const {
+      items,
+      guest_email,
+      contact,
+      contact_type,
+      delivery_address,
+      invoicing_address,
+      customer,
+      revolut_order_id,
+      currency = 'EUR',
+      description = 'Pedido realizado en 140d Galería de Arte',
+    } = req.body || {};
+
+    if (!revolut_order_id) {
+      throw new ApiError(400, 'Falta revolut_order_id en la solicitud', 'Solicitud inválida');
+    }
+
+    // Check if user is authenticated or guest (same logic as createOrder)
+    const isAuthenticated = req.user && req.user.id;
+    const isGuest = !isAuthenticated;
+
+    // Validate contact info (new flow) or guest_email (legacy)
+    if (isGuest) {
+      if (contact && contact_type) {
+        if (contact_type === 'email') {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(contact)) {
+            throw new ApiError(400, 'Formato de email inválido', 'Email inválido');
+          }
+        } else if (contact_type === 'whatsapp') {
+          const phoneRegex = /^\+\d{1,4}\d{6,15}$/;
+          if (!phoneRegex.test(contact)) {
+            throw new ApiError(400, 'Formato de teléfono inválido', 'Teléfono inválido');
+          }
+        } else {
+          throw new ApiError(400, 'Tipo de contacto inválido', 'Tipo de contacto inválido');
+        }
+      } else if (guest_email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(guest_email)) {
+          throw new ApiError(400, 'Formato de email inválido', 'Email inválido');
+        }
+      } else {
+        throw new ApiError(400, 'Se requiere información de contacto para compra como invitado', 'Contacto requerido');
+      }
+    }
+
+    // Get buyer_id (authenticated user or system guest user)
+    let buyer_id;
+    let buyer_email;
+    let buyer_contact;
+    let buyer_contact_type;
+
+    if (isAuthenticated) {
+      buyer_id = req.user.id;
+      buyer_email = req.user.email;
+      buyer_contact = contact || req.user.email;
+      buyer_contact_type = contact_type || 'email';
+    } else {
+      const guestUserResult = await db.execute({
+        sql: 'SELECT id FROM users WHERE email = ?',
+        args: ['SYSTEM_GUEST@kuadrat.internal'],
+      });
+      if (guestUserResult.rows.length === 0) {
+        throw new ApiError(500, 'Sistema de invitados no configurado', 'Error del servidor');
+      }
+      buyer_id = guestUserResult.rows[0].id;
+
+      if (contact && contact_type) {
+        buyer_contact = contact;
+        buyer_contact_type = contact_type;
+        if (contact_type === 'email') {
+          buyer_email = contact;
+        }
+      } else {
+        buyer_email = guest_email;
+        buyer_contact = guest_email;
+        buyer_contact_type = 'email';
+      }
+    }
+
+    // Validate input - items should be array of { type: 'art' | 'other', id, variantId?, shipping? }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      throw new ApiError(400, 'items debe ser un array no vacío', 'Solicitud inválida');
+    }
+
+    const itemsWithoutShipping = items.filter((item) => !item.shipping);
+    if (itemsWithoutShipping.length > 0) {
+      throw new ApiError(400, 'Todos los productos deben tener información de envío', 'Información de envío faltante');
+    }
+
+    // Separate art and others items
+    const artItems = items.filter((item) => item.type === 'art');
+    const othersItems = items.filter((item) => item.type === 'other');
+
+    // Fetch art products
+    const artProducts = [];
+    if (artItems.length > 0) {
+      const artPlaceholders = artItems.map(() => '?').join(',');
+      const artIds = artItems.map((item) => item.id);
+      const artResult = await db.execute({
+        sql: `SELECT * FROM art WHERE id IN (${artPlaceholders})`,
+        args: artIds,
+      });
+      if (artResult.rows.length !== artItems.length) {
+        throw new ApiError(404, 'Una o más obras de arte no fueron encontradas', 'Obras no encontradas');
+      }
+      artProducts.push(...artResult.rows);
+      const soldArt = artProducts.filter((p) => p.is_sold === 1);
+      if (soldArt.length > 0) {
+        throw new ApiError(400, `La obra ${soldArt[0].name} ya ha sido vendida`, 'Obra no disponible');
+      }
+    }
+
+    // Fetch others products and their variations
+    const othersProducts = [];
+    const othersVariations = [];
+    if (othersItems.length > 0) {
+      const uniqueOthersIds = [...new Set(othersItems.map((item) => item.id))];
+      const othersPlaceholders = uniqueOthersIds.map(() => '?').join(',');
+      const othersResult = await db.execute({
+        sql: `SELECT * FROM others WHERE id IN (${othersPlaceholders})`,
+        args: uniqueOthersIds,
+      });
+      if (othersResult.rows.length !== uniqueOthersIds.length) {
+        throw new ApiError(404, 'Uno o más productos no fueron encontrados', 'Productos no encontrados');
+      }
+      othersProducts.push(...othersResult.rows);
+      const soldOthers = othersProducts.filter((p) => p.is_sold === 1);
+      if (soldOthers.length > 0) {
+        throw new ApiError(400, `El producto ${soldOthers[0].name} ya ha sido vendido`, 'Producto no disponible');
+      }
+      for (const item of othersItems) {
+        const varResult = await db.execute({
+          sql: 'SELECT * FROM other_vars WHERE id = ? AND other_id = ?',
+          args: [item.variantId, item.id],
+        });
+        if (varResult.rows.length === 0) {
+          throw new ApiError(404, 'Variación no encontrada', 'Variación no encontrada');
+        }
+        const variant = varResult.rows[0];
+        const variantQuantity = othersItems.filter(
+          (i) => i.id === item.id && i.variantId === item.variantId,
+        ).length;
+        if (variant.stock < variantQuantity) {
+          const product = othersProducts.find((p) => p.id === item.id);
+          throw new ApiError(
+            400,
+            `Stock insuficiente para ${product.name}. Disponible: ${variant.stock}, solicitado: ${variantQuantity}`,
+            'Stock insuficiente',
+          );
+        }
+        othersVariations.push(variant);
+      }
+    }
+
+    // Calculate total price (products only; shipping tracked separately per item)
+    let totalPrice = 0;
+    totalPrice += artProducts.reduce((sum, product) => sum + product.price, 0);
+    totalPrice += othersProducts.reduce((sum, product) => sum + product.price, 0);
+
+    // Build compact items for Revolut (same grouping as legacy flow)
+    const groupKey = (it) => `${it.type}|${it.id}|${it.type === 'other' ? (it.variantId || 'null') : 'na'}`;
+    const grouped = new Map();
+    for (const it of items) {
+      const key = groupKey(it);
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...it, quantity: 0 });
+      }
+      const g = grouped.get(key);
+      g.quantity += 1;
+      if (!g.shipping && it.shipping) g.shipping = it.shipping;
+    }
+    const compactItems = Array.from(grouped.values()).map((g) => ({
+      type: g.type,
+      id: g.id,
+      ...(g.type === 'other' ? { variantId: g.variantId } : {}),
+      quantity: g.quantity,
+      shipping: g.shipping,
+    }));
+
+    const computeShippingTotal = (cItems) => {
+      let shippingTotal = 0;
+      for (const it of cItems) {
+        const c = it.shipping?.cost || 0;
+        shippingTotal += Math.round(c * 100);
+      }
+      return shippingTotal;
+    };
+
+    const artMap = new Map(artProducts.map((p) => [p.id, p]));
+    const otherMap = new Map(othersProducts.map((p) => [p.id, p]));
+    const lineItems = [];
+    let productsTotal = 0;
+    for (const it of compactItems) {
+      const src = it.type === 'art' ? artMap.get(it.id) : otherMap.get(it.id);
+      if (!src) continue;
+      const qty = Math.max(1, parseInt(it.quantity || 1, 10));
+      const unitPriceMinor = Math.round((src.price || 0) * 100);
+      const totalMinor = unitPriceMinor * qty;
+      productsTotal += totalMinor;
+
+      const imageUrl = it.type === 'art'
+        ? `${SITE_BASE_URL}/api/art/images/${encodeURIComponent(src.basename)}`
+        : `${SITE_BASE_URL}/api/others/images/${encodeURIComponent(src.basename)}`;
+      const productUrl = it.type === 'art'
+        ? `${SITE_BASE_URL}/galeria/p/${src.slug}`
+        : `${SITE_BASE_URL}/galeria/mas/p/${src.slug}`;
+
+      lineItems.push({
+        name: src.name,
+        type: 'physical',
+        quantity: { value: qty },
+        unit_price_amount: unitPriceMinor,
+        total_amount: totalMinor,
+        external_id: src.slug,
+        taxes: [],
+        image_urls: [imageUrl],
+        description: (src.description || '').toString().slice(0, 1000),
+        url: productUrl,
+      });
+    }
+
+    const shippingTotal = computeShippingTotal(compactItems);
+    const amountMinor = productsTotal + shippingTotal;
+    if (amountMinor <= 0) {
+      throw new ApiError(400, 'El importe debe ser mayor que cero', 'Importe inválido');
+    }
+
+    const mapAddressToRevolut = (addr) => {
+      if (!addr) return null;
+      return {
+        street_line_1: addr.line1 || '',
+        street_line_2: addr.line2 || '',
+        region: addr.province || '',
+        city: addr.city || '',
+        country_code: (addr.country || 'ES').toUpperCase(),
+        postcode: addr.postalCode || '',
+      };
+    };
+
+    let customerBlock = undefined;
+    if (customer && (customer.email || customer.full_name || customer.fullName)) {
+      customerBlock = {
+        email: customer.email,
+        full_name: customer.full_name || customer.fullName || '',
+        phone: customer.phone,
+      };
+      if (!customerBlock.phone) {
+        throw new ApiError(400, 'El teléfono del cliente es obligatorio', 'Datos del cliente inválidos');
+      }
+      if (!customerBlock.email) {
+        throw new ApiError(400, 'El email del cliente es obligatorio', 'Datos del cliente inválidos');
+      }
+    }
+
+    const allPickup = compactItems.every((i) => i.shipping?.methodType === 'pickup');
+    let shippingBlock = undefined;
+    if (allPickup) {
+      const addr = mapAddressToRevolut(invoicing_address || delivery_address);
+      if (addr && customerBlock) {
+        shippingBlock = {
+          address: addr,
+          contact: { name: customerBlock.full_name, email: customerBlock.email, phone: customerBlock.phone },
+        };
+      }
+    } else {
+      const addr = mapAddressToRevolut(delivery_address);
+      if (addr && customerBlock) {
+        shippingBlock = {
+          address: addr,
+          contact: { name: customerBlock.full_name, email: customerBlock.email, phone: customerBlock.phone },
+        };
+      }
+    }
+
+    // 1) Persist order in DB with status 'pending' and revolut_order_id
+    const orderResult = await db.execute({
+      sql: `INSERT INTO orders (
+        buyer_id,
+        total_price,
+        status,
+        guest_email,
+        contact,
+        contact_type,
+        delivery_address_line_1,
+        delivery_address_line_2,
+        delivery_postal_code,
+        delivery_city,
+        delivery_province,
+        delivery_country,
+        delivery_lat,
+        delivery_lng,
+        invoicing_address_line_1,
+        invoicing_address_line_2,
+        invoicing_postal_code,
+        invoicing_city,
+        invoicing_province,
+        invoicing_country,
+        revolut_order_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        buyer_id ?? null,
+        totalPrice ?? 0,
+        'pending',
+        isGuest ? (guest_email || null) : null,
+        buyer_contact ?? null,
+        buyer_contact_type ?? null,
+        delivery_address?.line1 ?? null,
+        delivery_address?.line2 ?? null,
+        delivery_address?.postalCode ?? null,
+        delivery_address?.city ?? null,
+        delivery_address?.province ?? null,
+        delivery_address?.country ?? null,
+        delivery_address?.lat ?? null,
+        delivery_address?.lng ?? null,
+        invoicing_address?.line1 ?? null,
+        invoicing_address?.line2 ?? null,
+        invoicing_address?.postalCode ?? null,
+        invoicing_address?.city ?? null,
+        invoicing_address?.province ?? null,
+        invoicing_address?.country ?? null,
+        revolut_order_id,
+      ],
+    });
+
+    const orderId = Number(orderResult.lastInsertRowid);
+
+    // 2) Create order item rows (art and others) without altering inventory yet
+    for (const item of artItems) {
+      const product = artProducts.find((p) => p.id === item.id);
+      await db.execute({
+        sql: `INSERT INTO art_order_items (
+          order_id,
+          art_id,
+          price_at_purchase,
+          shipping_method_id,
+          shipping_cost,
+          shipping_method_name,
+          shipping_method_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          orderId,
+          product.id,
+          product.price,
+          item.shipping?.methodId || null,
+          item.shipping?.cost || 0,
+          item.shipping?.methodName || null,
+          item.shipping?.methodType || null,
+        ],
+      });
+    }
+
+    for (const item of othersItems) {
+      const product = othersProducts.find((p) => p.id === item.id);
+      const variant = othersVariations.find((v) => v.id === item.variantId);
+      await db.execute({
+        sql: `INSERT INTO other_order_items (
+          order_id,
+          other_id,
+          other_var_id,
+          price_at_purchase,
+          shipping_method_id,
+          shipping_cost,
+          shipping_method_name,
+          shipping_method_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          orderId,
+          product.id,
+          variant.id,
+          product.price,
+          item.shipping?.methodId || null,
+          item.shipping?.cost || 0,
+          item.shipping?.methodName || null,
+          item.shipping?.methodType || null,
+        ],
+      });
+    }
+
+    // 3) PATCH Revolut order with full payload (amount, currency, description, line_items, customer, shipping, location)
+    const revPayload = {
+      amount: amountMinor,
+      currency,
+      capture_mode: 'automatic',
+      description,
+      merchant_order_ext_ref: `cart-${Date.now()}`,
+      line_items: lineItems,
+      ...(customerBlock ? { customer: customerBlock } : {}),
+      ...(shippingBlock ? { shipping: shippingBlock } : {}),
+      ...(REV_LOCATION_ID ? { location_id: REV_LOCATION_ID } : {}),
+    };
+
+    await updateRevolutOrder(revolut_order_id, revPayload);
+
+    // 4) Load order details (without sending any emails yet)
+    const orderDetailsResult = await db.execute({
+      sql: `
+        SELECT
+          o.*,
+          u.email as buyer_email
+        FROM orders o
+        LEFT JOIN users u ON o.buyer_id = u.id
+        WHERE o.id = ?
+      `,
+      args: [orderId],
+    });
+
+    const artOrderItemsResult = await db.execute({
+      sql: `
+        SELECT
+          aoi.*,
+          a.name,
+          a.type,
+          a.basename,
+          a.seller_id,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ?
+      `,
+      args: [orderId],
+    });
+
+    const othersOrderItemsResult = await db.execute({
+      sql: `
+        SELECT
+          ooi.*,
+          o.name,
+          o.basename,
+          o.seller_id,
+          ov.key as variant_key,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ?
+      `,
+      args: [orderId],
+    });
+
+    const order = orderDetailsResult.rows[0];
+    order.items = [...artOrderItemsResult.rows, ...othersOrderItemsResult.rows];
+
+    res.status(201).json({
+      success: true,
+      order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get all orders for logged-in user (seller view - shows only their products)
 const getUserOrders = async (req, res, next) => {
   try {
@@ -891,6 +1349,7 @@ const getOrderByIdAdmin = async (req, res, next) => {
 
 module.exports = {
   createOrder,
+  placeOrder,
   confirmOrderPayment,
   getUserOrders,
   getOrderById,

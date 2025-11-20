@@ -164,16 +164,17 @@ function mapAddressToRevolut(addr) {
   };
 }
 
-// POST /api/payments/revolut/order
-const createRevolutOrderEndpoint = async (req, res, next) => {
+// POST /api/payments/revolut/init-order
+// New flow: create a minimal Revolut order using only { amount, currency }.
+// The full payload (customer, line_items, shipping, description, location_id)
+// will be PATCHed later from the /api/orders/placeOrder endpoint once the
+// buyer has filled in all personal and address information.
+const initRevolutOrderEndpoint = async (req, res, next) => {
   try {
     const {
+      // compactItems: [{ type:'art'|'other', id, variantId?, quantity, shipping }]
       items: compactItems,
       currency = 'EUR',
-      description = 'Pedido realizado en 140d Galería de Arte',
-      customer,
-      delivery_address,
-      invoicing_address,
     } = req.body || {};
 
     if (!Array.isArray(compactItems) || compactItems.length === 0) {
@@ -190,54 +191,11 @@ const createRevolutOrderEndpoint = async (req, res, next) => {
       throw new ApiError(400, 'El importe debe ser mayor que cero', 'Importe inválido');
     }
 
-    // Customer mapping (phone and email mandatory as per user spec)
-    const customerBlock = customer ? {
-      email: customer.email,
-      full_name: customer.full_name || customer.fullName || '',
-      phone: customer.phone,
-    } : undefined;
-
-    // Shipping mapping
-    // Per spec: If pickup-only (all items pickup), use buyer invoicing address and personal info.
-    const allPickup = compactItems.every(i => i.shipping?.methodType === 'pickup');
-    let shippingBlock = undefined;
-    if (allPickup) {
-      // TODO: Multi-seller pickup policy. For now use buyer invoicing address as requested.
-      const addr = mapAddressToRevolut(invoicing_address || delivery_address);
-      if (addr && customerBlock) {
-        shippingBlock = {
-          address: addr,
-          contact: {
-            name: customerBlock.full_name,
-            email: customerBlock.email,
-            phone: customerBlock.phone,
-          },
-        };
-      }
-    } else {
-      // At least one delivery item: use provided delivery address and buyer contact
-      const addr = mapAddressToRevolut(delivery_address);
-      if (addr && customerBlock) {
-        shippingBlock = {
-          address: addr,
-          contact: {
-            name: customerBlock.full_name,
-            email: customerBlock.email,
-            phone: customerBlock.phone,
-          },
-        };
-      }
-    }
-
+    // Minimal payload for initial order creation per spec: only amount and currency.
+    // All descriptive/customer/shipping data will be PATCHed later.
     const payload = {
       amount: amountMinor,
       currency,
-      capture_mode: 'automatic',
-      description,
-      merchant_order_ext_ref: `cart-${Date.now()}`,
-      line_items: lineItems,
-      ...(customerBlock ? { customer: customerBlock } : {}),
-      ...(shippingBlock ? { shipping: shippingBlock } : {}),
       ...(REV_LOCATION_ID ? { location_id: REV_LOCATION_ID } : {}),
     };
 
@@ -270,7 +228,7 @@ const revolutWebhookEndpoint = async (req, res, next) => {
 };
 
 module.exports = {
-  createRevolutOrderEndpoint,
+  initRevolutOrderEndpoint,
   revolutWebhookEndpoint,
   getLatestRevolutPaymentForOrder,
 };

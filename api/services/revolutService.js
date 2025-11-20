@@ -81,6 +81,45 @@ async function getRevolutOrder(orderId) {
 }
 
 /**
+ * Patch/update an existing Revolut Order
+ * Used in the new flow to enrich an order (created with minimal fields)
+ * with customer and address information once the buyer completes the form.
+ *
+ * @param {string} orderId - Revolut order id
+ * @param {Object} payload - Partial order payload to PATCH
+ * @returns {Promise<Object>} Updated Revolut order object
+ */
+async function updateRevolutOrder(orderId, payload) {
+  const apiVersion = process.env.REVOLUT_API_VERSION;
+  const secret = process.env.REVOLUT_SECRET_KEY;
+  if (!secret) {
+    throw new Error('REVOLUT_SECRET_KEY is not configured');
+  }
+
+  const url = `${getBaseUrl()}/orders/${encodeURIComponent(orderId)}`;
+  try {
+    const res = await axios.patch(url, payload, {
+      headers: {
+        'Authorization': `Bearer ${secret}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Revolut-Api-Version': `${apiVersion}`,
+      },
+      timeout: 15000,
+    });
+    return res.data;
+  } catch (error) {
+    const status = error.response?.status || 500;
+    const data = error.response?.data || {};
+    const errMsg = data.message || data.error_description || data.error || error.message || 'Failed to update Revolut order';
+    const err = new Error(errMsg);
+    err.status = status;
+    err.response = data;
+    throw err;
+  }
+}
+
+/**
  * List payments created for a Revolut Order
  * Tries Merchant API endpoint: GET /orders/{orderId}/payments
  * @param {string} orderId
@@ -163,4 +202,5 @@ module.exports = {
   getRevolutOrder,
   getRevolutOrderPayments,
   getRevolutPayment,
+  updateRevolutOrder,
 };

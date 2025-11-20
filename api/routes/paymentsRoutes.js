@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 
-const { createRevolutOrderEndpoint, revolutWebhookEndpoint, getLatestRevolutPaymentForOrder } = require('../controllers/paymentsController');
+const { initRevolutOrderEndpoint, revolutWebhookEndpoint, getLatestRevolutPaymentForOrder } = require('../controllers/paymentsController');
 
-// Create Revolut order (returns token)
-router.post('/revolut/order', createRevolutOrderEndpoint);
+// Initialise Revolut order (minimal payload: amount + currency, returns token and id)
+router.post('/revolut/init-order', initRevolutOrderEndpoint);
 
 // Webhook endpoint (Revolut -> our server)
 router.post('/revolut/webhook', express.json({ type: '*/*' }), revolutWebhookEndpoint);

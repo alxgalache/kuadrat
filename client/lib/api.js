@@ -291,6 +291,14 @@ export const ordersAPI = {
     });
   },
 
+  // New flow: place order for an existing Revolut order (Card Field checkout)
+  placeOrder: async (payload) => {
+    return apiRequest('/orders/placeOrder', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   // Confirm payment / update order status
   updatePayment: async ({ orderId, paymentId = null }) => {
     const body = {
@@ -325,20 +333,20 @@ export const ordersAPI = {
 
 // Payments API
 export const paymentsAPI = {
-  // Create a Revolut order and get the widget token
-  createRevolutOrder: async (payloadOrItems, currency = 'EUR', description = 'Pedido realizado en 140d.art') => {
-    // Backward compatibility: if first arg is an array, use old signature
+  // Initialise a Revolut order and get the token + order id (new Card Field flow)
+  initRevolutOrder: async (payloadOrItems, currency = 'EUR') => {
+    // Convenience: allow passing an array of compact items directly
     const body = Array.isArray(payloadOrItems)
-      ? { items: payloadOrItems, currency, description }
-      : payloadOrItems;
+      ? { items: payloadOrItems, currency }
+      : { ...payloadOrItems, ...(payloadOrItems.currency ? {} : { currency }) };
 
-    return apiRequest('/payments/revolut/order', {
+    return apiRequest('/payments/revolut/init-order', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   },
 
-  // Resolve the latest payment for a Revolut order (to get payment_id after popup)
+  // Resolve the latest payment for a Revolut order (to get payment_id after Card Field / popup)
   getLatestRevolutPayment: async (revolutOrderId) => {
     return apiRequest(`/payments/revolut/order/${encodeURIComponent(revolutOrderId)}/payments/latest`, {
       method: 'GET',
