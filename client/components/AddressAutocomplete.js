@@ -473,13 +473,13 @@ export default function AddressAutocomplete({
           <label htmlFor="country" className="block text-sm font-medium text-gray-700">
             País
           </label>
-          <div className="mt-2 grid grid-cols-1">
+          <div className="mt-1 grid grid-cols-1">
             <select
               id="country"
               name="country"
               value={value.country || defaultCountry}
               onChange={(e) => onChange({ ...value, country: e.target.value })}
-              className="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white py-1.5 pr-8 pl-3 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600 sm:text-sm/6"
+              className="col-start-1 row-start-1 w-full appearance-none border border-gray-300 rounded-md bg-white py-1.5 pr-8 pl-3 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600 sm:text-sm/6"
             >
               <option value="ES">España</option>
             </select>
