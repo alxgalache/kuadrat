@@ -1,11 +1,16 @@
 const { db } = require('../config/database');
 const { ApiError } = require('../middleware/errorHandler');
 const { sendPurchaseConfirmation, sendPaymentConfirmation } = require('../services/emailService');
+const { createRevolutOrder } = require('../services/revolutService');
 
-// Create new order
+// Public site base URL used for product images/links in Revolut payload
+const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
+const REV_LOCATION_ID = process.env.REVOLUT_LOCATION_ID || null;
+
+// Create new order (new flow: creates Revolut order first, then persists DB order)
 const createOrder = async (req, res, next) => {
   try {
-    const { items, guest_email, contact, contact_type, delivery_address, invoicing_address } = req.body;
+    const { items, guest_email, contact, contact_type, delivery_address, invoicing_address, customer } = req.body;
 
     // Check if user is authenticated or guest
     const isAuthenticated = req.user && req.user.id;
@@ -176,12 +181,153 @@ const createOrder = async (req, res, next) => {
       }
     }
 
-    // Calculate total price
+    // Calculate total price (products only; shipping is tracked per item rows)
     let totalPrice = 0;
     totalPrice += artProducts.reduce((sum, product) => sum + product.price, 0);
     totalPrice += othersProducts.reduce((sum, product) => sum + product.price, 0);
 
-    // Create order with address information
+    // ==========================
+    // Revolut Order (pop-up flow)
+    // ==========================
+    // Build compact items (grouped by product+variant) with quantity and one shipping block per cart line
+    const groupKey = (it) => `${it.type}|${it.id}|${it.type === 'other' ? (it.variantId || 'null') : 'na'}`;
+    const grouped = new Map();
+    for (const it of items) {
+      const key = groupKey(it);
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...it, quantity: 0 });
+      }
+      const g = grouped.get(key);
+      g.quantity += 1;
+      // ensure we keep the first shipping object as the line's shipping (charge once per line)
+      if (!g.shipping && it.shipping) g.shipping = it.shipping;
+    }
+    const compactItems = Array.from(grouped.values()).map((g) => ({
+      type: g.type,
+      id: g.id,
+      ...(g.type === 'other' ? { variantId: g.variantId } : {}),
+      quantity: g.quantity,
+      shipping: g.shipping,
+    }));
+
+    // Helper: compute shipping total (once per line)
+    const computeShippingTotal = (cItems) => {
+      let shippingTotal = 0;
+      for (const it of cItems) {
+        const c = it.shipping?.cost || 0;
+        shippingTotal += Math.round(c * 100);
+      }
+      return shippingTotal;
+    };
+
+    // Build Revolut line_items and totals using already-fetched product rows
+    const artMap = new Map(artProducts.map((p) => [p.id, p]));
+    const otherMap = new Map(othersProducts.map((p) => [p.id, p]));
+    const lineItems = [];
+    let productsTotal = 0;
+    for (const it of compactItems) {
+      const src = it.type === 'art' ? artMap.get(it.id) : otherMap.get(it.id);
+      if (!src) continue;
+      const qty = Math.max(1, parseInt(it.quantity || 1, 10));
+      const unitPriceMinor = Math.round((src.price || 0) * 100);
+      const totalMinor = unitPriceMinor * qty;
+      productsTotal += totalMinor;
+
+      const imageUrl = it.type === 'art'
+        ? `${SITE_BASE_URL}/api/art/images/${encodeURIComponent(src.basename)}`
+        : `${SITE_BASE_URL}/api/others/images/${encodeURIComponent(src.basename)}`;
+      const productUrl = it.type === 'art'
+        ? `${SITE_BASE_URL}/galeria/p/${src.slug}`
+        : `${SITE_BASE_URL}/galeria/mas/p/${src.slug}`;
+
+      lineItems.push({
+        name: src.name,
+        type: 'physical',
+        quantity: { value: qty },
+        unit_price_amount: unitPriceMinor,
+        total_amount: totalMinor,
+        external_id: src.slug,
+        taxes: [],
+        image_urls: [imageUrl],
+        description: (src.description || '').toString().slice(0, 1000),
+        url: productUrl,
+      });
+    }
+
+    const shippingTotal = computeShippingTotal(compactItems);
+    const amountMinor = productsTotal + shippingTotal;
+    if (amountMinor <= 0) {
+      throw new ApiError(400, 'El importe debe ser mayor que cero', 'Importe inválido');
+    }
+
+    // Map addresses for Revolut shipping block
+    const mapAddressToRevolut = (addr) => {
+      if (!addr) return null;
+      return {
+        street_line_1: addr.line1 || '',
+        street_line_2: addr.line2 || '',
+        region: addr.province || '',
+        city: addr.city || '',
+        country_code: (addr.country || 'ES').toUpperCase(),
+        postcode: addr.postalCode || '',
+      };
+    };
+
+    // Customer block (mandatory phone as per spec)
+    let customerBlock = undefined;
+    if (customer && (customer.email || customer.full_name || customer.fullName)) {
+      customerBlock = {
+        email: customer.email,
+        full_name: customer.full_name || customer.fullName || '',
+        phone: customer.phone,
+      };
+      if (!customerBlock.phone) {
+        throw new ApiError(400, 'El teléfono del cliente es obligatorio', 'Datos del cliente inválidos');
+      }
+      if (!customerBlock.email) {
+        throw new ApiError(400, 'El email del cliente es obligatorio', 'Datos del cliente inválidos');
+      }
+    }
+
+    // Shipping block rules
+    const allPickup = compactItems.every(i => i.shipping?.methodType === 'pickup');
+    let shippingBlock = undefined;
+    if (allPickup) {
+      const addr = mapAddressToRevolut(invoicing_address || delivery_address);
+      if (addr && customerBlock) {
+        shippingBlock = {
+          address: addr,
+          contact: { name: customerBlock.full_name, email: customerBlock.email, phone: customerBlock.phone },
+        };
+      }
+    } else {
+      const addr = mapAddressToRevolut(delivery_address);
+      if (addr && customerBlock) {
+        shippingBlock = {
+          address: addr,
+          contact: { name: customerBlock.full_name, email: customerBlock.email, phone: customerBlock.phone },
+        };
+      }
+    }
+
+    // Create Revolut order first; if this fails, abort without creating DB order
+    const currency = 'EUR';
+    const description = 'Pedido realizado en 140d Galería de Arte';
+    const revPayload = {
+      amount: amountMinor,
+      currency,
+      capture_mode: 'automatic',
+      description,
+      merchant_order_ext_ref: `cart-${Date.now()}`,
+      line_items: lineItems,
+      ...(customerBlock ? { customer: customerBlock } : {}),
+      ...(shippingBlock ? { shipping: shippingBlock } : {}),
+      ...(REV_LOCATION_ID ? { location_id: REV_LOCATION_ID } : {}),
+    };
+
+    const revOrder = await createRevolutOrder(revPayload);
+
+    // Create order with address information (status pending_payment)
     const orderResult = await db.execute({
       sql: `INSERT INTO orders (
         buyer_id,
@@ -232,6 +378,14 @@ const createOrder = async (req, res, next) => {
     });
 
     const orderId = Number(orderResult.lastInsertRowid);
+
+    // Persist Revolut order id in our DB record
+    try {
+      await db.execute({ sql: 'UPDATE orders SET revolut_order_id = ? WHERE id = ?', args: [revOrder.id, orderId] });
+    } catch (e) {
+      // Non-fatal; continue, but the order will lack the revolut id
+      console.error('Failed to store revolut_order_id for order', orderId, e);
+    }
 
     // Create art order items (do NOT mark as sold yet; this will be done after payment confirmation)
     const processedArt = {};
@@ -353,47 +507,17 @@ const createOrder = async (req, res, next) => {
     const order = orderDetailsResult.rows[0];
     order.items = [...artOrderItemsResult.rows, ...othersOrderItemsResult.rows];
 
-    // Send purchase confirmation email (only if contact_type is email)
-    if (buyer_contact_type === 'email') {
-      try {
-        // Get unique seller information from items
-        const sellersInfo = [];
-        for (const item of order.items) {
-          if (item.seller_id && !sellersInfo.find(s => s.id === item.seller_id)) {
-            const sellerResult = await db.execute({
-              sql: 'SELECT email, full_name FROM users WHERE id = ?',
-              args: [item.seller_id],
-            });
-
-            if (sellerResult.rows.length > 0) {
-              const seller = sellerResult.rows[0];
-              sellersInfo.push({
-                email: seller.email,
-                name: seller.full_name,
-                id: item.seller_id,
-              });
-            }
-          }
-        }
-
-        await sendPurchaseConfirmation({
-          orderId,
-          items: order.items,
-          totalPrice,
-          buyerEmail: buyer_email,
-          buyerContact: buyer_contact,
-          contactType: buyer_contact_type,
-          sellers: sellersInfo,
-        });
-      } catch (emailError) {
-        console.error('Failed to send purchase confirmation email:', emailError);
-        // Don't fail the order if email fails
-      }
-    }
+    // New workflow: DO NOT send order confirmation email at creation time
 
     res.status(201).json({
       success: true,
       order,
+      revolut: {
+        token: revOrder.token,
+        amount: revOrder.amount,
+        currency: revOrder.currency,
+        state: revOrder.state,
+      },
     });
   } catch (error) {
     next(error);
@@ -775,14 +899,14 @@ module.exports = {
 };
 
 // Confirm order payment (PUT /api/orders)
-// Body: { order_id: number, revolut_order_id: string, payment_id: string }
+// Body: { order_id: number, payment_id: string }
 async function confirmOrderPayment(req, res, next) {
   try {
-    const { order_id, revolut_order_id, payment_id } = req.body || {};
+    const { order_id, payment_id } = req.body || {};
 
-    // Require all fields explicitly
-    if (!order_id || !revolut_order_id || !payment_id) {
-      throw new ApiError(400, 'Faltan parámetros requeridos: order_id, revolut_order_id y payment_id son obligatorios', 'Solicitud inválida');
+    // Require fields explicitly (revolut_order_id is already stored at creation)
+    if (!order_id || !payment_id) {
+      throw new ApiError(400, 'Faltan parámetros requeridos: order_id y payment_id son obligatorios', 'Solicitud inválida');
     }
 
     // Load order
@@ -794,24 +918,21 @@ async function confirmOrderPayment(req, res, next) {
 
     // If already paid, validate idempotency: IDs must match
     if (order.status === 'paid') {
-      if (order.revolut_order_id && order.revolut_order_id !== revolut_order_id) {
-        throw new ApiError(409, 'El pedido ya está pagado con otro identificador de orden de Revolut', 'Conflicto de pago');
-      }
       if (order.revolut_payment_id && order.revolut_payment_id !== payment_id) {
         throw new ApiError(409, 'El pedido ya está pagado con otro identificador de pago de Revolut', 'Conflicto de pago');
       }
       // Ensure IDs are persisted if they were null previously
       await db.execute({
-        sql: 'UPDATE orders SET revolut_order_id = COALESCE(revolut_order_id, ?), revolut_payment_id = COALESCE(revolut_payment_id, ?) WHERE id = ?',
-        args: [revolut_order_id, payment_id, order_id],
+        sql: 'UPDATE orders SET revolut_payment_id = COALESCE(revolut_payment_id, ?) WHERE id = ?',
+        args: [payment_id, order_id],
       });
       return res.status(200).json({ success: true, order: { id: order_id, status: 'paid' } });
     }
 
     // Store Revolut ids and mark as paid (no remote verification per spec)
     await db.execute({
-      sql: 'UPDATE orders SET status = ?, revolut_order_id = ?, revolut_payment_id = ? WHERE id = ?',
-      args: ['paid', revolut_order_id, payment_id, order_id],
+      sql: 'UPDATE orders SET status = ?, revolut_payment_id = ? WHERE id = ?',
+      args: ['paid', payment_id, order_id],
     });
 
     // Inventory updates
@@ -849,10 +970,74 @@ async function confirmOrderPayment(req, res, next) {
       }
     }
 
-    // Email buyer about payment success if we have email
-    const buyerEmail = order.guest_email || (order.contact_type === 'email' ? order.contact : null);
-    if (buyerEmail) {
-      await sendPaymentConfirmation({ orderId: order_id, buyerEmail, totalPrice: order.total_price });
+    // Send order confirmation email now (after payment success)
+    try {
+      // Reload order details including buyer email
+      const orderDetailsResult = await db.execute({
+        sql: `
+          SELECT o.*, u.email as buyer_email
+          FROM orders o
+          LEFT JOIN users u ON o.buyer_id = u.id
+          WHERE o.id = ?
+        `,
+        args: [order_id],
+      });
+      const orderRow = orderDetailsResult.rows[0] || order;
+
+      // Get items with seller info (same shape as in createOrder)
+      const artOrderItemsResult = await db.execute({
+        sql: `
+          SELECT
+            aoi.*, a.name, a.type, a.basename, a.seller_id, 'art' as product_type
+          FROM art_order_items aoi
+          LEFT JOIN art a ON aoi.art_id = a.id
+          WHERE aoi.order_id = ?
+        `,
+        args: [order_id],
+      });
+      const othersOrderItemsResult = await db.execute({
+        sql: `
+          SELECT
+            ooi.*, o.name, o.basename, o.seller_id, ov.key as variant_key, 'other' as product_type
+          FROM other_order_items ooi
+          LEFT JOIN others o ON ooi.other_id = o.id
+          LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+          WHERE ooi.order_id = ?
+        `,
+        args: [order_id],
+      });
+      const items = [...artOrderItemsResult.rows, ...othersOrderItemsResult.rows];
+
+      // Unique sellers
+      const sellersInfo = [];
+      for (const item of items) {
+        if (item.seller_id && !sellersInfo.find(s => s.id === item.seller_id)) {
+          const sellerResult = await db.execute({ sql: 'SELECT email, full_name FROM users WHERE id = ?', args: [item.seller_id] });
+          if (sellerResult.rows.length > 0) {
+            const seller = sellerResult.rows[0];
+            sellersInfo.push({ email: seller.email, name: seller.full_name, id: item.seller_id });
+          }
+        }
+      }
+
+      const buyerEmail = orderRow.buyer_email || orderRow.guest_email || (orderRow.contact_type === 'email' ? orderRow.contact : null);
+      const buyerContact = orderRow.contact || buyerEmail || null;
+      const contactType = orderRow.contact_type || (buyerEmail ? 'email' : null);
+
+      if (buyerEmail) {
+        await sendPurchaseConfirmation({
+          orderId: order_id,
+          items,
+          totalPrice: orderRow.total_price,
+          buyerEmail,
+          buyerContact,
+          contactType,
+          sellers: sellersInfo,
+        });
+      }
+    } catch (emailErr) {
+      console.error('Failed to send order confirmation email after payment:', emailErr);
+      // Do not fail the request
     }
 
     return res.status(200).json({ success: true, order: { id: order_id, status: 'paid' } });

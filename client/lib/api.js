@@ -260,7 +260,7 @@ export const authorsAPI = {
 
 // Orders API
 export const ordersAPI = {
-  create: async (items, contact = null, contactType = null, deliveryAddress = null, invoicingAddress = null) => {
+  create: async (items, contact = null, contactType = null, deliveryAddress = null, invoicingAddress = null, customer = null) => {
     // items should be array of { type: 'art' | 'other', id, variantId?, shipping }
     // contact is the email or phone number for order updates
     // contactType is 'email' or 'whatsapp'
@@ -281,6 +281,10 @@ export const ordersAPI = {
       requestBody.invoicing_address = invoicingAddress;
     }
 
+    if (customer) {
+      requestBody.customer = customer;
+    }
+
     return apiRequest('/orders', {
       method: 'POST',
       body: JSON.stringify(requestBody),
@@ -288,10 +292,9 @@ export const ordersAPI = {
   },
 
   // Confirm payment / update order status
-  updatePayment: async ({ orderId, revolutOrderId = null, paymentId = null }) => {
+  updatePayment: async ({ orderId, paymentId = null }) => {
     const body = {
       order_id: orderId,
-      ...(revolutOrderId ? { revolut_order_id: revolutOrderId } : {}),
       ...(paymentId ? { payment_id: paymentId } : {}),
     };
     return apiRequest('/orders', {

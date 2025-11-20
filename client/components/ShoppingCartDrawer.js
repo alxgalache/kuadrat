@@ -186,33 +186,26 @@ export default function ShoppingCartDrawer({ open, onClose }) {
       const finalDeliveryAddress = hasDeliveryShipping() ? deliveryAddress : null
       const finalInvoicingAddress = useSameAddressForInvoicing ? deliveryAddress : invoicingAddress
 
-      // 1) Create our internal order first (pending_payment)
+      // 1) Create our internal order first (pending_payment) and also create Revolut order inside API
       const created = await ordersAPI.create(
         orderItems,
         personalInfo.email,
         'email',
         finalDeliveryAddress,
-        finalInvoicingAddress
-      )
-
-      const createdOrderId = created?.order?.id
-      if (!createdOrderId) {
-        throw new Error('No se pudo crear el pedido')
-      }
-
-      // 2) Create Revolut order in our API to get token (send full context for payload build)
-      const { token, revolut_order_id } = await paymentsAPI.createRevolutOrder({
-        items: compactItems,
-        currency: 'EUR',
-        description: 'Pedido realizado en 140d Galería de Arte',
-        customer: {
+        finalInvoicingAddress,
+        {
           full_name: personalInfo.fullName,
           email: personalInfo.email,
           phone: personalInfo.phone,
-        },
-        delivery_address: finalDeliveryAddress,
-        invoicing_address: finalInvoicingAddress,
-      })
+        }
+      )
+
+      const createdOrderId = created?.order?.id
+      const revolutOrderId = created?.order?.revolut_order_id
+      const revolutToken = created?.revolut?.token
+      if (!createdOrderId || !revolutOrderId || !revolutToken) {
+        throw new Error('No se pudo preparar el pago. Por favor, inténtalo de nuevo.')
+      }
 
       // Load Revolut Checkout SDK and open Card pop-up
       if (!revolutModuleRef.current) {
@@ -220,10 +213,12 @@ export default function ShoppingCartDrawer({ open, onClose }) {
         revolutModuleRef.current = mod && (mod.default || mod)
       }
       const envMode = (process.env.NEXT_PUBLIC_REVOLUT_MODE || 'sandbox').toLowerCase()
-      const { payWithPopup } = await revolutModuleRef.current(token, envMode === 'production' ? undefined : 'sandbox')
+      const { payWithPopup } = await revolutModuleRef.current(revolutToken, envMode === 'production' ? undefined : 'sandbox')
+        const revLocale = process.env.NEXT_PUBLIC_REVOLUT_LOCALE || 'auto'
 
       payWithPopup({
         email: personalInfo.email,
+        ...(revLocale ? { locale: revLocale } : {}),
         onSuccess: async () => {
           try {
             // The Revolut SDK does not return a result payload on onSuccess.
@@ -234,7 +229,7 @@ export default function ShoppingCartDrawer({ open, onClose }) {
             let delay = 400 // ms
             while (attempt < maxAttempts && !paymentId) {
               try {
-                const resp = await paymentsAPI.getLatestRevolutPayment(revolut_order_id)
+                const resp = await paymentsAPI.getLatestRevolutPayment(revolutOrderId)
                 if (resp && resp.payment_id) {
                   paymentId = resp.payment_id
                   break
@@ -257,7 +252,6 @@ export default function ShoppingCartDrawer({ open, onClose }) {
             // 3) Confirm payment on our API (mark as paid)
             await ordersAPI.updatePayment({
               orderId: createdOrderId,
-              revolutOrderId: revolut_order_id,
               paymentId,
             })
 
