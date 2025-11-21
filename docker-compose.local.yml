@@ -1,0 +1,22 @@
+###############################################
+# Kuadrat – Docker Compose overrides: PRE env #
+###############################################
+
+# Usage (pre / staging environment):
+#   docker compose -f docker-compose.yml -f docker-compose.pre.yml up -d
+#
+# This file overrides only the values that should differ from the
+# production defaults defined in docker-compose.yml.
+
+services:
+  api:
+    environment:
+      NODE_ENV: development
+    # Pre/staging: run API in dev mode (nodemon)
+    command: npm run dev
+
+  client:
+    environment:
+      NODE_ENV: development
+    # Pre/staging: run Next.js in dev mode with hot reload
+    command: npm run dev

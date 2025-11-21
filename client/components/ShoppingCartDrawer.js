@@ -13,6 +13,9 @@ import {getArtImageUrl, getOthersImageUrl, ordersAPI, paymentsAPI} from '@/lib/a
 import AddressAutocomplete from './AddressAutocomplete'
 import AddressManualInput from './AddressManualInput'
 
+// Key used to persist a pending Revolut order for a given cart in sessionStorage
+const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
+
 export default function ShoppingCartDrawer({open, onClose}) {
     // Get address functionality mode from environment variable
     const addressMode = process.env.NEXT_PUBLIC_CART_ADDRESS_FUNC || 'manual'
@@ -34,6 +37,8 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const [addressError, setAddressError] = useState('')
     const [revolutOrderId, setRevolutOrderId] = useState(null)
     const [revolutOrderToken, setRevolutOrderToken] = useState(null)
+    // Snapshot of the cart used to initialise the current Revolut order (stringified compact items)
+    const [revolutCartSnapshot, setRevolutCartSnapshot] = useState(null)
     // Revolut Checkout SDK and Card Field refs
     const revolutModuleRef = useRef(null)
     const cardFieldContainerRef = useRef(null)
@@ -60,6 +65,18 @@ export default function ShoppingCartDrawer({open, onClose}) {
             : `/galeria/mas/p/${item.slug}`
     }
 
+    // Build the compact representation of cart items used to initialise a Revolut order.
+    // This is also used as a stable snapshot to decide if a stored Revolut order can be reused.
+    const buildCompactItems = (items) => (
+        items.map(item => ({
+            type: item.productType === 'art' ? 'art' : 'other',
+            id: item.productId,
+            ...(item.productType === 'other' ? {variantId: item.variantId} : {}),
+            quantity: item.quantity,
+            shipping: item.shipping,
+        }))
+    )
+
     const handleQuantityChange = (item, newQuantity) => {
         const qty = parseInt(newQuantity, 10)
         if (qty > 0 && qty <= 10) {
@@ -70,6 +87,126 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const handleRemove = (item) => {
         removeFromCart(item.productId, item.productType, item.variantId)
     }
+
+    // Ensure that every time the drawer is closed, we return to the first step
+    // (cart view with the "Completar pedido" button) and clear any address errors.
+    const handleCloseDrawer = () => {
+        setShowAddressInput(false)
+        setAddressError('')
+        onClose()
+    }
+
+    // On mount, try to restore a pending Revolut order from sessionStorage and reuse it
+    // only if the current cart matches the stored cart snapshot. This avoids creating
+    // multiple dummy orders when the user closes and reopens the drawer with the same cart.
+    // Additionally, whenever the drawer is closed (open becomes false), we reset the step
+    // back to the initial cart view so the user always sees the first screen on reopen.
+    useEffect(() => {
+        if (!open) {
+            setShowAddressInput(false)
+            setAddressError('')
+        }
+    }, [open])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+
+        try {
+            const raw = window.sessionStorage.getItem(REVOLUT_ORDER_STORAGE_KEY)
+            if (!raw) return
+
+            const stored = JSON.parse(raw)
+            if (!stored || !stored.revolut_order_id || !stored.token || !stored.cartSnapshot) {
+                window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
+                return
+            }
+
+            const currentSnapshot = JSON.stringify(buildCompactItems(cart))
+            if (currentSnapshot === stored.cartSnapshot) {
+                setRevolutOrderId(stored.revolut_order_id)
+                setRevolutOrderToken(stored.token)
+                setRevolutCartSnapshot(stored.cartSnapshot)
+                currentRevolutOrderIdRef.current = stored.revolut_order_id
+            } else {
+                // Cart changed since the stored order was created; discard stale order
+                // and attempt to cancel the now-stale Revolut order on the backend.
+                try {
+                    if (stored.revolut_order_id) {
+                        ;(async () => {
+                            try {
+                                await paymentsAPI.cancelOrder(stored.revolut_order_id)
+                            } catch (err) {
+                                // Silent failure: if cancel fails, the order will simply
+                                // remain in its previous state on Revolut's side.
+                                console.warn('No se pudo cancelar la orden de Revolut obsoleta:', err)
+                            }
+                        })()
+                    }
+                } catch (_) {
+                    // Ignore any unexpected errors around firing the cancellation
+                }
+
+                window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
+            }
+        } catch (e) {
+            console.error('Error restaurando la orden de Revolut desde sessionStorage:', e)
+            try {
+                window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
+            } catch (_) {
+                // ignore storage cleanup errors
+            }
+        }
+        // We intentionally run this effect only once on mount. Cart changes are handled
+        // by a dedicated invalidation effect below.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    // Whenever the cart changes, verify that it still matches the snapshot used for the
+    // current Revolut order. If it does not, invalidate the stored order so that a new
+    // dummy order will be created the next time the user clicks "Completar pedido".
+    // Before invalidating, we also try to cancel the now-unused Revolut order so it
+    // does not remain pending on Revolut's side. This cancellation is fire-and-forget
+    // and any failure is silently ignored (per requirements).
+    useEffect(() => {
+        if (!revolutCartSnapshot) return
+
+        const currentSnapshot = JSON.stringify(buildCompactItems(cart))
+        if (currentSnapshot !== revolutCartSnapshot) {
+            // Cart contents (items, quantities, shipping, etc.) have changed
+            if (revolutOrderId) {
+                try {
+                    ;(async () => {
+                        try {
+                            await paymentsAPI.cancelOrder(revolutOrderId)
+                        } catch (err) {
+                            console.warn('No se pudo cancelar la orden de Revolut tras cambios en el carrito:', err)
+                        }
+                    })()
+                } catch (_) {
+                    // Ignore any unexpected errors around firing the cancellation
+                }
+            }
+
+            setRevolutOrderId(null)
+            setRevolutOrderToken(null)
+            setRevolutCartSnapshot(null)
+            currentRevolutOrderIdRef.current = null
+
+            if (typeof window !== 'undefined') {
+                try {
+                    window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
+                } catch (_) {
+                    // ignore storage cleanup errors
+                }
+            }
+
+            // If the user was on the address/payment step, return them to the cart so they
+            // explicitly confirm checkout again with the updated cart.
+            if (showAddressInput) {
+                setShowAddressInput(false)
+            }
+        }
+    }, [cart, revolutCartSnapshot, showAddressInput, revolutOrderId])
 
     const handleCheckout = async () => {
         if (cart.length === 0) {
@@ -84,13 +221,24 @@ export default function ShoppingCartDrawer({open, onClose}) {
         setIsProcessing(true)
         try {
             // Build compact items with quantity for Revolut order initialisation
-            const compactItems = cart.map(item => ({
-                type: item.productType === 'art' ? 'art' : 'other',
-                id: item.productId,
-                ...(item.productType === 'other' ? {variantId: item.variantId} : {}),
-                quantity: item.quantity,
-                shipping: item.shipping,
-            }))
+            const compactItems = buildCompactItems(cart)
+            const snapshot = JSON.stringify(compactItems)
+
+            // If we already have a Revolut order whose snapshot matches the current cart,
+            // reuse it instead of creating a new dummy order in Revolut.
+            if (revolutOrderId && revolutOrderToken && revolutCartSnapshot === snapshot) {
+                // Pre-fill personal info if user is logged in (in case user logged in/out meanwhile)
+                setPersonalInfo((prev) => ({
+                    ...prev,
+                    fullName: user?.full_name || user?.name || prev.fullName,
+                    email: user?.email || prev.email,
+                    phone: user?.phone || prev.phone,
+                }))
+
+                setShowAddressInput(true)
+                setIsProcessing(false)
+                return
+            }
 
             const resp = await paymentsAPI.initRevolutOrder(compactItems)
 
@@ -100,7 +248,25 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
             setRevolutOrderId(resp.revolut_order_id)
             setRevolutOrderToken(resp.token)
+            setRevolutCartSnapshot(snapshot)
             currentRevolutOrderIdRef.current = resp.revolut_order_id
+
+            // Persist the Revolut order so we can reuse it if the user closes and reopens the drawer
+            if (typeof window !== 'undefined') {
+                try {
+                    window.sessionStorage.setItem(
+                        REVOLUT_ORDER_STORAGE_KEY,
+                        JSON.stringify({
+                            revolut_order_id: resp.revolut_order_id,
+                            token: resp.token,
+                            cartSnapshot: snapshot,
+                        }),
+                    )
+                } catch (e) {
+                    // If storage fails we still continue; it only means we cannot reuse the order later
+                    console.warn('No se pudo guardar la orden de Revolut en sessionStorage:', e)
+                }
+            }
 
             // Pre-fill personal info if user is logged in
             setPersonalInfo((prev) => ({
@@ -233,8 +399,8 @@ export default function ShoppingCartDrawer({open, onClose}) {
             // 1) Persist order in our DB with status 'pending' and PATCH Revolut order with full details
             const placed = await ordersAPI.placeOrder({
                 items: orderItems,
-                contact: personalInfo.email,
-                contact_type: 'email',
+                email: personalInfo.email,
+                phone: personalInfo.phone,
                 delivery_address: finalDeliveryAddress,
                 invoicing_address: finalInvoicingAddress,
                 customer: {
@@ -341,8 +507,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             if (typeof window !== 'undefined') {
                 sessionStorage.setItem(`order_token_${tokenKey}`, JSON.stringify({
                     orderId: createdOrderId,
-                    contact: personalInfo.email,
-                    contactType: 'email',
+                    email: personalInfo.email,
                 }))
             }
 
@@ -354,8 +519,17 @@ export default function ShoppingCartDrawer({open, onClose}) {
             setUseSameAddressForInvoicing(true)
             setRevolutOrderId(null)
             setRevolutOrderToken(null)
+            setRevolutCartSnapshot(null)
             currentOrderIdRef.current = null
             currentRevolutOrderIdRef.current = null
+
+            if (typeof window !== 'undefined') {
+                try {
+                    window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
+                } catch (_) {
+                    // ignore storage cleanup errors
+                }
+            }
 
             if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
                 try {
@@ -599,6 +773,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             // Extract payer email and shipping address from Google Pay response
             const email = paymentData.email || user?.email || ''
             const shipping = paymentData.shippingAddress || {}
+            const phone = shipping.phoneNumber || ''
 
             // Map Google Pay shipping to our address model
             const gDelivery = {
@@ -645,17 +820,17 @@ export default function ShoppingCartDrawer({open, onClose}) {
             const response = await ordersAPI.create(
                 orderItems,
                 email,
-                'email',
+                phone,
                 gDelivery,
-                gInvoicing
+                gInvoicing,
+                null
             )
 
             // Prepare confirmation token and redirect
             const token = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
             sessionStorage.setItem(`order_token_${token}`, JSON.stringify({
                 orderId: response.order.id,
-                contact: email,
-                contactType: 'email',
+                email,
             }))
 
             clearCart()
@@ -694,7 +869,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 </div>
             )}
 
-            <Dialog open={open} onClose={onClose} className="relative z-10">
+            <Dialog open={open} onClose={handleCloseDrawer} className="relative z-10">
             <DialogBackdrop
                 transition
                 className="fixed inset-0 bg-gray-500/75 transition-opacity duration-500 ease-in-out data-[closed]:opacity-0"
@@ -716,7 +891,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                         <div className="ml-3 flex h-7 items-center">
                                             <button
                                                 type="button"
-                                                onClick={onClose}
+                                                onClick={handleCloseDrawer}
                                                 className="relative -m-2 p-2 text-gray-400 hover:text-gray-500"
                                             >
                                                 <span className="absolute -inset-0.5"/>
@@ -752,7 +927,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                                         <h3>
                                                                             <Link
                                                                                 href={getProductUrl(item)}
-                                                                                onClick={onClose}
+                                                                                onClick={handleCloseDrawer}
                                                                                 className="hover:text-gray-600"
                                                                             >
                                                                                 {item.name}
@@ -943,7 +1118,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                             ubicación.</p>
                                         <div className="mt-6">
                                             {!showAddressInput ? (
-                                                // Step 1: Cart view - Show "Pagar pedido"
+                                                // Step 1: Cart view - Show "Completar pedido"
                                                 <>
                                                     <button
                                                         onClick={handleCheckout}
@@ -951,7 +1126,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                         className="flex w-full items-center justify-center gap-2 rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         <CreditCardIcon aria-hidden="true" className="size-5"/>
-                                                        {isProcessing ? 'Procesando...' : 'Pagar pedido'}
+                                                        {isProcessing ? 'Procesando...' : 'Completar pedido'}
                                                     </button>
                                                     {/* Payment buttons row */}
                                                     <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1013,7 +1188,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                 ) : (
                                                     <button
                                                         type="button"
-                                                        onClick={onClose}
+                                                        onClick={handleCloseDrawer}
                                                         className="font-medium text-black hover:text-gray-600"
                                                     >
                                                         Continuar comprando

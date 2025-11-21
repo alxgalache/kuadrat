@@ -23,6 +23,7 @@ const usersRoutes = require('./routes/usersRoutes');
 const adminRoutes = require('./routes/admin');
 const sellerRoutes = require('./routes/sellerRoutes');
 const shippingRoutes = require('./routes/shippingRoutes');
+const testAccessRoutes = require('./routes/testAccessRoutes');
 
 // Initialize Express app
 const app = express();
@@ -98,6 +99,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/seller', sellerRoutes);
 app.use('/api/shipping', shippingRoutes);
+app.use('/api/test-access', testAccessRoutes);
 
 // 404 handler
 app.use(notFound);

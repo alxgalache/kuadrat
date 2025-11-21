@@ -1,0 +1,24 @@
+###############################################
+# Kuadrat – Docker Compose overrides: PRO env #
+###############################################
+
+# Usage (production environment):
+#   docker compose -f docker-compose.yml -f docker-compose.pro.yml up -d
+#
+# The base docker-compose.yml file already contains the production
+# defaults (NODE_ENV=production and production commands). This file
+# can override only the values that should differ from the
+# production defaults defined in docker-compose.yml.
+
+services:
+  api:
+    environment:
+      NODE_ENV: production
+    # Pro/production: run API in production mode
+    command: npm run start
+
+  client:
+    environment:
+      NODE_ENV: production
+    # Pro/production: build and run Next.js in production mode
+    command: sh -c "npm run build && npm run start"

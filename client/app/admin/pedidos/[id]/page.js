@@ -198,13 +198,19 @@ function OrderDetailContent() {
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Nombre</dt>
                     <dd className="mt-1 text-sm text-gray-900">
-                      {order.buyer_name || order.guest_email || 'Invitado'}
+                      {order.email || order.guest_email || 'Invitado'}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Email</dt>
                     <dd className="mt-1 text-sm text-gray-900">
-                      {order.guest_email || order.buyer_email}
+                      {order.email || order.guest_email || 'Sin email'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Teléfono</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {order.phone || 'Sin teléfono'}
                     </dd>
                   </div>
                   {order.guest_email && (

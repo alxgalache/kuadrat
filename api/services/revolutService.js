@@ -164,6 +164,55 @@ async function getRevolutOrderPayments(orderId) {
 }
 
 /**
+ * Cancel a Revolut Order
+ * Used when a pending dummy order should no longer be used because the cart
+ * contents have changed on our side. If this call fails, the caller may choose
+ * to ignore the error and leave the order in its current state.
+ *
+ * Revolut API: POST /orders/{order_id}/cancel
+ * @param {string} orderId
+ * @returns {Promise<Object>} Cancelled order object or API response payload
+ */
+async function cancelRevolutOrder(orderId) {
+  const apiVersion = process.env.REVOLUT_API_VERSION;
+  const secret = process.env.REVOLUT_SECRET_KEY;
+  if (!secret) {
+    throw new Error('REVOLUT_SECRET_KEY is not configured');
+  }
+
+  const url = `${getBaseUrl()}/orders/${encodeURIComponent(orderId)}/cancel`;
+  try {
+    const res = await axios.post(
+      url,
+      {},
+      {
+        headers: {
+          'Authorization': `Bearer ${secret}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Revolut-Api-Version': `${apiVersion}`,
+        },
+        timeout: 15000,
+      },
+    );
+    return res.data;
+  } catch (error) {
+    const status = error.response?.status || 500;
+    const data = error.response?.data || {};
+    const errMsg =
+      data.message ||
+      data.error_description ||
+      data.error ||
+      error.message ||
+      'Failed to cancel Revolut order';
+    const err = new Error(errMsg);
+    err.status = status;
+    err.response = data;
+    throw err;
+  }
+}
+
+/**
  * Retrieve a payment by id
  * @param {string} paymentId
  * @returns {Promise<Object>} Payment object
@@ -203,4 +252,5 @@ module.exports = {
   getRevolutOrderPayments,
   getRevolutPayment,
   updateRevolutOrder,
+  cancelRevolutOrder,
 };

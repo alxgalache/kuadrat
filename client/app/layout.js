@@ -8,15 +8,26 @@ import { NotificationProvider } from '@/contexts/NotificationContext'
 import { BannerNotificationProvider } from '@/contexts/BannerNotificationContext'
 import NotificationContainer from '@/components/Notification'
 import BannerNotification from '@/components/BannerNotification'
+import TestAccessGate from '@/components/TestAccessGate'
+
+const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
 
 export const metadata = {
   title: '140d - Galería de Arte',
-    description: 'Una galería de arte en línea seleccionada que presenta obras de arte únicas de artistas talentosos',
+  description: 'Una galería de arte en línea seleccionada que presenta obras de arte únicas de artistas talentosos',
   appleWebApp: {
     title: '140d.art',
     statusBarStyle: 'default',
   },
   manifest: '/manifest.json',
+  ...(WEB_APP_HIDDEN
+    ? {
+        robots: {
+          index: false,
+          follow: false,
+        },
+      }
+    : {}),
 }
 
 export default function RootLayout({ children }) {
@@ -27,12 +38,14 @@ export default function RootLayout({ children }) {
           <BannerNotificationProvider>
             <AuthProvider>
               <CartProvider>
-                {/* <ShippingBanner /> */}
-                <Navbar />
-                <main className="flex-grow">{children}</main>
-                <Footer />
-                <NotificationContainer />
-                <BannerNotification />
+                <TestAccessGate gateEnabled={WEB_APP_HIDDEN}>
+                  {/* <ShippingBanner /> */}
+                  <Navbar />
+                  <main className="flex-grow">{children}</main>
+                  <Footer />
+                  <NotificationContainer />
+                  <BannerNotification />
+                </TestAccessGate>
               </CartProvider>
             </AuthProvider>
           </BannerNotificationProvider>

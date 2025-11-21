@@ -21,20 +21,25 @@ const getAuthToken = () => {
 };
 
 // Helper function to make API requests
+// The `options` object may include a special flag `skipAuthHandling` which, when true,
+// prevents global 401 handling (token clearing + redirect). This is useful for
+// endpoints like test-access where 401 is part of normal control flow.
 async function apiRequest(endpoint, options = {}) {
+  const { skipAuthHandling, ...fetchOptions } = options;
+
   const token = getAuthToken();
 
   // Detect FormData to avoid setting Content-Type so browser sets boundary
-  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
 
   const headers = {
     ...(!isFormData && { 'Content-Type': 'application/json' }),
     ...(token && { Authorization: `Bearer ${token}` }),
-    ...options.headers,
+    ...fetchOptions.headers,
   };
 
   const config = {
-    ...options,
+    ...fetchOptions,
     headers,
   };
 
@@ -44,7 +49,7 @@ async function apiRequest(endpoint, options = {}) {
 
     if (!response.ok) {
       // Handle 401 Unauthorized - session expired or invalid token
-      if (response.status === 401) {
+      if (response.status === 401 && !skipAuthHandling) {
         // Clear local auth data
         if (typeof window !== 'undefined') {
           localStorage.removeItem('token');
@@ -107,6 +112,18 @@ export const authAPI = {
 
   isAuthenticated: () => {
     return !!getAuthToken();
+  },
+};
+
+// Test access API (used for password gate on test instances)
+export const testAccessAPI = {
+  verify: async (password) => {
+    return apiRequest('/test-access/verify', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+      // A wrong password should not wipe auth/session state, so skip global 401 handling
+      skipAuthHandling: true,
+    });
   },
 };
 
@@ -260,17 +277,19 @@ export const authorsAPI = {
 
 // Orders API
 export const ordersAPI = {
-  create: async (items, contact = null, contactType = null, deliveryAddress = null, invoicingAddress = null, customer = null) => {
+  create: async (items, email = null, phone = null, deliveryAddress = null, invoicingAddress = null, customer = null) => {
     // items should be array of { type: 'art' | 'other', id, variantId?, shipping }
-    // contact is the email or phone number for order updates
-    // contactType is 'email' or 'whatsapp'
+    // email/phone come from the buyer's data entered in the checkout flow
     // deliveryAddress is optional { line1, line2, postalCode, city, province, country, lat, lng }
     // invoicingAddress is optional { line1, line2, postalCode, city, province, country }
     const requestBody = { items };
 
-    if (contact && contactType) {
-      requestBody.contact = contact;
-      requestBody.contact_type = contactType;
+    if (email) {
+      requestBody.email = email;
+    }
+
+    if (phone) {
+      requestBody.phone = phone;
     }
 
     if (deliveryAddress) {
@@ -350,6 +369,17 @@ export const paymentsAPI = {
   getLatestRevolutPayment: async (revolutOrderId) => {
     return apiRequest(`/payments/revolut/order/${encodeURIComponent(revolutOrderId)}/payments/latest`, {
       method: 'GET',
+    });
+  },
+
+  // Cancel a pending Revolut order (used when the cart changes after creating a dummy order)
+  cancelOrder: async (revolutOrderId) => {
+    if (!revolutOrderId) {
+      throw new Error('revolutOrderId is required to cancel an order');
+    }
+
+    return apiRequest(`/payments/revolut/order/${encodeURIComponent(revolutOrderId)}/cancel`, {
+      method: 'POST',
     });
   },
 };

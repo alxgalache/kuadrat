@@ -150,8 +150,8 @@ function OrdersPageContent() {
                           {formatDate(order.created_at)}
                         </td>
                         <td className="px-3 py-4 text-sm text-gray-900">
-                          <div className="font-medium">{order.buyer_name || order.guest_email || 'Invitado'}</div>
-                          <div className="text-gray-500">{order.guest_email || order.buyer_email}</div>
+                          <div className="font-medium">{order.email || order.guest_email || 'Invitado'}</div>
+                          <div className="text-gray-500">{order.phone || 'Sin teléfono'}</div>
                         </td>
                         <td className="px-3 py-4 text-sm text-gray-500">
                           {getUniqueSellers(order.items)}

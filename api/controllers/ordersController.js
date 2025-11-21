@@ -7,84 +7,50 @@ const { createRevolutOrder, updateRevolutOrder } = require('../services/revolutS
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
 const REV_LOCATION_ID = process.env.REVOLUT_LOCATION_ID || null;
 
+// Helper to convert rich-text / HTML descriptions from DB into plain text
+// suitable for sending to external providers like Revolut.
+// - Strips all HTML tags
+// - Converts common block/line-break tags into spaces
+// - Normalises consecutive whitespace to a single space
+// - Trims leading/trailing whitespace
+// - Optionally truncates to maxLength characters
+const htmlToPlainText = (value, maxLength = 0) => {
+  if (!value) return '';
+
+  let text = value.toString();
+
+  // Replace explicit line breaks with spaces (we avoid real newlines to keep payload compact)
+  text = text.replace(/<br\s*\/?>/gi, ' ');
+
+  // Insert spaces at the end of common block-level elements so words don't get concatenated
+  text = text.replace(/<\/(p|div|h[1-6]|li|ul|ol|blockquote|tr|td|th)>/gi, ' ');
+
+  // Strip all remaining HTML tags
+  text = text.replace(/<[^>]*>/g, '');
+
+  // Normalise whitespace
+  text = text.replace(/\s+/g, ' ').trim();
+
+  if (maxLength && typeof maxLength === 'number' && maxLength > 0 && text.length > maxLength) {
+    return text.slice(0, maxLength);
+  }
+
+  return text;
+};
+
 // Create new order (legacy popup flow: creates Revolut order first, then persists DB order)
 const createOrder = async (req, res, next) => {
   try {
-    const { items, guest_email, contact, contact_type, delivery_address, invoicing_address, customer } = req.body;
+    const { items, guest_email, email, phone, delivery_address, invoicing_address, customer } = req.body || {};
 
-    // Check if user is authenticated or guest
-    const isAuthenticated = req.user && req.user.id;
-    const isGuest = !isAuthenticated;
+    // Orders are always placed as guest-style: they are not linked to user accounts.
+    // We only care about the buyer's email (and optionally phone).
+    const buyerEmail = (email || guest_email || '').trim();
+    const buyerPhone = phone || (customer && customer.phone) || null;
 
-    // Validate contact info (new flow) or guest_email (legacy)
-    if (isGuest) {
-      // Check for new contact flow
-      if (contact && contact_type) {
-        // Validate contact based on type
-        if (contact_type === 'email') {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(contact)) {
-            throw new ApiError(400, 'Formato de email inválido', 'Email inválido');
-          }
-        } else if (contact_type === 'whatsapp') {
-          // Phone should be in format: +34600123456
-          const phoneRegex = /^\+\d{1,4}\d{6,15}$/;
-          if (!phoneRegex.test(contact)) {
-            throw new ApiError(400, 'Formato de teléfono inválido', 'Teléfono inválido');
-          }
-        } else {
-          throw new ApiError(400, 'Tipo de contacto inválido', 'Tipo de contacto inválido');
-        }
-      } else if (guest_email) {
-        // Legacy flow - validate guest email
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(guest_email)) {
-          throw new ApiError(400, 'Formato de email inválido', 'Email inválido');
-        }
-      } else {
-        throw new ApiError(400, 'Se requiere información de contacto para compra como invitado', 'Contacto requerido');
-      }
-    }
-
-    // Get buyer_id (authenticated user or system guest user)
-    let buyer_id;
-    let buyer_email;
-    let buyer_contact;
-    let buyer_contact_type;
-
-    if (isAuthenticated) {
-      buyer_id = req.user.id;
-      buyer_email = req.user.email;
-      // For authenticated users, contact defaults to email
-      buyer_contact = contact || req.user.email;
-      buyer_contact_type = contact_type || 'email';
-    } else {
-      // Get system GUEST user
-      const guestUserResult = await db.execute({
-        sql: 'SELECT id FROM users WHERE email = ?',
-        args: ['SYSTEM_GUEST@kuadrat.internal'],
-      });
-
-      if (guestUserResult.rows.length === 0) {
-        throw new ApiError(500, 'Sistema de invitados no configurado', 'Error del servidor');
-      }
-
-      buyer_id = guestUserResult.rows[0].id;
-
-      // Use new contact flow if available, otherwise legacy guest_email
-      if (contact && contact_type) {
-        buyer_contact = contact;
-        buyer_contact_type = contact_type;
-        // If contact is email, also set buyer_email for email sending
-        if (contact_type === 'email') {
-          buyer_email = contact;
-        }
-      } else {
-        // Legacy flow
-        buyer_email = guest_email;
-        buyer_contact = guest_email;
-        buyer_contact_type = 'email';
-      }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!buyerEmail || !emailRegex.test(buyerEmail)) {
+      throw new ApiError(400, 'Se requiere un email válido para completar el pedido', 'Email inválido');
     }
 
     // Validate input - items should be array of { type: 'art' | 'other', id, variantId?, shipping? }
@@ -249,7 +215,8 @@ const createOrder = async (req, res, next) => {
         external_id: src.slug,
         taxes: [],
         image_urls: [imageUrl],
-        description: (src.description || '').toString().slice(0, 1000),
+        // Revolut should receive a clean, human-readable description without HTML markup
+        description: htmlToPlainText(src.description || '', 1000),
         url: productUrl,
       });
     }
@@ -330,12 +297,11 @@ const createOrder = async (req, res, next) => {
     // Create order with address information (status pending_payment)
     const orderResult = await db.execute({
       sql: `INSERT INTO orders (
-        buyer_id,
+        email,
+        phone,
+        guest_email,
         total_price,
         status,
-        guest_email,
-        contact,
-        contact_type,
         delivery_address_line_1,
         delivery_address_line_2,
         delivery_postal_code,
@@ -352,12 +318,11 @@ const createOrder = async (req, res, next) => {
         invoicing_country
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        buyer_id ?? null,
+        buyerEmail,
+        buyerPhone ?? null,
+        guest_email || null,
         totalPrice ?? 0,
         'pending_payment',
-        isGuest ? (guest_email || null) : null, // Ensure null, not undefined
-        buyer_contact ?? null,
-        buyer_contact_type ?? null,
         // Delivery address
         delivery_address?.line1 ?? null,
         delivery_address?.line2 ?? null,
@@ -459,11 +424,8 @@ const createOrder = async (req, res, next) => {
     // Get complete order details
     const orderDetailsResult = await db.execute({
       sql: `
-        SELECT
-          o.*,
-          u.email as buyer_email
+        SELECT o.*
         FROM orders o
-        LEFT JOIN users u ON o.buyer_id = u.id
         WHERE o.id = ?
       `,
       args: [orderId],
@@ -532,8 +494,8 @@ const placeOrder = async (req, res, next) => {
     const {
       items,
       guest_email,
-      contact,
-      contact_type,
+      email,
+      phone,
       delivery_address,
       invoicing_address,
       customer,
@@ -546,68 +508,13 @@ const placeOrder = async (req, res, next) => {
       throw new ApiError(400, 'Falta revolut_order_id en la solicitud', 'Solicitud inválida');
     }
 
-    // Check if user is authenticated or guest (same logic as createOrder)
-    const isAuthenticated = req.user && req.user.id;
-    const isGuest = !isAuthenticated;
+    // Orders are always treated as guest orders; validate buyer email + optional phone
+    const buyerEmail = (email || guest_email || (customer && customer.email) || '').trim();
+    const buyerPhone = phone || (customer && customer.phone) || null;
 
-    // Validate contact info (new flow) or guest_email (legacy)
-    if (isGuest) {
-      if (contact && contact_type) {
-        if (contact_type === 'email') {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(contact)) {
-            throw new ApiError(400, 'Formato de email inválido', 'Email inválido');
-          }
-        } else if (contact_type === 'whatsapp') {
-          const phoneRegex = /^\+\d{1,4}\d{6,15}$/;
-          if (!phoneRegex.test(contact)) {
-            throw new ApiError(400, 'Formato de teléfono inválido', 'Teléfono inválido');
-          }
-        } else {
-          throw new ApiError(400, 'Tipo de contacto inválido', 'Tipo de contacto inválido');
-        }
-      } else if (guest_email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(guest_email)) {
-          throw new ApiError(400, 'Formato de email inválido', 'Email inválido');
-        }
-      } else {
-        throw new ApiError(400, 'Se requiere información de contacto para compra como invitado', 'Contacto requerido');
-      }
-    }
-
-    // Get buyer_id (authenticated user or system guest user)
-    let buyer_id;
-    let buyer_email;
-    let buyer_contact;
-    let buyer_contact_type;
-
-    if (isAuthenticated) {
-      buyer_id = req.user.id;
-      buyer_email = req.user.email;
-      buyer_contact = contact || req.user.email;
-      buyer_contact_type = contact_type || 'email';
-    } else {
-      const guestUserResult = await db.execute({
-        sql: 'SELECT id FROM users WHERE email = ?',
-        args: ['SYSTEM_GUEST@kuadrat.internal'],
-      });
-      if (guestUserResult.rows.length === 0) {
-        throw new ApiError(500, 'Sistema de invitados no configurado', 'Error del servidor');
-      }
-      buyer_id = guestUserResult.rows[0].id;
-
-      if (contact && contact_type) {
-        buyer_contact = contact;
-        buyer_contact_type = contact_type;
-        if (contact_type === 'email') {
-          buyer_email = contact;
-        }
-      } else {
-        buyer_email = guest_email;
-        buyer_contact = guest_email;
-        buyer_contact_type = 'email';
-      }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!buyerEmail || !emailRegex.test(buyerEmail)) {
+      throw new ApiError(400, 'Se requiere un email válido para completar el pedido', 'Email inválido');
     }
 
     // Validate input - items should be array of { type: 'art' | 'other', id, variantId?, shipping? }
@@ -747,7 +654,8 @@ const placeOrder = async (req, res, next) => {
         external_id: src.slug,
         taxes: [],
         image_urls: [imageUrl],
-        description: (src.description || '').toString().slice(0, 1000),
+        // Ensure PATCH payloads also use plain-text descriptions
+        description: htmlToPlainText(src.description || '', 1000),
         url: productUrl,
       });
     }
@@ -808,12 +716,11 @@ const placeOrder = async (req, res, next) => {
     // 1) Persist order in DB with status 'pending' and revolut_order_id
     const orderResult = await db.execute({
       sql: `INSERT INTO orders (
-        buyer_id,
+        email,
+        phone,
+        guest_email,
         total_price,
         status,
-        guest_email,
-        contact,
-        contact_type,
         delivery_address_line_1,
         delivery_address_line_2,
         delivery_postal_code,
@@ -829,14 +736,13 @@ const placeOrder = async (req, res, next) => {
         invoicing_province,
         invoicing_country,
         revolut_order_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        buyer_id ?? null,
+        buyerEmail,
+        buyerPhone ?? null,
+        guest_email || null,
         totalPrice ?? 0,
         'pending',
-        isGuest ? (guest_email || null) : null,
-        buyer_contact ?? null,
-        buyer_contact_type ?? null,
         delivery_address?.line1 ?? null,
         delivery_address?.line2 ?? null,
         delivery_address?.postalCode ?? null,
@@ -927,11 +833,8 @@ const placeOrder = async (req, res, next) => {
     // 4) Load order details (without sending any emails yet)
     const orderDetailsResult = await db.execute({
       sql: `
-        SELECT
-          o.*,
-          u.email as buyer_email
+        SELECT o.*
         FROM orders o
-        LEFT JOIN users u ON o.buyer_id = u.id
         WHERE o.id = ?
       `,
       args: [orderId],
@@ -1006,7 +909,7 @@ const getUserOrders = async (req, res, next) => {
     // We need to find orders where either art items or other items belong to this seller
     const ordersWithSellerItemsResult = await db.execute({
       sql: `
-        SELECT DISTINCT o.id, o.buyer_id, o.total_price, o.status, o.created_at, o.guest_email
+        SELECT DISTINCT o.id, o.total_price, o.status, o.created_at, o.email, o.guest_email
         FROM orders o
         LEFT JOIN art_order_items aoi ON o.id = aoi.order_id
         LEFT JOIN art a ON aoi.art_id = a.id
@@ -1198,15 +1101,11 @@ const getOrderById = async (req, res, next) => {
 // Get all orders (admin only)
 const getAllOrdersAdmin = async (req, res, next) => {
   try {
-    // Get all orders with buyer info
+    // Get all orders
     const ordersResult = await db.execute({
       sql: `
-        SELECT
-          o.*,
-          u.email as buyer_email,
-          u.full_name as buyer_name
+        SELECT o.*
         FROM orders o
-        LEFT JOIN users u ON o.buyer_id = u.id
         ORDER BY o.created_at DESC
       `,
       args: [],
@@ -1276,12 +1175,8 @@ const getOrderByIdAdmin = async (req, res, next) => {
 
     const orderResult = await db.execute({
       sql: `
-        SELECT
-          o.*,
-          u.email as buyer_email,
-          u.full_name as buyer_name
+        SELECT o.*
         FROM orders o
-        LEFT JOIN users u ON o.buyer_id = u.id
         WHERE o.id = ?
       `,
       args: [id],
@@ -1431,12 +1326,11 @@ async function confirmOrderPayment(req, res, next) {
 
     // Send order confirmation email now (after payment success)
     try {
-      // Reload order details including buyer email
+      // Reload order details
       const orderDetailsResult = await db.execute({
         sql: `
-          SELECT o.*, u.email as buyer_email
+          SELECT o.*
           FROM orders o
-          LEFT JOIN users u ON o.buyer_id = u.id
           WHERE o.id = ?
         `,
         args: [order_id],
@@ -1479,9 +1373,8 @@ async function confirmOrderPayment(req, res, next) {
         }
       }
 
-      const buyerEmail = orderRow.buyer_email || orderRow.guest_email || (orderRow.contact_type === 'email' ? orderRow.contact : null);
-      const buyerContact = orderRow.contact || buyerEmail || null;
-      const contactType = orderRow.contact_type || (buyerEmail ? 'email' : null);
+      const buyerEmail = orderRow.email || orderRow.guest_email || null;
+      const buyerPhone = orderRow.phone || null;
 
       if (buyerEmail) {
         await sendPurchaseConfirmation({
@@ -1489,8 +1382,7 @@ async function confirmOrderPayment(req, res, next) {
           items,
           totalPrice: orderRow.total_price,
           buyerEmail,
-          buyerContact,
-          contactType,
+          buyerPhone,
           sellers: sellersInfo,
         });
       }

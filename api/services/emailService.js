@@ -26,6 +26,57 @@ const verifyTransporter = async () => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Logo handling helpers
+// ---------------------------------------------------------------------------
+// We originally embedded the logo using a very long data: URL directly in the
+// <img src="..."> attribute. Some email clients handle long data URLs
+// inconsistently, which can result in a broken image placeholder. To improve
+// compatibility, we convert the data URL into an inline CID attachment and
+// reference it as <img src="cid:..."> when possible.
+
+const LOGO_CID = 'logo-140d@kuadrat';
+
+// Parse a data URL (data:image/png;base64,...) into a Nodemailer attachment
+// object that can be referenced with cid: in HTML emails.
+const parseDataUrlToAttachment = (dataUrl) => {
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+
+  const match = /^data:(.+);base64,(.+)$/i.exec(dataUrl);
+  if (!match) return null;
+
+  const mimeType = match[1];
+  const base64 = match[2];
+
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    return {
+      filename: 'logo.png',
+      content: buffer,
+      contentType: mimeType,
+      cid: LOGO_CID,
+    };
+  } catch (error) {
+    console.error('Failed to parse logo data URL for email attachment:', error);
+    return null;
+  }
+};
+
+// Parse once at startup and reuse the Buffer for all outgoing emails.
+const LOGO_ATTACHMENT = parseDataUrlToAttachment(LOGO_PNG_DATA_URL);
+
+// Return a fresh attachment object for each email (to avoid accidental
+// mutation of the shared object while safely reusing the Buffer instance).
+const getLogoAttachment = () => {
+  if (!LOGO_ATTACHMENT) return null;
+  return { ...LOGO_ATTACHMENT };
+};
+
+// Return the preferred <img src> value. If we could build a CID attachment,
+// use it; otherwise fall back to the original data URL so behaviour matches
+// previous versions.
+const getLogoSrc = () => (LOGO_ATTACHMENT ? `cid:${LOGO_CID}` : LOGO_PNG_DATA_URL);
+
 // Generate buyer email HTML
 const generateBuyerEmailHTML = (orderDetails) => {
   const { orderId, items, totalPrice } = orderDetails;
@@ -62,7 +113,7 @@ const generateBuyerEmailHTML = (orderDetails) => {
           <!-- Logo Header -->
           <tr>
             <td align="center" style="padding: 40px 40px 20px;">
-              <img src="${LOGO_PNG_DATA_URL}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
             </td>
           </tr>
 
@@ -172,7 +223,7 @@ const generateSellerEmailHTML = (orderDetails, sellerItems) => {
           <!-- Logo Header -->
           <tr>
             <td align="center" style="padding: 40px 40px 20px;">
-              <img src="${LOGO_PNG_DATA_URL}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+              <img src="${getLogoSrc()}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
             </td>
           </tr>
 
@@ -244,7 +295,7 @@ const generateSellerEmailHTML = (orderDetails, sellerItems) => {
 
 // Generate admin email HTML
 const generateAdminEmailHTML = (orderDetails) => {
-  const { orderId, items, totalPrice, buyerEmail, buyerContact, contactType, sellers } = orderDetails;
+  const { orderId, items, totalPrice, buyerEmail, buyerPhone, sellers } = orderDetails;
 
   const itemsHTML = items.map(item => `
     <tr>
@@ -288,7 +339,7 @@ const generateAdminEmailHTML = (orderDetails) => {
           <!-- Logo Header -->
           <tr>
             <td align="center" style="padding: 40px 40px 20px;">
-              <img src="${LOGO_PNG_DATA_URL}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+              <img src="${getLogoSrc()}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
             </td>
           </tr>
           <!-- Content -->
@@ -316,7 +367,7 @@ const generateAdminEmailHTML = (orderDetails) => {
                   </tr>
                   <tr>
                     <td style="padding-bottom: 8px;">
-                      <strong style="color: #111827;">Contacto:</strong> ${buyerContact} (${contactType === 'email' ? 'Email' : 'WhatsApp'})
+                      <strong style="color: #111827;">Teléfono:</strong> ${buyerPhone || 'No proporcionado'}
                     </td>
                   </tr>
                 </table>
@@ -367,11 +418,13 @@ const sendPurchaseConfirmation = async (orderDetails) => {
 
   // 1. Send email to buyer
   if (buyerEmail) {
+    const logoAttachment = getLogoAttachment();
     const buyerMailOptions = {
       from: process.env.EMAIL_FROM,
       to: buyerEmail,
       subject: `140d - Confirmación de pedido #${orderId}`,
       html: generateBuyerEmailHTML(orderDetails),
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
     };
 
     try {
@@ -389,11 +442,13 @@ const sendPurchaseConfirmation = async (orderDetails) => {
     // Filter items that belong to this seller
     const sellerItems = items.filter(item => item.seller_id === seller.id);
 
+    const logoAttachment = getLogoAttachment();
     const sellerMailOptions = {
       from: process.env.EMAIL_FROM,
       to: seller.email,
       subject: `Nuevo pedido #${orderId} - Productos vendidos`,
       html: generateSellerEmailHTML(orderDetails, sellerItems),
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
     };
 
     try {
@@ -409,11 +464,13 @@ const sendPurchaseConfirmation = async (orderDetails) => {
   // 3. Send email to admin
   const adminEmail = process.env.REGISTRATION_EMAIL;
   if (adminEmail) {
+    const logoAttachment = getLogoAttachment();
     const adminMailOptions = {
       from: process.env.EMAIL_FROM,
       to: adminEmail,
       subject: `[ADMIN] Nuevo pedido #${orderId} - Total: €${totalPrice.toFixed(2)}`,
       html: generateAdminEmailHTML(orderDetails),
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
     };
 
     try {
@@ -434,6 +491,7 @@ const sendPurchaseConfirmation = async (orderDetails) => {
 
 // Send registration request notification email
 const sendRegistrationRequest = async (userEmail) => {
+  const logoAttachment = getLogoAttachment();
   const mailOptions = {
     from: process.env.EMAIL_FROM,
     to: process.env.REGISTRATION_EMAIL,
@@ -466,7 +524,7 @@ Sistema Kuadrat Gallery
 <body>
   <div class="container">
     <div class="header" style="text-align: center;">
-      <img src="${LOGO_PNG_DATA_URL}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; margin: 0 auto 10px; display: block;">
+      <img src="${getLogoSrc()}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; margin: 0 auto 10px; display: block;">
       <h1 style="color: #000000; margin: 0;">Kuadrat Gallery</h1>
       <p style="margin: 5px 0 0 0;">Nueva Solicitud de Registro</p>
     </div>
@@ -489,6 +547,7 @@ Sistema Kuadrat Gallery
 </body>
 </html>
     `,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
   };
 
   try {

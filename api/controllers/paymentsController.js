@@ -1,6 +1,12 @@
 const { db } = require('../config/database');
 const { ApiError } = require('../middleware/errorHandler');
-const { createRevolutOrder, getRevolutOrder, getRevolutOrderPayments, getRevolutPayment } = require('../services/revolutService');
+const {
+  createRevolutOrder,
+  getRevolutOrder,
+  getRevolutOrderPayments,
+  getRevolutPayment,
+  cancelRevolutOrder,
+} = require('../services/revolutService');
 
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
 const REV_LOCATION_ID = process.env.REVOLUT_LOCATION_ID || null;
@@ -227,10 +233,37 @@ const revolutWebhookEndpoint = async (req, res, next) => {
   }
 };
 
+// POST /api/payments/revolut/order/:orderId/cancel
+// Cancel a pending Revolut order. Used when the cart contents change after
+// creating a dummy order so that we do not leave orphaned pending orders on
+// Revolut's side. This endpoint is intended to be called silently by the
+// frontend and will return a simple success/failure payload.
+const cancelRevolutOrderEndpoint = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) {
+      throw new ApiError(400, 'Falta orderId de Revolut', 'Solicitud inválida');
+    }
+
+    const result = await cancelRevolutOrder(orderId);
+
+    return res.status(200).json({
+      success: true,
+      order_id: orderId,
+      result,
+    });
+  } catch (err) {
+    // Let the global error handler format the error; the client side will
+    // treat failures as non-fatal for UX (order will simply remain pending).
+    next(err);
+  }
+};
+
 module.exports = {
   initRevolutOrderEndpoint,
   revolutWebhookEndpoint,
   getLatestRevolutPaymentForOrder,
+  cancelRevolutOrderEndpoint,
 };
 
 // GET /api/payments/revolut/order/:orderId/payments/latest

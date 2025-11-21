@@ -98,15 +98,54 @@ async function initializeDatabase() {
       )
     `);
 
-    // Create orders table
+    // --- Orders & order items schema --------------------------------------
+
+    // If an old orders schema exists (with buyer_id and without email),
+    // drop orders and the dependent order item tables so we can recreate
+    // them with the new guest-friendly structure.
+    try {
+      const pragmaResult = await db.execute('PRAGMA table_info(orders)');
+      const cols = pragmaResult.rows || [];
+      const hasEmailColumn = cols.some((c) => c.name === 'email');
+      const hasBuyerIdColumn = cols.some((c) => c.name === 'buyer_id');
+
+      if (!hasEmailColumn && hasBuyerIdColumn) {
+        console.log('Legacy orders schema detected. Recreating orders and order item tables...');
+        await db.execute('DROP TABLE IF EXISTS order_items');
+        await db.execute('DROP TABLE IF EXISTS art_order_items');
+        await db.execute('DROP TABLE IF EXISTS other_order_items');
+        await db.execute('DROP TABLE IF EXISTS orders');
+      }
+    } catch (err) {
+      console.log('Could not inspect existing orders schema (this may be expected on first run):', err.message);
+    }
+
+    // Create orders table (guest-friendly, no buyer_id)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        buyer_id INTEGER NOT NULL,
+        email TEXT,
+        phone TEXT,
+        guest_email TEXT,
         total_price REAL NOT NULL,
         status TEXT NOT NULL DEFAULT 'completed',
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (buyer_id) REFERENCES users(id)
+        revolut_order_id TEXT,
+        revolut_payment_id TEXT,
+        delivery_address_line_1 TEXT,
+        delivery_address_line_2 TEXT,
+        delivery_postal_code TEXT,
+        delivery_city TEXT,
+        delivery_province TEXT,
+        delivery_country TEXT,
+        delivery_lat REAL,
+        delivery_lng REAL,
+        invoicing_address_line_1 TEXT,
+        invoicing_address_line_2 TEXT,
+        invoicing_postal_code TEXT,
+        invoicing_city TEXT,
+        invoicing_province TEXT,
+        invoicing_country TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -119,7 +158,7 @@ async function initializeDatabase() {
       if (ordersCount === 0) {
         // Only set starting ID if table is empty
         // Insert a dummy row at 999 and delete it to set the next ID to 1000
-        await db.execute(`INSERT INTO orders (id, buyer_id, total_price, status) VALUES (999, 1, 0, 'completed')`);
+        await db.execute(`INSERT INTO orders (id, total_price, status) VALUES (999, 0, 'completed')`);
         await db.execute(`DELETE FROM orders WHERE id = 999`);
         console.log('Set orders table to start from ID 1000');
       }
@@ -140,19 +179,23 @@ async function initializeDatabase() {
       )
     `);
 
-    // Create art_order_items table
+    // Create art_order_items table (with shipping fields)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS art_order_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id INTEGER NOT NULL,
         art_id INTEGER NOT NULL,
         price_at_purchase REAL NOT NULL,
+        shipping_method_id INTEGER,
+        shipping_cost REAL,
+        shipping_method_name TEXT,
+        shipping_method_type TEXT,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (art_id) REFERENCES art(id)
       )
     `);
 
-    // Create other_order_items table
+    // Create other_order_items table (with shipping fields)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS other_order_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,6 +203,10 @@ async function initializeDatabase() {
         other_id INTEGER NOT NULL,
         other_var_id INTEGER NOT NULL,
         price_at_purchase REAL NOT NULL,
+        shipping_method_id INTEGER,
+        shipping_cost REAL,
+        shipping_method_name TEXT,
+        shipping_method_type TEXT,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (other_id) REFERENCES others(id),
         FOREIGN KEY (other_var_id) REFERENCES other_vars(id)
@@ -249,35 +296,9 @@ async function initializeDatabase() {
       }
     }
 
-    try {
-      // Add guest_email to orders for guest checkout support
-      await db.execute(`ALTER TABLE orders ADD COLUMN guest_email TEXT`);
-      console.log('Added guest_email column to orders table');
-    } catch (err) {
-      if (!err.message.includes('duplicate column')) {
-        console.log('guest_email column already exists or error:', err.message);
-      }
-    }
-
-    try {
-      // Add contact_type to orders (email or whatsapp)
-      await db.execute(`ALTER TABLE orders ADD COLUMN contact_type TEXT CHECK(contact_type IN ('email', 'whatsapp'))`);
-      console.log('Added contact_type column to orders table');
-    } catch (err) {
-      if (!err.message.includes('duplicate column')) {
-        console.log('contact_type column already exists or error:', err.message);
-      }
-    }
-
-    try {
-      // Add contact to orders (email address or phone number)
-      await db.execute(`ALTER TABLE orders ADD COLUMN contact TEXT`);
-      console.log('Added contact column to orders table');
-    } catch (err) {
-      if (!err.message.includes('duplicate column')) {
-        console.log('contact column already exists or error:', err.message);
-      }
-    }
+    // guest_email, email, phone and address/Revolut columns are now part of the
+    // base orders schema definition above. We drop older migrations that would
+    // reintroduce deprecated contact/contact_type columns.
 
     // Add pickup address fields to users table
     try {
@@ -323,6 +344,14 @@ async function initializeDatabase() {
       if (!err.message.includes('duplicate column')) {
         console.log('pickup_instructions column already exists or error:', err.message);
       }
+    }
+
+    // Remove legacy system guest user if it exists
+    try {
+      await db.execute(`DELETE FROM users WHERE email = 'SYSTEM_GUEST@kuadrat.internal'`);
+      console.log('Removed legacy SYSTEM_GUEST user if present');
+    } catch (err) {
+      console.log('Could not remove legacy SYSTEM_GUEST user (may not exist):', err.message);
     }
 
     // Add removed column to art table

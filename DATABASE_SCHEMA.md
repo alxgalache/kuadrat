@@ -29,15 +29,33 @@ Stores all the art pieces available for sale.
 | `created_at`  | DATETIME| NOT NULL, DEFAULT CURRENT_TIMESTAMP | Timestamp of product creation.            |
 
 ### `orders` table
-Stores information about a completed purchase.
+Stores information about a purchase. Orders are **not** linked to user accounts; they are always placed in guest mode based on the buyer's contact details.
 
-| Column        | Type     | Constraints                        | Description                                |
-|---------------|----------|------------------------------------|--------------------------------------------|
-| `id`          | INTEGER  | PRIMARY KEY AUTOINCREMENT          | Unique identifier for the order.           |
-| `buyer_id`    | INTEGER  | NOT NULL, FOREIGN KEY(users.id)    | The user who made the purchase.            |
-| `total_price` | REAL     | NOT NULL                           | The total cost of the order.               |
-| `status`      | TEXT     | NOT NULL, DEFAULT 'completed'      | Order status (e.g., completed, shipped).  |
-| `created_at`  | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP| Timestamp of the order.                    |
+| Column                     | Type     | Constraints                               | Description                                                       |
+|----------------------------|----------|-------------------------------------------|-------------------------------------------------------------------|
+| `id`                       | INTEGER  | PRIMARY KEY AUTOINCREMENT                 | Unique identifier for the order.                                  |
+| `email`                    | TEXT     | NULL                                      | Buyer email address provided in the checkout form.                |
+| `phone`                    | TEXT     | NULL                                      | Buyer phone number provided in the checkout form.                 |
+| `guest_email`              | TEXT     | NULL                                      | Legacy guest email used by older flows (may be null on new data). |
+| `total_price`              | REAL     | NOT NULL                                  | The total cost of the order (products + shipping).                |
+| `status`                   | TEXT     | NOT NULL, DEFAULT 'completed'             | Order status (`pending`, `pending_payment`, `paid`, etc.).        |
+| `revolut_order_id`         | TEXT     | NULL                                      | Revolut order identifier, when applicable.                        |
+| `revolut_payment_id`       | TEXT     | NULL                                      | Revolut payment identifier, when applicable.                      |
+| `delivery_address_line_1`  | TEXT     | NULL                                      | Delivery address line 1.                                          |
+| `delivery_address_line_2`  | TEXT     | NULL                                      | Delivery address line 2.                                          |
+| `delivery_postal_code`     | TEXT     | NULL                                      | Delivery postal code.                                             |
+| `delivery_city`            | TEXT     | NULL                                      | Delivery city.                                                    |
+| `delivery_province`        | TEXT     | NULL                                      | Delivery province.                                                |
+| `delivery_country`         | TEXT     | NULL                                      | Delivery country (ISO code).                                      |
+| `delivery_lat`             | REAL     | NULL                                      | Delivery latitude (when available).                               |
+| `delivery_lng`             | REAL     | NULL                                      | Delivery longitude (when available).                              |
+| `invoicing_address_line_1` | TEXT     | NULL                                      | Invoicing address line 1.                                         |
+| `invoicing_address_line_2` | TEXT     | NULL                                      | Invoicing address line 2.                                         |
+| `invoicing_postal_code`    | TEXT     | NULL                                      | Invoicing postal code.                                            |
+| `invoicing_city`           | TEXT     | NULL                                      | Invoicing city.                                                   |
+| `invoicing_province`       | TEXT     | NULL                                      | Invoicing province.                                               |
+| `invoicing_country`        | TEXT     | NULL                                      | Invoicing country (ISO code).                                     |
+| `created_at`               | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP       | Timestamp of the order.                                           |
 
 ### `order_items` table
 A junction table linking products to an order.
