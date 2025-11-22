@@ -17,6 +17,7 @@ function EditShippingMethodContent() {
     article_type: 'all',
     max_weight: '',
     max_dimensions: '',
+    max_articles: '1',
     estimated_delivery_days: '',
     is_active: true,
   })
@@ -42,6 +43,7 @@ function EditShippingMethodContent() {
         article_type: method.article_type || 'all',
         max_weight: method.max_weight || '',
         max_dimensions: method.max_dimensions || '',
+        max_articles: (method.max_articles ?? 1).toString(),
         estimated_delivery_days: method.estimated_delivery_days || '',
         is_active: method.is_active === 1,
       })
@@ -80,6 +82,16 @@ function EditShippingMethodContent() {
       }
     }
 
+    // Validate max_articles (must be integer >= 1). If empty, default to 1.
+    const parsedMaxArticles = formData.max_articles
+      ? parseInt(formData.max_articles, 10)
+      : 1
+
+    if (Number.isNaN(parsedMaxArticles) || parsedMaxArticles < 1) {
+      setError('El número máximo de artículos por envío debe ser un entero mayor o igual a 1')
+      return
+    }
+
     setSaving(true)
 
     try {
@@ -90,6 +102,7 @@ function EditShippingMethodContent() {
         article_type: formData.article_type,
         max_weight: formData.max_weight ? parseInt(formData.max_weight, 10) : null,
         max_dimensions: formData.max_dimensions.trim() || null,
+        max_articles: parsedMaxArticles,
         estimated_delivery_days: formData.estimated_delivery_days ? parseInt(formData.estimated_delivery_days, 10) : null,
         is_active: formData.is_active,
       }
@@ -269,6 +282,27 @@ function EditShippingMethodContent() {
               />
               <p className="mt-1 text-sm text-gray-500">
                 Formato: LxWxH en centímetros. Dejar vacío si no hay límite.
+              </p>
+            </div>
+
+            {/* Max articles per shipment */}
+            <div>
+              <label htmlFor="max_articles" className="block text-sm font-medium text-gray-900">
+                Máximo de artículos por envío
+              </label>
+              <input
+                type="number"
+                id="max_articles"
+                name="max_articles"
+                value={formData.max_articles}
+                onChange={handleChange}
+                min="1"
+                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                placeholder="ej: 1"
+              />
+              <p className="mt-1 text-sm text-gray-500">
+                Número máximo de artículos que se agrupan en un solo envío por autor. Por defecto es 1
+                (coste de envío por artículo).
               </p>
             </div>
 

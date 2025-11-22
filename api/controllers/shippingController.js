@@ -18,6 +18,7 @@ const getAllShippingMethods = async (req, res, next) => {
         article_type,
         max_weight,
         max_dimensions,
+        max_articles,
         estimated_delivery_days,
         is_active,
         created_at,
@@ -50,6 +51,7 @@ const getShippingMethodById = async (req, res, next) => {
           article_type,
           max_weight,
           max_dimensions,
+          max_articles,
           estimated_delivery_days,
           is_active,
           created_at,
@@ -83,6 +85,7 @@ const createShippingMethod = async (req, res, next) => {
       article_type = 'all',
       max_weight,
       max_dimensions,
+      max_articles = 1,
       estimated_delivery_days,
       is_active = 1,
     } = req.body;
@@ -123,11 +126,12 @@ const createShippingMethod = async (req, res, next) => {
           article_type,
           max_weight,
           max_dimensions,
+          max_articles,
           estimated_delivery_days,
           is_active,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `,
       args: [
         name,
@@ -136,6 +140,7 @@ const createShippingMethod = async (req, res, next) => {
         article_type,
         max_weight || null,
         max_dimensions || null,
+        max_articles || 1,
         estimated_delivery_days || null,
         is_active,
       ],
@@ -162,6 +167,7 @@ const updateShippingMethod = async (req, res, next) => {
       article_type,
       max_weight,
       max_dimensions,
+      max_articles,
       estimated_delivery_days,
       is_active,
     } = req.body;
@@ -198,6 +204,14 @@ const updateShippingMethod = async (req, res, next) => {
       }
     }
 
+    // Validate max_articles if provided
+    if (max_articles !== undefined) {
+      const parsed = parseInt(max_articles, 10);
+      if (Number.isNaN(parsed) || parsed < 1) {
+        throw new ApiError(400, 'max_articles debe ser un entero mayor o igual a 1', 'max_articles inválido');
+      }
+    }
+
     await db.execute({
       sql: `
         UPDATE shipping_methods
@@ -208,6 +222,7 @@ const updateShippingMethod = async (req, res, next) => {
           article_type = COALESCE(?, article_type),
           max_weight = COALESCE(?, max_weight),
           max_dimensions = COALESCE(?, max_dimensions),
+          max_articles = COALESCE(?, max_articles),
           estimated_delivery_days = COALESCE(?, estimated_delivery_days),
           is_active = COALESCE(?, is_active),
           updated_at = CURRENT_TIMESTAMP
@@ -220,6 +235,7 @@ const updateShippingMethod = async (req, res, next) => {
         article_type || null,
         max_weight !== undefined ? max_weight : null,
         max_dimensions !== undefined ? max_dimensions : null,
+        max_articles !== undefined ? max_articles : null,
         estimated_delivery_days !== undefined ? estimated_delivery_days : null,
         is_active !== undefined ? is_active : null,
         id,
@@ -597,6 +613,7 @@ const getAvailableShipping = async (req, res, next) => {
           sm.article_type,
           sm.max_weight,
           sm.max_dimensions,
+          sm.max_articles,
           sm.estimated_delivery_days,
           sz.cost,
           u.pickup_address,
@@ -623,6 +640,7 @@ const getAvailableShipping = async (req, res, next) => {
         description: method.description,
         type: method.type,
         cost: method.cost,
+        max_articles: method.max_articles,
         estimated_delivery_days: method.estimated_delivery_days,
         pickup_address: method.pickup_address,
         pickup_city: method.pickup_city,
@@ -657,6 +675,7 @@ const getAvailableShipping = async (req, res, next) => {
             sm.article_type,
             sm.max_weight,
             sm.max_dimensions,
+            sm.max_articles,
             sm.estimated_delivery_days,
             sz.cost,
             sz.postal_code
@@ -681,6 +700,7 @@ const getAvailableShipping = async (req, res, next) => {
             sm.article_type,
             sm.max_weight,
             sm.max_dimensions,
+            sm.max_articles,
             sm.estimated_delivery_days,
             sz.cost,
             sz.postal_code
@@ -717,6 +737,7 @@ const getAvailableShipping = async (req, res, next) => {
           description: method.description,
           type: method.type,
           cost: method.cost,
+          max_articles: method.max_articles,
           estimated_delivery_days: method.estimated_delivery_days,
         }));
     }

@@ -164,13 +164,56 @@ export function CartProvider({ children }) {
     return cart.reduce((total, item) => total + item.quantity, 0)
   }
 
-  // Get total price (including shipping)
+  // Internal helper: build shipping aggregation per (seller, productType, method)
+  // respecting maxArticles per shipment and counting total units.
+  const getShippingBreakdown = () => {
+    const groupsMap = new Map()
+
+    cart.forEach((item) => {
+      if (!item.shipping || !item.shipping.methodId) return
+
+      const key = `${item.sellerId}:${item.productType}:${item.shipping.methodId}`
+      const existing = groupsMap.get(key)
+
+      const maxArticles = item.shipping.maxArticles || 1
+
+      if (!existing) {
+        groupsMap.set(key, {
+          sellerId: item.sellerId,
+          sellerName: item.sellerName,
+          productType: item.productType,
+          methodId: item.shipping.methodId,
+          methodName: item.shipping.methodName,
+          methodType: item.shipping.methodType,
+          maxArticles,
+          costPerShipment: item.shipping.cost || 0,
+          totalUnits: item.quantity,
+        })
+      } else {
+        existing.totalUnits += item.quantity
+      }
+    })
+
+    const groups = Array.from(groupsMap.values()).map(group => {
+      const maxArticles = group.maxArticles || 1
+      const shipments = Math.ceil(group.totalUnits / maxArticles)
+      const totalShipping = shipments * group.costPerShipment
+
+      return {
+        ...group,
+        shipments,
+        totalShipping,
+      }
+    })
+
+    return groups
+  }
+
+  // Get total price (including shipping, aggregated per shipment)
   const getTotalPrice = () => {
-    return cart.reduce((total, item) => {
-      const itemTotal = item.price * item.quantity
-      const shippingCost = item.shipping?.cost || 0
-      return total + itemTotal + shippingCost
-    }, 0)
+    const productsTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
+    const shippingTotal = getShippingBreakdown().reduce((sum, group) => sum + group.totalShipping, 0)
+    return productsTotal + shippingTotal
   }
 
   // Get subtotal (products only, no shipping)
@@ -178,9 +221,9 @@ export function CartProvider({ children }) {
     return cart.reduce((total, item) => total + (item.price * item.quantity), 0)
   }
 
-  // Get total shipping cost
+  // Get total shipping cost (aggregated per shipment)
   const getTotalShipping = () => {
-    return cart.reduce((total, item) => total + (item.shipping?.cost || 0), 0)
+    return getShippingBreakdown().reduce((sum, group) => sum + group.totalShipping, 0)
   }
 
   // Update shipping for a specific cart item
@@ -231,6 +274,15 @@ export function CartProvider({ children }) {
     return sellerOthersItem?.shipping || null
   }
 
+  // Get existing shipping method for 'art' products from a seller
+  // This is used to auto-apply shipping only for 'art' products from the same seller
+  const getSellerArtShipping = (sellerId) => {
+    const sellerArtItem = cart.find(
+      item => item.sellerId === sellerId && item.productType === 'art'
+    )
+    return sellerArtItem?.shipping || null
+  }
+
   const value = {
     cart,
     isInCart,
@@ -243,12 +295,14 @@ export function CartProvider({ children }) {
     getTotalPrice,
     getSubtotal,
     getTotalShipping,
+    getShippingBreakdown,
     updateShipping,
     getItemsBySeller,
     updateSellerShipping,
     isSellerInCart,
     getSellerShipping,
     getSellerOthersShipping,
+    getSellerArtShipping,
     animationTrigger,
   }
 

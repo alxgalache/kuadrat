@@ -20,7 +20,7 @@ export default function ArtProductDetailPage({ params }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [shippingModalOpen, setShippingModalOpen] = useState(false)
   const [isHoveringCart, setIsHoveringCart] = useState(false)
-  const { isInCart, addToCart, removeFromCart, isSellerInCart, getSellerShipping } = useCart()
+  const { isInCart, addToCart, removeFromCart, isSellerInCart, getSellerArtShipping } = useCart()
   const { showSuccess } = useNotification()
   const { showBanner } = useBannerNotification()
   const router = useRouter()
@@ -67,9 +67,33 @@ export default function ArtProductDetailPage({ params }) {
   }
 
   const handleAddToCart = () => {
-    // Art products ALWAYS require shipping selection (no auto-apply)
-    // Each art product has its own specific shipping method and costs
-    setShippingModalOpen(true)
+    // For art products, if there is already an art item from this seller in the cart
+    // with a chosen shipping method, reuse that shipping automatically and do not
+    // reopen the shipping selection modal. Otherwise, open the modal.
+
+    const existingShipping = getSellerArtShipping(product.seller_id)
+
+    if (existingShipping) {
+      addToCart({
+        productId: product.id,
+        productType: 'art',
+        name: product.name,
+        price: product.price,
+        basename: product.basename,
+        slug: product.slug,
+        sellerId: product.seller_id,
+        sellerName: product.seller_full_name,
+        quantity: 1,
+        shipping: existingShipping,
+      })
+
+      // Cuando reutilizamos automáticamente el método de envío de otra obra del mismo autor,
+      // mostramos un mensaje más explicativo para que el usuario entienda qué ha ocurrido.
+      showBanner('Producto añadido. Se ha elegido por defecto el mismo método de envío que los artículos existentes en el carrito del mismo proveedor')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } else {
+      setShippingModalOpen(true)
+    }
   }
 
   const handleShippingSelected = (shipping) => {

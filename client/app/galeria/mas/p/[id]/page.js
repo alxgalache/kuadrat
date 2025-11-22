@@ -101,8 +101,9 @@ export default function OthersProductDetailPage({ params }) {
         shipping: existingOthersShipping,
       })
 
-      // Show banner notification
-      showBanner('Producto añadido')
+      // Cuando reutilizamos automáticamente el método de envío de otros productos del mismo proveedor,
+      // mostramos un mensaje más explicativo para que el usuario entienda qué ha ocurrido.
+      showBanner('Producto añadido. Se ha elegido por defecto el mismo método de envío que los artículos existentes en el carrito del mismo proveedor')
 
       // Scroll to top to show cart animation
       window.scrollTo({ top: 0, behavior: 'smooth' })

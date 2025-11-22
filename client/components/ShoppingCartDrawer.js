@@ -24,7 +24,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const googlePayMerchantId = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_ID || 'BCR2DN4T6D4YQ3XXXXXX' // placeholder
     const googlePayMerchantName = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_NAME || 'Kuadrat (Sandbox)'
     const googlePayLocale = process.env.NEXT_PUBLIC_GOOGLE_PAY_LOCALE || ''
-    const {cart, removeFromCart, updateQuantity, getTotalPrice, getSubtotal, getTotalShipping, clearCart} = useCart()
+    const {cart, removeFromCart, updateQuantity, getTotalPrice, getSubtotal, getTotalShipping, getShippingBreakdown, clearCart} = useCart()
     const {user} = useAuth()
     const {showBanner} = useBannerNotification()
     const router = useRouter()
@@ -1113,6 +1113,41 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                 <p>Total</p>
                                                 <p>€{getTotalPrice().toFixed(2)}</p>
                                             </div>
+                                            {/* Shipping breakdown explanation */}
+                                            {getShippingBreakdown().length > 0 && (
+                                                <div className="mt-2 rounded-md bg-gray-50 px-3 py-2">
+                                                    <p className="text-xs font-medium text-gray-700 mb-1">
+                                                        Detalle de los gastos de envío
+                                                    </p>
+                                                    <ul className="space-y-1">
+                                                        {getShippingBreakdown().map((group, index) => {
+                                                            const isArt = group.productType === 'art'
+                                                            const articleLabel = isArt ? 'obras de arte' : 'otros artículos'
+                                                            const sellerText = group.sellerName
+                                                                ? `del autor ${group.sellerName}`
+                                                                : 'del mismo autor'
+
+                                                            // Example sentence:
+                                                            // "Envío "Envío estándar" del autor X: 3 obras de arte agrupadas en 2 envíos (máx. 2 por envío) → 2 × 10,00 € = 20,00 €"
+                                                            return (
+                                                                <li key={`${group.sellerId}-${group.productType}-${group.methodId}-${index}`} className="text-[11px] text-gray-600">
+                                                                    <span className="font-semibold">{group.methodName}</span>{' '}
+                                                                    <span>
+                                                                        {sellerText}: {group.totalUnits} {articleLabel}
+                                                                        {group.maxArticles > 1 && ` agrupados en ${group.shipments} envíos (máx. ${group.maxArticles} por envío)`}
+                                                                        {group.maxArticles <= 1 && ` en ${group.shipments} envío${group.shipments > 1 ? 's' : ''}`}
+                                                                        {' '}→ {group.shipments} × €{group.costPerShipment.toFixed(2)} = €{group.totalShipping.toFixed(2)}
+                                                                    </span>
+                                                                </li>
+                                                            )
+                                                        })}
+                                                    </ul>
+                                                    <p className="mt-1 text-[11px] text-gray-500">
+                                                        Los gastos de envío se calculan por autor y método de envío, agrupando varias
+                                                        unidades en un mismo envío hasta el límite indicado.
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                         <p className="mt-2 text-xs text-gray-500">Los impuestos se calcularán según tu
                                             ubicación.</p>
