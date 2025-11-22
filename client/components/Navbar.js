@@ -333,6 +333,15 @@ export default function Navbar() {
                 {item.name}
               </Link>
             ))}
+            {/* Static upcoming feature label for auctions in mobile menu */}
+            <div className="-mx-3 rounded-lg px-3 py-2">
+              <span className="block text-base/7 font-semibold text-gray-900">
+                Subastas
+              </span>
+              <span className="mt-1 block text-sm text-gray-600">
+                Próximamente...
+              </span>
+            </div>
             {isAuthenticated && (
               <>
                 {isAdmin ? (
