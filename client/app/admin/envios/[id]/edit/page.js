@@ -14,6 +14,7 @@ function EditShippingMethodContent() {
     name: '',
     description: '',
     type: 'delivery',
+    article_type: 'all',
     max_weight: '',
     max_dimensions: '',
     estimated_delivery_days: '',
@@ -38,6 +39,7 @@ function EditShippingMethodContent() {
         name: method.name || '',
         description: method.description || '',
         type: method.type || 'delivery',
+        article_type: method.article_type || 'all',
         max_weight: method.max_weight || '',
         max_dimensions: method.max_dimensions || '',
         estimated_delivery_days: method.estimated_delivery_days || '',
@@ -85,6 +87,7 @@ function EditShippingMethodContent() {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         type: formData.type,
+        article_type: formData.article_type,
         max_weight: formData.max_weight ? parseInt(formData.max_weight, 10) : null,
         max_dimensions: formData.max_dimensions.trim() || null,
         estimated_delivery_days: formData.estimated_delivery_days ? parseInt(formData.estimated_delivery_days, 10) : null,
@@ -206,6 +209,28 @@ function EditShippingMethodContent() {
                 <option value="delivery">Entrega a domicilio</option>
                 <option value="pickup">Recogida en tienda</option>
               </select>
+            </div>
+
+            {/* Article type */}
+            <div>
+              <label htmlFor="article_type" className="block text-sm font-medium text-gray-900">
+                Tipo de artículo <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="article_type"
+                name="article_type"
+                value={formData.article_type}
+                onChange={handleChange}
+                required
+                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+              >
+                <option value="all">Arte y otros productos</option>
+                <option value="art">Solo arte</option>
+                <option value="others">Solo otros productos</option>
+              </select>
+              <p className="mt-1 text-sm text-gray-500">
+                Define para qué tipos de artículos se puede usar este método de envío.
+              </p>
             </div>
 
             {/* Max weight */}

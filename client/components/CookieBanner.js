@@ -3,34 +3,66 @@
 import { useEffect, useState } from 'react'
 
 const STORAGE_KEY = 'cookie_consent'
+// Roughly one month in milliseconds
+const CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+function loadConsent() {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+
+    const { value, expiresAt } = parsed
+
+    // If we have an expiry and it is in the past, clear and treat as not set
+    if (typeof expiresAt === 'number' && Date.now() > expiresAt) {
+      window.localStorage.removeItem(STORAGE_KEY)
+      return null
+    }
+
+    return value || null
+  } catch (e) {
+    // If localStorage or JSON parsing fails, behave as if no consent was stored
+    return null
+  }
+}
+
+function saveConsent(value) {
+  if (typeof window === 'undefined') return
+
+  try {
+    const payload = {
+      value,
+      expiresAt: Date.now() + CONSENT_TTL_MS,
+    }
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch (e) {
+    // Ignore storage errors; we still hide the banner for this session
+  }
+}
 
 export default function CookieBanner() {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    try {
-      const consent = window.sessionStorage.getItem(STORAGE_KEY)
-      if (consent === 'accepted') {
-        setVisible(false)
-      } else {
-        setVisible(true)
-      }
-    } catch (e) {
-      // If sessionStorage is not available, still show the banner
+    const consent = loadConsent()
+    if (consent === 'accepted') {
+      setVisible(false)
+    } else {
+      // If there is no stored consent or it is expired/invalid, show the banner
       setVisible(true)
     }
   }, [])
 
   const handleAccept = () => {
-    try {
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem(STORAGE_KEY, 'accepted')
-      }
-    } catch (e) {
-      // Ignore storage errors; we still hide the banner for this session
-    }
+    // Persist consent for approximately one month so it survives
+    // browser/tab closes, but will eventually expire.
+    saveConsent('accepted')
     setVisible(false)
   }
 

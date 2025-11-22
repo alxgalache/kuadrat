@@ -15,6 +15,7 @@ const getAllShippingMethods = async (req, res, next) => {
         name,
         description,
         type,
+        article_type,
         max_weight,
         max_dimensions,
         estimated_delivery_days,
@@ -46,6 +47,7 @@ const getShippingMethodById = async (req, res, next) => {
           name,
           description,
           type,
+          article_type,
           max_weight,
           max_dimensions,
           estimated_delivery_days,
@@ -78,6 +80,7 @@ const createShippingMethod = async (req, res, next) => {
       name,
       description,
       type,
+      article_type = 'all',
       max_weight,
       max_dimensions,
       estimated_delivery_days,
@@ -92,6 +95,11 @@ const createShippingMethod = async (req, res, next) => {
     // Validate type
     if (!['delivery', 'pickup'].includes(type)) {
       throw new ApiError(400, 'Tipo debe ser "delivery" o "pickup"', 'Tipo inválido');
+    }
+
+    // Validate article_type
+    if (!['art', 'others', 'all'].includes(article_type)) {
+      throw new ApiError(400, 'article_type debe ser "art", "others" o "all"', 'article_type inválido');
     }
 
     // Validate dimensions format if provided
@@ -112,18 +120,20 @@ const createShippingMethod = async (req, res, next) => {
           name,
           description,
           type,
+          article_type,
           max_weight,
           max_dimensions,
           estimated_delivery_days,
           is_active,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `,
       args: [
         name,
         description || null,
         type,
+        article_type,
         max_weight || null,
         max_dimensions || null,
         estimated_delivery_days || null,
@@ -149,6 +159,7 @@ const updateShippingMethod = async (req, res, next) => {
       name,
       description,
       type,
+      article_type,
       max_weight,
       max_dimensions,
       estimated_delivery_days,
@@ -170,6 +181,11 @@ const updateShippingMethod = async (req, res, next) => {
       throw new ApiError(400, 'Tipo debe ser "delivery" o "pickup"', 'Tipo inválido');
     }
 
+    // Validate article_type if provided
+    if (article_type && !['art', 'others', 'all'].includes(article_type)) {
+      throw new ApiError(400, 'article_type debe ser "art", "others" o "all"', 'article_type inválido');
+    }
+
     // Validate dimensions format if provided
     if (max_dimensions) {
       const dimensionPattern = /^\d+x\d+x\d+$/;
@@ -189,6 +205,7 @@ const updateShippingMethod = async (req, res, next) => {
           name = COALESCE(?, name),
           description = COALESCE(?, description),
           type = COALESCE(?, type),
+          article_type = COALESCE(?, article_type),
           max_weight = COALESCE(?, max_weight),
           max_dimensions = COALESCE(?, max_dimensions),
           estimated_delivery_days = COALESCE(?, estimated_delivery_days),
@@ -200,6 +217,7 @@ const updateShippingMethod = async (req, res, next) => {
         name || null,
         description !== undefined ? description : null,
         type || null,
+        article_type || null,
         max_weight !== undefined ? max_weight : null,
         max_dimensions !== undefined ? max_dimensions : null,
         estimated_delivery_days !== undefined ? estimated_delivery_days : null,
@@ -576,6 +594,7 @@ const getAvailableShipping = async (req, res, next) => {
           sm.name,
           sm.description,
           sm.type,
+          sm.article_type,
           sm.max_weight,
           sm.max_dimensions,
           sm.estimated_delivery_days,
@@ -590,9 +609,10 @@ const getAvailableShipping = async (req, res, next) => {
         INNER JOIN users u ON sz.seller_id = u.id
         WHERE sm.type = 'pickup'
           AND sm.is_active = 1
+          AND (sm.article_type = 'all' OR sm.article_type = ?)
           AND sz.seller_id = ?
       `,
-      args: [sellerId],
+      args: [productType, sellerId],
     });
 
     const pickupMethods = pickupResult.rows
@@ -634,6 +654,7 @@ const getAvailableShipping = async (req, res, next) => {
             sm.name,
             sm.description,
             sm.type,
+            sm.article_type,
             sm.max_weight,
             sm.max_dimensions,
             sm.estimated_delivery_days,
@@ -643,12 +664,13 @@ const getAvailableShipping = async (req, res, next) => {
           INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
           WHERE sm.type = 'delivery'
             AND sm.is_active = 1
+            AND (sm.article_type = 'all' OR sm.article_type = ?)
             AND sz.seller_id = ?
             AND sz.country = ?
             AND (sz.postal_code = ? OR sz.postal_code IS NULL)
           ORDER BY sz.postal_code DESC
         `;
-        deliveryArgs = [sellerId, country, postalCode];
+        deliveryArgs = [productType, sellerId, country, postalCode];
       } else {
         deliveryQuery = `
           SELECT DISTINCT
@@ -656,6 +678,7 @@ const getAvailableShipping = async (req, res, next) => {
             sm.name,
             sm.description,
             sm.type,
+            sm.article_type,
             sm.max_weight,
             sm.max_dimensions,
             sm.estimated_delivery_days,
@@ -665,11 +688,12 @@ const getAvailableShipping = async (req, res, next) => {
           INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
           WHERE sm.type = 'delivery'
             AND sm.is_active = 1
+            AND (sm.article_type = 'all' OR sm.article_type = ?)
             AND sz.seller_id = ?
             AND sz.country = ?
             AND sz.postal_code IS NULL
         `;
-        deliveryArgs = [sellerId, country];
+        deliveryArgs = [productType, sellerId, country];
       }
 
       const deliveryResult = await db.execute({

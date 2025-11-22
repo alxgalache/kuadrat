@@ -54,6 +54,15 @@ export default function Navbar() {
                 {item.name}
               </Link>
             ))}
+            {/* Static upcoming feature label for auctions */}
+            <div className="relative group">
+              <span className="text-sm/6 font-semibold text-gray-900 cursor-default">
+                Subastas
+              </span>
+              <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-lg ring-1 ring-gray-900/10 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                Próximamente...
+              </div>
+            </div>
           </div>
           <div className="flex lg:hidden">
             <button

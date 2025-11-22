@@ -4,6 +4,47 @@ import { useEffect, useState } from 'react'
 import { testAccessAPI } from '@/lib/api'
 
 const SESSION_KEY = 'test_access_granted'
+// Reuse the same rough one-month lifetime as the cookie banner
+const ACCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+function loadAccessFlag() {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+
+    const { value, expiresAt } = parsed
+
+    if (typeof expiresAt === 'number' && Date.now() > expiresAt) {
+      window.localStorage.removeItem(SESSION_KEY)
+      return null
+    }
+
+    return value || null
+  } catch (e) {
+    // Treat any storage or parsing issues as if there is no stored flag
+    return null
+  }
+}
+
+function saveAccessFlag(value) {
+  if (typeof window === 'undefined') return
+
+  try {
+    const payload = {
+      value,
+      expiresAt: Date.now() + ACCESS_TTL_MS,
+    }
+
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify(payload))
+  } catch (e) {
+    // Ignore storage errors; user will simply be asked again later
+  }
+}
 
 export default function TestAccessGate({ gateEnabled, children }) {
   const [authorized, setAuthorized] = useState(false)
@@ -25,7 +66,7 @@ export default function TestAccessGate({ gateEnabled, children }) {
     }
 
     try {
-      const stored = window.sessionStorage.getItem(SESSION_KEY)
+      const stored = loadAccessFlag()
       if (stored === 'true') {
         setAuthorized(true)
       }
@@ -51,13 +92,9 @@ export default function TestAccessGate({ gateEnabled, children }) {
 
       const res = await testAccessAPI.verify(trimmed)
       if (res && res.success) {
-        try {
-          if (typeof window !== 'undefined') {
-            window.sessionStorage.setItem(SESSION_KEY, 'true')
-          }
-        } catch (e) {
-          // Ignore storage errors; the user will just be asked again on reload
-        }
+        // Persist access flag for approximately one month so it survives
+        // browser closes, but will eventually expire.
+        saveAccessFlag('true')
         setAuthorized(true)
       } else {
         setError('Contraseña incorrecta.')

@@ -59,6 +59,22 @@ function ShippingMethodsPageContent() {
     )
   }
 
+  const getArticleTypeBadge = (articleType) => {
+    const typeConfig = {
+      art: { label: 'Solo arte', class: 'bg-purple-100 text-purple-800' },
+      others: { label: 'Solo otros', class: 'bg-orange-100 text-orange-800' },
+      all: { label: 'Arte y otros', class: 'bg-gray-100 text-gray-800' },
+    }
+
+    const config = typeConfig[articleType] || { label: 'Arte y otros', class: 'bg-gray-100 text-gray-800' }
+
+    return (
+      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${config.class}`}>
+        {config.label}
+      </span>
+    )
+  }
+
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
@@ -119,6 +135,9 @@ function ShippingMethodsPageContent() {
                         Tipo
                       </th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Tipo de artículo
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                         Peso máx.
                       </th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -146,6 +165,9 @@ function ShippingMethodsPageContent() {
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm">
                           {getTypeBadge(method.type)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          {getArticleTypeBadge(method.article_type)}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           {method.max_weight ? `${method.max_weight}g` : '-'}

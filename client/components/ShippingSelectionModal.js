@@ -237,7 +237,7 @@ export default function ShippingSelectionModal({
                       }}
                       role="button"
                       tabIndex={0}
-                      className={`group relative flex items-center justify-between gap-4 rounded-lg p-4 cursor-pointer ${
+                      className={`group relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg p-4 cursor-pointer ${
                         selectedType === 'pickup' && selectedMethod === method.id
                           ? 'border border-black bg-gray-50'
                           : 'border border-gray-300 bg-white hover:bg-gray-50'
@@ -277,7 +277,7 @@ export default function ShippingSelectionModal({
                         )}
                       </div>
                       {/* Right column: cost + check icon */}
-                      <div className="flex items-center gap-2">
+                      <div className="mt-1 flex w-full items-center gap-2 justify-start sm:mt-0 sm:w-auto sm:justify-end">
                         <span className="text-sm font-semibold text-gray-900">Gratis</span>
                         <CheckCircleIcon
                           className={`h-5 w-5 ${
@@ -291,7 +291,7 @@ export default function ShippingSelectionModal({
                   ))}
 
                   {/* Delivery option */}
-                  <label
+                  <div
                       onClick={handleSelectDelivery}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -311,32 +311,34 @@ export default function ShippingSelectionModal({
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <span className="block text-sm font-medium text-gray-900">Envío a domicilio</span>
                         {selectedType === 'delivery' && (
-                          <div className="flex items-center gap-2 sm:justify-end">
+                          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
                             <label htmlFor="postal-code" className="block text-sm font-medium text-gray-700">
                               Código postal
                             </label>
+                            <div className="flex w-full gap-2 sm:w-auto">
                               <input
-                                  id="postal-code"
-                                  name="postal-code"
-                                  type="text"
-                                  autoComplete="postal-code"
-                                  value={postalCode}
-                                  onChange={handlePostalCodeChange}
-                                  placeholder="28001"
-                                  className="block rounded-md border border-gray-300 bg-white px-2 py-1.5 text-base text-gray-900 placeholder:text-gray-400 sm:text-sm/6 outline-none"
-                                  onClick={(e) => e.stopPropagation()}
+                                id="postal-code"
+                                name="postal-code"
+                                type="text"
+                                autoComplete="postal-code"
+                                value={postalCode}
+                                onChange={handlePostalCodeChange}
+                                placeholder="28001"
+                                className="block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-base text-gray-900 placeholder:text-gray-400 sm:text-sm/6 outline-none"
+                                onClick={(e) => e.stopPropagation()}
                               />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                loadDeliveryMethods()
-                              }}
-                              disabled={!postalCode || loadingDelivery}
-                              className="rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {loadingDelivery ? 'Buscando...' : 'Buscar'}
-                            </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  loadDeliveryMethods()
+                                }}
+                                disabled={!postalCode || loadingDelivery}
+                                className="shrink-0 rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {loadingDelivery ? 'Buscando...' : 'Buscar'}
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -354,7 +356,7 @@ export default function ShippingSelectionModal({
                             return (
                               <div
                                 key={method.id}
-                                className={`flex items-center justify-between rounded-md p-3 cursor-pointer ${
+                                className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-md p-3 cursor-pointer ${
                                   isSelected
                                     ? 'border border-black bg-white'
                                     : 'border border-gray-200 bg-white hover:border-gray-300'
@@ -387,7 +389,7 @@ export default function ShippingSelectionModal({
                                     </span>
                                   )}
                                 </div>
-                                <div className="ml-3 flex items-center gap-2">
+                                <div className="ml-0 flex w-full items-center gap-2 justify-start sm:ml-3 sm:w-auto sm:justify-end">
                                   <span className="text-sm font-semibold text-gray-900">
                                     €{method.cost.toFixed(2)}
                                   </span>
@@ -398,7 +400,7 @@ export default function ShippingSelectionModal({
                           })}
                         </div>
                       )}
-                    </label>
+                    </div>
                 </div>
               </fieldset>
 
