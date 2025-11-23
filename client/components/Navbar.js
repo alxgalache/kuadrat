@@ -297,20 +297,7 @@ export default function Navbar() {
                 <span className="sr-only">Cerrar menú</span>
                 <XMarkIcon aria-hidden="true" className="size-6" />
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false)
-                  setCartOpen(true)
-                }}
-                className="relative -m-2.5 inline-flex items-center justify-center rounded-md p-2.5 text-gray-900 hover:text-gray-600"
-              >
-                <span className="sr-only">Abrir carrito</span>
-                <ShoppingCartIcon aria-hidden="true" className="size-6" />
-                {totalCartItems > 0 && (
-                  <span className="ml-2 text-sm font-semibold">{totalCartItems}</span>
-                )}
-              </button>
+              {/* Intentionally no cart button here on mobile; cart access remains in the main navbar on the right. */}
             </div>
             <Link href="/" className="-m-1.5 p-1.5">
               <span className="sr-only">Kuadrat</span>

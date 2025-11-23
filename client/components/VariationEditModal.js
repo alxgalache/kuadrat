@@ -41,17 +41,6 @@ export default function VariationEditModal({ open, onClose, product, onSave }) {
   }
 
   const handleSave = async () => {
-    // Validate variations
-    for (const variation of variations) {
-      if (!variation.key.trim() || !variation.value.trim()) {
-        showBanner('Todas las variaciones deben tener nombre y valor')
-        return
-      }
-      if (variation.stock < 0) {
-        showBanner('El stock no puede ser negativo')
-        return
-      }
-    }
 
     setSaving(true)
     try {

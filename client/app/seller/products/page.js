@@ -158,7 +158,7 @@ function SellerProductsPageContent() {
             href="/seller/publish"
             className="rounded-md bg-black px-3.5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-gray-800"
           >
-            Publicar producto
+            Nuevo
           </Link>
         </div>
 
@@ -178,7 +178,8 @@ function SellerProductsPageContent() {
           <div className="mt-8 flow-root">
             <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
               <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-                <table className="min-w-full divide-y divide-gray-300">
+                {/* Desktop table layout */}
+                <table className="hidden min-w-full divide-y divide-gray-300 sm:table">
                   <thead>
                     <tr>
                       <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0">
@@ -276,6 +277,78 @@ function SellerProductsPageContent() {
                     ))}
                   </tbody>
                 </table>
+
+                {/* Mobile-friendly stacked layout */}
+                <div className="space-y-4 sm:hidden">
+                  {products.map((product) => (
+                    <div
+                      key={`${product.product_type}-${product.id}`}
+                      className="rounded-lg border border-gray-200 bg-white p-4 mx-4 shadow-sm"
+                    >
+                      {/* Title row with status & visibility badges */}
+                      <div className="flex flex-col gap-2">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {product.name}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {getStatusBadge(product.status)}
+                          {getVisibleBadge(product.visible)}
+                        </div>
+                      </div>
+
+                      {/* Content row: image + main fields */}
+                      <div className="mt-4 flex items-center gap-4">
+                        <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-md bg-gray-100">
+                          <img
+                            alt={product.name}
+                            src={getImageUrl(product)}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+
+                        <div className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                          <div>
+                            <p className="text-xs text-gray-500">Precio</p>
+                            <p className="font-medium text-gray-900">€{product.price.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Stock</p>
+                            <p className="font-medium text-gray-900">{product.total_stock}</p>
+                          </div>
+                          <div className="ml-auto flex items-center gap-2">
+                            {product.product_type === 'others' && (
+                              <button
+                                onClick={() => handleEditVariations(product)}
+                                className="text-indigo-600 hover:text-indigo-900"
+                                title="Editar variaciones"
+                              >
+                                <PencilIcon className="size-5" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleToggleVisibility(product)}
+                              className="text-blue-600 hover:text-blue-900"
+                              title={product.visible ? 'Ocultar' : 'Mostrar'}
+                            >
+                              {product.visible ? (
+                                <EyeSlashIcon className="size-5" />
+                              ) : (
+                                <EyeIcon className="size-5" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleDelete(product)}
+                              className="text-red-600 hover:text-red-900"
+                              title="Eliminar"
+                            >
+                              <TrashIcon className="size-5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

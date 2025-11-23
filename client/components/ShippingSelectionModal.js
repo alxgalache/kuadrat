@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
 import { XMarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 import { shippingAPI } from '@/lib/api'
@@ -23,9 +23,16 @@ export default function ShippingSelectionModal({
   const [error, setError] = useState('')
   const [postalCodeError, setPostalCodeError] = useState('')
 
-  // Load pickup methods on mount
+  // Load pickup methods whenever the modal opens for a given product
   useEffect(() => {
     if (open && product) {
+      // Reset transient state on each open so we always start from a clean slate
+      setSelectedType(null)
+      setSelectedMethod(null)
+      setDeliveryMethods([])
+      setPostalCode('')
+      setError('')
+      setPostalCodeError('')
       loadPickupMethods()
     }
   }, [open, product])
@@ -42,12 +49,6 @@ export default function ShippingSelectionModal({
       )
 
       setPickupMethods(data.pickup || [])
-
-      // Auto-select if only one pickup method
-      if (data.pickup && data.pickup.length === 1) {
-        setSelectedType('pickup')
-        setSelectedMethod(data.pickup[0].id)
-      }
     } catch (err) {
       console.error('Error loading shipping methods:', err)
       setError('No se pudieron cargar los métodos de envío')
@@ -192,8 +193,12 @@ export default function ShippingSelectionModal({
     <Dialog open={open} onClose={handleClose} className="relative z-50">
       <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
 
-      <div className="fixed inset-0 flex items-center justify-center p-4">
-        <DialogPanel className="mx-auto max-w-2xl w-full rounded-lg bg-white p-6 shadow-xl">
+      {/* Scrollable container so the whole modal (including header and footer
+          actions) remains accessible on small screens when the content is
+          taller than the viewport. */}
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
+          <DialogPanel className="mx-auto max-w-2xl w-full rounded-lg bg-white p-6 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <DialogTitle className="text-lg font-semibold text-gray-900">
               Seleccionar método de envío
@@ -427,6 +432,7 @@ export default function ShippingSelectionModal({
             </div>
           )}
         </DialogPanel>
+        </div>
       </div>
     </Dialog>
   )
