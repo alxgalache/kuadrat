@@ -1122,7 +1122,6 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                     <ul className="space-y-1">
                                                         {getShippingBreakdown().map((group, index) => {
                                                             const isArt = group.productType === 'art'
-                                                            const articleLabel = isArt ? 'obras de arte' : 'otros artículos'
                                                             const sellerText = group.sellerName
                                                                 ? `del autor ${group.sellerName}`
                                                                 : 'del mismo autor'
@@ -1133,7 +1132,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                                 <li key={`${group.sellerId}-${group.productType}-${group.methodId}-${index}`} className="text-[11px] text-gray-600">
                                                                     <span className="font-semibold">{group.methodName}</span>{' '}
                                                                     <span>
-                                                                        {sellerText}: {group.totalUnits} {articleLabel}
+                                                                        {sellerText}: {group.totalUnits} artículos
                                                                         {group.maxArticles > 1 && ` agrupados en ${group.shipments} envíos (máx. ${group.maxArticles} por envío)`}
                                                                         {group.maxArticles <= 1 && ` en ${group.shipments} envío${group.shipments > 1 ? 's' : ''}`}
                                                                         {' '}→ {group.shipments} × €{group.costPerShipment.toFixed(2)} = €{group.totalShipping.toFixed(2)}

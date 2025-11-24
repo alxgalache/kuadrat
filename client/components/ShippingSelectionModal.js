@@ -23,7 +23,27 @@ export default function ShippingSelectionModal({
   const [error, setError] = useState('')
   const [postalCodeError, setPostalCodeError] = useState('')
 
-  // Load pickup methods whenever the modal opens for a given product
+  // Load pickup methods whenever the modal is opened for a product *or* the
+  // product actually changes.
+  //
+  // IMPORTANT: we deliberately depend on stable identifiers (product.id and
+  // product.type) instead of the whole `product` object. On the callers
+  // side, `product` is often passed as an inline object literal, so any
+  // parent re-render would create a new object reference even if it
+  // represents the same product. If we subscribed to the full `product`
+  // object, those benign re-renders would incorrectly reset the internal
+  // selection state and reload the shipping methods.
+  //
+  // This behaviour was particularly visible on mobile/touch devices: the
+  // first tap on the delivery card triggered a re-render higher in the
+  // tree, the `product` prop reference changed, and this effect ran again
+  // while the modal was still open. As a result, the user's selection was
+  // cleared and the shipping options were reloaded, so the delivery card
+  // only appeared to be selectable from the *second* tap onwards.
+  //
+  // By keying this effect on `open`, `product.id` and `product.type` only,
+  // we ensure that state is reset when the modal truly opens or when the
+  // underlying product changes, but not on unrelated parent re-renders.
   useEffect(() => {
     if (open && product) {
       // Reset transient state on each open so we always start from a clean slate
@@ -35,7 +55,7 @@ export default function ShippingSelectionModal({
       setPostalCodeError('')
       loadPickupMethods()
     }
-  }, [open, product])
+  }, [open, product?.id, product?.type])
 
 
   const loadPickupMethods = async () => {
