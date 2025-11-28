@@ -18,7 +18,7 @@ function OrdersPageContent() {
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
-  const [dateFilter, setDateFilter] = useState('all') // all | week | month | year
+  const [dateFilter, setDateFilter] = useState('week') // all | week | month | year
   const observerRef = useRef(null)
   const loadMoreRef = useRef(null)
 
