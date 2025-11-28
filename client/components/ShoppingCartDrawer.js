@@ -314,7 +314,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
     const isAddressValid = () => {
         const needsDelivery = hasDeliveryShipping()
-        const needsInvoicing = allPickupShipping() || !useSameAddressForInvoicing
+        const pickupOnly = allPickupShipping()
 
         // Validate delivery address if needed
         if (needsDelivery) {
@@ -324,8 +324,10 @@ export default function ShoppingCartDrawer({open, onClose}) {
             }
         }
 
-        // Validate invoicing address if needed
-        if (needsInvoicing && !useSameAddressForInvoicing) {
+        // Validate invoicing address:
+        //  - Always required for pickup-only carts
+        //  - Required for delivery carts only when the user chooses a different invoicing address
+        if (pickupOnly || (!useSameAddressForInvoicing && needsDelivery)) {
             if (!invoicingAddress.line1 || !invoicingAddress.postalCode || !invoicingAddress.city || !invoicingAddress.province || !invoicingAddress.country) {
                 setAddressError('Por favor, completa la dirección de facturación')
                 return false
@@ -393,8 +395,13 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 return
             }
 
-            const finalDeliveryAddress = hasDeliveryShipping() ? deliveryAddress : null
-            const finalInvoicingAddress = useSameAddressForInvoicing ? deliveryAddress : invoicingAddress
+            const hasDelivery = hasDeliveryShipping()
+            const pickupOnly = allPickupShipping()
+
+            const finalDeliveryAddress = hasDelivery ? deliveryAddress : null
+            const finalInvoicingAddress = pickupOnly
+                ? invoicingAddress
+                : (useSameAddressForInvoicing ? deliveryAddress : invoicingAddress)
 
             // 1) Persist order in our DB with status 'pending' and PATCH Revolut order with full details
             const placed = await ordersAPI.placeOrder({

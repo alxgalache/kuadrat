@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ordersAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { ArrowLeftIcon } from '@heroicons/react/20/solid'
+import { ArrowLeftIcon, InformationCircleIcon } from '@heroicons/react/20/solid'
 
 function OrderDetailContent() {
   const params = useParams()
@@ -49,18 +49,33 @@ function OrderDetailContent() {
   }
 
   const getStatusBadge = (status) => {
+    const arrivedTooltip =
+      'Pendiente de confirmación del comprador. El importe de la venta se añadirá a tu balance cuando el usuario confirme, o después de 5 días si no lo hace'
+
     const statusConfig = {
-      pending: { label: 'Pendiente', class: 'bg-yellow-100 text-yellow-800' },
-      completed: { label: 'Completado', class: 'bg-green-100 text-green-800' },
+      pending_payment: { label: 'Pendiente de pago', class: 'bg-blue-100 text-blue-800' },
+      paid: { label: 'Pagado', class: 'bg-amber-100 text-amber-800' },
+      sent: { label: 'Enviado', class: 'bg-indigo-100 text-indigo-800' },
+      arrived: { label: 'Recibido', class: 'bg-emerald-100 text-emerald-800', showInfo: true },
+      confirmed: { label: 'Confirmado', class: 'bg-green-100 text-green-800' },
       cancelled: { label: 'Cancelado', class: 'bg-red-100 text-red-800' },
-      processing: { label: 'Procesando', class: 'bg-blue-100 text-blue-800' },
+      reimbursed: { label: 'Reembolsado', class: 'bg-orange-100 text-orange-800' },
     }
 
     const config = statusConfig[status] || { label: status, class: 'bg-gray-100 text-gray-800' }
 
     return (
-      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${config.class}`}>
-        {config.label}
+      <span className="inline-flex items-center gap-1">
+        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${config.class}`}>
+          {config.label}
+        </span>
+        {config.showInfo && (
+          <InformationCircleIcon
+            className="h-4 w-4 text-gray-400"
+            aria-hidden="true"
+            title={arrivedTooltip}
+          />
+        )}
       </span>
     )
   }

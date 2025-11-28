@@ -88,9 +88,13 @@ export default function VariationEditModal({ open, onClose, product, onSave }) {
 
             <div className="sm:flex sm:items-start">
               <div className="mt-3 w-full text-center sm:mt-0 sm:text-left">
-                <DialogTitle as="h3" className="text-base font-semibold text-gray-900">
-                  Editar variaciones - {product.name}
+                <DialogTitle as="h3" className="text-lg font-semibold text-gray-900 tracking-tight">
+                  Editar variaciones
                 </DialogTitle>
+                <p className="mt-1 text-sm text-gray-500">
+                  {product.name}
+                </p>
+
                 <div className="mt-6">
                   <div className="space-y-4">
                     {variations.length === 0 ? (
@@ -99,52 +103,43 @@ export default function VariationEditModal({ open, onClose, product, onSave }) {
                       </p>
                     ) : (
                       variations.map((variation, index) => (
-                        <div key={index} className="flex gap-3 items-start">
-                          <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div
+                          key={index}
+                          className="flex gap-3 items-start rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 shadow-xs"
+                        >
+                          <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Nombre
+                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">
+                                Nombre de la variación
                               </label>
                               <input
                                 type="text"
                                 value={variation.key}
                                 onChange={(e) => handleVariationChange(index, 'key', e.target.value)}
-                                placeholder="Ej: Tamaño, Color"
-                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                                placeholder="Ej: Tamaño, Formato"
+                                className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
                               />
                             </div>
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Valor
-                              </label>
-                              <input
-                                type="text"
-                                value={variation.value}
-                                onChange={(e) => handleVariationChange(index, 'value', e.target.value)}
-                                placeholder="Ej: Grande, Rojo"
-                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Stock
+                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">
+                                Stock disponible
                               </label>
                               <input
                                 type="number"
                                 min="0"
                                 value={variation.stock}
                                 onChange={(e) => handleVariationChange(index, 'stock', e.target.value)}
-                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                                className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
                               />
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => handleRemoveVariation(index)}
-                            className="mt-7 p-2 text-red-600 hover:text-red-800"
+                            className="mt-6 inline-flex items-center justify-center rounded-full border border-red-100 bg-red-50 px-2.5 py-2 text-red-600 hover:bg-red-100 hover:text-red-700"
                             title="Eliminar variación"
                           >
-                            <TrashIcon className="size-5" />
+                            <TrashIcon className="size-4" />
                           </button>
                         </div>
                       ))
@@ -154,7 +149,7 @@ export default function VariationEditModal({ open, onClose, product, onSave }) {
                   <button
                     type="button"
                     onClick={handleAddVariation}
-                    className="mt-4 inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                    className="mt-4 inline-flex items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-xs hover:border-gray-400 hover:bg-gray-50"
                   >
                     <PlusIcon className="size-5" />
                     Agregar variación
@@ -163,12 +158,12 @@ export default function VariationEditModal({ open, onClose, product, onSave }) {
               </div>
             </div>
 
-            <div className="mt-6 sm:flex sm:flex-row-reverse gap-3">
+            <div className="mt-6 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-100 pt-4">
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={saving || variations.length === 0}
-                className="inline-flex w-full justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex w-full justify-center rounded-md bg-black px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? 'Guardando...' : 'Guardar cambios'}
               </button>
@@ -176,7 +171,7 @@ export default function VariationEditModal({ open, onClose, product, onSave }) {
                 type="button"
                 onClick={handleClose}
                 disabled={saving}
-                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto disabled:opacity-50"
+                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto disabled:opacity-50"
               >
                 Cancelar
               </button>

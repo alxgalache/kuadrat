@@ -10,6 +10,9 @@
 
 services:
   api:
+    ports:
+      - "3001:3001"
+      - "9229:9229"
     environment:
       NODE_ENV: development
     # Pre/staging: run API in dev mode (nodemon)

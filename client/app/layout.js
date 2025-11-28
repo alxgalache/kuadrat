@@ -16,7 +16,7 @@ export const metadata = {
   title: '140d - Galería de Arte',
   description: 'Una galería de arte en línea seleccionada que presenta obras de arte únicas de artistas talentosos',
   appleWebApp: {
-    title: '140d.art',
+    title: '140d',
     statusBarStyle: 'default',
   },
   manifest: '/manifest.json',

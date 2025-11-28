@@ -4,7 +4,7 @@
   "description": "Kuadrat Art Gallery API",
   "main": "server.js",
   "scripts": {
-    "dev": "nodemon server.js",
+    "dev": "nodemon --inspect=0.0.0.0:9229 server.js",
     "start": "node server.js",
     "test": "jest --coverage --detectOpenHandles",
     "test:watch": "jest --watch"
