@@ -8,6 +8,7 @@ import { NotificationProvider } from '@/contexts/NotificationContext'
 import { BannerNotificationProvider } from '@/contexts/BannerNotificationContext'
 import NotificationContainer from '@/components/Notification'
 import BannerNotification from '@/components/BannerNotification'
+import RateLimitHandler from '@/components/RateLimitHandler'
 import TestAccessGate from '@/components/TestAccessGate'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
@@ -36,6 +37,7 @@ export default function RootLayout({ children }) {
       <body className="h-full flex flex-col">
         <NotificationProvider>
           <BannerNotificationProvider>
+            <RateLimitHandler />
             <AuthProvider>
               <CartProvider>
                 <TestAccessGate gateEnabled={WEB_APP_HIDDEN}>

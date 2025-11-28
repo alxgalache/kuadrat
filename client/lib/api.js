@@ -61,6 +61,17 @@ async function apiRequest(endpoint, options = {}) {
         }
       }
 
+      // Handle 429 Too Many Requests - rate limit exceeded
+      if (response.status === 429) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('api-rate-limit', {
+            detail: {
+              message: 'Límite de peticiones alcanzado. Tómatelo con calma, hay mucho y muy bueno que ver en esta página 😉',
+            },
+          }));
+        }
+      }
+
       console.log('API Error:', data);
       console.log('API Response:', response.status);
 

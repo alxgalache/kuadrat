@@ -32,7 +32,8 @@
     "postcode-validator": "^3.10.5",
     "slugify": "^1.6.6",
     "socket.io": "^4.8.1",
-    "validator": "^13.12.0"
+    "validator": "^13.12.0",
+    "express-rate-limit": "^8.2.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
