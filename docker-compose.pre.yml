@@ -13,7 +13,7 @@ services:
     environment:
       NODE_ENV: development
     # Pre/staging: run API in dev mode (nodemon)
-    command: npm run dev
+    command: npm run pre
 
   client:
     environment:
