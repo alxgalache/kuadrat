@@ -6,6 +6,7 @@ const {
   confirmOrderPayment,
   getUserOrders,
   getOrderById,
+  getSellerStats,
 } = require('../controllers/ordersController');
 const { authenticate, optionalAuthenticate, requireAuth } = require('../middleware/authorization');
 
@@ -17,6 +18,9 @@ router.post('/placeOrder', optionalAuthenticate, placeOrder);
 
 // Confirm order payment (attach Revolut info and mark as paid)
 router.put('/', optionalAuthenticate, confirmOrderPayment);
+
+// Get seller stats for orders (current and previous periods)
+router.get('/stats', authenticate, requireAuth, getSellerStats);
 
 // Get orders - requires authentication
 router.get('/', authenticate, requireAuth, getUserOrders);

@@ -250,7 +250,7 @@ export default function OthersProductDetailPage({ params }) {
                   disabled
                   className="w-full max-w-xs flex items-center justify-center rounded-md border border-transparent bg-gray-400 px-8 py-3 text-base font-medium text-white cursor-not-allowed"
                 >
-                  Temporalmente no disponible
+                  Vendido
                 </button>
               ) : (
                 <>

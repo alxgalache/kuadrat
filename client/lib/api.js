@@ -20,6 +20,9 @@ const getAuthToken = () => {
   return null;
 };
 
+// Simple in-flight requests deduplication for GET requests (avoids duplicate calls in React StrictMode)
+const inflightRequests = new Map();
+
 // Helper function to make API requests
 // The `options` object may include a special flag `skipAuthHandling` which, when true,
 // prevents global 401 handling (token clearing + redirect). This is useful for
@@ -44,47 +47,72 @@ async function apiRequest(endpoint, options = {}) {
   };
 
   try {
-    const response = await fetch(`${API_URL}${endpoint}`, config);
-    const data = await response.json();
+    const url = `${API_URL}${endpoint}`;
 
-    if (!response.ok) {
-      // Handle 401 Unauthorized - session expired or invalid token
-      if (response.status === 401 && !skipAuthHandling) {
-        // Clear local auth data
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-        }
-        // Redirect to home page
-        if (typeof window !== 'undefined') {
-          window.location.href = '/';
-        }
-      }
+    // Deduplicate only GET requests with identical URL + method
+    const method = (config.method || 'GET').toUpperCase();
+    const dedupeKey = method === 'GET' ? `${method}:${url}` : null;
 
-      // Handle 429 Too Many Requests - rate limit exceeded
-      if (response.status === 429) {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('api-rate-limit', {
-            detail: {
-              message: 'Límite de peticiones alcanzado. Tómatelo con calma, hay mucho y muy bueno que ver en esta página 😉',
-            },
-          }));
-        }
-      }
-
-      console.log('API Error:', data);
-      console.log('API Response:', response.status);
-
-      // Create a structured error object
-      const error = new Error(data.message || 'Solicitud a la API fallida');
-      error.status = data.status || response.status;
-      error.title = data.title || 'Error';
-      error.message = data.message || 'Solicitud a la API fallida';
-      error.errors = data.errors || null;
-      error.response = data;
-      throw error;
+    if (dedupeKey && inflightRequests.has(dedupeKey)) {
+      return await inflightRequests.get(dedupeKey);
     }
 
+    const doFetch = async () => {
+      const response = await fetch(url, config);
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Handle 401 Unauthorized - session expired or invalid token
+        if (response.status === 401 && !skipAuthHandling) {
+          // Clear local auth data
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+          }
+          // Redirect to home page
+          if (typeof window !== 'undefined') {
+            window.location.href = '/';
+          }
+        }
+
+        // Handle 429 Too Many Requests - rate limit exceeded
+        if (response.status === 429) {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('api-rate-limit', {
+              detail: {
+                message: 'Límite de peticiones alcanzado. Tómatelo con calma, hay mucho y muy bueno que ver en esta página 😉',
+              },
+            }));
+          }
+        }
+
+        console.log('API Error:', data);
+        console.log('API Response:', response.status);
+
+        // Create a structured error object
+        const error = new Error(data.message || 'Solicitud a la API fallida');
+        error.status = data.status || response.status;
+        error.title = data.title || 'Error';
+        error.message = data.message || 'Solicitud a la API fallida';
+        error.errors = data.errors || null;
+        error.response = data;
+        throw error;
+      }
+
+      return data;
+    };
+
+    if (dedupeKey) {
+      const promise = doFetch().finally(() => {
+        // Small timeout to collapse back-to-back duplicates
+        setTimeout(() => inflightRequests.delete(dedupeKey), 0);
+      });
+      inflightRequests.set(dedupeKey, promise);
+      return await promise;
+    }
+
+    // Non-GET or non-deduped
+    const data = await doFetch();
     return data;
   } catch (error) {
     console.error('API Error:', error);
@@ -352,12 +380,36 @@ export const ordersAPI = {
       queryParams.append('limit', params.limit.toString());
     }
 
+    if (params.date) {
+      queryParams.append('date', params.date);
+    }
+
     const queryString = queryParams.toString();
     return apiRequest(`/orders${queryString ? '?' + queryString : ''}`);
   },
 
   getById: async (id) => {
     return apiRequest(`/orders/${id}`);
+  },
+
+  // Get seller stats for current and previous periods
+  getStats: async (params = {}) => {
+    const queryParams = new URLSearchParams();
+
+    if (params.date) {
+      queryParams.append('date', params.date);
+    }
+
+    if (params.previousDate) {
+      queryParams.append('previousDate', params.previousDate);
+    }
+
+    if (params.previousDateTo) {
+      queryParams.append('previousDateTo', params.previousDateTo);
+    }
+
+    const queryString = queryParams.toString();
+    return apiRequest(`/orders/stats${queryString ? '?' + queryString : ''}`);
   },
 };
 

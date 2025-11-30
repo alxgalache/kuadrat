@@ -206,7 +206,7 @@ export default function ArtProductDetailPage({ params }) {
                   disabled
                   className="flex max-w-xs flex-1 items-center justify-center rounded-md border border-transparent bg-gray-400 px-8 py-3 text-base font-medium text-white cursor-not-allowed sm:w-full"
                 >
-                  Temporalmente no disponible
+                  Vendido
                 </button>
               ) : (
                 <button

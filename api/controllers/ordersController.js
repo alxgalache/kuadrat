@@ -892,6 +892,7 @@ const getUserOrders = async (req, res, next) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 5;
     const offset = (page - 1) * limit;
+    const dateFrom = req.query.date || null; // Optional date filter (format: YYYY-MM-DD)
 
     // Check if user is a seller
     const userResult = await db.execute({
@@ -905,6 +906,10 @@ const getUserOrders = async (req, res, next) => {
 
     const userRole = userResult.rows[0].role;
 
+    // Build date filter condition
+    const dateCondition = dateFrom ? 'AND o.created_at >= ?' : '';
+    const dateArgs = dateFrom ? [dateFrom] : [];
+
     // Get all orders that contain at least one item from this seller
     // We need to find orders where either art items or other items belong to this seller
     const ordersWithSellerItemsResult = await db.execute({
@@ -915,11 +920,11 @@ const getUserOrders = async (req, res, next) => {
         LEFT JOIN art a ON aoi.art_id = a.id
         LEFT JOIN other_order_items ooi ON o.id = ooi.order_id
         LEFT JOIN others ot ON ooi.other_id = ot.id
-        WHERE a.seller_id = ? OR ot.seller_id = ?
+        WHERE (a.seller_id = ? OR ot.seller_id = ?) ${dateCondition}
         ORDER BY o.created_at DESC
         LIMIT ? OFFSET ?
       `,
-      args: [userId, userId, limit, offset],
+      args: [userId, userId, ...dateArgs, limit, offset],
     });
 
     // Get total count for pagination
@@ -931,9 +936,9 @@ const getUserOrders = async (req, res, next) => {
         LEFT JOIN art a ON aoi.art_id = a.id
         LEFT JOIN other_order_items ooi ON o.id = ooi.order_id
         LEFT JOIN others ot ON ooi.other_id = ot.id
-        WHERE a.seller_id = ? OR ot.seller_id = ?
+        WHERE (a.seller_id = ? OR ot.seller_id = ?) ${dateCondition}
       `,
-      args: [userId, userId],
+      args: [userId, userId, ...dateArgs],
     });
 
     const totalOrders = countResult.rows[0].total;
@@ -998,6 +1003,150 @@ const getUserOrders = async (req, res, next) => {
         totalPages: Math.ceil(totalOrders / limit),
         hasMore: page < Math.ceil(totalOrders / limit),
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get seller stats for current and previous periods (excluding shipping costs)
+const getSellerStats = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const dateFrom = req.query.date || null; // Current period start date (format: YYYY-MM-DD)
+    const previousDateFrom = req.query.previousDate || null; // Previous period start date
+    const previousDateTo = req.query.previousDateTo || null; // Previous period end date
+
+    // Helper function to calculate stats for a date range
+    const calculateStats = async (startDate, endDate = null) => {
+      // Build date filter conditions
+      let dateCondition = '';
+      const dateArgs = [];
+      
+      if (startDate && endDate) {
+        dateCondition = 'AND o.created_at >= ? AND o.created_at < ?';
+        dateArgs.push(startDate, endDate);
+      } else if (startDate) {
+        dateCondition = 'AND o.created_at >= ?';
+        dateArgs.push(startDate);
+      }
+
+      // Get all order items for this seller within the date range (art items)
+      const artItemsResult = await db.execute({
+        sql: `
+          SELECT 
+            aoi.price_at_purchase,
+            o.status
+          FROM art_order_items aoi
+          LEFT JOIN art a ON aoi.art_id = a.id
+          LEFT JOIN orders o ON aoi.order_id = o.id
+          WHERE a.seller_id = ? ${dateCondition}
+        `,
+        args: [userId, ...dateArgs],
+      });
+
+      // Get all order items for this seller within the date range (other items)
+      const otherItemsResult = await db.execute({
+        sql: `
+          SELECT 
+            ooi.price_at_purchase,
+            o.status
+          FROM other_order_items ooi
+          LEFT JOIN others ot ON ooi.other_id = ot.id
+          LEFT JOIN orders o ON ooi.order_id = o.id
+          WHERE ot.seller_id = ? ${dateCondition}
+        `,
+        args: [userId, ...dateArgs],
+      });
+
+      const allItems = [...artItemsResult.rows, ...otherItemsResult.rows];
+
+      // Calculate totals (excluding shipping costs as per requirement)
+      const totals = {
+        available: 0,      // Saldo disponible (confirmed orders)
+        sales: 0,          // Total de ventas (all orders)
+        withdrawn: 0,      // Total retirado (placeholder - no withdrawal system yet)
+        pendingIncome: 0,  // Pendiente de ingreso (paid/sent/arrived but not confirmed)
+      };
+
+      allItems.forEach((item) => {
+        const price = Number(item.price_at_purchase) || 0;
+        totals.sales += price;
+
+        // Saldo disponible: confirmed orders
+        if (item.status === 'confirmed') {
+          totals.available += price;
+        }
+
+        // Pendiente de ingreso: paid/sent/arrived but not confirmed
+        if (['paid', 'sent', 'arrived'].includes(item.status)) {
+          totals.pendingIncome += price;
+        }
+      });
+
+      return totals;
+    };
+
+    // Calculate current period stats
+    const currentStats = await calculateStats(dateFrom, null);
+
+    // Calculate previous period stats if dates provided
+    let previousStats = null;
+    if (previousDateFrom && previousDateTo) {
+      previousStats = await calculateStats(previousDateFrom, previousDateTo);
+    }
+
+    // Calculate change percentages with business rules:
+    // - One decimal precision
+    // - Cap at ">1000%" when magnitude exceeds 1000%
+    // - When previous === 0 and current > 0 => treat as +100.0%
+    // - When previous > 0 and current === 0 => -100.0% (decrease)
+    // - When both are 0 => 0%
+    const calculateChange = (current, previous) => {
+      const cur = Number(current) || 0;
+      const prev = Number(previous) || 0;
+
+      // No previous period provided (null/undefined): treat as no change info
+      if (previous === null || previous === undefined) {
+        return { change: '0%', changeType: 'increase' };
+      }
+
+      if (prev === 0) {
+        if (cur === 0) {
+          // No change at all
+          return { change: '0%', changeType: 'increase' };
+        }
+        // Business decision: when previous is zero and current > 0, show 100.0% increase
+        return { change: '100.0%', changeType: 'increase' };
+      }
+
+      const diff = cur - prev;
+      const percentage = (diff / prev) * 100;
+      const absPerc = Math.abs(percentage);
+
+      // Apply cap
+      const display = absPerc > 1000 ? '>1000%' : `${absPerc.toFixed(1)}%`;
+
+      return {
+        change: display,
+        changeType: diff >= 0 ? 'increase' : 'decrease',
+      };
+    };
+
+    const stats = {
+      current: currentStats,
+      previous: previousStats,
+      changes: previousStats ? {
+        available: calculateChange(currentStats.available, previousStats.available),
+        sales: calculateChange(currentStats.sales, previousStats.sales),
+        withdrawn: calculateChange(currentStats.withdrawn, previousStats.withdrawn),
+        pendingIncome: calculateChange(currentStats.pendingIncome, previousStats.pendingIncome),
+      } : null,
+    };
+
+    res.status(200).json({
+      success: true,
+      stats,
     });
   } catch (error) {
     next(error);
@@ -1248,6 +1397,7 @@ module.exports = {
   confirmOrderPayment,
   getUserOrders,
   getOrderById,
+  getSellerStats,
   getAllOrdersAdmin,
   getOrderByIdAdmin,
 };
