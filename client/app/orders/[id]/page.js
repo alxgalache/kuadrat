@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ordersAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { ArrowLeftIcon, InformationCircleIcon } from '@heroicons/react/20/solid'
+import { ArrowLeftIcon, InformationCircleIcon, MapPinIcon, DocumentTextIcon } from '@heroicons/react/20/solid'
 
 function OrderDetailContent() {
   const params = useParams()
@@ -88,6 +88,38 @@ function OrderDetailContent() {
     return order.items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0)
   }
 
+  // Address helpers
+  const hasAnyDeliveryAddress = () => {
+    const fields = [
+      'address_line_1',
+      'address_line_2',
+      'postal_code',
+      'city',
+      'province',
+      'country',
+    ]
+    return fields.some((f) => !!order[`delivery_${f}`])
+  }
+
+  const getAddressLines = (prefix) => {
+    const line1 = order[`${prefix}_address_line_1`] || ''
+    const line2 = order[`${prefix}_address_line_2`] || ''
+    const pc = order[`${prefix}_postal_code`] || ''
+    const city = order[`${prefix}_city`] || ''
+    const province = order[`${prefix}_province`] || ''
+    const country = order[`${prefix}_country`] || ''
+
+    const lines = []
+    if (line1) lines.push(line1)
+    if (line2) lines.push(line2)
+    const cityLine = [pc, city].filter(Boolean).join(' ')
+    if (cityLine) lines.push(cityLine)
+    const regionLine = [province, country].filter(Boolean).join(' · ')
+    if (regionLine) lines.push(regionLine)
+
+    return lines
+  }
+
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
@@ -149,6 +181,56 @@ function OrderDetailContent() {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           {/* Main content - Order items */}
           <div className="lg:col-span-2">
+            {/* Addresses card */}
+            <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden mb-8">
+              <div className="px-4 py-5 sm:p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Direcciones</h2>
+
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  {/* Delivery address */}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <MapPinIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                      <h3 className="text-sm font-semibold text-gray-900">Entrega</h3>
+                    </div>
+
+                    {hasAnyDeliveryAddress() ? (
+                      <address className="mt-2 not-italic space-y-1">
+                        {getAddressLines('delivery').map((line, idx) => (
+                          <p key={idx} className="text-sm text-gray-700">
+                            {line}
+                          </p>
+                        ))}
+                      </address>
+                    ) : (
+                      <p className="mt-2 inline-flex items-center rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+                        Pedido para recogida
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Invoicing address */}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <DocumentTextIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                      <h3 className="text-sm font-semibold text-gray-900">Facturación</h3>
+                    </div>
+                    <address className="mt-2 not-italic space-y-1">
+                      {getAddressLines('invoicing').length > 0 ? (
+                        getAddressLines('invoicing').map((line, idx) => (
+                          <p key={idx} className="text-sm text-gray-700">
+                            {line}
+                          </p>
+                        ))
+                      ) : (
+                        <p className="text-sm text-gray-500">—</p>
+                      )}
+                    </address>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden">
               <div className="px-4 py-5 sm:p-6">
                 <h2 className="text-lg font-medium text-gray-900 mb-4">Tus productos en este pedido</h2>

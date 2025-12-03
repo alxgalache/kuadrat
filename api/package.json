@@ -15,17 +15,19 @@
   "license": "ISC",
   "dependencies": {
     "@libsql/client": "^0.14.0",
+    "@sentry/node": "^10.28.0",
     "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
+    "express-rate-limit": "^8.2.1",
     "helmet": "^8.0.0",
     "image-size": "^1.1.1",
     "jsonwebtoken": "^9.0.2",
-    "node-fetch": "^2.7.0",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
+    "node-fetch": "^2.7.0",
     "nodemailer": "^6.9.15",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
@@ -33,8 +35,7 @@
     "postcode-validator": "^3.10.5",
     "slugify": "^1.6.6",
     "socket.io": "^4.8.1",
-    "validator": "^13.12.0",
-    "express-rate-limit": "^8.2.1"
+    "validator": "^13.12.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",
