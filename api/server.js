@@ -1,3 +1,8 @@
+// IMPORTANT: Initialize Sentry as early as possible per v10 docs
+// See: https://docs.sentry.io/platforms/node/guides/express/
+require('./instrument.js');
+
+const Sentry = require('@sentry/node');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -96,6 +101,12 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Debug route to verify Sentry error capture
+// Hit GET /debug-sentry to force an error and confirm it appears in Sentry
+app.get('/debug-sentry', (req, res) => {
+  throw new Error('Sentry test error');
+});
+
 // API Routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/products', productsRoutes); // Keep old routes for backward compatibility temporarily
@@ -111,6 +122,9 @@ app.use('/api/test-access', testAccessRoutes);
 
 // 404 handler
 app.use(notFound);
+
+// Register Sentry error handler before any other error middleware and after all controllers
+Sentry.setupExpressErrorHandler(app);
 
 // Error handler (must be last)
 app.use(errorHandler);
