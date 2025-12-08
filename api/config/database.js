@@ -1,4 +1,5 @@
 const { createClient } = require('@libsql/client');
+const crypto = require('crypto');
 require('dotenv').config();
 
 // Create Turso database client
@@ -100,17 +101,45 @@ async function initializeDatabase() {
 
     // --- Orders & order items schema --------------------------------------
 
-    // If an old orders schema exists (with buyer_id and without email),
-    // drop orders and the dependent order item tables so we can recreate
-    // them with the new guest-friendly structure.
+    // Detect legacy or mismatched schemas for orders and order item tables.
+    // If found, drop and recreate them to avoid foreign key mismatches at runtime.
     try {
-      const pragmaResult = await db.execute('PRAGMA table_info(orders)');
-      const cols = pragmaResult.rows || [];
-      const hasEmailColumn = cols.some((c) => c.name === 'email');
-      const hasBuyerIdColumn = cols.some((c) => c.name === 'buyer_id');
+      const ordersInfo = await db.execute('PRAGMA table_info(orders)');
+      const ordersCols = ordersInfo.rows || [];
+      const hasEmailColumn = ordersCols.some((c) => c.name === 'email');
+      const hasTokenColumn = ordersCols.some((c) => c.name === 'token');
+      const hasBuyerIdColumn = ordersCols.some((c) => c.name === 'buyer_id');
+      const hasIdPrimaryKey = ordersCols.some((c) => c.name === 'id' && c.pk === 1);
 
-      if (!hasEmailColumn && hasBuyerIdColumn) {
-        console.log('Legacy orders schema detected. Recreating orders and order item tables...');
+      let shouldRecreateOrders = false;
+
+      // Legacy schema (buyer_id without email/token) or missing token column
+      if (hasBuyerIdColumn || !hasEmailColumn || !hasTokenColumn || !hasIdPrimaryKey) {
+        shouldRecreateOrders = true;
+      }
+
+      // Inspect child tables to ensure their FKs point to orders(id)
+      const checkFk = async (tableName) => {
+        try {
+          const fkList = await db.execute(`PRAGMA foreign_key_list(${tableName})`);
+          const rows = fkList.rows || [];
+          if (rows.length === 0) return false;
+          return rows.some((r) => r.table === 'orders' && r.from === 'order_id' && r.to === 'id');
+        } catch (err) {
+          return false;
+        }
+      };
+
+      const artFkOk = await checkFk('art_order_items');
+      const otherFkOk = await checkFk('other_order_items');
+      const legacyFkOk = await checkFk('order_items');
+
+      if (!artFkOk || !otherFkOk || !legacyFkOk) {
+        shouldRecreateOrders = true;
+      }
+
+      if (shouldRecreateOrders) {
+        console.log('Recreating orders and related item tables to fix schema/foreign key mismatches...');
         await db.execute('DROP TABLE IF EXISTS order_items');
         await db.execute('DROP TABLE IF EXISTS art_order_items');
         await db.execute('DROP TABLE IF EXISTS other_order_items');
@@ -131,6 +160,7 @@ async function initializeDatabase() {
         status TEXT NOT NULL DEFAULT 'completed',
         revolut_order_id TEXT,
         revolut_payment_id TEXT,
+        token TEXT UNIQUE NOT NULL,
         delivery_address_line_1 TEXT,
         delivery_address_line_2 TEXT,
         delivery_postal_code TEXT,
@@ -374,7 +404,37 @@ async function initializeDatabase() {
       }
     }
 
-    // Add delivery address fields to orders table
+    // Add missing columns to orders table
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN token TEXT`);
+      console.log('Added token column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('token column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_token ON orders(token)`);
+      console.log('Ensured unique index on orders.token');
+    } catch (err) {
+      console.log('Could not ensure unique index on orders.token:', err.message);
+    }
+
+    // Backfill missing tokens for existing rows
+    try {
+      const missing = await db.execute('SELECT id FROM orders WHERE token IS NULL OR token = ""');
+      if (missing.rows.length > 0) {
+        for (const row of missing.rows) {
+          const token = crypto.randomBytes(24).toString('hex');
+          await db.execute({ sql: 'UPDATE orders SET token = ? WHERE id = ?', args: [token, row.id] });
+        }
+        console.log(`Backfilled tokens for ${missing.rows.length} existing orders`);
+      }
+    } catch (err) {
+      console.log('Could not backfill order tokens:', err.message);
+    }
+
     try {
       await db.execute(`ALTER TABLE orders ADD COLUMN delivery_address_line_1 TEXT`);
       console.log('Added delivery_address_line_1 column to orders table');

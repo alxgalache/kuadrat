@@ -1,7 +1,11 @@
 const { db } = require('../config/database');
 const { ApiError } = require('../middleware/errorHandler');
 const { sendPurchaseConfirmation, sendPaymentConfirmation } = require('../services/emailService');
+const { sendBuyerToSellerContactEmail } = require('../services/emailService');
 const { createRevolutOrder, updateRevolutOrder } = require('../services/revolutService');
+const crypto = require('crypto');
+
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 
 // Public site base URL used for product images/links in Revolut payload
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
@@ -302,6 +306,7 @@ const createOrder = async (req, res, next) => {
         guest_email,
         total_price,
         status,
+        token,
         delivery_address_line_1,
         delivery_address_line_2,
         delivery_postal_code,
@@ -315,14 +320,16 @@ const createOrder = async (req, res, next) => {
         invoicing_postal_code,
         invoicing_city,
         invoicing_province,
-        invoicing_country
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        invoicing_country,
+        revolut_order_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         buyerEmail,
         buyerPhone ?? null,
         guest_email || null,
         totalPrice ?? 0,
         'pending_payment',
+        crypto.randomBytes(24).toString('hex'),
         // Delivery address
         delivery_address?.line1 ?? null,
         delivery_address?.line2 ?? null,
@@ -339,6 +346,7 @@ const createOrder = async (req, res, next) => {
         invoicing_address?.city ?? null,
         invoicing_address?.province ?? null,
         invoicing_address?.country ?? null,
+        revOrder.id,
       ],
     });
 
@@ -721,6 +729,7 @@ const placeOrder = async (req, res, next) => {
         guest_email,
         total_price,
         status,
+        token,
         delivery_address_line_1,
         delivery_address_line_2,
         delivery_postal_code,
@@ -736,13 +745,14 @@ const placeOrder = async (req, res, next) => {
         invoicing_province,
         invoicing_country,
         revolut_order_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         buyerEmail,
         buyerPhone ?? null,
         guest_email || null,
         totalPrice ?? 0,
         'pending',
+        crypto.randomBytes(24).toString('hex'),
         delivery_address?.line1 ?? null,
         delivery_address?.line2 ?? null,
         delivery_address?.postalCode ?? null,
@@ -1153,6 +1163,158 @@ const getSellerStats = async (req, res, next) => {
   }
 };
 
+// Public: get order details by token (no authentication). Includes seller contact info per item.
+const getOrderByToken = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+
+    if (!token || typeof token !== 'string' || token.length < 16) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE token = ?',
+      args: [token],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const order = orderResult.rows[0];
+
+    // Get art order items with seller info
+    const artItemsResult = await db.execute({
+      sql: `
+        SELECT
+          aoi.*,
+          a.name,
+          a.description,
+          a.type,
+          a.basename,
+          a.seller_id,
+          u.full_name as seller_name,
+          u.email as seller_email,
+          u.email_contact as seller_email_contact,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        LEFT JOIN users u ON a.seller_id = u.id
+        WHERE aoi.order_id = ?
+      `,
+      args: [order.id],
+    });
+
+    // Get others order items with seller info
+    const othersItemsResult = await db.execute({
+      sql: `
+        SELECT
+          ooi.*,
+          o.name,
+          o.description,
+          o.basename,
+          o.seller_id,
+          ov.key as variant_key,
+          u.full_name as seller_name,
+          u.email as seller_email,
+          u.email_contact as seller_email_contact,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        LEFT JOIN users u ON o.seller_id = u.id
+        WHERE ooi.order_id = ?
+      `,
+      args: [order.id],
+    });
+
+    order.items = [...artItemsResult.rows, ...othersItemsResult.rows];
+
+    res.status(200).json({ success: true, order });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Public: send a message from buyer to a specific seller for an order, using order token for authorization
+const contactSellerForOrder = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { seller_id, message } = req.body || {};
+
+    if (!token || typeof token !== 'string' || token.length < 16) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    if (!seller_id) {
+      throw new ApiError(400, 'Falta seller_id', 'Solicitud inválida');
+    }
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      throw new ApiError(400, 'El mensaje no puede estar vacío', 'Solicitud inválida');
+    }
+
+    const orderResult = await db.execute({ sql: 'SELECT * FROM orders WHERE token = ?', args: [token] });
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+    const order = orderResult.rows[0];
+
+    // Load items to ensure seller is part of this order and to build context
+    const itemsResult = await db.execute({
+      sql: `
+        SELECT * FROM (
+          SELECT aoi.id, aoi.order_id, aoi.art_id as product_id, aoi.price_at_purchase, aoi.shipping_cost, aoi.shipping_method_name, aoi.shipping_method_type,
+                 a.name, a.description, a.type, a.basename, a.seller_id, 'art' as product_type
+          FROM art_order_items aoi
+          LEFT JOIN art a ON aoi.art_id = a.id
+          WHERE aoi.order_id = ?
+          UNION ALL
+          SELECT ooi.id, ooi.order_id, ooi.other_id as product_id, ooi.price_at_purchase, ooi.shipping_cost, ooi.shipping_method_name, ooi.shipping_method_type,
+                 o.name, o.description, NULL as type, o.basename, o.seller_id, 'other' as product_type
+          FROM other_order_items ooi
+          LEFT JOIN others o ON ooi.other_id = o.id
+          WHERE ooi.order_id = ?
+        ) t
+        WHERE seller_id = ?
+      `,
+      args: [order.id, order.id, seller_id],
+    });
+
+    if (itemsResult.rows.length === 0) {
+      throw new ApiError(404, 'No se encontró un producto de este vendedor en el pedido', 'Vendedor inválido');
+    }
+
+    const sellerRes = await db.execute({ sql: 'SELECT email, full_name, email_contact FROM users WHERE id = ?', args: [seller_id] });
+    if (sellerRes.rows.length === 0) {
+      throw new ApiError(404, 'Vendedor no encontrado', 'Vendedor no encontrado');
+    }
+    const seller = sellerRes.rows[0];
+    const recipient = seller.email_contact || seller.email;
+    if (!recipient) {
+      throw new ApiError(400, 'El vendedor no tiene email de contacto configurado', 'Contacto no disponible');
+    }
+
+    const buyerEmail = order.email || order.guest_email || null;
+    const buyerPhone = order.phone || null;
+
+    await sendBuyerToSellerContactEmail({
+      sellerEmail: recipient,
+      sellerName: seller.full_name || 'Vendedor',
+      buyerEmail,
+      buyerPhone,
+      orderId: order.id,
+      orderToken: order.token,
+      items: itemsResult.rows,
+      message: message.trim(),
+    });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get single order by ID (seller view - shows only seller's products)
 const getOrderById = async (req, res, next) => {
   try {
@@ -1400,6 +1562,8 @@ module.exports = {
   getSellerStats,
   getAllOrdersAdmin,
   getOrderByIdAdmin,
+  getOrderByToken,
+  contactSellerForOrder,
 };
 
 // Confirm order payment (PUT /api/orders)
@@ -1529,6 +1693,7 @@ async function confirmOrderPayment(req, res, next) {
       if (buyerEmail) {
         await sendPurchaseConfirmation({
           orderId: order_id,
+          orderToken: orderRow.token,
           items,
           totalPrice: orderRow.total_price,
           buyerEmail,

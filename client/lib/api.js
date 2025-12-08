@@ -392,6 +392,22 @@ export const ordersAPI = {
     return apiRequest(`/orders/${id}`);
   },
 
+  // Public: get order by token (no auth)
+  getByTokenPublic: async (token) => {
+    return apiRequest(`/orders/public/token/${encodeURIComponent(token)}`, {
+      skipAuthHandling: true,
+    });
+  },
+
+  // Public: contact seller for an order by token
+  contactSellerPublic: async ({ token, sellerId, message }) => {
+    return apiRequest(`/orders/public/token/${encodeURIComponent(token)}/contact`, {
+      method: 'POST',
+      body: JSON.stringify({ seller_id: sellerId, message }),
+      skipAuthHandling: true,
+    });
+  },
+
   // Get seller stats for current and previous periods
   getStats: async (params = {}) => {
     const queryParams = new URLSearchParams();

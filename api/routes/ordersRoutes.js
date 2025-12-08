@@ -7,6 +7,8 @@ const {
   getUserOrders,
   getOrderById,
   getSellerStats,
+  getOrderByToken,
+  contactSellerForOrder,
 } = require('../controllers/ordersController');
 const { authenticate, optionalAuthenticate, requireAuth } = require('../middleware/authorization');
 
@@ -21,6 +23,12 @@ router.put('/', optionalAuthenticate, confirmOrderPayment);
 
 // Get seller stats for orders (current and previous periods)
 router.get('/stats', authenticate, requireAuth, getSellerStats);
+
+// Public order detail by token
+router.get('/public/token/:token', getOrderByToken);
+
+// Public contact seller for an order (token-based)
+router.post('/public/token/:token/contact', contactSellerForOrder);
 
 // Get orders - requires authentication
 router.get('/', authenticate, requireAuth, getUserOrders);

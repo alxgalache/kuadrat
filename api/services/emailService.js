@@ -79,7 +79,9 @@ const getLogoSrc = () => (LOGO_ATTACHMENT ? `cid:${LOGO_CID}` : LOGO_PNG_DATA_UR
 
 // Generate buyer email HTML
 const generateBuyerEmailHTML = (orderDetails) => {
-  const { orderId, items, totalPrice } = orderDetails;
+  const { orderId, items, totalPrice, orderToken } = orderDetails;
+
+  const orderUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/pedido/${orderToken}`;
 
   const itemsHTML = items.map(item => `
     <tr>
@@ -137,6 +139,12 @@ const generateBuyerEmailHTML = (orderDetails) => {
                   <tr>
                     <td style="padding-bottom: 8px;">
                       <strong style="color: #111827;">Fecha:</strong> ${new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding-top: 8px;">
+                      <strong style="color: #111827;">Consulta tu pedido:</strong><br>
+                      <a href="${orderUrl}" style="color: #1d4ed8; text-decoration: underline; word-break: break-all;">${orderUrl}</a>
                     </td>
                   </tr>
                 </table>
@@ -596,9 +604,91 @@ const sendPaymentConfirmation = async ({ orderId, buyerEmail, totalPrice }) => {
   }
 };
 
+// Send a buyer-to-seller contact email for a specific order/token
+const sendBuyerToSellerContactEmail = async ({
+  sellerEmail,
+  sellerName,
+  buyerEmail,
+  buyerPhone,
+  orderId,
+  orderToken,
+  items,
+  message,
+}) => {
+  const safeSellerName = sellerName || 'Vendedor';
+  const baseUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const orderUrl = `${baseUrl}/orders/${orderId}`;
+
+  const itemsHTML = (items || [])
+    .map((item) => {
+      const shippingInfo = item.shipping_method_name
+        ? `${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''}`
+        : null;
+      return `
+        <li style="margin-bottom: 8px;">
+          <div style="font-weight: 600; color: #111827;">${item.name || 'Producto'}</div>
+          ${item.variant_key ? `<div style="color: #6b7280; font-size: 14px;">Variante: ${item.variant_key}</div>` : ''}
+          ${shippingInfo ? `<div style="color: #6b7280; font-size: 14px;">Envío: ${shippingInfo}</div>` : ''}
+        </li>
+      `;
+    })
+    .join('');
+
+  const logoAttachment = getLogoAttachment();
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Mensaje de comprador</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f9fafb; padding: 24px;">
+  <div style="max-width: 640px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <div style="text-align: center; margin-bottom: 16px;">
+      <img src="${getLogoSrc()}" alt="Kuadrat" style="max-width: 160px; height: auto;" />
+    </div>
+    <h1 style="margin: 0 0 12px; font-size: 22px; color: #111827;">Nuevo mensaje de un comprador</h1>
+    <p style="margin: 0 0 12px; color: #374151;">Hola ${safeSellerName},</p>
+    <p style="margin: 0 0 12px; color: #374151;">Has recibido un mensaje relacionado con el pedido #${orderId}.</p>
+    <p style="margin: 0 0 12px; color: #374151;"><strong>Pedido:</strong> <a href="${orderUrl}" style="color: #1d4ed8; text-decoration: underline;">${orderUrl}</a></p>
+    <p style="margin: 0 0 16px; color: #374151;">Para contestar a este mensaje, puedes contactar con el comprador por estos medios:</p>
+    ${buyerEmail ? `<p style="margin: 0 0 8px; color: #374151;"><strong>Email del comprador:</strong> ${buyerEmail}</p>` : ''}
+    ${buyerPhone ? `<p style="margin: 0 0 16px; color: #374151;"><strong>Teléfono del comprador:</strong> ${buyerPhone}</p>` : ''}
+    <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+      <p style="margin: 0 0 8px; color: #111827; font-weight: 600;">Mensaje:</p>
+      <p style="margin: 0; color: #374151; white-space: pre-wrap;">${message}</p>
+    </div>
+    ${itemsHTML ? `
+      <div style="margin-top: 16px;">
+        <p style="margin: 0 0 8px; color: #111827; font-weight: 600;">Productos relacionados:</p>
+        <ul style="padding-left: 18px; margin: 0; color: #374151;">${itemsHTML}</ul>
+      </div>
+    ` : ''}
+  </div>
+</body>
+</html>
+  `.trim();
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || 'noreply@kuadrat.com',
+    to: sellerEmail,
+    subject: `Mensaje de comprador - Pedido #${orderId}`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✓ Mensaje del comprador enviado al vendedor (${sellerEmail}):`, info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('✗ Error enviando mensaje del comprador al vendedor:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
   sendRegistrationRequest,
   sendPaymentConfirmation,
+  sendBuyerToSellerContactEmail,
 };
