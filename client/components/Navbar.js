@@ -63,6 +63,14 @@ export default function Navbar() {
                 Próximamente...
               </div>
             </div>
+            <div className="relative group">
+              <span className="text-sm/6 font-semibold text-gray-900 cursor-default">
+                Espacios
+              </span>
+              <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-lg ring-1 ring-gray-900/10 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                Próximamente...
+              </div>
+            </div>
           </div>
           <div className="flex lg:hidden">
             <button
@@ -324,6 +332,14 @@ export default function Navbar() {
             <div className="-mx-3 rounded-lg px-3 py-2">
               <span className="block text-base/7 font-semibold text-gray-900">
                 Subastas
+              </span>
+              <span className="mt-1 block text-sm text-gray-600">
+                Próximamente...
+              </span>
+            </div>
+            <div className="-mx-3 rounded-lg px-3 py-2">
+              <span className="block text-base/7 font-semibold text-gray-900">
+                Espacios
               </span>
               <span className="mt-1 block text-sm text-gray-600">
                 Próximamente...

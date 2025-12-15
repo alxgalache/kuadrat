@@ -421,7 +421,11 @@ const generateAdminEmailHTML = (orderDetails) => {
 
 // Send purchase confirmation email to buyer, sellers, and admin
 const sendPurchaseConfirmation = async (orderDetails) => {
-  const { orderId, items, totalPrice, buyerEmail, sellers } = orderDetails;
+  const { orderId, items, buyerEmail, sellers } = orderDetails;
+
+  const itemsSubtotal = items.reduce((sum, item) => sum + (item.price_at_purchase || 0), 0);
+  const shippingTotal = items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0);
+  const grandTotal = itemsSubtotal + shippingTotal;
   const results = [];
 
   // 1. Send email to buyer
@@ -431,7 +435,7 @@ const sendPurchaseConfirmation = async (orderDetails) => {
       from: process.env.EMAIL_FROM,
       to: buyerEmail,
       subject: `140d - Confirmación de pedido #${orderId}`,
-      html: generateBuyerEmailHTML(orderDetails),
+      html: generateBuyerEmailHTML({ ...orderDetails, totalPrice: grandTotal }),
       ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
     };
 
@@ -476,8 +480,8 @@ const sendPurchaseConfirmation = async (orderDetails) => {
     const adminMailOptions = {
       from: process.env.EMAIL_FROM,
       to: adminEmail,
-      subject: `[ADMIN] Nuevo pedido #${orderId} - Total: €${totalPrice.toFixed(2)}`,
-      html: generateAdminEmailHTML(orderDetails),
+      subject: `[ADMIN] Nuevo pedido #${orderId} - Total: €${grandTotal.toFixed(2)}`,
+      html: generateAdminEmailHTML({ ...orderDetails, totalPrice: grandTotal }),
       ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
     };
 

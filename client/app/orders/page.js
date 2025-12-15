@@ -218,6 +218,15 @@ function OrdersPageContent() {
         return items.reduce((sum, item) => sum + (Number(item.price_at_purchase) || 0), 0)
     }
 
+    // Subtotal after commission deduction
+    const getSubtotalAfterCommission = (items) => {
+        return items.reduce((sum, item) => {
+            const price = Number(item.price_at_purchase) || 0
+            const commission = Number(item.commission_amount) || 0
+            return sum + (price - commission)
+        }, 0)
+    }
+
     const getStatusBadge = (status) => {
         const arrivedTooltip =
             'Pendiente de confirmación del comprador. El importe de la venta se añadirá a tu balance cuando el usuario confirme, o después de 5 días si no lo hace'
@@ -469,6 +478,10 @@ function OrdersPageContent() {
                                         </th>
                                         <th scope="col"
                                             className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                            Recibes
+                                        </th>
+                                        <th scope="col"
+                                            className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                             Envío
                                         </th>
                                         <th scope="col"
@@ -507,6 +520,9 @@ function OrdersPageContent() {
                                                 </td>
                                                 <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
                                                     €{getSubtotalWithoutShipping(order.items).toFixed(2)}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
+                                                    €{getSubtotalAfterCommission(order.items).toFixed(2)}
                                                 </td>
                                                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                     €{getTotalShipping(order.items).toFixed(2)}
@@ -564,7 +580,7 @@ function OrdersPageContent() {
                                                     <p className="mt-0.5 text-xs text-gray-400">{order.items.length} item(s)</p>
                                                 </div>
 
-                                                {/* Shipping + subtotal + total + actions */}
+                                                {/* Shipping + subtotal + subtotal after commission + total + actions */}
                                                 <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
                                                     <div>
                                                         <p className="text-xs text-gray-500">Envío</p>
@@ -576,6 +592,12 @@ function OrdersPageContent() {
                                                         <p className="text-xs text-gray-500">Subtotal sin envío</p>
                                                         <p className="font-medium text-gray-900">
                                                             €{getSubtotalWithoutShipping(order.items).toFixed(2)}
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">Recibes</p>
+                                                        <p className="font-medium text-gray-900">
+                                                            €{getSubtotalAfterCommission(order.items).toFixed(2)}
                                                         </p>
                                                     </div>
                                                     <div>

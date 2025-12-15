@@ -362,10 +362,12 @@ const createOrder = async (req, res, next) => {
 
     // Create art order items (do NOT mark as sold yet; this will be done after payment confirmation)
     const processedArt = {};
+    const dealerCommissionRate = parseFloat(process.env.DEALER_COMMISSION || 0) / 100;
     for (const item of artItems) {
       const product = artProducts.find(p => p.id === item.id);
+      const commissionAmount = product.price * dealerCommissionRate;
 
-      // Insert art order item with shipping info
+      // Insert art order item with shipping info and commission
       await db.execute({
         sql: `INSERT INTO art_order_items (
           order_id,
@@ -374,8 +376,9 @@ const createOrder = async (req, res, next) => {
           shipping_method_id,
           shipping_cost,
           shipping_method_name,
-          shipping_method_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          shipping_method_type,
+          commission_amount
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -384,6 +387,7 @@ const createOrder = async (req, res, next) => {
           item.shipping?.cost || 0,
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
+          commissionAmount,
         ],
       });
 
@@ -395,8 +399,9 @@ const createOrder = async (req, res, next) => {
     for (const item of othersItems) {
       const product = othersProducts.find(p => p.id === item.id);
       const variant = othersVariations.find(v => v.id === item.variantId);
+      const commissionAmount = product.price * dealerCommissionRate;
 
-      // Insert other order item with shipping info
+      // Insert other order item with shipping info and commission
       await db.execute({
         sql: `INSERT INTO other_order_items (
           order_id,
@@ -406,8 +411,9 @@ const createOrder = async (req, res, next) => {
           shipping_method_id,
           shipping_cost,
           shipping_method_name,
-          shipping_method_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          shipping_method_type,
+          commission_amount
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -417,6 +423,7 @@ const createOrder = async (req, res, next) => {
           item.shipping?.cost || 0,
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
+          commissionAmount,
         ],
       });
 
@@ -774,8 +781,11 @@ const placeOrder = async (req, res, next) => {
     const orderId = Number(orderResult.lastInsertRowid);
 
     // 2) Create order item rows (art and others) without altering inventory yet
+    const dealerCommissionRate = parseFloat(process.env.DEALER_COMMISSION || 0) / 100;
+    
     for (const item of artItems) {
       const product = artProducts.find((p) => p.id === item.id);
+      const commissionAmount = product.price * dealerCommissionRate;
       await db.execute({
         sql: `INSERT INTO art_order_items (
           order_id,
@@ -784,8 +794,9 @@ const placeOrder = async (req, res, next) => {
           shipping_method_id,
           shipping_cost,
           shipping_method_name,
-          shipping_method_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          shipping_method_type,
+          commission_amount
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -794,6 +805,7 @@ const placeOrder = async (req, res, next) => {
           item.shipping?.cost || 0,
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
+          commissionAmount,
         ],
       });
     }
@@ -801,6 +813,7 @@ const placeOrder = async (req, res, next) => {
     for (const item of othersItems) {
       const product = othersProducts.find((p) => p.id === item.id);
       const variant = othersVariations.find((v) => v.id === item.variantId);
+      const commissionAmount = product.price * dealerCommissionRate;
       await db.execute({
         sql: `INSERT INTO other_order_items (
           order_id,
@@ -810,8 +823,9 @@ const placeOrder = async (req, res, next) => {
           shipping_method_id,
           shipping_cost,
           shipping_method_name,
-          shipping_method_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          shipping_method_type,
+          commission_amount
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -821,6 +835,7 @@ const placeOrder = async (req, res, next) => {
           item.shipping?.cost || 0,
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
+          commissionAmount,
         ],
       });
     }
@@ -1046,6 +1061,7 @@ const getSellerStats = async (req, res, next) => {
         sql: `
           SELECT 
             aoi.price_at_purchase,
+            aoi.commission_amount,
             o.status
           FROM art_order_items aoi
           LEFT JOIN art a ON aoi.art_id = a.id
@@ -1060,6 +1076,7 @@ const getSellerStats = async (req, res, next) => {
         sql: `
           SELECT 
             ooi.price_at_purchase,
+            ooi.commission_amount,
             o.status
           FROM other_order_items ooi
           LEFT JOIN others ot ON ooi.other_id = ot.id
@@ -1071,7 +1088,7 @@ const getSellerStats = async (req, res, next) => {
 
       const allItems = [...artItemsResult.rows, ...otherItemsResult.rows];
 
-      // Calculate totals (excluding shipping costs as per requirement)
+      // Calculate totals (excluding shipping costs as per requirement, and deducting commission)
       const totals = {
         available: 0,      // Saldo disponible (confirmed orders)
         sales: 0,          // Total de ventas (all orders)
@@ -1081,16 +1098,18 @@ const getSellerStats = async (req, res, next) => {
 
       allItems.forEach((item) => {
         const price = Number(item.price_at_purchase) || 0;
-        totals.sales += price;
+        const commission = Number(item.commission_amount) || 0;
+        const sellerEarning = price - commission;
+        totals.sales += sellerEarning;
 
         // Saldo disponible: confirmed orders
         if (item.status === 'confirmed') {
-          totals.available += price;
+          totals.available += sellerEarning;
         }
 
         // Pendiente de ingreso: paid/sent/arrived but not confirmed
         if (['paid', 'sent', 'arrived'].includes(item.status)) {
-          totals.pendingIncome += price;
+          totals.pendingIncome += sellerEarning;
         }
       });
 

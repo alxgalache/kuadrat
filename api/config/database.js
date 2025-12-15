@@ -581,6 +581,26 @@ async function initializeDatabase() {
       }
     }
 
+    // Add commission_amount column to art_order_items table
+    try {
+      await db.execute(`ALTER TABLE art_order_items ADD COLUMN commission_amount REAL`);
+      console.log('Added commission_amount column to art_order_items table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('commission_amount column already exists in art_order_items or error:', err.message);
+      }
+    }
+
+    // Add commission_amount column to other_order_items table
+    try {
+      await db.execute(`ALTER TABLE other_order_items ADD COLUMN commission_amount REAL`);
+      console.log('Added commission_amount column to other_order_items table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('commission_amount column already exists in other_order_items or error:', err.message);
+      }
+    }
+
     console.log('Database schema initialized successfully!');
   } catch (error) {
     console.error('Error initializing database:', error);

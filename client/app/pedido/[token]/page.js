@@ -169,6 +169,7 @@ function PublicOrderContent() {
 
   const getSubtotal = () => order.items.reduce((sum, item) => sum + item.price_at_purchase, 0)
   const getTotalShipping = () => order.items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0)
+  const getGrandTotal = () => getSubtotal() + getTotalShipping()
 
   const hasAnyDeliveryAddress = () => {
     const fields = ['address_line_1', 'address_line_2', 'postal_code', 'city', 'province', 'country']
@@ -402,7 +403,7 @@ function PublicOrderContent() {
                   </div>
                   <div className="flex justify-between border-t border-gray-200 pt-3 text-base font-medium">
                     <dt className="text-gray-900">Total</dt>
-                    <dd className="text-gray-900">€{order.total_price.toFixed(2)}</dd>
+                    <dd className="text-gray-900">€{getGrandTotal().toFixed(2)}</dd>
                   </div>
                 </dl>
               </div>
