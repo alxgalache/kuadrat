@@ -39,6 +39,10 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const [revolutOrderToken, setRevolutOrderToken] = useState(null)
     // Snapshot of the cart used to initialise the current Revolut order (stringified compact items)
     const [revolutCartSnapshot, setRevolutCartSnapshot] = useState(null)
+    // Validation errors from Revolut Card Field
+    const [cardValidationErrors, setCardValidationErrors] = useState([])
+    // Track if card field has been validated and is valid
+    const [isCardFieldValid, setIsCardFieldValid] = useState(false)
     // Revolut Checkout SDK and Card Field refs
     const revolutModuleRef = useRef(null)
     const cardFieldContainerRef = useRef(null)
@@ -90,7 +94,12 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
     // Ensure that every time the drawer is closed, we return to the first step
     // (cart view with the "Completar pedido" button) and clear any address errors.
+    // Prevent closing if payment is being processed.
     const handleCloseDrawer = () => {
+        if (isProcessing) {
+            // Do not allow closing the drawer while processing payment
+            return
+        }
         setShowAddressInput(false)
         setAddressError('')
         onClose()
@@ -376,6 +385,12 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return
         }
 
+        // Validate that card field has been filled and is valid before proceeding
+        if (!isCardFieldValid) {
+            showBanner('Por favor, completa los datos de tu tarjeta antes de continuar.')
+            return
+        }
+
         setIsProcessing(true)
         try {
             // Prepare items in the expanded format expected by orders API
@@ -573,6 +588,10 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
         const initCardField = async () => {
             try {
+                // Reset card field validity state when initializing
+                setIsCardFieldValid(false)
+                setCardValidationErrors([])
+                
                 if (!revolutModuleRef.current) {
                     const mod = await import('@revolut/checkout')
                     revolutModuleRef.current = mod && (mod.default || mod)
@@ -615,6 +634,20 @@ export default function ShoppingCartDrawer({open, onClose}) {
                         console.error('Revolut Card Field error:', error)
                         showBanner(error?.message || 'Error en el pago con tarjeta. Por favor, inténtalo de nuevo.')
                         setIsProcessing(false)
+                    },
+                    onValidation: (validationData) => {
+                        // Handle validation errors from the card field
+                        if (validationData && validationData.length > 0) {
+                            // Store all validation error messages
+                            const errorMessages = validationData.map(err => err.message || 'Error de validación')
+                            setCardValidationErrors(errorMessages)
+                            setIsCardFieldValid(false)
+                            setIsProcessing(false)
+                        } else {
+                            // Clear validation errors when card data is valid
+                            setCardValidationErrors([])
+                            setIsCardFieldValid(true)
+                        }
                     },
                 })
 
@@ -867,7 +900,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
         <>
             {/* Full-screen loading overlay to block all interactions during critical payment steps */}
             {isProcessing && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/70">
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-white/70 backdrop-blur-sm">
                     <div className="flex flex-col items-center gap-3">
                         <div
                             className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
@@ -887,7 +920,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     <div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10 sm:pl-16">
                         <DialogPanel
                             transition
-                            className="pointer-events-auto w-screen max-w-md lg:max-w-xl transform transition duration-500 ease-in-out data-[closed]:translate-x-full sm:duration-700"
+                            className={`w-screen max-w-md lg:max-w-xl transform transition duration-500 ease-in-out data-[closed]:translate-x-full sm:duration-700 ${isProcessing ? 'pointer-events-none' : 'pointer-events-auto'}`}
                         >
                             <div className="flex h-full flex-col overflow-y-auto bg-white shadow-xl">
                                 {/* Make the entire drawer content share a single scroll. Remove inner overflow to avoid nested scrolls. */}
@@ -1201,13 +1234,30 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                 </>
                                             ) : (
                                                 // Step 3: Address input - Show "Pagar"
-                                                <button
-                                                    onClick={handleProceedToPayment}
-                                                    disabled={isProcessing}
-                                                    className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    {isProcessing ? 'Procesando...' : 'Pagar'}
-                                                </button>
+                                                <>
+                                                    {/* Display validation errors above the Pagar button */}
+                                                    {cardValidationErrors.length > 0 && (
+                                                        <div className="mb-3">
+                                                            {cardValidationErrors.map((error, index) => (
+                                                                <p key={index} className="text-sm text-red-600">
+                                                                    {error}
+                                                                </p>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <button
+                                                        onClick={handleProceedToPayment}
+                                                        disabled={isProcessing || !isCardFieldValid}
+                                                        className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {isProcessing ? 'Procesando...' : 'Pagar'}
+                                                    </button>
+                                                    {!isCardFieldValid && cardValidationErrors.length === 0 && !isProcessing && (
+                                                        <p className="mt-2 text-xs text-center text-gray-500">
+                                                            Por favor, completa los datos de tu tarjeta para continuar
+                                                        </p>
+                                                    )}
+                                                </>
                                             )}
                                             {cart.some(item => !item.shipping) && !showAddressInput && (
                                                 <p className="mt-2 text-xs text-center text-amber-600">
