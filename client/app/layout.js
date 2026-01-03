@@ -12,6 +12,7 @@ import RateLimitHandler from '@/components/RateLimitHandler'
 import TestAccessGate from '@/components/TestAccessGate'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
+const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
 
 export const metadata = {
   title: '140d - Galería de Arte',
@@ -42,9 +43,9 @@ export default function RootLayout({ children }) {
               <CartProvider>
                 <TestAccessGate gateEnabled={WEB_APP_HIDDEN}>
                   {/* <ShippingBanner /> */}
-                  <Navbar />
+                  {IS_PUBLISHED && <Navbar />}
                   <main className="flex-grow">{children}</main>
-                  <Footer />
+                  {IS_PUBLISHED && <Footer />}
                   <NotificationContainer />
                   <BannerNotification />
                 </TestAccessGate>

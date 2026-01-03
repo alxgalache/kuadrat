@@ -24,6 +24,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const googlePayMerchantId = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_ID || 'BCR2DN4T6D4YQ3XXXXXX' // placeholder
     const googlePayMerchantName = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_NAME || 'Kuadrat (Sandbox)'
     const googlePayLocale = process.env.NEXT_PUBLIC_GOOGLE_PAY_LOCALE || ''
+    const paymentTimeoutMs = parseInt(process.env.NEXT_PUBLIC_PAYMENT_TIMEOUT_MS || '30000', 10)
     const {cart, removeFromCart, updateQuantity, getTotalPrice, getSubtotal, getTotalShipping, getShippingBreakdown, clearCart} = useCart()
     const {user} = useAuth()
     const {showBanner} = useBannerNotification()
@@ -49,6 +50,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const cardFieldInstanceRef = useRef(null)
     const currentOrderIdRef = useRef(null)
     const currentRevolutOrderIdRef = useRef(null)
+    const paymentTimeoutRef = useRef(null)
 
     // Google Pay integration state
     const [gpayReady, setGpayReady] = useState(false)
@@ -356,7 +358,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             })
 
             if (incompatibleItems.length > 0) {
-                setAddressError(`El código postal ${deliveryPostalCode} no está disponible para todos los métodos de envío seleccionados`)
+                setAddressError(`El código postal (${deliveryPostalCode}) no coincide con el introducido en el momento de añadir los productos a la cesta. Por favor, elimina los productos de la cesta y vuelve a añadirlo con el código postal correcto.`)
                 return false
             }
         }
@@ -470,9 +472,28 @@ export default function ShoppingCartDrawer({open, onClose}) {
             }
 
             try {
+                // Clear any existing payment timeout
+                if (paymentTimeoutRef.current) {
+                    clearTimeout(paymentTimeoutRef.current)
+                    paymentTimeoutRef.current = null
+                }
+
+                // Start payment timeout - if payment doesn't complete within the timeout, abort
+                paymentTimeoutRef.current = setTimeout(() => {
+                    paymentTimeoutRef.current = null
+                    setIsProcessing(false)
+                    showBanner('Ha ocurrido un error al procesar el pago. Inténtelo de nuevo o contacte con info@140d.art')
+                    setShowAddressInput(false)
+                }, paymentTimeoutMs)
+
                 cardFieldInstanceRef.current.submit(meta)
-                // We keep isProcessing=true; it will be cleared in the Card Field onSuccess/onError handlers
+                // We keep isProcessing=true; it will be cleared in the Card Field onSuccess/onError handlers OR timeout
             } catch (submitErr) {
+                // Clear timeout on immediate error
+                if (paymentTimeoutRef.current) {
+                    clearTimeout(paymentTimeoutRef.current)
+                    paymentTimeoutRef.current = null
+                }
                 console.error('Revolut Card Field submit error:', submitErr)
                 showBanner(submitErr.message || 'No se pudo procesar el pago con tarjeta.')
                 setIsProcessing(false)
@@ -485,6 +506,12 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     const handleRevolutCardSuccess = async () => {
+        // Clear payment timeout since payment succeeded
+        if (paymentTimeoutRef.current) {
+            clearTimeout(paymentTimeoutRef.current)
+            paymentTimeoutRef.current = null
+        }
+
         try {
             const createdOrderId = currentOrderIdRef.current
             const revolutId = currentRevolutOrderIdRef.current || revolutOrderId
@@ -631,6 +658,11 @@ export default function ShoppingCartDrawer({open, onClose}) {
                         handleRevolutCardSuccess()
                     },
                     onError: (error) => {
+                        // Clear payment timeout since we received an error
+                        if (paymentTimeoutRef.current) {
+                            clearTimeout(paymentTimeoutRef.current)
+                            paymentTimeoutRef.current = null
+                        }
                         console.error('Revolut Card Field error:', error)
                         showBanner(error?.message || 'Error en el pago con tarjeta. Por favor, inténtalo de nuevo.')
                         setIsProcessing(false)
@@ -662,6 +694,11 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
         return () => {
             isMounted = false
+            // Clear payment timeout on unmount
+            if (paymentTimeoutRef.current) {
+                clearTimeout(paymentTimeoutRef.current)
+                paymentTimeoutRef.current = null
+            }
             if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
                 try {
                     cardFieldInstanceRef.current.destroy()
@@ -852,7 +889,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             })
 
             if (incompatibleItems.length > 0) {
-                showBanner(`El código postal ${deliveryPostalCode} no está disponible para todos los métodos de envío seleccionados`)
+                showBanner(`El código postal (${deliveryPostalCode}) no coincide con el introducido en el momento de añadir los productos a la cesta. Por favor, elimina los productos de la cesta y vuelve a añadirlo con el código postal correcto.`)
                 return
             }
 

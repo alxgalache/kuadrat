@@ -111,7 +111,7 @@ export default function ShippingSelectionModal({
       if (data.delivery && data.delivery.length === 1) {
         setSelectedMethod(data.delivery[0].id)
       } else if (data.delivery && data.delivery.length === 0) {
-        setError('No hay métodos de envío disponibles para este código postal')
+        setError('No hay métodos de envío disponibles para este código postal compatible con las medidas o peso del artículo. Por favor, contacta con el vendedor o escribe a info@140d.art')
       }
     } catch (err) {
       console.error('Error loading delivery methods:', err)
