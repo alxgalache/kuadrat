@@ -476,25 +476,46 @@ const updateShippingZone = async (req, res, next) => {
       }
     }
 
-    await db.execute({
-      sql: `
-        UPDATE shipping_zones
-        SET
-          seller_id = COALESCE(?, seller_id),
-          country = COALESCE(?, country),
-          postal_code = COALESCE(?, postal_code),
-          cost = COALESCE(?, cost),
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `,
-      args: [
-        seller_id || null,
-        country !== undefined ? country : null,
-        postal_code !== undefined ? postal_code : null,
-        cost !== undefined ? cost : null,
-        zoneId,
-      ],
-    });
+    // Build update query dynamically to handle null values properly
+    const updates = [];
+    const args = [];
+
+    if (seller_id !== undefined) {
+      updates.push('seller_id = ?');
+      args.push(seller_id);
+    }
+
+    if (country !== undefined) {
+      updates.push('country = ?');
+      args.push(country);
+    }
+
+    if (postal_code !== undefined) {
+      updates.push('postal_code = ?');
+      args.push(postal_code || null);
+    }
+
+    if (cost !== undefined) {
+      updates.push('cost = ?');
+      args.push(cost);
+    }
+
+    // Always update timestamp
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+
+    // Only execute if there are fields to update
+    if (updates.length > 1) { // > 1 because updated_at is always included
+      args.push(zoneId);
+
+      await db.execute({
+        sql: `
+          UPDATE shipping_zones
+          SET ${updates.join(', ')}
+          WHERE id = ?
+        `,
+        args,
+      });
+    }
 
     res.status(200).json({
       success: true,

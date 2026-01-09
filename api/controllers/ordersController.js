@@ -47,6 +47,8 @@ const createOrder = async (req, res, next) => {
   try {
     const { items, guest_email, email, phone, delivery_address, invoicing_address, customer } = req.body || {};
 
+    const VAT_ES = parseFloat(process.env.TAX_VAT_ES || 0.21);
+
     // Orders are always placed as guest-style: they are not linked to user accounts.
     // We only care about the buyer's email (and optionally phone).
     const buyerEmail = (email || guest_email || '').trim();
@@ -199,8 +201,10 @@ const createOrder = async (req, res, next) => {
       const src = it.type === 'art' ? artMap.get(it.id) : otherMap.get(it.id);
       if (!src) continue;
       const qty = Math.max(1, parseInt(it.quantity || 1, 10));
-      const unitPriceMinor = Math.round((src.price || 0) * 100);
-      const totalMinor = unitPriceMinor * qty;
+      const totalVat = Math.round(((src.price || 0) * (VAT_ES)) * 100) * qty;
+      const unitPriceMinor = Math.round(((src.price || 0) * (1 - VAT_ES)) * 100);
+      const unitTotalPriceMinor = Math.round((src.price || 0) * 100);
+      const totalMinor = unitTotalPriceMinor * qty;
       productsTotal += totalMinor;
 
       const imageUrl = it.type === 'art'
@@ -217,7 +221,7 @@ const createOrder = async (req, res, next) => {
         unit_price_amount: unitPriceMinor,
         total_amount: totalMinor,
         external_id: src.slug,
-        taxes: [],
+        taxes: [{ name: 'IVA', amount: totalVat }],
         image_urls: [imageUrl],
         // Revolut should receive a clean, human-readable description without HTML markup
         description: htmlToPlainText(src.description || '', 1000),
@@ -519,6 +523,8 @@ const placeOrder = async (req, res, next) => {
       description = 'Pedido realizado en 140d Galería de Arte',
     } = req.body || {};
 
+    const VAT_ES = parseFloat(process.env.TAX_VAT_ES || 0.21);
+
     if (!revolut_order_id) {
       throw new ApiError(400, 'Falta revolut_order_id en la solicitud', 'Solicitud inválida');
     }
@@ -648,9 +654,12 @@ const placeOrder = async (req, res, next) => {
     for (const it of compactItems) {
       const src = it.type === 'art' ? artMap.get(it.id) : otherMap.get(it.id);
       if (!src) continue;
+
       const qty = Math.max(1, parseInt(it.quantity || 1, 10));
-      const unitPriceMinor = Math.round((src.price || 0) * 100);
-      const totalMinor = unitPriceMinor * qty;
+      const totalVat = Math.round(((src.price || 0) * (VAT_ES)) * 100) * qty;
+      const unitPriceMinor = Math.round(((src.price || 0) * (1 - VAT_ES)) * 100);
+      const unitTotalPriceMinor = Math.round((src.price || 0) * 100);
+      const totalMinor = unitTotalPriceMinor * qty;
       productsTotal += totalMinor;
 
       const imageUrl = it.type === 'art'
@@ -667,7 +676,7 @@ const placeOrder = async (req, res, next) => {
         unit_price_amount: unitPriceMinor,
         total_amount: totalMinor,
         external_id: src.slug,
-        taxes: [],
+        taxes: [{ name: 'IVA', amount: totalVat }],
         image_urls: [imageUrl],
         // Ensure PATCH payloads also use plain-text descriptions
         description: htmlToPlainText(src.description || '', 1000),
