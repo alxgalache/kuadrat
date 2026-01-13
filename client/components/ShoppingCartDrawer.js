@@ -4,60 +4,68 @@ import {useEffect, useRef, useState} from 'react'
 import {useRouter} from 'next/navigation'
 import {Dialog, DialogBackdrop, DialogPanel, DialogTitle} from '@headlessui/react'
 import {XMarkIcon, CreditCardIcon} from '@heroicons/react/24/outline'
+import {CheckCircleIcon} from '@heroicons/react/20/solid'
 import Link from 'next/link'
+import Image from 'next/image'
 import {useCart} from '@/contexts/CartContext'
 import {useAuth} from '@/contexts/AuthContext'
 import {useBannerNotification} from '@/contexts/BannerNotificationContext'
 import {getArtImageUrl, getOthersImageUrl, ordersAPI, paymentsAPI} from '@/lib/api'
-// Removed CountryCodeSelector; phone will be collected as a single field in the address step
 import AddressAutocomplete from './AddressAutocomplete'
 import AddressManualInput from './AddressManualInput'
 
 // Key used to persist a pending Revolut order for a given cart in sessionStorage
 const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
 
+// Step constants for clarity
+const STEP_CART = 1
+const STEP_ADDRESS = 2
+const STEP_PAYMENT = 3
+
+// Payment method options
+const PAYMENT_METHOD_CARD = 'card'
+const PAYMENT_METHOD_GOOGLE_APPLE = 'google_apple'
+const PAYMENT_METHOD_REVOLUT = 'revolut'
+const PAYMENT_METHOD_PAYPAL = 'paypal'
+
 export default function ShoppingCartDrawer({open, onClose}) {
     // Get address functionality mode from environment variable
     const addressMode = process.env.NEXT_PUBLIC_CART_ADDRESS_FUNC || 'manual'
-    const googlePayEnabled = (process.env.NEXT_PUBLIC_GOOGLE_PAY_ENABLED || 'false') === 'true'
-    const googlePayEnv = process.env.NEXT_PUBLIC_GOOGLE_PAY_ENV || 'TEST'
-    const googlePayMerchantId = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_ID || 'BCR2DN4T6D4YQ3XXXXXX' // placeholder
-    const googlePayMerchantName = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_NAME || 'Kuadrat (Sandbox)'
-    const googlePayLocale = process.env.NEXT_PUBLIC_GOOGLE_PAY_LOCALE || ''
     const paymentTimeoutMs = parseInt(process.env.NEXT_PUBLIC_PAYMENT_TIMEOUT_MS || '30000', 10)
     const {cart, removeFromCart, updateQuantity, getTotalPrice, getSubtotal, getTotalShipping, getShippingBreakdown, clearCart} = useCart()
     const {user} = useAuth()
     const {showBanner} = useBannerNotification()
     const router = useRouter()
+
+    // Step management (1: cart, 2: address, 3: payment method selection)
+    const [currentStep, setCurrentStep] = useState(STEP_CART)
     const [isProcessing, setIsProcessing] = useState(false)
-    const [showAddressInput, setShowAddressInput] = useState(false)
     const [personalInfo, setPersonalInfo] = useState({fullName: '', email: '', phone: ''})
     const [deliveryAddress, setDeliveryAddress] = useState({})
     const [invoicingAddress, setInvoicingAddress] = useState({})
     const [useSameAddressForInvoicing, setUseSameAddressForInvoicing] = useState(true)
     const [addressError, setAddressError] = useState('')
+
+    // Payment method selection
+    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null)
+    const [isInitializingPayment, setIsInitializingPayment] = useState(false)
+
+    // Revolut order state
     const [revolutOrderId, setRevolutOrderId] = useState(null)
     const [revolutOrderToken, setRevolutOrderToken] = useState(null)
-    // Snapshot of the cart used to initialise the current Revolut order (stringified compact items)
     const [revolutCartSnapshot, setRevolutCartSnapshot] = useState(null)
-    // Validation errors from Revolut Card Field
+
+    // Card field validation state
     const [cardValidationErrors, setCardValidationErrors] = useState([])
-    // Track if card field has been validated and is valid
     const [isCardFieldValid, setIsCardFieldValid] = useState(false)
-    // Revolut Checkout SDK and Card Field refs
+
+    // Refs
     const revolutModuleRef = useRef(null)
     const cardFieldContainerRef = useRef(null)
     const cardFieldInstanceRef = useRef(null)
     const currentOrderIdRef = useRef(null)
     const currentRevolutOrderIdRef = useRef(null)
     const paymentTimeoutRef = useRef(null)
-
-    // Google Pay integration state
-    const [gpayReady, setGpayReady] = useState(false)
-    const [gpayLoading, setGpayLoading] = useState(false)
-    const gpayBtnContainerRef = useRef(null)
-    // When the drawer section unmounts, the DOM node holding the button is removed.
-    // Do NOT guard rendering with a persistent flag; always (re)render the button when eligible.
 
     const getImageUrl = (item) => {
         return item.productType === 'art'
@@ -72,7 +80,6 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     // Build the compact representation of cart items used to initialise a Revolut order.
-    // This is also used as a stable snapshot to decide if a stored Revolut order can be reused.
     const buildCompactItems = (items) => (
         items.map(item => ({
             type: item.productType === 'art' ? 'art' : 'other',
@@ -90,35 +97,79 @@ export default function ShoppingCartDrawer({open, onClose}) {
         }
     }
 
-    const handleRemove = (item) => {
-        removeFromCart(item.productId, item.productType, item.variantId)
+    // Handle item removal - behavior depends on current step
+    const handleRemove = async (item) => {
+        if (currentStep === STEP_PAYMENT) {
+            // In step 3: cancel any existing Revolut order and return to step 1
+            if (revolutOrderId) {
+                try {
+                    await paymentsAPI.cancelOrder(revolutOrderId)
+                } catch (err) {
+                    console.warn('No se pudo cancelar la orden de Revolut:', err)
+                }
+            }
+
+            // Clean up Revolut state
+            cleanupRevolutState()
+
+            // Remove item and return to step 1
+            removeFromCart(item.productId, item.productType, item.variantId)
+            setCurrentStep(STEP_CART)
+            setSelectedPaymentMethod(null)
+        } else {
+            // In steps 1 and 2: just remove the item
+            removeFromCart(item.productId, item.productType, item.variantId)
+        }
     }
 
-    // Ensure that every time the drawer is closed, we return to the first step
-    // (cart view with the "Completar pedido" button) and clear any address errors.
-    // Prevent closing if payment is being processed.
+    // Clean up Revolut order state
+    const cleanupRevolutState = () => {
+        setRevolutOrderId(null)
+        setRevolutOrderToken(null)
+        setRevolutCartSnapshot(null)
+        currentRevolutOrderIdRef.current = null
+        setIsCardFieldValid(false)
+        setCardValidationErrors([])
+
+        if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
+            try {
+                cardFieldInstanceRef.current.destroy()
+            } catch (e) {
+                // ignore
+            }
+        }
+        cardFieldInstanceRef.current = null
+
+        if (typeof window !== 'undefined') {
+            try {
+                window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
+            } catch (_) {
+                // ignore storage cleanup errors
+            }
+        }
+    }
+
+    // Prevent closing if payment is being processed
     const handleCloseDrawer = () => {
         if (isProcessing) {
-            // Do not allow closing the drawer while processing payment
             return
         }
-        setShowAddressInput(false)
+        setCurrentStep(STEP_CART)
         setAddressError('')
+        setSelectedPaymentMethod(null)
         onClose()
     }
 
-    // On mount, try to restore a pending Revolut order from sessionStorage and reuse it
-    // only if the current cart matches the stored cart snapshot. This avoids creating
-    // multiple dummy orders when the user closes and reopens the drawer with the same cart.
-    // Additionally, whenever the drawer is closed (open becomes false), we reset the step
-    // back to the initial cart view so the user always sees the first screen on reopen.
+    // Reset to step 1 when drawer closes
     useEffect(() => {
         if (!open) {
-            setShowAddressInput(false)
+            setCurrentStep(STEP_CART)
             setAddressError('')
+            setSelectedPaymentMethod(null)
         }
     }, [open])
 
+    // On mount, try to restore a pending Revolut order from sessionStorage
     useEffect(() => {
         if (typeof window === 'undefined') return
 
@@ -139,24 +190,16 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 setRevolutCartSnapshot(stored.cartSnapshot)
                 currentRevolutOrderIdRef.current = stored.revolut_order_id
             } else {
-                // Cart changed since the stored order was created; discard stale order
-                // and attempt to cancel the now-stale Revolut order on the backend.
-                try {
-                    if (stored.revolut_order_id) {
-                        ;(async () => {
-                            try {
-                                await paymentsAPI.cancelOrder(stored.revolut_order_id)
-                            } catch (err) {
-                                // Silent failure: if cancel fails, the order will simply
-                                // remain in its previous state on Revolut's side.
-                                console.warn('No se pudo cancelar la orden de Revolut obsoleta:', err)
-                            }
-                        })()
-                    }
-                } catch (_) {
-                    // Ignore any unexpected errors around firing the cancellation
+                // Cart changed since the stored order was created; cancel stale order
+                if (stored.revolut_order_id) {
+                    ;(async () => {
+                        try {
+                            await paymentsAPI.cancelOrder(stored.revolut_order_id)
+                        } catch (err) {
+                            console.warn('No se pudo cancelar la orden de Revolut obsoleta:', err)
+                        }
+                    })()
                 }
-
                 window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
             }
         } catch (e) {
@@ -164,62 +207,41 @@ export default function ShoppingCartDrawer({open, onClose}) {
             try {
                 window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
             } catch (_) {
-                // ignore storage cleanup errors
+                // ignore
             }
         }
-        // We intentionally run this effect only once on mount. Cart changes are handled
-        // by a dedicated invalidation effect below.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    // Whenever the cart changes, verify that it still matches the snapshot used for the
-    // current Revolut order. If it does not, invalidate the stored order so that a new
-    // dummy order will be created the next time the user clicks "Completar pedido".
-    // Before invalidating, we also try to cancel the now-unused Revolut order so it
-    // does not remain pending on Revolut's side. This cancellation is fire-and-forget
-    // and any failure is silently ignored (per requirements).
+    // Whenever the cart changes, verify that it still matches the snapshot
     useEffect(() => {
         if (!revolutCartSnapshot) return
 
         const currentSnapshot = JSON.stringify(buildCompactItems(cart))
         if (currentSnapshot !== revolutCartSnapshot) {
-            // Cart contents (items, quantities, shipping, etc.) have changed
+            // Cart changed - cancel Revolut order
             if (revolutOrderId) {
-                try {
-                    ;(async () => {
-                        try {
-                            await paymentsAPI.cancelOrder(revolutOrderId)
-                        } catch (err) {
-                            console.warn('No se pudo cancelar la orden de Revolut tras cambios en el carrito:', err)
-                        }
-                    })()
-                } catch (_) {
-                    // Ignore any unexpected errors around firing the cancellation
-                }
+                ;(async () => {
+                    try {
+                        await paymentsAPI.cancelOrder(revolutOrderId)
+                    } catch (err) {
+                        console.warn('No se pudo cancelar la orden de Revolut tras cambios en el carrito:', err)
+                    }
+                })()
             }
 
-            setRevolutOrderId(null)
-            setRevolutOrderToken(null)
-            setRevolutCartSnapshot(null)
-            currentRevolutOrderIdRef.current = null
+            cleanupRevolutState()
 
-            if (typeof window !== 'undefined') {
-                try {
-                    window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
-                } catch (_) {
-                    // ignore storage cleanup errors
-                }
-            }
-
-            // If the user was on the address/payment step, return them to the cart so they
-            // explicitly confirm checkout again with the updated cart.
-            if (showAddressInput) {
-                setShowAddressInput(false)
+            // Return to cart step if not already there
+            if (currentStep !== STEP_CART) {
+                setCurrentStep(STEP_CART)
+                setSelectedPaymentMethod(null)
             }
         }
-    }, [cart, revolutCartSnapshot, showAddressInput, revolutOrderId])
+    }, [cart, revolutCartSnapshot, currentStep, revolutOrderId])
 
-    const handleCheckout = async () => {
+    // Step 1 -> Step 2: Handle "Completar pedido" click
+    const handleCheckout = () => {
         if (cart.length === 0) {
             showBanner('El carrito está vacío')
             return
@@ -229,78 +251,53 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return
         }
 
-        setIsProcessing(true)
-        try {
-            // Build compact items with quantity for Revolut order initialisation
-            const compactItems = buildCompactItems(cart)
-            const snapshot = JSON.stringify(compactItems)
+        // Pre-fill personal info if user is logged in
+        setPersonalInfo((prev) => ({
+            ...prev,
+            fullName: user?.full_name || user?.name || prev.fullName,
+            email: user?.email || prev.email,
+            phone: user?.phone || prev.phone,
+        }))
 
-            // If we already have a Revolut order whose snapshot matches the current cart,
-            // reuse it instead of creating a new dummy order in Revolut.
-            if (revolutOrderId && revolutOrderToken && revolutCartSnapshot === snapshot) {
-                // Pre-fill personal info if user is logged in (in case user logged in/out meanwhile)
-                setPersonalInfo((prev) => ({
-                    ...prev,
-                    fullName: user?.full_name || user?.name || prev.fullName,
-                    email: user?.email || prev.email,
-                    phone: user?.phone || prev.phone,
-                }))
+        setCurrentStep(STEP_ADDRESS)
+    }
 
-                setShowAddressInput(true)
-                setIsProcessing(false)
-                return
-            }
-
-            const resp = await paymentsAPI.initRevolutOrder(compactItems)
-
-            if (!resp || !resp.revolut_order_id || !resp.token) {
-                throw new Error('No se pudo inicializar el pago con Revolut. Por favor, inténtalo de nuevo.')
-            }
-
-            setRevolutOrderId(resp.revolut_order_id)
-            setRevolutOrderToken(resp.token)
-            setRevolutCartSnapshot(snapshot)
-            currentRevolutOrderIdRef.current = resp.revolut_order_id
-
-            // Persist the Revolut order so we can reuse it if the user closes and reopens the drawer
-            if (typeof window !== 'undefined') {
-                try {
-                    window.sessionStorage.setItem(
-                        REVOLUT_ORDER_STORAGE_KEY,
-                        JSON.stringify({
-                            revolut_order_id: resp.revolut_order_id,
-                            token: resp.token,
-                            cartSnapshot: snapshot,
-                        }),
-                    )
-                } catch (e) {
-                    // If storage fails we still continue; it only means we cannot reuse the order later
-                    console.warn('No se pudo guardar la orden de Revolut en sessionStorage:', e)
-                }
-            }
-
-            // Pre-fill personal info if user is logged in
-            setPersonalInfo((prev) => ({
-                ...prev,
-                fullName: user?.full_name || user?.name || prev.fullName,
-                email: user?.email || prev.email,
-                phone: user?.phone || prev.phone,
-            }))
-
-            setShowAddressInput(true)
-        } catch (err) {
-            console.error('Error inicializando la orden de Revolut:', err)
-            showBanner(err.message || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
-        } finally {
-            setIsProcessing(false)
+    // Step 2 -> Step 3: Handle "Ir al pago" click
+    const handleProceedToPaymentStep = () => {
+        if (!isPersonalInfoValid()) {
+            showBanner('Por favor, completa la información personal con datos válidos')
+            return
         }
+        if (!isAddressValid()) {
+            return
+        }
+
+        setCurrentStep(STEP_PAYMENT)
+        setSelectedPaymentMethod(null)
     }
 
+    // Navigation handlers
     const handleBackToCart = () => {
-        setShowAddressInput(false)
+        setCurrentStep(STEP_CART)
+        setAddressError('')
     }
 
-    // Contact selection step removed
+    const handleBackToAddress = () => {
+        // If we have a Revolut order and are leaving payment step, cancel it
+        if (revolutOrderId && selectedPaymentMethod === PAYMENT_METHOD_CARD) {
+            ;(async () => {
+                try {
+                    await paymentsAPI.cancelOrder(revolutOrderId)
+                } catch (err) {
+                    console.warn('No se pudo cancelar la orden de Revolut:', err)
+                }
+            })()
+            cleanupRevolutState()
+        }
+
+        setCurrentStep(STEP_ADDRESS)
+        setSelectedPaymentMethod(null)
+    }
 
     // Check if cart has any delivery shipping methods
     const hasDeliveryShipping = () => {
@@ -321,13 +318,10 @@ export default function ShoppingCartDrawer({open, onClose}) {
         return true
     }
 
-    // Removed: no separate contact step
-
     const isAddressValid = () => {
         const needsDelivery = hasDeliveryShipping()
         const pickupOnly = allPickupShipping()
 
-        // Validate delivery address if needed
         if (needsDelivery) {
             if (!deliveryAddress.line1 || !deliveryAddress.postalCode || !deliveryAddress.city || !deliveryAddress.province || !deliveryAddress.country) {
                 setAddressError('Por favor, completa la dirección de entrega')
@@ -335,9 +329,6 @@ export default function ShoppingCartDrawer({open, onClose}) {
             }
         }
 
-        // Validate invoicing address:
-        //  - Always required for pickup-only carts
-        //  - Required for delivery carts only when the user chooses a different invoicing address
         if (pickupOnly || (!useSameAddressForInvoicing && needsDelivery)) {
             if (!invoicingAddress.line1 || !invoicingAddress.postalCode || !invoicingAddress.city || !invoicingAddress.province || !invoicingAddress.country) {
                 setAddressError('Por favor, completa la dirección de facturación')
@@ -345,12 +336,10 @@ export default function ShoppingCartDrawer({open, onClose}) {
             }
         }
 
-        // Validate that postal code matches all delivery shipping methods
         if (needsDelivery) {
             const deliveryPostalCode = deliveryAddress.postalCode
             const incompatibleItems = cart.filter(item => {
                 if (item.shipping?.methodType === 'delivery') {
-                    // Check if the shipping method's postal code matches
                     const shippingPostalCode = item.shipping.deliveryPostalCode
                     return shippingPostalCode && shippingPostalCode !== deliveryPostalCode
                 }
@@ -367,18 +356,79 @@ export default function ShoppingCartDrawer({open, onClose}) {
         return true
     }
 
-    const handleProceedToPayment = async () => {
-        // Validate personal data and addresses first
-        if (!isPersonalInfoValid()) {
-            showBanner('Por favor, completa la información personal con datos válidos')
-            return
-        }
-        if (!isAddressValid()) {
-            return
+    // Handle payment method selection
+    const handlePaymentMethodSelect = async (method) => {
+        // If switching from card to another method, cancel existing Revolut order
+        if (selectedPaymentMethod === PAYMENT_METHOD_CARD && method !== PAYMENT_METHOD_CARD && revolutOrderId) {
+            try {
+                await paymentsAPI.cancelOrder(revolutOrderId)
+            } catch (err) {
+                console.warn('No se pudo cancelar la orden de Revolut:', err)
+            }
+            cleanupRevolutState()
         }
 
+        setSelectedPaymentMethod(method)
+
+        // If selecting card payment, initialize Revolut order
+        if (method === PAYMENT_METHOD_CARD) {
+            await initializeRevolutOrder()
+        }
+    }
+
+    // Initialize Revolut order when card payment is selected
+    const initializeRevolutOrder = async () => {
+        setIsInitializingPayment(true)
+
+        try {
+            const compactItems = buildCompactItems(cart)
+            const snapshot = JSON.stringify(compactItems)
+
+            // If we already have a matching Revolut order, reuse it
+            if (revolutOrderId && revolutOrderToken && revolutCartSnapshot === snapshot) {
+                setIsInitializingPayment(false)
+                return
+            }
+
+            const resp = await paymentsAPI.initRevolutOrder(compactItems)
+
+            if (!resp || !resp.revolut_order_id || !resp.token) {
+                throw new Error('No se pudo inicializar el pago con Revolut. Por favor, inténtalo de nuevo.')
+            }
+
+            setRevolutOrderId(resp.revolut_order_id)
+            setRevolutOrderToken(resp.token)
+            setRevolutCartSnapshot(snapshot)
+            currentRevolutOrderIdRef.current = resp.revolut_order_id
+
+            // Persist the Revolut order
+            if (typeof window !== 'undefined') {
+                try {
+                    window.sessionStorage.setItem(
+                        REVOLUT_ORDER_STORAGE_KEY,
+                        JSON.stringify({
+                            revolut_order_id: resp.revolut_order_id,
+                            token: resp.token,
+                            cartSnapshot: snapshot,
+                        }),
+                    )
+                } catch (e) {
+                    console.warn('No se pudo guardar la orden de Revolut en sessionStorage:', e)
+                }
+            }
+        } catch (err) {
+            console.error('Error inicializando la orden de Revolut:', err)
+            showBanner(err.message || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
+            setSelectedPaymentMethod(null)
+        } finally {
+            setIsInitializingPayment(false)
+        }
+    }
+
+    // Handle payment submission (Step 3: "Pagar" button)
+    const handlePayment = async () => {
         if (!revolutOrderId || !revolutOrderToken) {
-            showBanner('No se ha podido inicializar el pago. Vuelve al paso anterior e inténtalo de nuevo.')
+            showBanner('No se ha podido inicializar el pago. Por favor, selecciona el método de pago de nuevo.')
             return
         }
 
@@ -387,7 +437,6 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return
         }
 
-        // Validate that card field has been filled and is valid before proceeding
         if (!isCardFieldValid) {
             showBanner('Por favor, completa los datos de tu tarjeta antes de continuar.')
             return
@@ -442,7 +491,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
             currentOrderIdRef.current = createdOrderId
 
-            // 2) Enviar el pago a Revolut usando Card Field
+            // 2) Submit payment to Revolut using Card Field
             const billing = finalInvoicingAddress || finalDeliveryAddress || {}
             const shipping = finalDeliveryAddress || null
 
@@ -478,18 +527,17 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     paymentTimeoutRef.current = null
                 }
 
-                // Start payment timeout - if payment doesn't complete within the timeout, abort
+                // Start payment timeout
                 paymentTimeoutRef.current = setTimeout(() => {
                     paymentTimeoutRef.current = null
                     setIsProcessing(false)
                     showBanner('Ha ocurrido un error al procesar el pago. Inténtelo de nuevo o contacte con info@140d.art')
-                    setShowAddressInput(false)
+                    setCurrentStep(STEP_CART)
+                    setSelectedPaymentMethod(null)
                 }, paymentTimeoutMs)
 
                 cardFieldInstanceRef.current.submit(meta)
-                // We keep isProcessing=true; it will be cleared in the Card Field onSuccess/onError handlers OR timeout
             } catch (submitErr) {
-                // Clear timeout on immediate error
                 if (paymentTimeoutRef.current) {
                     clearTimeout(paymentTimeoutRef.current)
                     paymentTimeoutRef.current = null
@@ -561,33 +609,14 @@ export default function ShoppingCartDrawer({open, onClose}) {
             }
 
             clearCart()
-            setShowAddressInput(false)
+            setCurrentStep(STEP_CART)
+            setSelectedPaymentMethod(null)
             setPersonalInfo({fullName: '', email: '', phone: ''})
             setDeliveryAddress({})
             setInvoicingAddress({})
             setUseSameAddressForInvoicing(true)
-            setRevolutOrderId(null)
-            setRevolutOrderToken(null)
-            setRevolutCartSnapshot(null)
+            cleanupRevolutState()
             currentOrderIdRef.current = null
-            currentRevolutOrderIdRef.current = null
-
-            if (typeof window !== 'undefined') {
-                try {
-                    window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
-                } catch (_) {
-                    // ignore storage cleanup errors
-                }
-            }
-
-            if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
-                try {
-                    cardFieldInstanceRef.current.destroy()
-                } catch (e) {
-                    // ignore
-                }
-            }
-            cardFieldInstanceRef.current = null
 
             setTimeout(() => {
                 router.push(`/pedido-completado?token=${tokenKey}`)
@@ -601,13 +630,9 @@ export default function ShoppingCartDrawer({open, onClose}) {
         }
     }
 
-    // ------------------------
-    // Revolut Card Field initialisation
-    // ------------------------
-
+    // Initialize Revolut Card Field when we have a token and are on payment step with card selected
     useEffect(() => {
-        // Only initialise Card Field when we are on the address/payment step and have a valid token
-        if (!showAddressInput || !revolutOrderToken || !cardFieldContainerRef.current) {
+        if (currentStep !== STEP_PAYMENT || selectedPaymentMethod !== PAYMENT_METHOD_CARD || !revolutOrderToken || !cardFieldContainerRef.current) {
             return
         }
 
@@ -615,10 +640,9 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
         const initCardField = async () => {
             try {
-                // Reset card field validity state when initializing
                 setIsCardFieldValid(false)
                 setCardValidationErrors([])
-                
+
                 if (!revolutModuleRef.current) {
                     const mod = await import('@revolut/checkout')
                     revolutModuleRef.current = mod && (mod.default || mod)
@@ -639,7 +663,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     throw new Error('No se pudo inicializar el formulario de tarjeta de Revolut')
                 }
 
-                // Destroy any previous instance before creating a new one
+                // Destroy any previous instance
                 if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
                     try {
                         cardFieldInstanceRef.current.destroy()
@@ -654,11 +678,9 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     target: cardFieldContainerRef.current,
                     ...(revLocale ? {locale: revLocale} : {}),
                     onSuccess: () => {
-                        // Let the dedicated handler orchestrate payment confirmation and redirect
                         handleRevolutCardSuccess()
                     },
                     onError: (error) => {
-                        // Clear payment timeout since we received an error
                         if (paymentTimeoutRef.current) {
                             clearTimeout(paymentTimeoutRef.current)
                             paymentTimeoutRef.current = null
@@ -668,15 +690,12 @@ export default function ShoppingCartDrawer({open, onClose}) {
                         setIsProcessing(false)
                     },
                     onValidation: (validationData) => {
-                        // Handle validation errors from the card field
                         if (validationData && validationData.length > 0) {
-                            // Store all validation error messages
                             const errorMessages = validationData.map(err => err.message || 'Error de validación')
                             setCardValidationErrors(errorMessages)
                             setIsCardFieldValid(false)
                             setIsProcessing(false)
                         } else {
-                            // Clear validation errors when card data is valid
                             setCardValidationErrors([])
                             setIsCardFieldValid(true)
                         }
@@ -694,7 +713,6 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
         return () => {
             isMounted = false
-            // Clear payment timeout on unmount
             if (paymentTimeoutRef.current) {
                 clearTimeout(paymentTimeoutRef.current)
                 paymentTimeoutRef.current = null
@@ -708,631 +726,501 @@ export default function ShoppingCartDrawer({open, onClose}) {
             }
             cardFieldInstanceRef.current = null
         }
-    }, [showAddressInput, revolutOrderToken, open])
+    }, [currentStep, selectedPaymentMethod, revolutOrderToken, open])
 
-    // ------------------------
-    // Google Pay Express Checkout
-    // ------------------------
-
-    // Load Google Pay script once
-    const loadGooglePayScript = () => {
-        return new Promise((resolve, reject) => {
-            if (typeof window === 'undefined') return reject(new Error('Window not available'))
-            if (window.google && window.google.payments && window.google.payments.api) return resolve()
-            const existing = document.querySelector('script[src="https://pay.google.com/gp/p/js/pay.js"]')
-            if (existing) {
-                existing.addEventListener('load', () => resolve())
-                existing.addEventListener('error', () => reject(new Error('Google Pay script failed')))
-                return
-            }
-            const script = document.createElement('script')
-            script.src = 'https://pay.google.com/gp/p/js/pay.js'
-            script.async = true
-            script.onload = () => resolve()
-            script.onerror = () => reject(new Error('Google Pay script failed'))
-            document.head.appendChild(script)
-        })
-    }
-
-    const getPaymentsClient = () => {
-        if (!(window.google && window.google.payments && window.google.payments.api)) return null
-        const client = new window.google.payments.api.PaymentsClient({
-            environment: googlePayEnv === 'PRODUCTION' ? 'PRODUCTION' : 'TEST',
-        })
-        return client
-    }
-
-    const getBaseCardPaymentMethod = () => ({
-        type: 'CARD',
-        parameters: {
-            allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
-            allowedCardNetworks: ['VISA', 'MASTERCARD'],
-            billingAddressRequired: false,
+    // Payment methods configuration
+    const paymentMethods = [
+        {
+            id: PAYMENT_METHOD_CARD,
+            title: 'Tarjeta',
+            icons: ['/parties/visa.png', '/parties/mastercard.png'],
+            disabled: false,
         },
-        tokenizationSpecification: {
-            type: 'PAYMENT_GATEWAY',
-            parameters: {
-                // IMPORTANT: This is only for sandbox/demo. Replace with your real gateway when moving to production.
-                gateway: process.env.NEXT_PUBLIC_GOOGLE_PAY_GATEWAY || 'example',
-                gatewayMerchantId: process.env.NEXT_PUBLIC_GOOGLE_PAY_GATEWAY_MERCHANT_ID || 'exampleGatewayMerchantId',
-            },
+        {
+            id: PAYMENT_METHOD_GOOGLE_APPLE,
+            title: 'Google Pay / Apple Pay',
+            icons: ['/parties/google-pay.png', '/parties/apple-pay.png'],
+            disabled: true,
         },
-    })
+        {
+            id: PAYMENT_METHOD_REVOLUT,
+            title: 'Revolut Pay',
+            icons: ['/parties/revolut.png'],
+            disabled: true,
+        },
+        {
+            id: PAYMENT_METHOD_PAYPAL,
+            title: 'PayPal',
+            icons: ['/parties/paypal.png'],
+            disabled: true,
+        },
+    ]
 
-    const buildPaymentDataRequest = () => {
-        const total = getTotalPrice().toFixed(2)
-        const merchantInfo = googlePayEnv === 'PRODUCTION'
-            ? {merchantId: googlePayMerchantId, merchantName: googlePayMerchantName}
-            : {merchantName: googlePayMerchantName}
-        return {
-            apiVersion: 2,
-            apiVersionMinor: 0,
-            allowedPaymentMethods: [getBaseCardPaymentMethod()],
-            merchantInfo,
-            transactionInfo: {
-                totalPriceStatus: 'FINAL',
-                totalPrice: total,
-                currencyCode: 'EUR',
-                countryCode: 'ES',
-            },
-            shippingAddressRequired: true,
-            shippingAddressParameters: {
-                allowedCountryCodes: ['ES'],
-                phoneNumberRequired: true,
-            },
-            emailRequired: true,
-        }
-    }
+    // Render cart items list (used in all steps)
+    const renderCartItems = () => (
+        <div className="mt-8">
+            <div className="flow-root">
+                <ul role="list" className="-my-6 divide-y divide-gray-200">
+                    {cart.map((item) => (
+                        <li key={item.id} className="flex py-6">
+                            <div className="size-32 shrink-0 overflow-hidden rounded-md border border-gray-200">
+                                <img
+                                    alt={item.name}
+                                    src={getImageUrl(item)}
+                                    className="size-full object-cover"
+                                />
+                            </div>
 
-    const initGooglePay = async () => {
-        try {
-            setGpayLoading(true)
-            await loadGooglePayScript()
-            const client = getPaymentsClient()
-            if (!client) throw new Error('Google Pay no disponible')
+                            <div className="ml-4 flex flex-1 flex-col">
+                                <div>
+                                    <div className="flex justify-between text-base font-medium text-gray-900">
+                                        <h3>
+                                            <Link
+                                                href={getProductUrl(item)}
+                                                onClick={handleCloseDrawer}
+                                                className="hover:text-gray-600"
+                                            >
+                                                {item.name}
+                                            </Link>
+                                        </h3>
+                                        <p className="ml-4">€{(item.price * item.quantity).toFixed(2)}</p>
+                                    </div>
+                                    {item.variantKey && (
+                                        <p className="mt-1 text-sm text-gray-500">{item.variantKey}</p>
+                                    )}
+                                    {item.shipping && (
+                                        <div className="mt-1 text-sm text-gray-500">
+                                            <p>
+                                                <span className="font-medium">Envío:</span> {item.shipping.methodName}
+                                                {item.shipping.methodType === 'pickup' && ' (Recogida)'}
+                                                {' · '}€{item.shipping.cost.toFixed(2)}
+                                            </p>
+                                            {item.shipping.estimatedDays && (
+                                                <p className="text-xs text-gray-400">
+                                                    Entrega estimada: {item.shipping.estimatedDays} días
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                    {!item.shipping && (
+                                        <p className="mt-1 text-xs text-amber-600">
+                                            Método de envío no seleccionado
+                                        </p>
+                                    )}
+                                    <div className="mt-3 flex items-center justify-between text-sm">
+                                        {item.productType === 'art' ? (
+                                            <p className="text-gray-500">Cantidad: {item.quantity}</p>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <label htmlFor={`quantity-${item.id}`} className="text-gray-500">
+                                                    Cantidad:
+                                                </label>
+                                                <select
+                                                    id={`quantity-${item.id}`}
+                                                    value={item.quantity}
+                                                    onChange={(e) => handleQuantityChange(item, e.target.value)}
+                                                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-black focus:ring-1 focus:ring-black"
+                                                    disabled={currentStep === STEP_PAYMENT}
+                                                >
+                                                    {[...Array(10)].map((_, i) => (
+                                                        <option key={i + 1} value={i + 1}>
+                                                            {i + 1}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                        <div className="flex">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemove(item)}
+                                                className="font-medium text-red-900 hover:bg-red-100 rounded px-2 py-1 transition-colors"
+                                            >
+                                                Eliminar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    )
 
-            const isReadyToPayRequest = {
-                apiVersion: 2,
-                apiVersionMinor: 0,
-                allowedPaymentMethods: [getBaseCardPaymentMethod()],
-            }
+    // Render order summary (used in all steps)
+    const renderOrderSummary = () => (
+        <div className="space-y-2">
+            <div className="flex justify-between text-sm text-gray-600">
+                <p>Subtotal productos</p>
+                <p>€{getSubtotal().toFixed(2)}</p>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600">
+                <p>Envío</p>
+                <p>€{getTotalShipping().toFixed(2)}</p>
+            </div>
+            <div className="flex justify-between text-base font-medium text-gray-900 pt-2 border-t border-gray-200">
+                <p>Total</p>
+                <p>€{getTotalPrice().toFixed(2)}</p>
+            </div>
+            {getShippingBreakdown().length > 0 && (
+                <div className="mt-2 rounded-md bg-gray-50 px-3 py-2">
+                    <p className="text-xs font-medium text-gray-700 mb-1">
+                        Detalle de los gastos de envío
+                    </p>
+                    <ul className="space-y-1">
+                        {getShippingBreakdown().map((group, index) => {
+                            const sellerText = group.sellerName
+                                ? `del autor ${group.sellerName}`
+                                : 'del mismo autor'
 
-            const {result} = await client.isReadyToPay(isReadyToPayRequest)
-            if (result) {
-                setGpayReady(true)
-                // Always render (or re-render) the official button to avoid disappearing after unmounts
-                if (gpayBtnContainerRef.current) {
-                    const buttonOptions = {
-                        onClick: onGooglePayButtonClicked,
-                        buttonColor: 'black',
-                        buttonType: 'long',
-                        buttonSizeMode: 'fill', // make it fill its container (so it matches the grid cell width)
-                    }
-                    if (googlePayLocale) {
-                        // Try to force button locale if configured (falls back to browser locale otherwise)
-                        buttonOptions.buttonLocale = googlePayLocale
-                    }
-                    const button = client.createButton(buttonOptions)
-                    gpayBtnContainerRef.current.innerHTML = ''
-                    gpayBtnContainerRef.current.appendChild(button)
-                }
-            } else {
-                setGpayReady(false)
-            }
-        } catch (err) {
-            console.error('Google Pay init error:', err)
-            setGpayReady(false)
-        } finally {
-            setGpayLoading(false)
-        }
-    }
+                            return (
+                                <li key={`${group.sellerId}-${group.productType}-${group.methodId}-${index}`} className="text-[11px] text-gray-600">
+                                    <span className="font-semibold">{group.methodName}</span>{' '}
+                                    <span>
+                                        {sellerText}: {group.totalUnits} artículos
+                                        {group.maxArticles > 1 && ` agrupados en ${group.shipments} envíos (máx. ${group.maxArticles} por envío)`}
+                                        {group.maxArticles <= 1 && ` en ${group.shipments} envío${group.shipments > 1 ? 's' : ''}`}
+                                        {' '}→ {group.shipments} × €{group.costPerShipment.toFixed(2)} = €{group.totalShipping.toFixed(2)}
+                                    </span>
+                                </li>
+                            )
+                        })}
+                    </ul>
+                    <p className="mt-1 text-[11px] text-gray-500">
+                        Los gastos de envío se calculan por autor y método de envío, agrupando varias
+                        unidades en un mismo envío hasta el límite indicado.
+                    </p>
+                </div>
+            )}
+        </div>
+    )
 
-    // Initialize Google Pay when drawer opens on the first step and shipping is selected
-    useEffect(() => {
-        const onFirstStep = !showAddressInput
-        const allHaveShipping = cart.length > 0 && cart.every(item => !!item.shipping)
-        if (open && googlePayEnabled && onFirstStep && allHaveShipping) {
-            initGooglePay()
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, googlePayEnabled, showAddressInput, cart])
-
-    // Removed inline card field initialization; Revolut pop-up is opened on demand
-
-    const onGooglePayButtonClicked = async () => {
-        try {
-            setIsProcessing(true)
-            const client = getPaymentsClient()
-            if (!client) throw new Error('Google Pay no disponible')
-            const paymentDataRequest = buildPaymentDataRequest()
-            const paymentData = await client.loadPaymentData(paymentDataRequest)
-
-            // Extract payer email and shipping address from Google Pay response
-            const email = paymentData.email || user?.email || ''
-            const shipping = paymentData.shippingAddress || {}
-            const phone = shipping.phoneNumber || ''
-
-            // Map Google Pay shipping to our address model
-            const gDelivery = {
-                line1: shipping.address1 || '',
-                line2: [shipping.address2, shipping.address3].filter(Boolean).join(' ').trim() || null,
-                postalCode: shipping.postalCode || '',
-                city: shipping.locality || '',
-                province: shipping.administrativeArea || '',
-                country: shipping.countryCode || 'ES',
-            }
-
-            // Invoicing address equals delivery by default
-            const gInvoicing = {...gDelivery}
-
-            // Convert cart items to order items format (same logic as standard flow)
-            const orderItems = cart.flatMap(item => {
-                const baseItem = {
-                    type: item.productType === 'art' ? 'art' : 'other',
-                    id: item.productId,
-                    shipping: item.shipping,
-                }
-                if (item.productType === 'other') {
-                    baseItem.variantId = item.variantId
-                }
-                return Array(item.quantity).fill(baseItem)
-            })
-
-            // Validate that postal code matches all delivery shipping methods (same rule as manual flow)
-            const deliveryPostalCode = gDelivery.postalCode
-            const incompatibleItems = cart.filter(item => {
-                if (item.shipping?.methodType === 'delivery') {
-                    const shippingPostalCode = item.shipping.deliveryPostalCode
-                    return shippingPostalCode && shippingPostalCode !== deliveryPostalCode
-                }
-                return false
-            })
-
-            if (incompatibleItems.length > 0) {
-                showBanner(`El código postal (${deliveryPostalCode}) no coincide con el introducido en el momento de añadir los productos a la cesta. Por favor, elimina los productos de la cesta y vuelve a añadirlo con el código postal correcto.`)
-                return
-            }
-
-            // Create order via API using email for contact (so confirmation email is sent)
-            const response = await ordersAPI.create(
-                orderItems,
-                email,
-                phone,
-                gDelivery,
-                gInvoicing,
-                null
-            )
-
-            // Prepare confirmation token and redirect
-            const token = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
-            sessionStorage.setItem(`order_token_${token}`, JSON.stringify({
-                orderId: response.order.id,
-                email,
-            }))
-
-            clearCart()
-            setShowAddressInput(false)
-            setPersonalInfo({fullName: '', email: '', phone: ''})
-            setDeliveryAddress({})
-            setInvoicingAddress({})
-            setUseSameAddressForInvoicing(true)
-
-            setTimeout(() => {
-                router.push(`/pedido-completado?token=${token}`)
-                onClose()
-            }, 50)
-        } catch (err) {
-            if (err && err.status === 'CANCELED' || err?.statusCode === 'CANCELED') {
-                // User canceled the sheet; no banner
-                return
-            }
-            console.error('Google Pay error:', err)
-            showBanner(err.message || 'Pago con Google Pay fallido. Por favor, inténtalo de nuevo.')
-        } finally {
-            setIsProcessing(false)
-        }
-    }
+    // Render payment method selection cards
+    const renderPaymentMethodSelection = () => (
+        <fieldset className="mb-6">
+            <legend className="text-sm font-bold underline text-gray-900">Selecciona el método de pago</legend>
+            <div className="mt-4 grid grid-cols-4 gap-3">
+                {paymentMethods.map((method) => (
+                    <label
+                        key={method.id}
+                        aria-label={method.title}
+                        className={`group relative flex flex-col rounded-lg border bg-white p-3 cursor-pointer transition-all
+                            ${method.disabled
+                                ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
+                                : 'border-gray-300 hover:border-gray-400'}
+                            ${selectedPaymentMethod === method.id && !method.disabled
+                                ? 'outline outline-2 -outline-offset-2 outline-black border-black'
+                                : ''}
+                        `}
+                    >
+                        <input
+                            type="radio"
+                            name="payment-method"
+                            value={method.id}
+                            checked={selectedPaymentMethod === method.id}
+                            onChange={() => !method.disabled && handlePaymentMethodSelect(method.id)}
+                            disabled={method.disabled}
+                            className="sr-only"
+                        />
+                        <span className={`block text-xs font-medium ${method.disabled ? 'text-gray-400' : 'text-gray-900'}`}>
+                            {method.title}
+                        </span>
+                        <div className="mt-2 flex items-center gap-1">
+                            {method.icons.map((icon, idx) => (
+                                <Image
+                                    key={idx}
+                                    src={icon}
+                                    alt=""
+                                    width={32}
+                                    height={20}
+                                    className={`h-5 w-auto object-contain ${method.disabled ? 'grayscale opacity-50' : ''}`}
+                                />
+                            ))}
+                        </div>
+                        {!method.disabled && (
+                            <CheckCircleIcon
+                                aria-hidden="true"
+                                className={`absolute top-2 right-2 size-5 text-black ${selectedPaymentMethod === method.id ? 'visible' : 'invisible'}`}
+                            />
+                        )}
+                    </label>
+                ))}
+            </div>
+        </fieldset>
+    )
 
     return (
         <>
-            {/* Full-screen loading overlay to block all interactions during critical payment steps */}
+            {/* Full-screen loading overlay */}
             {isProcessing && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-white/70 backdrop-blur-sm">
                     <div className="flex flex-col items-center gap-3">
-                        <div
-                            className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
                         <p className="text-sm text-gray-700">Procesando tu pedido...</p>
                     </div>
                 </div>
             )}
 
             <Dialog open={open} onClose={handleCloseDrawer} className="relative z-10">
-            <DialogBackdrop
-                transition
-                className="fixed inset-0 bg-gray-500/75 transition-opacity duration-500 ease-in-out data-[closed]:opacity-0"
-            />
+                <DialogBackdrop
+                    transition
+                    className="fixed inset-0 bg-gray-500/75 transition-opacity duration-500 ease-in-out data-[closed]:opacity-0"
+                />
 
-            <div className="fixed inset-0 overflow-hidden">
-                <div className="absolute inset-0 overflow-hidden">
-                    <div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10 sm:pl-16">
-                        <DialogPanel
-                            transition
-                            className={`w-screen max-w-md lg:max-w-xl transform transition duration-500 ease-in-out data-[closed]:translate-x-full sm:duration-700 ${isProcessing ? 'pointer-events-none' : 'pointer-events-auto'}`}
-                        >
-                            <div className="flex h-full flex-col overflow-y-auto bg-white shadow-xl">
-                                {/* Make the entire drawer content share a single scroll. Remove inner overflow to avoid nested scrolls. */}
-                                <div className="flex-1 px-4 py-6 sm:px-6">
-                                    <div className="flex items-start justify-between">
-                                        <DialogTitle className="text-lg font-medium text-gray-900">Carrito de
-                                            compra</DialogTitle>
-                                        <div className="ml-3 flex h-7 items-center">
-                                            <button
-                                                type="button"
-                                                onClick={handleCloseDrawer}
-                                                className="relative -m-2 p-2 text-gray-400 hover:text-gray-500"
-                                            >
-                                                <span className="absolute -inset-0.5"/>
-                                                <span className="sr-only">Cerrar panel</span>
-                                                <XMarkIcon aria-hidden="true" className="size-6"/>
-                                            </button>
+                <div className="fixed inset-0 overflow-hidden">
+                    <div className="absolute inset-0 overflow-hidden">
+                        <div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10 sm:pl-16">
+                            <DialogPanel
+                                transition
+                                className={`w-screen max-w-md lg:max-w-xl transform transition duration-500 ease-in-out data-[closed]:translate-x-full sm:duration-700 ${isProcessing ? 'pointer-events-none' : 'pointer-events-auto'}`}
+                            >
+                                <div className="flex h-full flex-col overflow-y-auto bg-white shadow-xl">
+                                    <div className="flex-1 px-4 py-6 sm:px-6">
+                                        <div className="flex items-start justify-between">
+                                            <DialogTitle className="text-lg font-medium text-gray-900">
+                                                Carrito de compra
+                                            </DialogTitle>
+                                            <div className="ml-3 flex h-7 items-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCloseDrawer}
+                                                    className="relative -m-2 p-2 text-gray-400 hover:text-gray-500"
+                                                >
+                                                    <span className="absolute -inset-0.5"/>
+                                                    <span className="sr-only">Cerrar panel</span>
+                                                    <XMarkIcon aria-hidden="true" className="size-6"/>
+                                                </button>
+                                            </div>
                                         </div>
+
+                                        {cart.length === 0 ? (
+                                            <div className="mt-8 text-center">
+                                                <p className="text-gray-500">Tu carrito está vacío</p>
+                                            </div>
+                                        ) : (
+                                            renderCartItems()
+                                        )}
                                     </div>
 
-                                    {cart.length === 0 ? (
-                                        <div className="mt-8 text-center">
-                                            <p className="text-gray-500">Tu carrito está vacío</p>
-                                        </div>
-                                    ) : (
-                                        <div className="mt-8">
-                                            <div className="flow-root">
-                                                <ul role="list" className="-my-6 divide-y divide-gray-200">
-                                                    {cart.map((item) => (
-                                                        <li key={item.id} className="flex py-6">
-                                                            <div
-                                                                className="size-32 shrink-0 overflow-hidden rounded-md border border-gray-200">
-                                                                <img
-                                                                    alt={item.name}
-                                                                    src={getImageUrl(item)}
-                                                                    className="size-full object-cover"
-                                                                />
-                                                            </div>
+                                    {cart.length > 0 && (
+                                        <div className="border-t border-gray-200 px-4 py-6 sm:px-6">
+                                            {/* Step 2: Address Input */}
+                                            {currentStep === STEP_ADDRESS && (
+                                                <div className="mb-6 space-y-6">
+                                                    {addressError && (
+                                                        <div className="rounded-lg bg-red-50 p-4">
+                                                            <p className="text-sm text-red-800">{addressError}</p>
+                                                        </div>
+                                                    )}
 
-                                                            <div className="ml-4 flex flex-1 flex-col">
-                                                                <div>
-                                                                    <div
-                                                                        className="flex justify-between text-base font-medium text-gray-900">
-                                                                        <h3>
-                                                                            <Link
-                                                                                href={getProductUrl(item)}
-                                                                                onClick={handleCloseDrawer}
-                                                                                className="hover:text-gray-600"
-                                                                            >
-                                                                                {item.name}
-                                                                            </Link>
-                                                                        </h3>
-                                                                        <p className="ml-4">€{(item.price * item.quantity).toFixed(2)}</p>
-                                                                    </div>
-                                                                    {item.variantKey && (
-                                                                        <p className="mt-1 text-sm text-gray-500">{item.variantKey}</p>
-                                                                    )}
-                                                                    {item.shipping && (
-                                                                        <div className="mt-1 text-sm text-gray-500">
-                                                                            <p>
-                                                                                <span
-                                                                                    className="font-medium">Envío:</span> {item.shipping.methodName}
-                                                                                {item.shipping.methodType === 'pickup' && ' (Recogida)'}
-                                                                                {' · '}€{item.shipping.cost.toFixed(2)}
-                                                                            </p>
-                                                                            {item.shipping.estimatedDays && (
-                                                                                <p className="text-xs text-gray-400">
-                                                                                    Entrega
-                                                                                    estimada: {item.shipping.estimatedDays} días
-                                                                                </p>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                    {!item.shipping && (
-                                                                        <p className="mt-1 text-xs text-amber-600">
-                                                                            ⚠ Método de envío no seleccionado
-                                                                        </p>
-                                                                    )}
-                                                                    {/* Quantity and remove controls moved just below shipping info */}
-                                                                    <div
-                                                                        className="mt-3 flex items-center justify-between text-sm">
-                                                                        {item.productType === 'art' ? (
-                                                                            <p className="text-gray-500">Cantidad: {item.quantity}</p>
-                                                                        ) : (
-                                                                            <div className="flex items-center gap-2">
-                                                                                <label htmlFor={`quantity-${item.id}`}
-                                                                                       className="text-gray-500">
-                                                                                    Cantidad:
-                                                                                </label>
-                                                                                <select
-                                                                                    id={`quantity-${item.id}`}
-                                                                                    value={item.quantity}
-                                                                                    onChange={(e) => handleQuantityChange(item, e.target.value)}
-                                                                                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-black focus:ring-1 focus:ring-black"
-                                                                                >
-                                                                                    {[...Array(10)].map((_, i) => (
-                                                                                        <option key={i + 1}
-                                                                                                value={i + 1}>
-                                                                                            {i + 1}
-                                                                                        </option>
-                                                                                    ))}
-                                                                                </select>
-                                                                            </div>
-                                                                        )}
-                                                                        <div className="flex">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => handleRemove(item)}
-                                                                                className="font-medium text-red-900 hover:bg-red-100 rounded px-2 py-1 transition-colors"
-                                                                            >
-                                                                                Eliminar
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
+                                                    {hasDeliveryShipping() && (
+                                                        addressMode === 'autocomplete' ? (
+                                                            <AddressAutocomplete
+                                                                value={deliveryAddress}
+                                                                onChange={setDeliveryAddress}
+                                                                label="Dirección de entrega"
+                                                                defaultCountry="ES"
+                                                                showMap={true}
+                                                                personalInfo={personalInfo}
+                                                                onPersonalInfoChange={setPersonalInfo}
+                                                                showPersonalSection={true}
+                                                            />
+                                                        ) : (
+                                                            <AddressManualInput
+                                                                value={deliveryAddress}
+                                                                onChange={setDeliveryAddress}
+                                                                label="Dirección de entrega"
+                                                                defaultCountry="ES"
+                                                                personalInfo={personalInfo}
+                                                                onPersonalInfoChange={setPersonalInfo}
+                                                                showPersonalSection={true}
+                                                            />
+                                                        )
+                                                    )}
+
+                                                    {hasDeliveryShipping() && (
+                                                        <div className="flex items-center">
+                                                            <input
+                                                                id="same-address"
+                                                                type="checkbox"
+                                                                checked={useSameAddressForInvoicing}
+                                                                onChange={(e) => setUseSameAddressForInvoicing(e.target.checked)}
+                                                                className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                                                            />
+                                                            <label htmlFor="same-address" className="ml-2 block text-sm text-gray-900">
+                                                                Usar la misma dirección para facturación
+                                                            </label>
+                                                        </div>
+                                                    )}
+
+                                                    {(allPickupShipping() || !useSameAddressForInvoicing) && (
+                                                        addressMode === 'autocomplete' ? (
+                                                            <AddressAutocomplete
+                                                                value={invoicingAddress}
+                                                                onChange={setInvoicingAddress}
+                                                                label="Dirección de facturación"
+                                                                defaultCountry="ES"
+                                                                showMap={false}
+                                                                personalInfo={personalInfo}
+                                                                onPersonalInfoChange={setPersonalInfo}
+                                                                showPersonalSection={!hasDeliveryShipping()}
+                                                            />
+                                                        ) : (
+                                                            <AddressManualInput
+                                                                value={invoicingAddress}
+                                                                onChange={setInvoicingAddress}
+                                                                label="Dirección de facturación"
+                                                                defaultCountry="ES"
+                                                                personalInfo={personalInfo}
+                                                                onPersonalInfoChange={setPersonalInfo}
+                                                                showPersonalSection={!hasDeliveryShipping()}
+                                                            />
+                                                        )
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Step 3: Payment Method Selection */}
+                                            {currentStep === STEP_PAYMENT && (
+                                                <div className="mb-6 space-y-6">
+                                                    {renderPaymentMethodSelection()}
+
+                                                    {/* Card field - only shown when card payment is selected and initialized */}
+                                                    {selectedPaymentMethod === PAYMENT_METHOD_CARD && (
+                                                        <div className="mt-4">
+                                                            {isInitializingPayment ? (
+                                                                <div className="flex items-center justify-center py-4">
+                                                                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
+                                                                    <span className="ml-2 text-sm text-gray-600">Cargando formulario de pago...</span>
                                                                 </div>
+                                                            ) : revolutOrderToken ? (
+                                                                <>
+                                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Datos de la tarjeta</h3>
+                                                                    <div
+                                                                        ref={cardFieldContainerRef}
+                                                                        id="card-field"
+                                                                        className="rounded-md border border-gray-300 bg-white px-3 py-3"
+                                                                    />
+                                                                </>
+                                                            ) : null}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Order Summary */}
+                                            {renderOrderSummary()}
+                                            <p className="mt-2 text-xs text-gray-500">
+                                                Los impuestos se calcularán según tu ubicación.
+                                            </p>
+
+                                            {/* Action Buttons */}
+                                            <div className="mt-6">
+                                                {currentStep === STEP_CART && (
+                                                    <>
+                                                        <button
+                                                            onClick={handleCheckout}
+                                                            disabled={isProcessing || cart.some(item => !item.shipping)}
+                                                            className="flex w-full items-center justify-center gap-2 rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            <CreditCardIcon aria-hidden="true" className="size-5"/>
+                                                            {isProcessing ? 'Procesando...' : 'Completar pedido'}
+                                                        </button>
+                                                        {cart.some(item => !item.shipping) && (
+                                                            <p className="mt-2 text-xs text-center text-amber-600">
+                                                                Algunos productos no tienen método de envío seleccionado
+                                                            </p>
+                                                        )}
+                                                    </>
+                                                )}
+
+                                                {currentStep === STEP_ADDRESS && (
+                                                    <button
+                                                        onClick={handleProceedToPaymentStep}
+                                                        disabled={isProcessing}
+                                                        className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {isProcessing ? 'Procesando...' : 'Ir al pago'}
+                                                    </button>
+                                                )}
+
+                                                {currentStep === STEP_PAYMENT && (
+                                                    <>
+                                                        {cardValidationErrors.length > 0 && (
+                                                            <div className="mb-3">
+                                                                {cardValidationErrors.map((error, index) => (
+                                                                    <p key={index} className="text-sm text-red-600">
+                                                                        {error}
+                                                                    </p>
+                                                                ))}
                                                             </div>
-                                                        </li>
-                                                    ))}
-                                                </ul>
+                                                        )}
+                                                        <button
+                                                            onClick={handlePayment}
+                                                            disabled={isProcessing || !selectedPaymentMethod || (selectedPaymentMethod === PAYMENT_METHOD_CARD && !isCardFieldValid)}
+                                                            className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            {isProcessing ? 'Procesando...' : 'Pagar'}
+                                                        </button>
+                                                        {!selectedPaymentMethod && (
+                                                            <p className="mt-2 text-xs text-center text-gray-500">
+                                                                Selecciona un método de pago para continuar
+                                                            </p>
+                                                        )}
+                                                        {selectedPaymentMethod === PAYMENT_METHOD_CARD && !isCardFieldValid && cardValidationErrors.length === 0 && !isProcessing && (
+                                                            <p className="mt-2 text-xs text-center text-gray-500">
+                                                                Por favor, completa los datos de tu tarjeta para continuar
+                                                            </p>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            {/* Navigation Links */}
+                                            <div className="mt-6 flex justify-center text-center text-sm text-gray-500">
+                                                <p>
+                                                    {currentStep === STEP_CART && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleCloseDrawer}
+                                                            className="font-medium text-black hover:text-gray-600"
+                                                        >
+                                                            Continuar comprando
+                                                            <span aria-hidden="true"> &rarr;</span>
+                                                        </button>
+                                                    )}
+                                                    {currentStep === STEP_ADDRESS && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleBackToCart}
+                                                            className="font-medium text-black hover:text-gray-600"
+                                                        >
+                                                            <span aria-hidden="true">&larr; </span>
+                                                            Volver al carrito
+                                                        </button>
+                                                    )}
+                                                    {currentStep === STEP_PAYMENT && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleBackToAddress}
+                                                            className="font-medium text-black hover:text-gray-600"
+                                                        >
+                                                            <span aria-hidden="true">&larr; </span>
+                                                            Volver
+                                                        </button>
+                                                    )}
+                                                </p>
                                             </div>
                                         </div>
                                     )}
                                 </div>
-
-                                {cart.length > 0 && (
-                                    <div className="border-t border-gray-200 px-4 py-6 sm:px-6">
-                                        {/* Address Input Step */}
-                                        {showAddressInput && (
-                                            <div className="mb-6 space-y-6">
-                                                {addressError && (
-                                                    <div className="rounded-lg bg-red-50 p-4">
-                                                        <p className="text-sm text-red-800">{addressError}</p>
-                                                    </div>
-                                                )}
-
-                                                {/* Delivery Address - Show if any product has delivery shipping */}
-                                                {hasDeliveryShipping() && (
-                                                    addressMode === 'autocomplete' ? (
-                                                        <AddressAutocomplete
-                                                            value={deliveryAddress}
-                                                            onChange={setDeliveryAddress}
-                                                            label="Dirección de entrega"
-                                                            defaultCountry="ES"
-                                                            showMap={true}
-                                                            personalInfo={personalInfo}
-                                                            onPersonalInfoChange={setPersonalInfo}
-                                                            showPersonalSection={true}
-                                                        />
-                                                    ) : (
-                                                        <AddressManualInput
-                                                            value={deliveryAddress}
-                                                            onChange={setDeliveryAddress}
-                                                            label="Dirección de entrega"
-                                                            defaultCountry="ES"
-                                                            personalInfo={personalInfo}
-                                                            onPersonalInfoChange={setPersonalInfo}
-                                                            showPersonalSection={true}
-                                                        />
-                                                    )
-                                                )}
-
-                                                {/* Checkbox for using same address for invoicing */}
-                                                {hasDeliveryShipping() && (
-                                                    <div className="flex items-center">
-                                                        <input
-                                                            id="same-address"
-                                                            type="checkbox"
-                                                            checked={useSameAddressForInvoicing}
-                                                            onChange={(e) => setUseSameAddressForInvoicing(e.target.checked)}
-                                                            className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
-                                                        />
-                                                        <label htmlFor="same-address"
-                                                               className="ml-2 block text-sm text-gray-900">
-                                                            Usar la misma dirección para facturación
-                                                        </label>
-                                                    </div>
-                                                )}
-
-                                                {/* Invoicing Address - Show if checkbox is unchecked OR all products are pickup */}
-                                                {(allPickupShipping() || !useSameAddressForInvoicing) && (
-                                                    addressMode === 'autocomplete' ? (
-                                                        <AddressAutocomplete
-                                                            value={invoicingAddress}
-                                                            onChange={setInvoicingAddress}
-                                                            label="Dirección de facturación"
-                                                            defaultCountry="ES"
-                                                            showMap={false}
-                                                            personalInfo={personalInfo}
-                                                            onPersonalInfoChange={setPersonalInfo}
-                                                            showPersonalSection={!hasDeliveryShipping()}
-                                                        />
-                                                    ) : (
-                                                        <AddressManualInput
-                                                            value={invoicingAddress}
-                                                            onChange={setInvoicingAddress}
-                                                            label="Dirección de facturación"
-                                                            defaultCountry="ES"
-                                                            personalInfo={personalInfo}
-                                                            onPersonalInfoChange={setPersonalInfo}
-                                                            showPersonalSection={!hasDeliveryShipping()}
-                                                        />
-                                                    )
-                                                )}
-
-                                                {/* Revolut Card Field container */}
-                                                <div className="mt-4">
-                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pago con tarjeta</h3>
-                                                    <div
-                                                        ref={cardFieldContainerRef}
-                                                        id="card-field"
-                                                        className="rounded-md border border-gray-300 bg-white px-3 py-3"
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Paso de selección de contacto eliminado: datos personales se recopilan en el bloque de dirección */}
-
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-sm text-gray-600">
-                                                <p>Subtotal productos</p>
-                                                <p>€{getSubtotal().toFixed(2)}</p>
-                                            </div>
-                                            <div className="flex justify-between text-sm text-gray-600">
-                                                <p>Envío</p>
-                                                <p>€{getTotalShipping().toFixed(2)}</p>
-                                            </div>
-                                            <div
-                                                className="flex justify-between text-base font-medium text-gray-900 pt-2 border-t border-gray-200">
-                                                <p>Total</p>
-                                                <p>€{getTotalPrice().toFixed(2)}</p>
-                                            </div>
-                                            {/* Shipping breakdown explanation */}
-                                            {getShippingBreakdown().length > 0 && (
-                                                <div className="mt-2 rounded-md bg-gray-50 px-3 py-2">
-                                                    <p className="text-xs font-medium text-gray-700 mb-1">
-                                                        Detalle de los gastos de envío
-                                                    </p>
-                                                    <ul className="space-y-1">
-                                                        {getShippingBreakdown().map((group, index) => {
-                                                            const isArt = group.productType === 'art'
-                                                            const sellerText = group.sellerName
-                                                                ? `del autor ${group.sellerName}`
-                                                                : 'del mismo autor'
-
-                                                            // Example sentence:
-                                                            // "Envío "Envío estándar" del autor X: 3 obras de arte agrupadas en 2 envíos (máx. 2 por envío) → 2 × 10,00 € = 20,00 €"
-                                                            return (
-                                                                <li key={`${group.sellerId}-${group.productType}-${group.methodId}-${index}`} className="text-[11px] text-gray-600">
-                                                                    <span className="font-semibold">{group.methodName}</span>{' '}
-                                                                    <span>
-                                                                        {sellerText}: {group.totalUnits} artículos
-                                                                        {group.maxArticles > 1 && ` agrupados en ${group.shipments} envíos (máx. ${group.maxArticles} por envío)`}
-                                                                        {group.maxArticles <= 1 && ` en ${group.shipments} envío${group.shipments > 1 ? 's' : ''}`}
-                                                                        {' '}→ {group.shipments} × €{group.costPerShipment.toFixed(2)} = €{group.totalShipping.toFixed(2)}
-                                                                    </span>
-                                                                </li>
-                                                            )
-                                                        })}
-                                                    </ul>
-                                                    <p className="mt-1 text-[11px] text-gray-500">
-                                                        Los gastos de envío se calculan por autor y método de envío, agrupando varias
-                                                        unidades en un mismo envío hasta el límite indicado.
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <p className="mt-2 text-xs text-gray-500">Los impuestos se calcularán según tu
-                                            ubicación.</p>
-                                        <div className="mt-6">
-                                            {!showAddressInput ? (
-                                                // Step 1: Cart view - Show "Completar pedido"
-                                                <>
-                                                    <button
-                                                        onClick={handleCheckout}
-                                                        disabled={isProcessing || cart.some(item => !item.shipping)}
-                                                        className="flex w-full items-center justify-center gap-2 rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        <CreditCardIcon aria-hidden="true" className="size-5"/>
-                                                        {isProcessing ? 'Procesando...' : 'Completar pedido'}
-                                                    </button>
-                                                    {/* Payment buttons row */}
-                                                    <div className="mt-3 grid grid-cols-2 gap-2">
-                                                        {/* Google Pay Express Checkout */}
-                                                        {googlePayEnabled && (
-                                                            <div className="col-span-1">
-                                                                {/* Official Google Pay button will render here */}
-                                                                <div ref={gpayBtnContainerRef}
-                                                                     className="flex justify-center w-full min-h-[48px]"></div>
-                                                                {!gpayReady && !gpayLoading && (
-                                                                    <button
-                                                                        onClick={initGooglePay}
-                                                                        disabled={isProcessing || cart.some(item => !item.shipping)}
-                                                                        className="mt-0 flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                    >
-                                                                        {isProcessing ? 'Procesando...' : 'Pagar con Google Pay'}
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        {/* Apple Pay placeholder (no functionality yet) */}
-                                                        <div className="col-span-1">
-                                                            <button
-                                                                type="button"
-                                                                className="flex w-full items-center justify-center rounded-md border border-gray-300 bg-black px-4 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-50"
-                                                            >
-                                                                Apple Pay
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </>
-                                            ) : (
-                                                // Step 3: Address input - Show "Pagar"
-                                                <>
-                                                    {/* Display validation errors above the Pagar button */}
-                                                    {cardValidationErrors.length > 0 && (
-                                                        <div className="mb-3">
-                                                            {cardValidationErrors.map((error, index) => (
-                                                                <p key={index} className="text-sm text-red-600">
-                                                                    {error}
-                                                                </p>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    <button
-                                                        onClick={handleProceedToPayment}
-                                                        disabled={isProcessing || !isCardFieldValid}
-                                                        className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        {isProcessing ? 'Procesando...' : 'Pagar'}
-                                                    </button>
-                                                    {!isCardFieldValid && cardValidationErrors.length === 0 && !isProcessing && (
-                                                        <p className="mt-2 text-xs text-center text-gray-500">
-                                                            Por favor, completa los datos de tu tarjeta para continuar
-                                                        </p>
-                                                    )}
-                                                </>
-                                            )}
-                                            {cart.some(item => !item.shipping) && !showAddressInput && (
-                                                <p className="mt-2 text-xs text-center text-amber-600">
-                                                    Algunos productos no tienen método de envío seleccionado
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="mt-6 flex justify-center text-center text-sm text-gray-500">
-                                            <p>
-                                                {showAddressInput ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleBackToCart}
-                                                        className="font-medium text-black hover:text-gray-600"
-                                                    >
-                                                        <span aria-hidden="true">&larr; </span>
-                                                        Volver al carrito
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleCloseDrawer}
-                                                        className="font-medium text-black hover:text-gray-600"
-                                                    >
-                                                        Continuar comprando
-                                                        <span aria-hidden="true"> &rarr;</span>
-                                                    </button>
-                                                )}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </DialogPanel>
+                            </DialogPanel>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </Dialog>
+            </Dialog>
         </>
     )
 }
