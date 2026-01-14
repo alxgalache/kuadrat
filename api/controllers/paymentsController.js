@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { db } = require('../config/database');
 const { ApiError } = require('../middleware/errorHandler');
 const {
@@ -7,9 +8,11 @@ const {
   getRevolutPayment,
   cancelRevolutOrder,
 } = require('../services/revolutService');
+const { sendPurchaseConfirmation } = require('../services/emailService');
 
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
 const REV_LOCATION_ID = process.env.REVOLUT_LOCATION_ID || null;
+const REVOLUT_WEBHOOK_SECRET = process.env.REVOLUT_WEBHOOK_SECRET || '';
 
 // Helper: compute total amount (products + shipping) from expanded items
 // items: [{ type: 'art'|'other', id, variantId?, shipping: { cost, ... } }]
@@ -220,16 +223,295 @@ const initRevolutOrderEndpoint = async (req, res, next) => {
   }
 };
 
+// Helper: Verify Revolut webhook signature
+// Revolut uses HMAC-SHA256 with the signing secret
+// Format: payload_to_sign = "v1.{timestamp}.{raw_payload}"
+// Signature header format: "v1={hex_signature}" (may contain multiple comma-separated)
+function verifyRevolutWebhookSignature(rawPayload, signatureHeader, timestampHeader, secret) {
+  if (!secret) {
+    console.warn('REVOLUT_WEBHOOK_SECRET not configured, skipping signature verification');
+    return true;
+  }
+  if (!signatureHeader) {
+    console.warn('Missing Revolut-Signature header');
+    return false;
+  }
+  if (!timestampHeader) {
+    console.warn('Missing Revolut-Request-Timestamp header');
+    return false;
+  }
+
+  // Validate timestamp is within 5 minutes to prevent replay attacks
+  const timestamp = parseInt(timestampHeader, 10);
+  const now = Date.now();
+  const fiveMinutesMs = 5 * 60 * 1000;
+  if (Math.abs(now - timestamp) > fiveMinutesMs) {
+    console.warn('Webhook timestamp outside 5-minute tolerance:', { timestamp, now });
+    return false;
+  }
+
+  // Build the payload to sign: v1.{timestamp}.{raw_payload}
+  const payloadToSign = `v1.${timestampHeader}.${rawPayload}`;
+
+  // Compute expected signature
+  const expectedSignature = 'v1=' + crypto
+    .createHmac('sha256', secret)
+    .update(payloadToSign, 'utf8')
+    .digest('hex');
+
+  // Revolut-Signature header may contain multiple signatures (comma-separated)
+  // e.g., "v1=abc123,v1=def456" if signing secrets were rotated
+  const signatures = signatureHeader.split(',').map(s => s.trim());
+
+  // Check if any signature matches
+  for (const sig of signatures) {
+    try {
+      if (sig.length === expectedSignature.length &&
+          crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSignature))) {
+        return true;
+      }
+    } catch (e) {
+      // Length mismatch or other error, continue checking
+      continue;
+    }
+  }
+
+  console.warn('No matching signature found');
+  return false;
+}
+
+// Helper: Process order confirmation (shared between webhook and manual confirmation)
+// This marks the order as paid, updates inventory, and sends emails
+async function processOrderConfirmation(orderId, paymentId) {
+  // Load order
+  const orderRes = await db.execute({ sql: 'SELECT * FROM orders WHERE id = ?', args: [orderId] });
+  if (orderRes.rows.length === 0) {
+    throw new Error(`Order not found: ${orderId}`);
+  }
+  const order = orderRes.rows[0];
+
+  // If already paid, validate idempotency: IDs must match
+  if (order.status === 'paid') {
+    if (order.revolut_payment_id && order.revolut_payment_id !== paymentId) {
+      throw new Error(`Order ${orderId} already paid with different payment ID`);
+    }
+    // Ensure IDs are persisted if they were null previously
+    await db.execute({
+      sql: 'UPDATE orders SET revolut_payment_id = COALESCE(revolut_payment_id, ?) WHERE id = ?',
+      args: [paymentId, orderId],
+    });
+    return { success: true, order: { id: orderId, status: 'paid' }, alreadyPaid: true };
+  }
+
+  // Store Revolut ids and mark as paid
+  await db.execute({
+    sql: 'UPDATE orders SET status = ?, revolut_payment_id = ? WHERE id = ?',
+    args: ['paid', paymentId, orderId],
+  });
+
+  // Inventory updates
+  // 1) Mark art items as sold
+  const artItemsRes = await db.execute({
+    sql: 'SELECT aoi.art_id FROM art_order_items aoi WHERE aoi.order_id = ?',
+    args: [orderId],
+  });
+  const uniqueArtIds = [...new Set(artItemsRes.rows.map(r => r.art_id))];
+  for (const artId of uniqueArtIds) {
+    await db.execute({ sql: 'UPDATE art SET is_sold = 1 WHERE id = ?', args: [artId] });
+  }
+
+  // 2) Decrement others variants stock and mark product as sold if out of stock
+  const otherItemsRes = await db.execute({
+    sql: 'SELECT other_var_id FROM other_order_items WHERE order_id = ?',
+    args: [orderId],
+  });
+  const counts = new Map();
+  for (const row of otherItemsRes.rows) {
+    counts.set(row.other_var_id, (counts.get(row.other_var_id) || 0) + 1);
+  }
+  for (const [variantId, qty] of counts.entries()) {
+    const varRes = await db.execute({ sql: 'SELECT id, stock, other_id FROM other_vars WHERE id = ?', args: [variantId] });
+    if (varRes.rows.length) {
+      const v = varRes.rows[0];
+      const newStock = Math.max(0, (v.stock || 0) - qty);
+      await db.execute({ sql: 'UPDATE other_vars SET stock = ? WHERE id = ?', args: [newStock, variantId] });
+      const totalRes = await db.execute({ sql: 'SELECT SUM(stock) as total_stock FROM other_vars WHERE other_id = ?', args: [v.other_id] });
+      if ((totalRes.rows[0]?.total_stock || 0) <= 0) {
+        await db.execute({ sql: 'UPDATE others SET is_sold = 1 WHERE id = ?', args: [v.other_id] });
+      }
+    }
+  }
+
+  // Send order confirmation email
+  try {
+    const orderDetailsResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE id = ?',
+      args: [orderId],
+    });
+    const orderRow = orderDetailsResult.rows[0] || order;
+
+    const artOrderItemsResult = await db.execute({
+      sql: `
+        SELECT aoi.*, a.name, a.type, a.basename, a.seller_id, 'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ?
+      `,
+      args: [orderId],
+    });
+    const othersOrderItemsResult = await db.execute({
+      sql: `
+        SELECT ooi.*, o.name, o.basename, o.seller_id, ov.key as variant_key, 'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ?
+      `,
+      args: [orderId],
+    });
+    const items = [...artOrderItemsResult.rows, ...othersOrderItemsResult.rows];
+
+    const sellersInfo = [];
+    for (const item of items) {
+      if (item.seller_id && !sellersInfo.find(s => s.id === item.seller_id)) {
+        const sellerResult = await db.execute({ sql: 'SELECT email, full_name FROM users WHERE id = ?', args: [item.seller_id] });
+        if (sellerResult.rows.length > 0) {
+          const seller = sellerResult.rows[0];
+          sellersInfo.push({ email: seller.email, name: seller.full_name, id: item.seller_id });
+        }
+      }
+    }
+
+    const buyerEmail = orderRow.email || orderRow.guest_email || null;
+    const buyerPhone = orderRow.phone || null;
+
+    if (buyerEmail) {
+      await sendPurchaseConfirmation({
+        orderId,
+        orderToken: orderRow.token,
+        items,
+        totalPrice: orderRow.total_price,
+        buyerEmail,
+        buyerPhone,
+        sellers: sellersInfo,
+      });
+    }
+  } catch (emailErr) {
+    console.error('Failed to send order confirmation email:', emailErr);
+  }
+
+  return { success: true, order: { id: orderId, status: 'paid' }, alreadyPaid: false };
+}
+
 // POST /api/payments/revolut/webhook
-// Note: For a production-grade implementation, verify the signature header per Revolut docs.
+// Handles Revolut webhook events for payment confirmation
 const revolutWebhookEndpoint = async (req, res, next) => {
   try {
-    // Placeholder: log event; in future, verify signature and reconcile payments
+    // Use the raw body captured by the verify callback for signature verification
+    // This preserves the exact bytes that Revolut signed
+    const rawBody = req.rawBody || JSON.stringify(req.body);
+    const signatureHeader = req.headers['revolut-signature'] || '';
+    const timestampHeader = req.headers['revolut-request-timestamp'] || '';
     const event = req.body;
-    console.log('Revolut webhook received:', JSON.stringify(event));
-    return res.status(200).json({ received: true });
+
+    console.log('Revolut webhook received:', rawBody);
+    console.log('Event type:', event.event);
+    console.log('Timestamp:', timestampHeader);
+
+    // Verify signature if secret is configured
+    if (REVOLUT_WEBHOOK_SECRET) {
+      const isValid = verifyRevolutWebhookSignature(rawBody, signatureHeader, timestampHeader, REVOLUT_WEBHOOK_SECRET);
+      if (!isValid) {
+        console.error('Invalid webhook signature');
+        console.error('Raw body length:', rawBody.length);
+        console.error('Signature header:', signatureHeader);
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+      console.log('Webhook signature verified successfully');
+    }
+
+    // Handle different event types
+    const eventType = event.event || event.type;
+
+    // Events we care about: ORDER_COMPLETED, ORDER_PAYMENT_COMPLETED
+    if (eventType === 'ORDER_COMPLETED' || eventType === 'ORDER_PAYMENT_COMPLETED') {
+      const revolutOrderId = event.order_id;
+
+      if (!revolutOrderId) {
+        console.error('Webhook event missing order_id:', event);
+        return res.status(200).json({ received: true, processed: false, reason: 'missing order_id' });
+      }
+
+      // Find order by revolut_order_id
+      const orderRes = await db.execute({
+        sql: 'SELECT id, status, revolut_payment_id FROM orders WHERE revolut_order_id = ?',
+        args: [revolutOrderId],
+      });
+
+      if (orderRes.rows.length === 0) {
+        console.log(`Order not found for revolut_order_id: ${revolutOrderId}`);
+        // This might happen if the order hasn't been created yet (race condition)
+        // Return 200 to acknowledge receipt, but note it wasn't processed
+        return res.status(200).json({ received: true, processed: false, reason: 'order not found' });
+      }
+
+      const order = orderRes.rows[0];
+
+      // If already paid, nothing to do
+      if (order.status === 'paid') {
+        console.log(`Order ${order.id} already paid, webhook acknowledged`);
+        return res.status(200).json({ received: true, processed: false, reason: 'already paid' });
+      }
+
+      // Get payment ID from event or fetch from Revolut
+      let paymentId = event.payment_id;
+      if (!paymentId) {
+        try {
+          const payments = await getRevolutOrderPayments(revolutOrderId);
+          if (payments && payments.length > 0) {
+            paymentId = payments[0].id || payments[0].payment_id || payments[0].token;
+          }
+        } catch (e) {
+          console.error('Failed to fetch payment ID:', e);
+        }
+      }
+
+      if (!paymentId) {
+        // Try to get from order
+        try {
+          const revOrder = await getRevolutOrder(revolutOrderId);
+          if (revOrder && revOrder.payments && revOrder.payments.length > 0) {
+            paymentId = revOrder.payments[0].id || revOrder.payments[0].payment_id;
+          }
+        } catch (e) {
+          console.error('Failed to fetch order for payment ID:', e);
+        }
+      }
+
+      // Generate a payment ID if we still don't have one
+      if (!paymentId) {
+        paymentId = `webhook-${revolutOrderId}-${Date.now()}`;
+        console.warn(`Could not get payment ID, using generated: ${paymentId}`);
+      }
+
+      // Process the order confirmation
+      try {
+        const result = await processOrderConfirmation(order.id, paymentId);
+        console.log(`Order ${order.id} confirmed via webhook:`, result);
+        return res.status(200).json({ received: true, processed: true, orderId: order.id });
+      } catch (confirmErr) {
+        console.error(`Failed to confirm order ${order.id}:`, confirmErr);
+        // Still return 200 to acknowledge the webhook
+        return res.status(200).json({ received: true, processed: false, reason: confirmErr.message });
+      }
+    }
+
+    // For other events, just acknowledge receipt
+    return res.status(200).json({ received: true, processed: false, reason: 'unhandled event type' });
   } catch (err) {
-    next(err);
+    console.error('Webhook processing error:', err);
+    // Always return 200 to prevent Revolut from retrying
+    return res.status(200).json({ received: true, processed: false, error: err.message });
   }
 };
 
@@ -259,11 +541,51 @@ const cancelRevolutOrderEndpoint = async (req, res, next) => {
   }
 };
 
+// GET /api/payments/revolut/order/:orderId/status
+// Returns the status of an order by its Revolut order ID or token
+// Used by the success page to check if the webhook has confirmed the payment
+// Note: Revolut's _rp_oid URL param contains the TOKEN, not the internal ID
+async function getOrderStatusByRevolutId(req, res, next) {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) {
+      throw new ApiError(400, 'Falta orderId de Revolut', 'Solicitud inválida');
+    }
+
+    // Find order by revolut_order_id OR revolut_order_token
+    // The URL param might be either the internal ID or the public token
+    const orderRes = await db.execute({
+      sql: 'SELECT id, status, token, email, guest_email FROM orders WHERE revolut_order_id = ? OR revolut_order_token = ?',
+      args: [orderId, orderId],
+    });
+
+    if (orderRes.rows.length === 0) {
+      return res.status(404).json({ success: false, found: false, message: 'Order not found' });
+    }
+
+    const order = orderRes.rows[0];
+
+    return res.status(200).json({
+      success: true,
+      found: true,
+      order_id: order.id,
+      status: order.status,
+      token: order.token,
+      email: order.email || order.guest_email,
+      is_paid: order.status === 'paid',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   initRevolutOrderEndpoint,
   revolutWebhookEndpoint,
   getLatestRevolutPaymentForOrder,
   cancelRevolutOrderEndpoint,
+  getOrderStatusByRevolutId,
+  processOrderConfirmation,
 };
 
 // GET /api/payments/revolut/order/:orderId/payments/latest

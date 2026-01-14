@@ -461,6 +461,22 @@ export const paymentsAPI = {
       method: 'POST',
     });
   },
+
+  // Get order status by Revolut order ID (used by success page to check if payment was confirmed via webhook)
+  // Note: We add a timestamp to bust cache and use cache: 'no-store' to prevent 304 responses
+  getOrderStatusByRevolutId: async (revolutOrderId) => {
+    if (!revolutOrderId) {
+      throw new Error('revolutOrderId is required to get order status');
+    }
+
+    // Add timestamp to prevent browser caching and avoid 304 responses
+    const timestamp = Date.now();
+    return apiRequest(`/payments/revolut/order/${encodeURIComponent(revolutOrderId)}/status?_t=${timestamp}`, {
+      method: 'GET',
+      skipAuthHandling: true,
+      cache: 'no-store', // Prevent browser from using cached response
+    });
+  },
 };
 
 // Shipping API (public)

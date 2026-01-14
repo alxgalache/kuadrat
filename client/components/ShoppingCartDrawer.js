@@ -1,6 +1,6 @@
 'use client'
 
-import {useEffect, useRef, useState} from 'react'
+import {useEffect, useRef, useState, useCallback} from 'react'
 import {useRouter} from 'next/navigation'
 import {Dialog, DialogBackdrop, DialogPanel, DialogTitle} from '@headlessui/react'
 import {XMarkIcon, CreditCardIcon} from '@heroicons/react/24/outline'
@@ -32,6 +32,8 @@ export default function ShoppingCartDrawer({open, onClose}) {
     // Get address functionality mode from environment variable
     const addressMode = process.env.NEXT_PUBLIC_CART_ADDRESS_FUNC || 'manual'
     const paymentTimeoutMs = parseInt(process.env.NEXT_PUBLIC_PAYMENT_TIMEOUT_MS || '30000', 10)
+    const revolutPublicKey = process.env.NEXT_PUBLIC_REVOLUT_PUBLIC_KEY || ''
+    const revolutMode = (process.env.NEXT_PUBLIC_REVOLUT_MODE || 'sandbox').toLowerCase()
     const {cart, removeFromCart, updateQuantity, getTotalPrice, getSubtotal, getTotalShipping, getShippingBreakdown, clearCart} = useCart()
     const {user} = useAuth()
     const {showBanner} = useBannerNotification()
@@ -50,7 +52,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null)
     const [isInitializingPayment, setIsInitializingPayment] = useState(false)
 
-    // Revolut order state
+    // Revolut order state (shared between Card and Revolut Pay)
     const [revolutOrderId, setRevolutOrderId] = useState(null)
     const [revolutOrderToken, setRevolutOrderToken] = useState(null)
     const [revolutCartSnapshot, setRevolutCartSnapshot] = useState(null)
@@ -59,13 +61,19 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const [cardValidationErrors, setCardValidationErrors] = useState([])
     const [isCardFieldValid, setIsCardFieldValid] = useState(false)
 
+    // Revolut Pay state
+    const [isRevolutPayMounted, setIsRevolutPayMounted] = useState(false)
+
     // Refs
     const revolutModuleRef = useRef(null)
     const cardFieldContainerRef = useRef(null)
     const cardFieldInstanceRef = useRef(null)
+    const revolutPayContainerRef = useRef(null)
+    const revolutPayInstanceRef = useRef(null)
     const currentOrderIdRef = useRef(null)
     const currentRevolutOrderIdRef = useRef(null)
     const paymentTimeoutRef = useRef(null)
+    const paymentSucceededRef = useRef(false) // Prevents cart change effect from cancelling after success
 
     const getImageUrl = (item) => {
         return item.productType === 'art'
@@ -80,7 +88,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     // Build the compact representation of cart items used to initialise a Revolut order.
-    const buildCompactItems = (items) => (
+    const buildCompactItems = useCallback((items) => (
         items.map(item => ({
             type: item.productType === 'art' ? 'art' : 'other',
             id: item.productId,
@@ -88,7 +96,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             quantity: item.quantity,
             shipping: item.shipping,
         }))
-    )
+    ), [])
 
     const handleQuantityChange = (item, newQuantity) => {
         const qty = parseInt(newQuantity, 10)
@@ -123,13 +131,14 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     // Clean up Revolut order state
-    const cleanupRevolutState = () => {
+    const cleanupRevolutState = useCallback(() => {
         setRevolutOrderId(null)
         setRevolutOrderToken(null)
         setRevolutCartSnapshot(null)
         currentRevolutOrderIdRef.current = null
         setIsCardFieldValid(false)
         setCardValidationErrors([])
+        setIsRevolutPayMounted(false)
 
         if (cardFieldInstanceRef.current && typeof cardFieldInstanceRef.current.destroy === 'function') {
             try {
@@ -140,6 +149,15 @@ export default function ShoppingCartDrawer({open, onClose}) {
         }
         cardFieldInstanceRef.current = null
 
+        if (revolutPayInstanceRef.current && typeof revolutPayInstanceRef.current.destroy === 'function') {
+            try {
+                revolutPayInstanceRef.current.destroy()
+            } catch (e) {
+                // ignore
+            }
+        }
+        revolutPayInstanceRef.current = null
+
         if (typeof window !== 'undefined') {
             try {
                 window.sessionStorage.removeItem(REVOLUT_ORDER_STORAGE_KEY)
@@ -147,7 +165,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 // ignore storage cleanup errors
             }
         }
-    }
+    }, [])
 
     // Prevent closing if payment is being processed
     const handleCloseDrawer = () => {
@@ -217,6 +235,19 @@ export default function ShoppingCartDrawer({open, onClose}) {
     useEffect(() => {
         if (!revolutCartSnapshot) return
 
+        // Skip if payment already succeeded (cart was cleared intentionally) - web flow
+        if (paymentSucceededRef.current) {
+            paymentSucceededRef.current = false // Reset for next payment
+            return
+        }
+
+        // Skip if cart is empty - likely cleared after successful payment (mobile redirect flow)
+        // In this case, we don't want to cancel the already-completed order
+        if (cart.length === 0) {
+            cleanupRevolutState()
+            return
+        }
+
         const currentSnapshot = JSON.stringify(buildCompactItems(cart))
         if (currentSnapshot !== revolutCartSnapshot) {
             // Cart changed - cancel Revolut order
@@ -225,7 +256,13 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     try {
                         await paymentsAPI.cancelOrder(revolutOrderId)
                     } catch (err) {
-                        console.warn('No se pudo cancelar la orden de Revolut tras cambios en el carrito:', err)
+                        // Ignore "already completed" errors - this is fine, payment succeeded
+                        const isAlreadyCompleted = err?.response?.code === 'cancelling_completed_order' ||
+                            err?.message?.includes('completed') ||
+                            err?.status === 422
+                        if (!isAlreadyCompleted) {
+                            console.warn('No se pudo cancelar la orden de Revolut tras cambios en el carrito:', err)
+                        }
                     }
                 })()
             }
@@ -238,7 +275,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 setSelectedPaymentMethod(null)
             }
         }
-    }, [cart, revolutCartSnapshot, currentStep, revolutOrderId])
+    }, [cart, revolutCartSnapshot, currentStep, revolutOrderId, buildCompactItems, cleanupRevolutState])
 
     // Step 1 -> Step 2: Handle "Completar pedido" click
     const handleCheckout = () => {
@@ -283,8 +320,8 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     const handleBackToAddress = () => {
-        // If we have a Revolut order and are leaving payment step, cancel it
-        if (revolutOrderId && selectedPaymentMethod === PAYMENT_METHOD_CARD) {
+        // When going back from payment step, cancel Revolut order
+        if (revolutOrderId) {
             ;(async () => {
                 try {
                     await paymentsAPI.cancelOrder(revolutOrderId)
@@ -300,23 +337,48 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     // Check if cart has any delivery shipping methods
-    const hasDeliveryShipping = () => {
+    const hasDeliveryShipping = useCallback(() => {
         return cart.some(item => item.shipping?.methodType === 'delivery')
-    }
+    }, [cart])
 
     // Check if all products use pickup shipping
-    const allPickupShipping = () => {
+    const allPickupShipping = useCallback(() => {
         return cart.length > 0 && cart.every(item => item.shipping?.methodType === 'pickup')
-    }
+    }, [cart])
 
-    const isPersonalInfoValid = () => {
+    const isPersonalInfoValid = useCallback(() => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
         const phoneRegex = /^\+\d{7,15}$/ // E.164-like: + followed by 7-15 digits
         if (!personalInfo.fullName || personalInfo.fullName.trim().length < 2) return false
         if (!emailRegex.test((personalInfo.email || '').trim())) return false
         if (!phoneRegex.test((personalInfo.phone || '').trim())) return false
         return true
-    }
+    }, [personalInfo])
+
+    // Check if address fields are filled (for button validation, not showing errors)
+    const isAddressFieldsFilled = useCallback(() => {
+        const needsDelivery = hasDeliveryShipping()
+        const pickupOnly = allPickupShipping()
+
+        if (needsDelivery) {
+            if (!deliveryAddress.line1 || !deliveryAddress.postalCode || !deliveryAddress.city || !deliveryAddress.province || !deliveryAddress.country) {
+                return false
+            }
+        }
+
+        if (pickupOnly || (!useSameAddressForInvoicing && needsDelivery)) {
+            if (!invoicingAddress.line1 || !invoicingAddress.postalCode || !invoicingAddress.city || !invoicingAddress.province || !invoicingAddress.country) {
+                return false
+            }
+        }
+
+        return true
+    }, [hasDeliveryShipping, allPickupShipping, deliveryAddress, invoicingAddress, useSameAddressForInvoicing])
+
+    // Check if step 2 form is complete (for button validation)
+    const isStep2FormComplete = useCallback(() => {
+        return isPersonalInfoValid() && isAddressFieldsFilled()
+    }, [isPersonalInfoValid, isAddressFieldsFilled])
 
     const isAddressValid = () => {
         const needsDelivery = hasDeliveryShipping()
@@ -358,38 +420,31 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
     // Handle payment method selection
     const handlePaymentMethodSelect = async (method) => {
-        // If switching from card to another method, cancel existing Revolut order
-        if (selectedPaymentMethod === PAYMENT_METHOD_CARD && method !== PAYMENT_METHOD_CARD && revolutOrderId) {
-            try {
-                await paymentsAPI.cancelOrder(revolutOrderId)
-            } catch (err) {
-                console.warn('No se pudo cancelar la orden de Revolut:', err)
-            }
-            cleanupRevolutState()
-        }
+        // If selecting the same method, do nothing
+        if (selectedPaymentMethod === method) return
 
         setSelectedPaymentMethod(method)
 
-        // If selecting card payment, initialize Revolut order
-        if (method === PAYMENT_METHOD_CARD) {
+        // For both Card and Revolut Pay, we need a Revolut order
+        // Initialize if we don't have one, or reuse existing if cart matches
+        if (method === PAYMENT_METHOD_CARD || method === PAYMENT_METHOD_REVOLUT) {
             await initializeRevolutOrder()
         }
     }
 
-    // Initialize Revolut order when card payment is selected
+    // Initialize Revolut order (shared between Card and Revolut Pay)
     const initializeRevolutOrder = async () => {
+        const compactItems = buildCompactItems(cart)
+        const snapshot = JSON.stringify(compactItems)
+
+        // If we already have a matching Revolut order, reuse it
+        if (revolutOrderId && revolutOrderToken && revolutCartSnapshot === snapshot) {
+            return { revolutOrderId, revolutOrderToken }
+        }
+
         setIsInitializingPayment(true)
 
         try {
-            const compactItems = buildCompactItems(cart)
-            const snapshot = JSON.stringify(compactItems)
-
-            // If we already have a matching Revolut order, reuse it
-            if (revolutOrderId && revolutOrderToken && revolutCartSnapshot === snapshot) {
-                setIsInitializingPayment(false)
-                return
-            }
-
             const resp = await paymentsAPI.initRevolutOrder(compactItems)
 
             if (!resp || !resp.revolut_order_id || !resp.token) {
@@ -416,17 +471,68 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     console.warn('No se pudo guardar la orden de Revolut en sessionStorage:', e)
                 }
             }
+
+            return { revolutOrderId: resp.revolut_order_id, revolutOrderToken: resp.token }
         } catch (err) {
             console.error('Error inicializando la orden de Revolut:', err)
             showBanner(err.message || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
             setSelectedPaymentMethod(null)
+            return null
         } finally {
             setIsInitializingPayment(false)
         }
     }
 
-    // Handle payment submission (Step 3: "Pagar" button)
-    const handlePayment = async () => {
+    // Place order in our database (shared between Card and Revolut Pay)
+    const placeOrderInDatabase = async () => {
+        const orderItems = cart.flatMap(item => {
+            const baseItem = {
+                type: item.productType === 'art' ? 'art' : 'other',
+                id: item.productId,
+                shipping: item.shipping,
+            }
+            if (item.productType === 'other') baseItem.variantId = item.variantId
+            return Array(item.quantity).fill(baseItem)
+        })
+
+        if (orderItems.length === 0) {
+            throw new Error('El carrito está vacío')
+        }
+
+        const hasDelivery = hasDeliveryShipping()
+        const pickupOnly = allPickupShipping()
+
+        const finalDeliveryAddress = hasDelivery ? deliveryAddress : null
+        const finalInvoicingAddress = pickupOnly
+            ? invoicingAddress
+            : (useSameAddressForInvoicing ? deliveryAddress : invoicingAddress)
+
+        const placed = await ordersAPI.placeOrder({
+            items: orderItems,
+            email: personalInfo.email,
+            phone: personalInfo.phone,
+            delivery_address: finalDeliveryAddress,
+            invoicing_address: finalInvoicingAddress,
+            customer: {
+                full_name: personalInfo.fullName,
+                email: personalInfo.email,
+                phone: personalInfo.phone,
+            },
+            revolut_order_id: revolutOrderId,
+            revolut_order_token: revolutOrderToken,
+        })
+
+        const createdOrderId = placed?.order?.id
+        if (!createdOrderId) {
+            throw new Error('No se pudo registrar el pedido. Por favor, inténtalo de nuevo.')
+        }
+
+        currentOrderIdRef.current = createdOrderId
+        return { createdOrderId, finalDeliveryAddress, finalInvoicingAddress }
+    }
+
+    // Handle payment submission for Card (Step 3: "Pagar" button)
+    const handleCardPayment = async () => {
         if (!revolutOrderId || !revolutOrderToken) {
             showBanner('No se ha podido inicializar el pago. Por favor, selecciona el método de pago de nuevo.')
             return
@@ -444,54 +550,9 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
         setIsProcessing(true)
         try {
-            // Prepare items in the expanded format expected by orders API
-            const orderItems = cart.flatMap(item => {
-                const baseItem = {
-                    type: item.productType === 'art' ? 'art' : 'other',
-                    id: item.productId,
-                    shipping: item.shipping,
-                }
-                if (item.productType === 'other') baseItem.variantId = item.variantId
-                return Array(item.quantity).fill(baseItem)
-            })
+            const { finalDeliveryAddress, finalInvoicingAddress } = await placeOrderInDatabase()
 
-            if (orderItems.length === 0) {
-                showBanner('El carrito está vacío')
-                setIsProcessing(false)
-                return
-            }
-
-            const hasDelivery = hasDeliveryShipping()
-            const pickupOnly = allPickupShipping()
-
-            const finalDeliveryAddress = hasDelivery ? deliveryAddress : null
-            const finalInvoicingAddress = pickupOnly
-                ? invoicingAddress
-                : (useSameAddressForInvoicing ? deliveryAddress : invoicingAddress)
-
-            // 1) Persist order in our DB with status 'pending' and PATCH Revolut order with full details
-            const placed = await ordersAPI.placeOrder({
-                items: orderItems,
-                email: personalInfo.email,
-                phone: personalInfo.phone,
-                delivery_address: finalDeliveryAddress,
-                invoicing_address: finalInvoicingAddress,
-                customer: {
-                    full_name: personalInfo.fullName,
-                    email: personalInfo.email,
-                    phone: personalInfo.phone,
-                },
-                revolut_order_id: revolutOrderId,
-            })
-
-            const createdOrderId = placed?.order?.id
-            if (!createdOrderId) {
-                throw new Error('No se pudo registrar el pedido. Por favor, inténtalo de nuevo.')
-            }
-
-            currentOrderIdRef.current = createdOrderId
-
-            // 2) Submit payment to Revolut using Card Field
+            // Submit payment to Revolut using Card Field
             const billing = finalInvoicingAddress || finalDeliveryAddress || {}
             const shipping = finalDeliveryAddress || null
 
@@ -553,7 +614,8 @@ export default function ShoppingCartDrawer({open, onClose}) {
         }
     }
 
-    const handleRevolutCardSuccess = async () => {
+    // Handle successful payment (shared between Card and Revolut Pay)
+    const handlePaymentSuccess = async () => {
         // Clear payment timeout since payment succeeded
         if (paymentTimeoutRef.current) {
             clearTimeout(paymentTimeoutRef.current)
@@ -608,6 +670,8 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 }))
             }
 
+            // Mark payment as succeeded to prevent cart change effect from cancelling
+            paymentSucceededRef.current = true
             clearCart()
             setCurrentStep(STEP_CART)
             setSelectedPaymentMethod(null)
@@ -650,10 +714,9 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
                 if (!isMounted) return
 
-                const envMode = (process.env.NEXT_PUBLIC_REVOLUT_MODE || 'sandbox').toLowerCase()
                 const checkoutInstance = await revolutModuleRef.current(
                     revolutOrderToken,
-                    envMode === 'production' ? undefined : 'sandbox'
+                    revolutMode === 'production' ? undefined : 'sandbox'
                 )
 
                 if (!isMounted) return
@@ -678,7 +741,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     target: cardFieldContainerRef.current,
                     ...(revLocale ? {locale: revLocale} : {}),
                     onSuccess: () => {
-                        handleRevolutCardSuccess()
+                        handlePaymentSuccess()
                     },
                     onError: (error) => {
                         if (paymentTimeoutRef.current) {
@@ -726,7 +789,143 @@ export default function ShoppingCartDrawer({open, onClose}) {
             }
             cardFieldInstanceRef.current = null
         }
-    }, [currentStep, selectedPaymentMethod, revolutOrderToken, open])
+    }, [currentStep, selectedPaymentMethod, revolutOrderToken, open, revolutMode, showBanner])
+
+    // Initialize Revolut Pay when selected
+    useEffect(() => {
+        if (currentStep !== STEP_PAYMENT || selectedPaymentMethod !== PAYMENT_METHOD_REVOLUT || !revolutPayContainerRef.current || !revolutPublicKey) {
+            return
+        }
+
+        // Require revolut order to be initialized first
+        if (!revolutOrderId || !revolutOrderToken) {
+            return
+        }
+
+        let isMounted = true
+
+        const initRevolutPay = async () => {
+            try {
+                if (!revolutModuleRef.current) {
+                    const mod = await import('@revolut/checkout')
+                    revolutModuleRef.current = mod && (mod.default || mod)
+                }
+
+                if (!isMounted) return
+
+                // Destroy any previous instance
+                if (revolutPayInstanceRef.current && typeof revolutPayInstanceRef.current.destroy === 'function') {
+                    try {
+                        revolutPayInstanceRef.current.destroy()
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+
+                const revLocale = process.env.NEXT_PUBLIC_REVOLUT_LOCALE || 'es'
+
+                // Initialize Revolut Pay with public key
+                const { revolutPay } = await revolutModuleRef.current.payments({
+                    locale: revLocale,
+                    publicToken: revolutPublicKey,
+                    mode: revolutMode === 'production' ? 'prod' : 'sandbox',
+                })
+
+                if (!isMounted) return
+
+                // Get base URL for redirects
+                const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+
+                // Payment options for Revolut Pay
+                const paymentOptions = {
+                    currency: 'EUR',
+                    totalAmount: Math.round(getTotalPrice() * 100), // Amount in minor units (cents)
+                    requestShipping: false, // We already collected shipping info
+                    // Redirect URLs for mobile flows - using dedicated pages
+                    redirectUrls: {
+                        success: `${baseUrl}/pedido-completado`,
+                        failure: `${baseUrl}/pago-fallido`,
+                        cancel: `${baseUrl}/pago-cancelado`,
+                    },
+                    // Create order callback - called when user clicks the button
+                    createOrder: async () => {
+                        try {
+                            // Place the order in our database first
+                            await placeOrderInDatabase()
+
+                            // Store order info in sessionStorage for mobile redirect recovery
+                            if (typeof window !== 'undefined') {
+                                const pendingOrderInfo = {
+                                    orderId: currentOrderIdRef.current,
+                                    revolutOrderId: revolutOrderId,
+                                    revolutOrderToken: revolutOrderToken,
+                                    email: personalInfo.email,
+                                    timestamp: Date.now(),
+                                }
+                                window.sessionStorage.setItem('kuadrat_pending_revolut_pay_order', JSON.stringify(pendingOrderInfo))
+                            }
+
+                            // Return the public ID (token) for Revolut
+                            return { publicId: revolutOrderToken }
+                        } catch (err) {
+                            console.error('Error in createOrder callback:', err)
+                            throw err
+                        }
+                    },
+                    // Customer info
+                    customer: {
+                        name: personalInfo.fullName,
+                        email: personalInfo.email,
+                        phone: personalInfo.phone,
+                    },
+                }
+
+                // Mount the Revolut Pay button
+                revolutPay.mount(revolutPayContainerRef.current, paymentOptions)
+
+                // Listen for payment events (web flow)
+                revolutPay.on('payment', async (event) => {
+                    if (event.type === 'success') {
+                        setIsProcessing(true)
+                        // Clear pending order info since we're handling it now
+                        if (typeof window !== 'undefined') {
+                            window.sessionStorage.removeItem('kuadrat_pending_revolut_pay_order')
+                        }
+                        await handlePaymentSuccess()
+                    } else if (event.type === 'error') {
+                        console.error('Revolut Pay error:', event)
+                        showBanner(event.message || 'Error en el pago con Revolut Pay. Por favor, inténtalo de nuevo.')
+                        setIsProcessing(false)
+                    } else if (event.type === 'cancel') {
+                        // User cancelled - show message but don't navigate
+                        console.log('Revolut Pay cancelled by user')
+                        showBanner('Has cancelado el pago. Puedes intentarlo de nuevo cuando quieras.')
+                    }
+                })
+
+                revolutPayInstanceRef.current = revolutPay
+                setIsRevolutPayMounted(true)
+            } catch (err) {
+                console.error('Error inicializando Revolut Pay:', err)
+                showBanner(err.message || 'No se pudo cargar Revolut Pay. Inténtalo de nuevo.')
+            }
+        }
+
+        initRevolutPay()
+
+        return () => {
+            isMounted = false
+            if (revolutPayInstanceRef.current && typeof revolutPayInstanceRef.current.destroy === 'function') {
+                try {
+                    revolutPayInstanceRef.current.destroy()
+                } catch (e) {
+                    // ignore
+                }
+            }
+            revolutPayInstanceRef.current = null
+            setIsRevolutPayMounted(false)
+        }
+    }, [currentStep, selectedPaymentMethod, revolutPublicKey, revolutMode, personalInfo, getTotalPrice, showBanner, revolutOrderId, revolutOrderToken])
 
     // Payment methods configuration
     const paymentMethods = [
@@ -746,7 +945,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             id: PAYMENT_METHOD_REVOLUT,
             title: 'Revolut Pay',
             icons: ['/parties/revolut.png'],
-            disabled: true,
+            disabled: false,
         },
         {
             id: PAYMENT_METHOD_PAYPAL,
@@ -1103,8 +1302,35 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                                         id="card-field"
                                                                         className="rounded-md border border-gray-300 bg-white px-3 py-3"
                                                                     />
+                                                                    <p className="mt-2 text-xs text-gray-500">
+                                                                        El nombre del propietario de la tarjeta debe coincidir con el nombre introducido en el paso anterior.
+                                                                    </p>
                                                                 </>
                                                             ) : null}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Revolut Pay button - only shown when Revolut Pay is selected */}
+                                                    {selectedPaymentMethod === PAYMENT_METHOD_REVOLUT && (
+                                                        <div className="mt-4">
+                                                            {isInitializingPayment ? (
+                                                                <div className="flex items-center justify-center py-4">
+                                                                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
+                                                                    <span className="ml-2 text-sm text-gray-600">Cargando Revolut Pay...</span>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pagar con Revolut</h3>
+                                                                    <div
+                                                                        ref={revolutPayContainerRef}
+                                                                        id="revolut-pay"
+                                                                        className="min-h-[48px]"
+                                                                    />
+                                                                    <p className="mt-2 text-xs text-gray-500">
+                                                                        Haz clic en el botón de Revolut Pay para completar tu pago de forma segura.
+                                                                    </p>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
@@ -1137,42 +1363,71 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                 )}
 
                                                 {currentStep === STEP_ADDRESS && (
-                                                    <button
-                                                        onClick={handleProceedToPaymentStep}
-                                                        disabled={isProcessing}
-                                                        className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        {isProcessing ? 'Procesando...' : 'Ir al pago'}
-                                                    </button>
+                                                    <>
+                                                        <button
+                                                            onClick={handleProceedToPaymentStep}
+                                                            disabled={isProcessing || !isStep2FormComplete()}
+                                                            className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            {isProcessing ? 'Procesando...' : 'Ir al pago'}
+                                                        </button>
+                                                        {!isStep2FormComplete() && (
+                                                            <p className="mt-2 text-xs text-center text-gray-500">
+                                                                Completa todos los campos requeridos para continuar
+                                                            </p>
+                                                        )}
+                                                    </>
                                                 )}
 
                                                 {currentStep === STEP_PAYMENT && (
                                                     <>
-                                                        {cardValidationErrors.length > 0 && (
-                                                            <div className="mb-3">
-                                                                {cardValidationErrors.map((error, index) => (
-                                                                    <p key={index} className="text-sm text-red-600">
-                                                                        {error}
+                                                        {/* Card payment button */}
+                                                        {selectedPaymentMethod === PAYMENT_METHOD_CARD && (
+                                                            <>
+                                                                {cardValidationErrors.length > 0 && (
+                                                                    <div className="mb-3">
+                                                                        {cardValidationErrors.map((error, index) => (
+                                                                            <p key={index} className="text-sm text-red-600">
+                                                                                {error}
+                                                                            </p>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                                <button
+                                                                    onClick={handleCardPayment}
+                                                                    disabled={isProcessing || !isCardFieldValid}
+                                                                    className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                >
+                                                                    {isProcessing ? 'Procesando...' : 'Pagar'}
+                                                                </button>
+                                                                {!isCardFieldValid && cardValidationErrors.length === 0 && !isProcessing && (
+                                                                    <p className="mt-2 text-xs text-center text-gray-500">
+                                                                        Por favor, completa los datos de tu tarjeta para continuar
                                                                     </p>
-                                                                ))}
-                                                            </div>
+                                                                )}
+                                                            </>
                                                         )}
-                                                        <button
-                                                            onClick={handlePayment}
-                                                            disabled={isProcessing || !selectedPaymentMethod || (selectedPaymentMethod === PAYMENT_METHOD_CARD && !isCardFieldValid)}
-                                                            className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                        >
-                                                            {isProcessing ? 'Procesando...' : 'Pagar'}
-                                                        </button>
+
+                                                        {/* Revolut Pay - button is rendered by SDK, no extra button needed */}
+                                                        {selectedPaymentMethod === PAYMENT_METHOD_REVOLUT && !isRevolutPayMounted && !isInitializingPayment && (
+                                                            <p className="mt-2 text-xs text-center text-gray-500">
+                                                                Cargando botón de Revolut Pay...
+                                                            </p>
+                                                        )}
+
+                                                        {/* No payment method selected */}
                                                         {!selectedPaymentMethod && (
-                                                            <p className="mt-2 text-xs text-center text-gray-500">
-                                                                Selecciona un método de pago para continuar
-                                                            </p>
-                                                        )}
-                                                        {selectedPaymentMethod === PAYMENT_METHOD_CARD && !isCardFieldValid && cardValidationErrors.length === 0 && !isProcessing && (
-                                                            <p className="mt-2 text-xs text-center text-gray-500">
-                                                                Por favor, completa los datos de tu tarjeta para continuar
-                                                            </p>
+                                                            <>
+                                                                <button
+                                                                    disabled={true}
+                                                                    className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                >
+                                                                    Pagar
+                                                                </button>
+                                                                <p className="mt-2 text-xs text-center text-gray-500">
+                                                                    Selecciona un método de pago para continuar
+                                                                </p>
+                                                            </>
                                                         )}
                                                     </>
                                                 )}

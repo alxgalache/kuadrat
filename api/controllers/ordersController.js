@@ -519,6 +519,7 @@ const placeOrder = async (req, res, next) => {
       invoicing_address,
       customer,
       revolut_order_id,
+      revolut_order_token,
       currency = 'EUR',
       description = 'Pedido realizado en 140d Galería de Arte',
     } = req.body || {};
@@ -760,8 +761,9 @@ const placeOrder = async (req, res, next) => {
         invoicing_city,
         invoicing_province,
         invoicing_country,
-        revolut_order_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        revolut_order_id,
+        revolut_order_token
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         buyerEmail,
         buyerPhone ?? null,
@@ -784,6 +786,7 @@ const placeOrder = async (req, res, next) => {
         invoicing_address?.province ?? null,
         invoicing_address?.country ?? null,
         revolut_order_id,
+        revolut_order_token || null,
       ],
     });
 

@@ -463,6 +463,16 @@ async function initializeDatabase() {
       }
     }
 
+    // Add Revolut order token column (public ID used in Revolut Pay redirects)
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN revolut_order_token TEXT`);
+      console.log('Added revolut_order_token column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('revolut_order_token column already exists or error:', err.message);
+      }
+    }
+
     try {
       await db.execute(`ALTER TABLE orders ADD COLUMN delivery_address_line_2 TEXT`);
       console.log('Added delivery_address_line_2 column to orders table');
