@@ -38,8 +38,22 @@ const sensitiveLimiter = rateLimit({
     },
 });
 
+// Lenient limiter for payment verification (status checks, payment retrieval)
+// These are read-only operations that need to support polling during checkout
+const paymentVerificationLimiter = rateLimit({
+    windowMs: (parseInt(process.env.PAYMENT_VERIFICATION_RATE_LIMIT_WINDOW_SECONDS) || 15) * 60 * 1000, // 15 min
+    limit: parseInt(process.env.PAYMENT_VERIFICATION_RATE_LIMIT_MAX_REQUESTS) || 2000, // Much higher limit
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Too many verification requests, please try again later.',
+    },
+});
+
 module.exports = {
     generalLimiter,
     authLimiter,
     sensitiveLimiter,
+    paymentVerificationLimiter,
 };

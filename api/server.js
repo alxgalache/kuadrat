@@ -113,7 +113,7 @@ app.use('/api/products', productsRoutes); // Keep old routes for backward compat
 app.use('/api/art', artRoutes);
 app.use('/api/others', othersRoutes);
 app.use('/api/orders', sensitiveLimiter, ordersRoutes);
-app.use('/api/payments', sensitiveLimiter, paymentsRoutes);
+app.use('/api/payments', paymentsRoutes); // Rate limiters applied per-endpoint in paymentsRoutes
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/seller', sellerRoutes);
