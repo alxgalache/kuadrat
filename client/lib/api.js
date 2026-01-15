@@ -80,7 +80,7 @@ async function apiRequest(endpoint, options = {}) {
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('api-rate-limit', {
               detail: {
-                message: 'Límite de peticiones alcanzado. Tómatelo con calma, hay mucho y muy bueno que ver en esta página 😉',
+                message: 'Límite de peticiones alcanzado. Vuelve a intentarlo más tarde.',
               },
             }));
           }

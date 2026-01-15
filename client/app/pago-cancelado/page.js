@@ -1,10 +1,54 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { Suspense, useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { XCircleIcon } from '@heroicons/react/20/solid'
 
-export default function PagoCanceladoPage() {
+function PagoCanceladoContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  const [isValidAccess, setIsValidAccess] = useState(false)
+  const [isChecking, setIsChecking] = useState(true)
+
+  const revolutOrderId = searchParams.get('_rp_oid')
+
+  // Validate access - must have valid _rp_oid that matches pending order
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    // Check if we have a valid pending order for this Revolut order ID
+    if (revolutOrderId) {
+      try {
+        const stored = window.sessionStorage.getItem('kuadrat_pending_revolut_pay_order')
+        if (stored) {
+          const pendingOrder = JSON.parse(stored)
+          // Validate that the order ID or token matches
+          if (pendingOrder.revolutOrderId === revolutOrderId || pendingOrder.revolutOrderToken === revolutOrderId) {
+            setIsValidAccess(true)
+            setIsChecking(false)
+            return
+          }
+        }
+      } catch (e) {
+        console.error('Error checking pending order:', e)
+      }
+    }
+
+    // Invalid access - redirect to home
+    setIsChecking(false)
+    router.replace('/')
+  }, [revolutOrderId, router])
+
+  // Show nothing while checking
+  if (isChecking) {
+    return <div className="bg-white min-h-screen"></div>
+  }
+
+  // Show nothing if invalid (will redirect)
+  if (!isValidAccess) {
+    return <div className="bg-white min-h-screen"></div>
+  }
 
   return (
     <div className="relative isolate overflow-hidden bg-white min-h-screen">
@@ -44,11 +88,14 @@ export default function PagoCanceladoPage() {
               </button>
               <button
                 onClick={() => {
-                  // Open the cart drawer by dispatching a custom event
-                  if (typeof window !== 'undefined') {
-                    window.dispatchEvent(new CustomEvent('open-cart-drawer'))
-                  }
+                  // Navigate to home first, then open cart drawer
                   router.push('/')
+                  // Use a small delay to ensure navigation completes before dispatching event
+                  setTimeout(() => {
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new CustomEvent('open-cart-drawer'))
+                    }
+                  }, 100)
                 }}
                 className="text-sm font-semibold text-gray-900 hover:text-gray-600"
               >
@@ -59,5 +106,13 @@ export default function PagoCanceladoPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function PagoCanceladoPage() {
+  return (
+    <Suspense fallback={<div className="bg-white min-h-screen"></div>}>
+      <PagoCanceladoContent />
+    </Suspense>
   )
 }

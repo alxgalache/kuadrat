@@ -44,6 +44,18 @@ export default function Navbar() {
     }
   }, [animationTrigger])
 
+  // Listen for custom event to open cart drawer from other pages
+  useEffect(() => {
+    const handleOpenCartDrawer = () => {
+      setCartOpen(true)
+    }
+
+    window.addEventListener('open-cart-drawer', handleOpenCartDrawer)
+    return () => {
+      window.removeEventListener('open-cart-drawer', handleOpenCartDrawer)
+    }
+  }, [])
+
   return (
     <header className="bg-white">
       <nav aria-label="Global" className="mx-auto flex max-w-7xl items-center justify-between p-6 lg:px-8">

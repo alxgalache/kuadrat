@@ -1,27 +1,75 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { ExclamationTriangleIcon } from '@heroicons/react/20/solid'
+import { Suspense, useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { XCircleIcon } from '@heroicons/react/20/solid'
 
-export default function PagoFallidoPage() {
+function PagoFallidoContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  const [isValidAccess, setIsValidAccess] = useState(false)
+  const [isChecking, setIsChecking] = useState(true)
+
+  // Get error description from URL param (added by Revolut on redirect)
+  const failureReason = searchParams.get('_rp_fr')
+  const revolutOrderId = searchParams.get('_rp_oid')
+
+  // Validate access - must have valid _rp_oid that matches pending order
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    // Check if we have a valid pending order for this Revolut order ID
+    if (revolutOrderId) {
+      try {
+        const stored = window.sessionStorage.getItem('kuadrat_pending_revolut_pay_order')
+        if (stored) {
+          const pendingOrder = JSON.parse(stored)
+          // Validate that the order ID or token matches
+          if (pendingOrder.revolutOrderId === revolutOrderId || pendingOrder.revolutOrderToken === revolutOrderId) {
+            setIsValidAccess(true)
+            setIsChecking(false)
+            return
+          }
+        }
+      } catch (e) {
+        console.error('Error checking pending order:', e)
+      }
+    }
+
+    // Invalid access - redirect to home
+    setIsChecking(false)
+    router.replace('/')
+  }, [revolutOrderId, router])
+
+  // Show nothing while checking
+  if (isChecking) {
+    return <div className="bg-white min-h-screen"></div>
+  }
+
+  // Show nothing if invalid (will redirect)
+  if (!isValidAccess) {
+    return <div className="bg-white min-h-screen"></div>
+  }
 
   return (
     <div className="relative isolate overflow-hidden bg-white min-h-screen">
       <div className="px-6 py-24 sm:py-32 lg:px-8">
         <div className="mx-auto max-w-2xl">
           {/* Error Alert */}
-          <div className="rounded-md bg-yellow-50 p-4 mb-8">
+          <div className="rounded-md bg-red-50 p-4 mb-8">
             <div className="flex">
               <div className="shrink-0">
-                <ExclamationTriangleIcon aria-hidden="true" className="size-5 text-yellow-400" />
+                <XCircleIcon aria-hidden="true" className="size-5 text-red-400" />
               </div>
               <div className="ml-3">
-                <h3 className="text-sm font-medium text-yellow-800">Error en el pago</h3>
-                <div className="mt-2 text-sm text-yellow-700">
+                <h3 className="text-sm font-medium text-red-800">Error en el pago</h3>
+                <div className="mt-2 text-sm text-red-700">
                   <p>
-                    No hemos podido procesar tu pago. Esto puede deberse a fondos insuficientes,
-                    datos de tarjeta incorrectos, o un problema temporal con el servicio de pagos.
+                    No hemos podido procesar tu pago.
+                    {failureReason && (
+                      <> {failureReason}</>
+                    )}
                   </p>
                 </div>
               </div>
@@ -45,11 +93,14 @@ export default function PagoFallidoPage() {
               </button>
               <button
                 onClick={() => {
-                  // Open the cart drawer by dispatching a custom event
-                  if (typeof window !== 'undefined') {
-                    window.dispatchEvent(new CustomEvent('open-cart-drawer'))
-                  }
+                  // Navigate to home first, then open cart drawer
                   router.push('/')
+                  // Use a small delay to ensure navigation completes before dispatching event
+                  setTimeout(() => {
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new CustomEvent('open-cart-drawer'))
+                    }
+                  }, 100)
                 }}
                 className="text-sm font-semibold text-gray-900 hover:text-gray-600"
               >
@@ -66,5 +117,13 @@ export default function PagoFallidoPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function PagoFallidoPage() {
+  return (
+    <Suspense fallback={<div className="bg-white min-h-screen"></div>}>
+      <PagoFallidoContent />
+    </Suspense>
   )
 }

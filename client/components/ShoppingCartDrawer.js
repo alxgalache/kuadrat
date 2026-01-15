@@ -631,6 +631,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             }
 
             // Poll backend to resolve latest payment for this Revolut order
+            // We check both payment_id and state to ensure the payment was successful
             let paymentId = null
             const maxAttempts = 10
             let attempt = 0
@@ -639,10 +640,23 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 try {
                     const resp = await paymentsAPI.getLatestRevolutPayment(revolutId)
                     if (resp && resp.payment_id) {
-                        paymentId = resp.payment_id
-                        break
+                        // Check if payment was captured (successful)
+                        if (resp.state === 'captured') {
+                            paymentId = resp.payment_id
+                            break
+                        }
+                        // Check for terminal failure states - stop polling immediately
+                        if (['declined', 'failed', 'cancelled'].includes(resp.state)) {
+                            throw new Error('El pago no se ha completado correctamente. Por favor, inténtalo de nuevo.')
+                        }
+                        // Other states (pending, processing, authorised) - keep polling
                     }
                 } catch (e) {
+                    // Re-throw payment failure errors
+                    if (e?.message?.includes('El pago no se ha completado')) {
+                        throw e
+                    }
+                    // 404 means payment not found yet, keep polling
                     if (e?.status !== 404) {
                         throw e
                     }

@@ -2,8 +2,8 @@ const rateLimit = require('express-rate-limit');
 
 // General API rate limiter
 const generalLimiter = rateLimit({
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    limit: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // Limit each IP to 100 requests per windowMs
+    windowMs: (parseInt(process.env.GENERAL_RATE_LIMIT_WINDOW_SECONDS) || 30) * 60 * 1000,
+    limit: parseInt(process.env.GENERAL_RATE_LIMIT_MAX_REQUESTS) || 1000, // Limit each IP to X requests per windowMs
     standardHeaders: 'draft-7', // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     message: {
@@ -16,8 +16,8 @@ const generalLimiter = rateLimit({
 
 // Stricter limiter for authentication routes (login, register)
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 10, // Limit each IP to 10 auth requests per windowMs
+    windowMs: (parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_SECONDS) || 30) * 60 * 1000,
+    limit: parseInt(process.env.AUTH_RATE_LIMIT_MAX_REQUESTS) || 60, // Limit each IP to X requests per windowMs
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: {
@@ -28,8 +28,8 @@ const authLimiter = rateLimit({
 
 // Stricter limiter for sensitive operations (payments, orders)
 const sensitiveLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    limit: 30, // Limit each IP to 30 requests per hour
+    windowMs: (parseInt(process.env.SENSITIVE_RATE_LIMIT_WINDOW_SECONDS) || 30) * 60 * 1000,
+    limit: parseInt(process.env.SENSITIVE_RATE_LIMIT_MAX_REQUESTS) || 500, // Limit each IP to X requests per windowMs
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: {

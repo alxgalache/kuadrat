@@ -622,9 +622,9 @@ async function getLatestRevolutPaymentForOrder(req, res, next) {
       return res.status(404).json({ success: false, message: 'Payment not found yet for this order' });
     }
 
-    // Pick the most recent payment; try updated_at then created_at; otherwise first
-    const normDate = (p) => new Date(p.updated_at || p.created_at || 0).getTime();
-    const latest = payments.sort((a, b) => normDate(b) - normDate(a))[0];
+    // Revolut returns payments in chronological order (oldest first, newest last)
+    // So the last item in the array is the most recent payment
+    const latest = payments[payments.length - 1];
 
     // Some responses may use different id fields (id vs token). Prefer id.
     const paymentId = latest.id || latest.token || latest.payment_id || null;

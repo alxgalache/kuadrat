@@ -22,18 +22,65 @@ function PedidoCompletadoContent() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingMessage, setProcessingMessage] = useState('Verificando tu pago...')
   const [error, setError] = useState(null)
+  const [isValidAccess, setIsValidAccess] = useState(false)
+  const [isCheckingAccess, setIsCheckingAccess] = useState(true)
 
   // Ref to prevent multiple executions (React StrictMode, dependency changes)
   const hasStartedRef = useRef(false)
 
+  // Get URL params
+  const token = searchParams.get('token')
+  const revolutOrderIdFromUrl = searchParams.get('_rp_oid')
+
+  // Validate access on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    let valid = false
+
+    // Check for card/web flow with token param
+    if (token) {
+      const storageKey = `order_token_${token}`
+      const storedData = sessionStorage.getItem(storageKey)
+      if (storedData) {
+        valid = true
+      }
+    }
+
+    // Check for Revolut Pay mobile flow with _rp_oid param
+    if (!valid && revolutOrderIdFromUrl) {
+      try {
+        const stored = sessionStorage.getItem('kuadrat_pending_revolut_pay_order')
+        if (stored) {
+          const pendingOrder = JSON.parse(stored)
+          if (pendingOrder.revolutOrderId === revolutOrderIdFromUrl || pendingOrder.revolutOrderToken === revolutOrderIdFromUrl) {
+            valid = true
+          }
+        }
+      } catch (e) {
+        console.error('Error checking pending order:', e)
+      }
+    }
+
+    if (!valid) {
+      // Invalid access - redirect to home
+      setIsCheckingAccess(false)
+      router.replace('/')
+      return
+    }
+
+    setIsValidAccess(true)
+    setIsCheckingAccess(false)
+  }, [token, revolutOrderIdFromUrl, router])
+
   // Check for Revolut Pay redirect and handle payment confirmation
   const handleRevolutPayRedirect = useCallback(async () => {
+    // Wait for access validation to complete
+    if (isCheckingAccess || !isValidAccess) return
+
     // Prevent multiple executions (React StrictMode, dependency changes)
     if (hasStartedRef.current) return
     hasStartedRef.current = true
-
-    // Check for Revolut Pay redirect params (_rp_oid is added by Revolut)
-    const revolutOrderIdFromUrl = searchParams.get('_rp_oid')
 
     // Also check for pending order info in sessionStorage
     let pendingOrderInfo = null
@@ -85,7 +132,7 @@ function PedidoCompletadoContent() {
             break
           } else if (statusResp.found && statusResp.status === 'pending') {
             // Order exists but not yet confirmed - wait and retry
-            setProcessingMessage(`Confirmando pago... (${attempt + 1}/${MAX_POLL_ATTEMPTS})`)
+            setProcessingMessage('Confirmando pago...')
           }
         } catch (pollErr) {
           // 404 means order not found yet, keep polling
@@ -150,15 +197,15 @@ function PedidoCompletadoContent() {
       setIsProcessing(false)
       setReady(true)
     }
-  }, [searchParams, clearCart])
+  }, [isCheckingAccess, isValidAccess, revolutOrderIdFromUrl, clearCart])
 
   useEffect(() => {
     handleRevolutPayRedirect()
-  }, [handleRevolutPayRedirect])
+  }, [handleRevolutPayRedirect, isCheckingAccess, isValidAccess])
 
   // Also clear cart if coming from normal checkout flow with token
   useEffect(() => {
-    const token = searchParams.get('token')
+    if (!isValidAccess || isCheckingAccess) return
     if (token && typeof window !== 'undefined') {
       const storageKey = `order_token_${token}`
       const storedData = sessionStorage.getItem(storageKey)
@@ -167,7 +214,17 @@ function PedidoCompletadoContent() {
         clearCart()
       }
     }
-  }, [searchParams, clearCart])
+  }, [token, clearCart, isValidAccess, isCheckingAccess])
+
+  // Show nothing while checking access
+  if (isCheckingAccess) {
+    return <div className="bg-white min-h-screen"></div>
+  }
+
+  // Show nothing if invalid access (will redirect)
+  if (!isValidAccess) {
+    return <div className="bg-white min-h-screen"></div>
+  }
 
   if (isProcessing) {
     return (
@@ -177,6 +234,7 @@ function PedidoCompletadoContent() {
             <div className="flex flex-col items-center gap-4">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
               <p className="text-lg text-gray-600">{processingMessage}</p>
+              <p className="text-sm text-gray-500">No cierres o salgas de esta página hasta que la operación se haya realizado.</p>
             </div>
           </div>
         </div>
