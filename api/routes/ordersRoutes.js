@@ -9,6 +9,9 @@ const {
   getSellerStats,
   getOrderByToken,
   contactSellerForOrder,
+  updateItemTracking,
+  updateItemStatus,
+  updateOrderStatus,
 } = require('../controllers/ordersController');
 const { authenticate, optionalAuthenticate, requireAuth } = require('../middleware/authorization');
 
@@ -33,5 +36,10 @@ router.post('/public/token/:token/contact', contactSellerForOrder);
 // Get orders - requires authentication
 router.get('/', authenticate, requireAuth, getUserOrders);
 router.get('/:id', authenticate, requireAuth, getOrderById);
+
+// Update order item tracking and status - requires authentication
+router.patch('/:orderId/items/:itemId/tracking', authenticate, requireAuth, updateItemTracking);
+router.patch('/:orderId/items/:itemId/status', authenticate, requireAuth, updateItemStatus);
+router.patch('/:orderId/status', authenticate, requireAuth, updateOrderStatus);
 
 module.exports = router;

@@ -4,8 +4,10 @@ import {useState, useEffect, useRef, useCallback} from 'react'
 import Link from 'next/link'
 import {ordersAPI, getArtImageUrl, getOthersImageUrl} from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import {ArrowDownIcon, ArrowUpIcon, EyeIcon, InformationCircleIcon} from '@heroicons/react/20/solid'
+import {ArrowDownIcon, ArrowUpIcon, EyeIcon, InformationCircleIcon, EllipsisVerticalIcon, ExclamationTriangleIcon} from '@heroicons/react/20/solid'
 import {ChevronDownIcon} from '@heroicons/react/16/solid'
+import {Popover, PopoverButton, PopoverPanel, Dialog, DialogBackdrop, DialogPanel, DialogTitle} from '@headlessui/react'
+import {useBannerNotification} from '@/contexts/BannerNotificationContext'
 
 function classNames(...classes) {
     return classes.filter(Boolean).join(' ')
@@ -74,6 +76,135 @@ function formatFilterDateLabel(date) {
     return formatted.charAt(0).toUpperCase() + formatted.slice(1)
 }
 
+// Confirmation Dialog Component with optional tracking
+function ConfirmationDialog({ open, onClose, onConfirm, title, message, confirming, withTracking = false }) {
+    const [addTracking, setAddTracking] = useState(false)
+    const [trackingUrl, setTrackingUrl] = useState('')
+    const [trackingError, setTrackingError] = useState('')
+
+    const validateUrl = (url) => {
+        if (!url || url.trim().length === 0) return true
+        try {
+            new URL(url)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    const handleConfirm = () => {
+        if (addTracking && trackingUrl.trim().length > 0) {
+            if (!validateUrl(trackingUrl)) {
+                setTrackingError('Por favor, introduce una URL válida')
+                return
+            }
+        }
+        onConfirm(addTracking && trackingUrl.trim().length > 0 ? trackingUrl : null)
+    }
+
+    const handleClose = () => {
+        setAddTracking(false)
+        setTrackingUrl('')
+        setTrackingError('')
+        onClose()
+    }
+
+    return (
+        <Dialog open={open} onClose={handleClose} className="relative z-10">
+            <DialogBackdrop
+                transition
+                className="fixed inset-0 bg-gray-500/75 transition-opacity data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in"
+            />
+
+            <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+                <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                    <DialogPanel
+                        transition
+                        className="relative transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-lg sm:p-6 data-closed:sm:translate-y-0 data-closed:sm:scale-95"
+                    >
+                        <div className="sm:flex sm:items-start">
+                            <div className="mx-auto flex size-12 shrink-0 items-center justify-center rounded-full bg-gray-100 sm:mx-0 sm:size-10">
+                                <ExclamationTriangleIcon aria-hidden="true" className="size-6 text-gray-600" />
+                            </div>
+                            <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left flex-1">
+                                <DialogTitle as="h3" className="text-base font-semibold text-gray-900">
+                                    {title}
+                                </DialogTitle>
+                                <div className="mt-2">
+                                    <p className="text-sm text-gray-500">{message}</p>
+                                    <p className="mt-3 text-sm text-gray-500 italic">Se enviará una notificación por correo electrónico al comprador</p>
+                                </div>
+
+                                {withTracking && (
+                                    <div className="mt-4 space-y-3">
+                                        <div className="flex items-center">
+                                            <input
+                                                id="add-tracking"
+                                                type="checkbox"
+                                                checked={addTracking}
+                                                onChange={(e) => {
+                                                    setAddTracking(e.target.checked)
+                                                    if (!e.target.checked) {
+                                                        setTrackingUrl('')
+                                                        setTrackingError('')
+                                                    }
+                                                }}
+                                                className="h-4 w-4 rounded border-gray-300 text-black accent-black focus:ring-black"
+                                                disabled={confirming}
+                                            />
+                                            <label htmlFor="add-tracking" className="ml-2 text-sm text-gray-700">
+                                                Añadir dirección de seguimiento
+                                            </label>
+                                        </div>
+
+                                        {addTracking && (
+                                            <div>
+                                                <input
+                                                    type="url"
+                                                    value={trackingUrl}
+                                                    onChange={(e) => {
+                                                        setTrackingUrl(e.target.value)
+                                                        setTrackingError('')
+                                                    }}
+                                                    placeholder="https://ejemplo.com/tracking/123"
+                                                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+                                                    disabled={confirming}
+                                                />
+                                                {trackingError && (
+                                                    <p className="mt-1 text-sm text-red-600">{trackingError}</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                            <button
+                                type="button"
+                                onClick={handleConfirm}
+                                disabled={confirming || (addTracking && trackingUrl.trim().length === 0)}
+                                className="inline-flex w-full justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 disabled:opacity-60 sm:ml-3 sm:w-auto"
+                            >
+                                {confirming ? 'Procesando...' : 'Confirmar'}
+                            </button>
+                            <button
+                                type="button"
+                                data-autofocus
+                                onClick={handleClose}
+                                disabled={confirming}
+                                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring-1 inset-ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                            >
+                                Cancelar
+                            </button>
+                        </div>
+                    </DialogPanel>
+                </div>
+            </div>
+        </Dialog>
+    )
+}
+
 function OrdersPageContent() {
     const [orders, setOrders] = useState([])
     const [loading, setLoading] = useState(true)
@@ -91,6 +222,11 @@ function OrdersPageContent() {
     const loadMoreRef = useRef(null)
     // Guard to avoid double fetch in React 18 StrictMode on first mount
     const didInitRef = useRef(false)
+    const { showBanner } = useBannerNotification()
+
+    // Mark order as sent confirmation dialog state
+    const [orderSentDialog, setOrderSentDialog] = useState({ open: false, orderId: null })
+    const [markingOrderSent, setMarkingOrderSent] = useState(false)
 
     // Get current date ranges based on filter
     const dateRanges = getDateRanges(dateFilter)
@@ -167,6 +303,29 @@ function OrdersPageContent() {
             // Keep default stats on error
         } finally {
             setLoadingStats(false)
+        }
+    }
+
+    // Handle opening order sent dialog
+    const openOrderSentDialog = (orderId) => {
+        setOrderSentDialog({ open: true, orderId })
+    }
+
+    // Handle confirming order as sent
+    const handleMarkOrderSent = async (tracking) => {
+        if (!orderSentDialog.orderId) return
+        setMarkingOrderSent(true)
+        try {
+            await ordersAPI.updateOrderStatus(orderSentDialog.orderId, 'sent', tracking)
+            showBanner(tracking ? 'Pedido marcado como enviado con seguimiento' : 'Pedido marcado como enviado')
+            setOrderSentDialog({ open: false, orderId: null })
+            // Reload orders to reflect the change
+            loadOrders(1)
+        } catch (err) {
+            showBanner(err.message || 'No se pudo marcar el pedido como enviado')
+            console.error('Error marking order as sent:', err)
+        } finally {
+            setMarkingOrderSent(false)
         }
     }
 
@@ -452,7 +611,7 @@ function OrdersPageContent() {
                     </div>
                 ) : (
                     <div className="mt-8 flow-root">
-                        <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+                        <div className="-mx-4 -my-2 sm:-mx-6 lg:-mx-8">
                             <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
                                 {/* Desktop table layout */}
                                 <table className="hidden min-w-full divide-y divide-gray-300 sm:table">
@@ -492,8 +651,9 @@ function OrdersPageContent() {
                                             className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                             Estado
                                         </th>
-                                        <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0">
-                                            <span className="sr-only">Ver</span>
+                                        <th scope="col"
+                                            className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                            Acciones
                                         </th>
                                     </tr>
                                     </thead>
@@ -533,14 +693,34 @@ function OrdersPageContent() {
                                                 <td className="whitespace-nowrap px-3 py-4 text-sm">
                                                     {getStatusBadge(order.status)}
                                                 </td>
-                                                <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
-                                                    <Link
-                                                        href={`/orders/${order.id}`}
-                                                        className="inline-flex items-center gap-x-1.5 text-gray-900 hover:text-gray-600"
-                                                    >
-                                                        <EyeIcon className="h-5 w-5"/>
-                                                        Ver
-                                                    </Link>
+                                                <td className="whitespace-nowrap px-3 py-4 text-sm">
+                                                    <div className="flex items-center gap-2">
+                                                        <Link
+                                                            href={`/orders/${order.id}`}
+                                                            className="inline-flex items-center gap-x-1.5 text-gray-900 hover:text-gray-600"
+                                                        >
+                                                            <EyeIcon className="h-5 w-5"/>
+                                                            Ver
+                                                        </Link>
+                                                        {order.status === 'paid' && !order.items.every(item => item.status === 'sent') && (
+                                                            <Popover className="relative">
+                                                                <PopoverButton className="inline-flex items-center gap-x-1 rounded-md p-1 hover:bg-gray-100">
+                                                                    <EllipsisVerticalIcon className="h-5 w-5 text-gray-600" aria-hidden="true" />
+                                                                </PopoverButton>
+                                                                <PopoverPanel
+                                                                    transition
+                                                                    className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-xl bg-white p-2 shadow-lg ring-1 ring-gray-900/5 transition data-closed:scale-95 data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
+                                                                >
+                                                                    <button
+                                                                        onClick={() => openOrderSentDialog(order.id)}
+                                                                        className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+                                                                    >
+                                                                        Marcar pedido como enviado
+                                                                    </button>
+                                                                </PopoverPanel>
+                                                            </Popover>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         )
@@ -635,6 +815,17 @@ function OrdersPageContent() {
                     </div>
                 )}
             </div>
+
+            {/* Confirmation Dialog */}
+            <ConfirmationDialog
+                open={orderSentDialog.open}
+                onClose={() => setOrderSentDialog({ open: false, orderId: null })}
+                onConfirm={handleMarkOrderSent}
+                title="Marcar pedido como enviado"
+                message="¿Estás seguro de que quieres marcar este pedido como enviado?"
+                confirming={markingOrderSent}
+                withTracking={true}
+            />
         </div>
     )
 }

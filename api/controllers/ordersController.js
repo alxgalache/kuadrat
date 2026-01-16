@@ -1,6 +1,6 @@
 const { db } = require('../config/database');
 const { ApiError } = require('../middleware/errorHandler');
-const { sendPurchaseConfirmation, sendPaymentConfirmation } = require('../services/emailService');
+const { sendPurchaseConfirmation, sendPaymentConfirmation, sendTrackingUpdateEmail, sendItemsSentEmail } = require('../services/emailService');
 const { sendBuyerToSellerContactEmail } = require('../services/emailService');
 const { createRevolutOrder, updateRevolutOrder } = require('../services/revolutService');
 const crypto = require('crypto');
@@ -1584,6 +1584,524 @@ const getOrderByIdAdmin = async (req, res, next) => {
   }
 };
 
+// Helper function to check if all items in an order are sent and update order status
+const checkAndUpdateOrderStatus = async (orderId) => {
+  try {
+    // Get all items in the order (from all sellers)
+    const allArtItemsResult = await db.execute({
+      sql: 'SELECT status FROM art_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+
+    const allOtherItemsResult = await db.execute({
+      sql: 'SELECT status FROM other_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+
+    const allItems = [...allArtItemsResult.rows, ...allOtherItemsResult.rows];
+
+    // Check if all items have 'sent' status
+    const allSent = allItems.length > 0 && allItems.every(item => item.status === 'sent');
+
+    if (allSent) {
+      // Update order status to 'sent'
+      await db.execute({
+        sql: 'UPDATE orders SET status = ? WHERE id = ?',
+        args: ['sent', orderId],
+      });
+      console.log(`Order #${orderId} status updated to 'sent' - all items have been sent`);
+    }
+  } catch (error) {
+    console.error('Error checking and updating order status:', error);
+    // Don't throw - this is a background operation
+  }
+};
+
+// Update tracking number for an order item
+const updateItemTracking = async (req, res, next) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { tracking, product_type } = req.body;
+    const userId = req.user.id;
+
+    if (!tracking || typeof tracking !== 'string' || tracking.trim().length === 0) {
+      throw new ApiError(400, 'El número de seguimiento no puede estar vacío', 'Solicitud inválida');
+    }
+
+    if (!product_type || !['art', 'other'].includes(product_type)) {
+      throw new ApiError(400, 'Tipo de producto inválido', 'Solicitud inválida');
+    }
+
+    // Verify the seller owns this item in this order
+    const table = product_type === 'art' ? 'art_order_items' : 'other_order_items';
+    const idColumn = product_type === 'art' ? 'art_id' : 'other_id';
+    const productTable = product_type === 'art' ? 'art' : 'others';
+
+    const itemCheckResult = await db.execute({
+      sql: `
+        SELECT i.id
+        FROM ${table} i
+        LEFT JOIN ${productTable} p ON i.${idColumn} = p.id
+        WHERE i.id = ? AND i.order_id = ? AND p.seller_id = ?
+      `,
+      args: [itemId, orderId, userId],
+    });
+
+    if (itemCheckResult.rows.length === 0) {
+      throw new ApiError(404, 'Item no encontrado', 'Item no encontrado');
+    }
+
+    // Update tracking number
+    await db.execute({
+      sql: `UPDATE ${table} SET tracking = ? WHERE id = ?`,
+      args: [tracking.trim(), itemId],
+    });
+
+    // Get updated order data to return
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE id = ?',
+      args: [orderId],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const order = orderResult.rows[0];
+
+    // Get art order items (only seller's items)
+    const artItemsResult = await db.execute({
+      sql: `
+        SELECT
+          aoi.*,
+          a.name,
+          a.description,
+          a.type,
+          a.basename,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ? AND a.seller_id = ?
+      `,
+      args: [orderId, userId],
+    });
+
+    // Get others order items (only seller's items)
+    const othersItemsResult = await db.execute({
+      sql: `
+        SELECT
+          ooi.*,
+          o.name,
+          o.description,
+          o.basename,
+          ov.key as variant_key,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ? AND o.seller_id = ?
+      `,
+      args: [orderId, userId],
+    });
+
+    const sellerItems = [...artItemsResult.rows, ...othersItemsResult.rows];
+
+    // Calculate seller's portion of the order
+    const sellerTotal = sellerItems.reduce((sum, item) => {
+      return sum + item.price_at_purchase + (item.shipping_cost || 0);
+    }, 0);
+
+    // Send email notification to buyer (only if not admin)
+    const isAdmin = req.user.role === 'admin';
+    if (!isAdmin) {
+      // Find the updated item in the seller items
+      const updatedItem = sellerItems.find(item => item.id === parseInt(itemId));
+      if (updatedItem) {
+        try {
+          await sendTrackingUpdateEmail(order, [updatedItem]);
+        } catch (emailError) {
+          console.error('Error sending tracking update email:', emailError);
+          // Don't fail the request if email fails
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Número de seguimiento actualizado correctamente',
+      order: {
+        ...order,
+        items: sellerItems,
+        total_price: sellerTotal,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update status for an order item
+const updateItemStatus = async (req, res, next) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { status, product_type, tracking } = req.body;
+    const userId = req.user.id;
+
+    if (!status || typeof status !== 'string') {
+      throw new ApiError(400, 'Estado inválido', 'Solicitud inválida');
+    }
+
+    if (!product_type || !['art', 'other'].includes(product_type)) {
+      throw new ApiError(400, 'Tipo de producto inválido', 'Solicitud inválida');
+    }
+
+    // Get order to check status
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE id = ?',
+      args: [orderId],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const order = orderResult.rows[0];
+
+    // Validate order status is 'paid' before allowing status change to 'sent'
+    if (status === 'sent' && order.status !== 'paid') {
+      throw new ApiError(400, 'Solo se pueden marcar como enviados los pedidos que estén en estado "pagado"', 'Estado no válido');
+    }
+
+    // Verify the seller owns this item in this order
+    const table = product_type === 'art' ? 'art_order_items' : 'other_order_items';
+    const idColumn = product_type === 'art' ? 'art_id' : 'other_id';
+    const productTable = product_type === 'art' ? 'art' : 'others';
+
+    const itemCheckResult = await db.execute({
+      sql: `
+        SELECT i.id
+        FROM ${table} i
+        LEFT JOIN ${productTable} p ON i.${idColumn} = p.id
+        WHERE i.id = ? AND i.order_id = ? AND p.seller_id = ?
+      `,
+      args: [itemId, orderId, userId],
+    });
+
+    if (itemCheckResult.rows.length === 0) {
+      throw new ApiError(404, 'Item no encontrado', 'Item no encontrado');
+    }
+
+    // Update item status and tracking (if provided)
+    if (tracking && tracking.trim().length > 0) {
+      await db.execute({
+        sql: `UPDATE ${table} SET status = ?, tracking = ? WHERE id = ?`,
+        args: [status, tracking.trim(), itemId],
+      });
+    } else {
+      await db.execute({
+        sql: `UPDATE ${table} SET status = ? WHERE id = ?`,
+        args: [status, itemId],
+      });
+    }
+
+    // Get art order items (only seller's items)
+    const artItemsResult = await db.execute({
+      sql: `
+        SELECT
+          aoi.*,
+          a.name,
+          a.description,
+          a.type,
+          a.basename,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ? AND a.seller_id = ?
+      `,
+      args: [orderId, userId],
+    });
+
+    // Get others order items (only seller's items)
+    const othersItemsResult = await db.execute({
+      sql: `
+        SELECT
+          ooi.*,
+          o.name,
+          o.description,
+          o.basename,
+          ov.key as variant_key,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ? AND o.seller_id = ?
+      `,
+      args: [orderId, userId],
+    });
+
+    const sellerItems = [...artItemsResult.rows, ...othersItemsResult.rows];
+
+    // Calculate seller's portion of the order
+    const sellerTotal = sellerItems.reduce((sum, item) => {
+      return sum + item.price_at_purchase + (item.shipping_cost || 0);
+    }, 0);
+
+    // Send email notification to buyer (only if status is 'sent' and not admin)
+    const isAdmin = req.user.role === 'admin';
+    if (status === 'sent' && !isAdmin) {
+      // Find the updated item in the seller items
+      const updatedItem = sellerItems.find(item => item.id === parseInt(itemId));
+      if (updatedItem) {
+        try {
+          await sendItemsSentEmail(order, [updatedItem]);
+        } catch (emailError) {
+          console.error('Error sending items sent email:', emailError);
+          // Don't fail the request if email fails
+        }
+      }
+    }
+
+    // Check if all items in the order are now 'sent' and update order status if needed
+    if (status === 'sent') {
+      await checkAndUpdateOrderStatus(orderId);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Estado actualizado correctamente',
+      order: {
+        ...order,
+        items: sellerItems,
+        total_price: sellerTotal,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update order status - marks all seller's items (or all items if admin) as sent
+const updateOrderStatus = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { status, tracking } = req.body;
+    const userId = req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!status || typeof status !== 'string') {
+      throw new ApiError(400, 'Estado inválido', 'Solicitud inválida');
+    }
+
+    // Only allow marking as 'sent' for now
+    if (status !== 'sent') {
+      throw new ApiError(400, 'Solo se puede actualizar el estado a "sent"', 'Solicitud inválida');
+    }
+
+    // Get order to check status
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE id = ?',
+      args: [orderId],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const order = orderResult.rows[0];
+
+    // Validate order status is 'paid'
+    if (order.status !== 'paid') {
+      throw new ApiError(400, 'Solo se pueden marcar como enviados los pedidos que estén en estado "pagado"', 'Estado no válido');
+    }
+
+    // Check if this order contains any items from this seller (if not admin)
+    if (!isAdmin) {
+      const sellerItemCheckResult = await db.execute({
+        sql: `
+          SELECT COUNT(*) as count
+          FROM (
+            SELECT aoi.id
+            FROM art_order_items aoi
+            LEFT JOIN art a ON aoi.art_id = a.id
+            WHERE aoi.order_id = ? AND a.seller_id = ?
+            UNION
+            SELECT ooi.id
+            FROM other_order_items ooi
+            LEFT JOIN others o ON ooi.other_id = o.id
+            WHERE ooi.order_id = ? AND o.seller_id = ?
+          )
+        `,
+        args: [orderId, userId, orderId, userId],
+      });
+
+      if (sellerItemCheckResult.rows[0].count === 0) {
+        throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+      }
+    }
+
+    // Update item statuses to 'sent' and tracking (if provided)
+    const hasTracking = tracking && tracking.trim().length > 0;
+
+    if (isAdmin) {
+      // Admin: Update ALL items
+      if (hasTracking) {
+        await db.execute({
+          sql: 'UPDATE art_order_items SET status = ?, tracking = ? WHERE order_id = ?',
+          args: ['sent', tracking.trim(), orderId],
+        });
+        await db.execute({
+          sql: 'UPDATE other_order_items SET status = ?, tracking = ? WHERE order_id = ?',
+          args: ['sent', tracking.trim(), orderId],
+        });
+      } else {
+        await db.execute({
+          sql: 'UPDATE art_order_items SET status = ? WHERE order_id = ?',
+          args: ['sent', orderId],
+        });
+        await db.execute({
+          sql: 'UPDATE other_order_items SET status = ? WHERE order_id = ?',
+          args: ['sent', orderId],
+        });
+      }
+    } else {
+      // Seller: Update only their items
+      if (hasTracking) {
+        await db.execute({
+          sql: `
+            UPDATE art_order_items
+            SET status = ?, tracking = ?
+            WHERE order_id = ? AND art_id IN (
+              SELECT id FROM art WHERE seller_id = ?
+            )
+          `,
+          args: ['sent', tracking.trim(), orderId, userId],
+        });
+        await db.execute({
+          sql: `
+            UPDATE other_order_items
+            SET status = ?, tracking = ?
+            WHERE order_id = ? AND other_id IN (
+              SELECT id FROM others WHERE seller_id = ?
+            )
+          `,
+          args: ['sent', tracking.trim(), orderId, userId],
+        });
+      } else {
+        await db.execute({
+          sql: `
+            UPDATE art_order_items
+            SET status = ?
+            WHERE order_id = ? AND art_id IN (
+              SELECT id FROM art WHERE seller_id = ?
+            )
+          `,
+          args: ['sent', orderId, userId],
+        });
+        await db.execute({
+          sql: `
+            UPDATE other_order_items
+            SET status = ?
+            WHERE order_id = ? AND other_id IN (
+              SELECT id FROM others WHERE seller_id = ?
+            )
+          `,
+          args: ['sent', orderId, userId],
+        });
+      }
+    }
+
+    // Get art order items (only seller's items, or all if admin)
+    const artItemsResult = await db.execute({
+      sql: isAdmin ? `
+        SELECT
+          aoi.*,
+          a.name,
+          a.description,
+          a.type,
+          a.basename,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ?
+      ` : `
+        SELECT
+          aoi.*,
+          a.name,
+          a.description,
+          a.type,
+          a.basename,
+          'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ? AND a.seller_id = ?
+      `,
+      args: isAdmin ? [orderId] : [orderId, userId],
+    });
+
+    // Get others order items (only seller's items, or all if admin)
+    const othersItemsResult = await db.execute({
+      sql: isAdmin ? `
+        SELECT
+          ooi.*,
+          o.name,
+          o.description,
+          o.basename,
+          ov.key as variant_key,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ?
+      ` : `
+        SELECT
+          ooi.*,
+          o.name,
+          o.description,
+          o.basename,
+          ov.key as variant_key,
+          'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+        WHERE ooi.order_id = ? AND o.seller_id = ?
+      `,
+      args: isAdmin ? [orderId] : [orderId, userId],
+    });
+
+    const sellerItems = [...artItemsResult.rows, ...othersItemsResult.rows];
+
+    // Calculate seller's portion of the order
+    const sellerTotal = sellerItems.reduce((sum, item) => {
+      return sum + item.price_at_purchase + (item.shipping_cost || 0);
+    }, 0);
+
+    // Send email notification to buyer (only if not admin)
+    if (!isAdmin && sellerItems.length > 0) {
+      try {
+        await sendItemsSentEmail(order, sellerItems);
+      } catch (emailError) {
+        console.error('Error sending items sent email:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
+
+    // Check if all items in the order are now 'sent' and update order status if needed
+    await checkAndUpdateOrderStatus(orderId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Estado del pedido actualizado correctamente',
+      order: {
+        ...order,
+        items: sellerItems,
+        total_price: sellerTotal,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createOrder,
   placeOrder,
@@ -1591,6 +2109,9 @@ module.exports = {
   getUserOrders,
   getOrderById,
   getSellerStats,
+  updateItemTracking,
+  updateItemStatus,
+  updateOrderStatus,
   getAllOrdersAdmin,
   getOrderByIdAdmin,
   getOrderByToken,

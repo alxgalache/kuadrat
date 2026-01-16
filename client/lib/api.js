@@ -427,6 +427,38 @@ export const ordersAPI = {
     const queryString = queryParams.toString();
     return apiRequest(`/orders/stats${queryString ? '?' + queryString : ''}`);
   },
+
+  // Update tracking number for an order item
+  updateItemTracking: async (orderId, itemId, trackingNumber, productType) => {
+    return apiRequest(`/orders/${orderId}/items/${itemId}/tracking`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tracking: trackingNumber, product_type: productType }),
+    });
+  },
+
+  // Update status for an order item
+  updateItemStatus: async (orderId, itemId, status, productType, tracking = null) => {
+    const body = { status, product_type: productType };
+    if (tracking) {
+      body.tracking = tracking;
+    }
+    return apiRequest(`/orders/${orderId}/items/${itemId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  // Update order status
+  updateOrderStatus: async (orderId, status, tracking = null) => {
+    const body = { status };
+    if (tracking) {
+      body.tracking = tracking;
+    }
+    return apiRequest(`/orders/${orderId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
 };
 
 // Payments API
