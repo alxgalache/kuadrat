@@ -1,7 +1,7 @@
 {
   "name": "kuadrat-api",
   "version": "1.0.0",
-  "description": "Kuadrat Art Gallery API",
+  "description": "140d Galería de Arte",
   "main": "server.js",
   "scripts": {
     "dev": "nodemon --inspect=0.0.0.0:9229 server.js",

@@ -15,11 +15,15 @@ services:
       - "9229:9229"
     environment:
       NODE_ENV: development
+    env_file:
+      - ./api/.env.local
     # Pre/staging: run API in dev mode (nodemon)
     command: npm run dev
 
   client:
     environment:
       NODE_ENV: development
+    env_file:
+      - ./client/.env.local
     # Pre/staging: run Next.js in dev mode with hot reload
     command: npm run dev

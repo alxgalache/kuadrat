@@ -22,6 +22,7 @@ export default function OthersProductDetailPage({ params }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [shippingModalOpen, setShippingModalOpen] = useState(false)
   const [isHoveringCart, setIsHoveringCart] = useState(false)
+  const [supportsHover, setSupportsHover] = useState(true)
   const { isInCart, addToCart, removeFromCart, getCartItem, getSellerOthersShipping } = useCart()
   const { showSuccess } = useNotification()
   const { showBanner } = useBannerNotification()
@@ -31,6 +32,16 @@ export default function OthersProductDetailPage({ params }) {
     const currentUser = authAPI.getCurrentUser()
     setUser(currentUser)
     loadProduct()
+
+    // Detect if device supports hover (desktop with mouse)
+    // Touch-only devices will have (hover: none)
+    const hoverQuery = window.matchMedia('(hover: hover)')
+    setSupportsHover(hoverQuery.matches)
+
+    const handleHoverChange = (e) => setSupportsHover(e.matches)
+    hoverQuery.addEventListener('change', handleHoverChange)
+
+    return () => hoverQuery.removeEventListener('change', handleHoverChange)
   }, [])
 
   const loadProduct = async () => {
@@ -279,14 +290,14 @@ export default function OthersProductDetailPage({ params }) {
                     onMouseLeave={() => setIsHoveringCart(false)}
                     className={`w-full max-w-xs flex items-center justify-center rounded-md border border-transparent px-8 py-3 text-base font-medium focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-50 focus:outline-hidden transition-colors ${
                       selectedVariant && isInCart(product.id, 'other', selectedVariant.id)
-                        ? isHoveringCart
+                        ? (isHoveringCart || !supportsHover)
                           ? 'bg-red-100 text-red-900'
                           : 'bg-gray-200 text-gray-900'
                         : 'bg-black text-white hover:bg-gray-900'
                     }`}
                   >
                     {selectedVariant && isInCart(product.id, 'other', selectedVariant.id)
-                      ? isHoveringCart
+                      ? (isHoveringCart || !supportsHover)
                         ? 'Eliminar de la cesta'
                         : 'En la cesta'
                       : 'Añadir a la cesta'}

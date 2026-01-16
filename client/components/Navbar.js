@@ -97,9 +97,9 @@ export default function Navbar() {
         </div>
 
         <Link href="/" className="-m-1.5 p-1.5">
-          <span className="sr-only">Kuadrat</span>
+          <span className="sr-only">140d</span>
           <img
-            alt="Kuadrat logo"
+            alt="140d Galería de Arte logo"
             src="/brand/140d.svg"
             className="h-6 w-auto"
           />
@@ -320,9 +320,9 @@ export default function Navbar() {
               {/* Intentionally no cart button here on mobile; cart access remains in the main navbar on the right. */}
             </div>
             <Link href="/" className="-m-1.5 p-1.5">
-              <span className="sr-only">Kuadrat</span>
+              <span className="sr-only">140d</span>
               <img
-                alt="Kuadrat logo"
+                alt="140d Galería de Arte logo"
                 src="/brand/140d.svg"
                 className="h-8 w-auto"
               />

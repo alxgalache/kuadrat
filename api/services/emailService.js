@@ -45,7 +45,7 @@ const getFormattedSender = () => {
 // compatibility, we convert the data URL into an inline CID attachment and
 // reference it as <img src="cid:..."> when possible.
 
-const LOGO_CID = 'logo-140d@kuadrat';
+const LOGO_CID = 'logo-140d@140d';
 
 // Parse a data URL (data:image/png;base64,...) into a Nodemailer attachment
 // object that can be referenced with cid: in HTML emails.
@@ -267,7 +267,7 @@ const generateSellerEmailHTML = (orderDetails, sellerItems) => {
           <!-- Logo Header -->
           <tr>
             <td align="center" style="padding: 40px 40px 20px;">
-              <img src="${getLogoSrc()}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
             </td>
           </tr>
 
@@ -391,7 +391,7 @@ const generateAdminEmailHTML = (orderDetails) => {
           <!-- Logo Header -->
           <tr>
             <td align="center" style="padding: 40px 40px 20px;">
-              <img src="${getLogoSrc()}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
             </td>
           </tr>
           <!-- Content -->
@@ -555,14 +555,14 @@ const sendRegistrationRequest = async (userEmail) => {
     text: `
 Hola,
 
-Se ha recibido una nueva solicitud de registro de artista en Kuadrat Gallery.
+Se ha recibido una nueva solicitud de registro de artista en 140d.
 
 Correo electrónico del solicitante: ${userEmail}
 
 Por favor, revisa esta solicitud y contacta al usuario para completar el proceso de registro.
 
 Saludos,
-Sistema Kuadrat Gallery
+140d Galería de Arte
     `,
     html: `
 <!DOCTYPE html>
@@ -589,13 +589,13 @@ Sistema Kuadrat Gallery
 <body bgcolor="#ffffff" style="background-color: #ffffff; background: #ffffff; margin: 0; padding: 0;">
   <div class="container" style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; background: #ffffff;">
     <div class="header" style="text-align: center;">
-      <img src="${getLogoSrc()}" alt="Kuadrat Gallery Logo" style="max-width: 180px; height: auto; margin: 0 auto 10px; display: block;">
-      <h1 style="color: #000000; margin: 0;">Kuadrat Gallery</h1>
+      <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; margin: 0 auto 10px; display: block;">
+      <h1 style="color: #000000; margin: 0;">140d Galería de Arte</h1>
       <p style="margin: 5px 0 0 0;">Nueva Solicitud de Registro</p>
     </div>
 
     <h2>Solicitud de Registro de Artista</h2>
-    <p>Se ha recibido una nueva solicitud de registro en Kuadrat Gallery.</p>
+    <p>Se ha recibido una nueva solicitud de registro.</p>
 
     <div class="content" style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
       <p><strong>Correo electrónico del solicitante:</strong></p>
@@ -605,7 +605,7 @@ Sistema Kuadrat Gallery
     <p>Por favor, revisa esta solicitud y contacta al usuario para completar el proceso de registro.</p>
 
     <div class="footer">
-      <p>Saludos,<br>Sistema Kuadrat Gallery</p>
+      <p>Saludos,<br>140d Galería de Arte</p>
       <p style="font-size: 0.8em;">Este es un correo automático. Por favor no responder.</p>
     </div>
   </div>
@@ -700,7 +700,7 @@ const sendBuyerToSellerContactEmail = async ({
 <body bgcolor="#ffffff" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff; padding: 24px;">
   <div style="max-width: 640px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
     <div style="text-align: center; margin-bottom: 16px;">
-      <img src="${getLogoSrc()}" alt="Kuadrat" style="max-width: 160px; height: auto;" />
+      <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 160px; height: auto;" />
     </div>
     <h1 style="margin: 0 0 12px; font-size: 22px; color: #111827;">Nuevo mensaje de un comprador</h1>
     <p style="margin: 0 0 12px; color: #374151;">Hola ${safeSellerName},</p>

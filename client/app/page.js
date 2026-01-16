@@ -10,7 +10,7 @@ export default function Home() {
       <div className="bg-white relative">
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
           <img
-            alt="Kuadrat logo"
+            alt="140d Galería de Arte"
             src="/brand/140d.svg"
             className="h-10 w-auto mb-8"
           />

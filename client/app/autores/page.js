@@ -45,7 +45,7 @@ export default function AutoresPage() {
     <div className="flex min-h-full flex-col justify-center px-6 py-12 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-sm">
         <img
-          alt="Kuadrat logo"
+          alt="140d Galería de Arte"
           src="/brand/140d.svg"
           className="mx-auto h-10 w-auto"
         />
