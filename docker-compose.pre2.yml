@@ -12,11 +12,15 @@ services:
   api:
     environment:
       NODE_ENV: staging
+    env_file:
+      - ./api/.env.staging
     # Pre/staging: run API in dev mode (nodemon)
     command: npm run start
 
   client:
     environment:
       NODE_ENV: staging
+    env_file:
+      - ./client/.env.staging
     # Pre/staging: run Next.js in dev mode with hot reload
     command: sh -c "npm run build && npm run start"
