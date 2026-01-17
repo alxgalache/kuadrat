@@ -3,9 +3,11 @@ const router = express.Router()
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const { authenticate } = require('../middleware/authorization')
 const adminAuth = require('../middleware/adminAuth')
 const { db } = require('../config/database')
+const { sendPasswordSetupEmail } = require('../services/emailService')
 
 // Configure multer for author avatar uploads
 const authorStorage = multer.diskStorage({
@@ -71,23 +73,33 @@ router.use(authenticate, adminAuth)
 
 // ===== AUTHOR ROUTES =====
 
+// Token expiration time: 48 hours in milliseconds
+const TOKEN_EXPIRATION_MS = 48 * 60 * 60 * 1000
+
+/**
+ * Generate a cryptographically secure token
+ */
+function generateSecureToken() {
+  return crypto.randomBytes(32).toString('hex')
+}
+
 /**
  * POST /api/admin/authors
  * Create a new author (seller user)
+ * Password is not set here - a setup email is sent to the user
  */
 router.post('/authors', async (req, res) => {
   try {
     const {
-      email, password, full_name, bio, location, email_contact, visible,
+      email, full_name, slug, bio, location, email_contact, visible,
       pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
     } = req.body
-    const bcrypt = require('bcrypt')
 
     // Validate required fields
-    if (!email || !password || !full_name) {
+    if (!email || !full_name) {
       return res.status(400).json({
         title: 'Error de validación',
-        message: 'El email, contraseña y nombre completo son obligatorios'
+        message: 'El email y nombre completo son obligatorios'
       })
     }
 
@@ -104,18 +116,36 @@ router.post('/authors', async (req, res) => {
       })
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10)
+    // Check if slug already exists (if provided)
+    if (slug) {
+      const checkSlug = await db.execute({
+        sql: 'SELECT id FROM users WHERE slug = ?',
+        args: [slug]
+      })
 
-    // Create user with role 'seller'
+      if (checkSlug.rows.length > 0) {
+        return res.status(400).json({
+          title: 'Error de validación',
+          message: 'Este slug ya está en uso'
+        })
+      }
+    }
+
+    // Generate secure token for password setup
+    const setupToken = generateSecureToken()
+    const tokenExpires = new Date(Date.now() + TOKEN_EXPIRATION_MS).toISOString()
+
+    // Create user with role 'seller' and no password (will be set via token)
+    // password_hash is set to empty string temporarily - user must set password via token
     const result = await db.execute({
-      sql: `INSERT INTO users (email, password_hash, full_name, bio, location, email_contact, role, visible,
-            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions)
-            VALUES (?, ?, ?, ?, ?, ?, 'seller', ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT INTO users (email, password_hash, full_name, slug, bio, location, email_contact, role, visible,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
+            password_setup_token, password_setup_token_expires)
+            VALUES (?, '', ?, ?, ?, ?, ?, 'seller', ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         email,
-        hashedPassword,
         full_name,
+        slug || null,
         bio || '',
         location || '',
         email_contact || '',
@@ -124,14 +154,29 @@ router.post('/authors', async (req, res) => {
         pickup_city || '',
         pickup_postal_code || '',
         pickup_country || '',
-        pickup_instructions || ''
+        pickup_instructions || '',
+        setupToken,
+        tokenExpires
       ]
     })
 
+    // Send password setup email
+    const emailResult = await sendPasswordSetupEmail({
+      email,
+      fullName: full_name,
+      token: setupToken,
+      expiresIn: '48 horas'
+    })
+
+    if (!emailResult.success) {
+      console.error('Failed to send password setup email to:', email)
+    }
+
     // Fetch created user
     const newUser = await db.execute({
-      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
-            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, visible, created_at,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
+            password_setup_token_expires
             FROM users
             WHERE id = ?`,
       args: [result.lastInsertRowid]
@@ -139,8 +184,9 @@ router.post('/authors', async (req, res) => {
 
     res.status(201).json({
       title: 'Creado',
-      message: 'Autor creado correctamente',
-      author: newUser.rows[0]
+      message: 'Autor creado correctamente. Se ha enviado un email para configurar la contraseña.',
+      author: newUser.rows[0],
+      emailSent: emailResult.success
     })
   } catch (error) {
     console.error('Error creating author:', error)
@@ -158,15 +204,26 @@ router.post('/authors', async (req, res) => {
 router.get('/authors', async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
-            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, visible, created_at,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
+            password_hash, password_setup_token_expires
             FROM users
             WHERE role = 'seller'
             ORDER BY created_at DESC`,
       args: []
     })
 
-    res.json({ authors: result.rows })
+    // Map results to include activation status without exposing password_hash
+    const authors = result.rows.map(author => {
+      const { password_hash, ...authorData } = author
+      return {
+        ...authorData,
+        // User is activated if they have a password set (non-empty password_hash)
+        is_activated: password_hash && password_hash.length > 0
+      }
+    })
+
+    res.json({ authors })
   } catch (error) {
     console.error('Error fetching authors:', error)
     res.status(500).json({
@@ -183,8 +240,9 @@ router.get('/authors', async (req, res) => {
 router.get('/authors/:id', async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
-            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, visible, created_at,
+            pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
+            password_hash, password_setup_token_expires
             FROM users
             WHERE id = ? AND role = 'seller'`,
       args: [req.params.id]
@@ -197,12 +255,91 @@ router.get('/authors/:id', async (req, res) => {
       })
     }
 
-    res.json({ author: result.rows[0] })
+    const { password_hash, ...authorData } = result.rows[0]
+    res.json({
+      author: {
+        ...authorData,
+        is_activated: password_hash && password_hash.length > 0
+      }
+    })
   } catch (error) {
     console.error('Error fetching author:', error)
     res.status(500).json({
       title: 'Error del servidor',
       message: 'No se pudo cargar el autor'
+    })
+  }
+})
+
+/**
+ * POST /api/admin/authors/:id/resend-invitation
+ * Resend the password setup email to an author
+ */
+router.post('/authors/:id/resend-invitation', async (req, res) => {
+  try {
+    const authorId = req.params.id
+
+    // Fetch author
+    const result = await db.execute({
+      sql: `SELECT id, email, full_name, password_hash
+            FROM users
+            WHERE id = ? AND role = 'seller'`,
+      args: [authorId]
+    })
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        title: 'No encontrado',
+        message: 'Autor no encontrado'
+      })
+    }
+
+    const author = result.rows[0]
+
+    // Check if author already has a password set
+    if (author.password_hash && author.password_hash.length > 0) {
+      return res.status(400).json({
+        title: 'Error',
+        message: 'Este autor ya ha configurado su contraseña'
+      })
+    }
+
+    // Generate new token and update expiration
+    const newToken = generateSecureToken()
+    const newExpires = new Date(Date.now() + TOKEN_EXPIRATION_MS).toISOString()
+
+    await db.execute({
+      sql: `UPDATE users
+            SET password_setup_token = ?, password_setup_token_expires = ?
+            WHERE id = ?`,
+      args: [newToken, newExpires, authorId]
+    })
+
+    // Send password setup email
+    const emailResult = await sendPasswordSetupEmail({
+      email: author.email,
+      fullName: author.full_name,
+      token: newToken,
+      expiresIn: '48 horas'
+    })
+
+    if (!emailResult.success) {
+      return res.status(500).json({
+        title: 'Error',
+        message: 'No se pudo enviar el email de invitación'
+      })
+    }
+
+    res.json({
+      title: 'Enviado',
+      message: 'Se ha reenviado el email de invitación',
+      emailSent: true
+    })
+  } catch (error) {
+    console.error('Error resending invitation:', error)
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudo reenviar la invitación'
     })
   }
 })

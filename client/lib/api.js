@@ -126,6 +126,8 @@ export const authAPI = {
     const data = await apiRequest('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+      // Skip global 401 handling to avoid redirect on failed login
+      skipAuthHandling: true,
     });
 
     if (data.token) {
@@ -151,6 +153,37 @@ export const authAPI = {
 
   isAuthenticated: () => {
     return !!getAuthToken();
+  },
+
+  // Validate password setup token
+  validateSetupToken: async (token) => {
+    return apiRequest(`/auth/validate-setup-token/${token}`, {
+      skipAuthHandling: true,
+    });
+  },
+
+  // Set password using setup token
+  setPassword: async (token, password, confirmPassword) => {
+    const data = await apiRequest('/auth/set-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password, confirmPassword }),
+      skipAuthHandling: true,
+    });
+
+    // Auto-login after setting password
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+    }
+
+    return data;
+  },
+
+  // Get password requirements
+  getPasswordRequirements: async () => {
+    return apiRequest('/auth/password-requirements', {
+      skipAuthHandling: true,
+    });
   },
 };
 
@@ -569,6 +602,12 @@ export const adminAPI = {
 
     getProducts: async (id) => {
       return apiRequest(`/admin/authors/${id}/products`);
+    },
+
+    resendInvitation: async (id) => {
+      return apiRequest(`/admin/authors/${id}/resend-invitation`, {
+        method: 'POST',
+      });
     },
   },
 

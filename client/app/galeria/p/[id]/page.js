@@ -201,11 +201,12 @@ export default function ArtProductDetailPage({ params }) {
               {product.seller_full_name && (
                 <p className="text-lg text-gray-400 mt-1">
                   <span className="font-medium">Autor:</span>{' '}
+                  {product.seller_full_name}
                   <button
                     onClick={handleViewAuthorBio}
-                    className="text-gray-400 hover:text-gray-500 hover:underline"
+                    className="ml-2 text-gray-600 hover:text-gray-700 hover:underline"
                   >
-                    {product.seller_full_name}
+                    (info)
                   </button>
                 </p>
               )}

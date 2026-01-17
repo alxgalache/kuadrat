@@ -23,14 +23,14 @@ passport.use(
         const user = result.rows[0];
 
         if (!user) {
-          return done(null, false, { message: 'Invalid email or password' });
+          return done(null, false, { message: 'El correo electrónico o la contraseña no son válidos' });
         }
 
         // Verify password
         const isMatch = await bcrypt.compare(password, user.password_hash);
 
         if (!isMatch) {
-          return done(null, false, { message: 'Invalid email or password' });
+          return done(null, false, { message: 'El correo electrónico o la contraseña no son válidos' });
         }
 
         // Return user without password hash

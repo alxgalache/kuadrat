@@ -16,7 +16,6 @@ function NewAuthorPageContent() {
   const [bio, setBio] = useState('')
   const [location, setLocation] = useState('')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [emailContact, setEmailContact] = useState('')
   const [visible, setVisible] = useState(true)
   const [pickupAddress, setPickupAddress] = useState('')
@@ -133,16 +132,6 @@ function NewAuthorPageContent() {
       return
     }
 
-    if (!password.trim()) {
-      showError('Error de validación', 'La contraseña es obligatoria')
-      return
-    }
-
-    if (password.length < 6) {
-      showError('Error de validación', 'La contraseña debe tener al menos 6 caracteres')
-      return
-    }
-
     setSaving(true)
 
     try {
@@ -153,7 +142,6 @@ function NewAuthorPageContent() {
         bio: bio,
         location: location.trim(),
         email: email.trim(),
-        password: password,
         email_contact: emailContact.trim(),
         visible: visible,
         pickup_address: pickupAddress.trim(),
@@ -170,7 +158,9 @@ function NewAuthorPageContent() {
         await adminAPI.authors.uploadAvatar(newAuthorId, avatarFile)
       }
 
-      showSuccess('Creado', 'Autor creado correctamente')
+      showSuccess('Creado', result.emailSent
+        ? 'Autor creado correctamente. Se ha enviado un email para configurar la contraseña.'
+        : 'Autor creado correctamente.')
       router.push(`/admin/authors/${newAuthorId}`)
     } catch (err) {
       showApiError(err)
@@ -189,6 +179,21 @@ function NewAuthorPageContent() {
               <p className="mt-1 text-sm/6 text-gray-600">
                 Crea un nuevo usuario con rol de vendedor (seller)
               </p>
+
+              <div className="mt-4 rounded-md bg-blue-50 p-4">
+                <div className="flex">
+                  <div className="shrink-0">
+                    <svg className="size-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3 flex-1 md:flex md:justify-between">
+                    <p className="text-sm text-blue-700">
+                      Se enviará un email al usuario con un enlace para configurar su contraseña. El enlace será válido durante 48 horas.
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               <div className="mt-10 grid grid-cols-1 lg:grid-cols-5 gap-x-8 gap-y-8">
                 {/* Left Column - Form Fields */}
@@ -243,24 +248,6 @@ function NewAuthorPageContent() {
                         onChange={(e) => setEmail(e.target.value)}
                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
                       />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="password" className="block text-sm/6 font-medium text-gray-900">
-                      Contraseña
-                    </label>
-                    <div className="mt-2">
-                      <input
-                        id="password"
-                        name="password"
-                        type="password"
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">Mínimo 6 caracteres</p>
                     </div>
                   </div>
 
