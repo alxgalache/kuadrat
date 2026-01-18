@@ -16,17 +16,8 @@ router.post('/revolut/init-order', sensitiveLimiter, initRevolutOrderEndpoint);
 
 // Webhook endpoint (Revolut -> our server)
 // NO rate limiting - this is server-to-server communication from Revolut
-// We need to capture the raw body for signature verification, then parse JSON
-router.post('/revolut/webhook',
-  express.json({
-    type: '*/*',
-    verify: (req, res, buf) => {
-      // Store the raw buffer as a string for signature verification
-      req.rawBody = buf.toString('utf8');
-    }
-  }),
-  revolutWebhookEndpoint
-);
+// Raw body is captured by the global express.json() middleware in server.js
+router.post('/revolut/webhook', revolutWebhookEndpoint);
 
 // Resolve latest payment for a Revolut order (used by client after pop-up success)
 // Apply lenient rate limiting - this endpoint is used for polling

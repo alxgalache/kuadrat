@@ -59,7 +59,16 @@ app.set('trust proxy', 1);
 app.use(generalLimiter);
 
 app.use(morgan('dev'));
-app.use(express.json());
+
+// Capture raw body for webhook signature verification
+// The verify callback stores the raw buffer before JSON parsing
+app.use(express.json({
+  verify: (req, res, buf, encoding) => {
+    // Store raw body for routes that need it (e.g., webhook signature verification)
+    req.rawBody = buf.toString(encoding || 'utf8');
+  }
+}));
+
 app.use(express.urlencoded({ extended: true }));
 app.use(passport.initialize());
 

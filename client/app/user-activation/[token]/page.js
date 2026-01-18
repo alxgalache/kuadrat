@@ -121,7 +121,7 @@ export default function SetupAccountPage() {
         setSuccess(true)
         // Redirect to seller dashboard after 2 seconds
         setTimeout(() => {
-          router.push('/galeria')
+          router.push('/')
         }, 2000)
       } else {
         setSubmitError(result.message || 'No se ha podido configurar la contrasena.')
@@ -191,7 +191,7 @@ export default function SetupAccountPage() {
                 </div>
                 <h1 className="mt-4 text-base font-semibold text-gray-900">Cuenta configurada</h1>
                 <p className="mt-2 text-sm text-gray-600">
-                  Tu contrasena ha sido configurada correctamente. Redirigiendo a la galería...
+                  Tu contrasena ha sido configurada correctamente. Redirigiendo al inicio...
                 </p>
               </div>
             </div>
