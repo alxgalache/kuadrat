@@ -223,6 +223,11 @@ const setPassword = async (req, res, next) => {
       args: [hashedPassword, user.id],
     });
 
+    // Send account activated email (non-blocking)
+    const { sendAccountActivatedEmail } = require('../services/emailService');
+    sendAccountActivatedEmail({ email: user.email, fullName: user.full_name })
+      .catch((err) => console.warn('Failed to send account activated email:', err));
+
     // Generate JWT token so user can login immediately
     const jwtToken = jwt.sign(
       {
