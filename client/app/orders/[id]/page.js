@@ -8,6 +8,7 @@ import AuthGuard from '@/components/AuthGuard'
 import { ArrowLeftIcon, InformationCircleIcon, MapPinIcon, DocumentTextIcon, EllipsisVerticalIcon, ExclamationTriangleIcon } from '@heroicons/react/20/solid'
 import { Popover, PopoverButton, PopoverPanel, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
+import { SafeProductDescription } from '@/components/SafeHTML'
 
 // Tracking Modal Component
 function TrackingModal({ open, onClose, onSave, trackingNumber, setTrackingNumber, saving, itemName }) {
@@ -614,9 +615,9 @@ function OrderDetailContent() {
                           </div>
                         )}
                         {item.description && (
-                          <div
+                          <SafeProductDescription
+                            html={item.description}
                             className="mt-2 text-sm text-gray-500 line-clamp-2"
-                            dangerouslySetInnerHTML={{ __html: item.description }}
                           />
                         )}
                       </div>

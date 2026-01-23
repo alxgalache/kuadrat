@@ -17,6 +17,12 @@ const passport = require('./config/passport');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { verifyTransporter } = require('./services/emailService');
 const { generalLimiter, authLimiter, sensitiveLimiter } = require('./middleware/rateLimiter');
+const {
+    prototypePollutionGuard,
+    userAgentFilter,
+    requestSizeLimiter,
+    suspiciousActivityLogger,
+} = require('./middleware/securityMiddleware');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -55,7 +61,17 @@ app.use(cors({
 // Trust proxy - required when behind a reverse proxy (nginx, Docker, etc.)
 app.set('trust proxy', 1);
 
-// Apply general rate limiter to all requests (ADD THIS LINE)
+// Security middleware - MUST be applied before body parsing
+// Filter malicious user agents
+app.use(userAgentFilter);
+
+// Log suspicious activity
+app.use(suspiciousActivityLogger);
+
+// Limit request size (10MB default, prevents large payload attacks)
+app.use(requestSizeLimiter(15 * 1024 * 1024)); // Match express.json limit
+
+// Apply general rate limiter to all requests
 app.use(generalLimiter);
 
 app.use(morgan('dev'));
@@ -63,13 +79,18 @@ app.use(morgan('dev'));
 // Capture raw body for webhook signature verification
 // The verify callback stores the raw buffer before JSON parsing
 app.use(express.json({
+  limit: '15mb', // Increase limit for larger payloads
   verify: (req, res, buf, encoding) => {
     // Store raw body for routes that need it (e.g., webhook signature verification)
     req.rawBody = buf.toString(encoding || 'utf8');
   }
 }));
 
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
+
+// Prototype pollution and command injection guard - MUST be after body parsing
+app.use(prototypePollutionGuard);
+
 app.use(passport.initialize());
 
 // Socket.IO connection (ready for future auction implementation)

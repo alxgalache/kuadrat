@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { adminAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { ArrowLeftIcon } from '@heroicons/react/20/solid'
+import { SafeProductDescription } from '@/components/SafeHTML'
 
 function OrderDetailContent() {
   const params = useParams()
@@ -175,9 +176,9 @@ function OrderDetailContent() {
                           </div>
                         )}
                         {item.description && (
-                          <div
+                          <SafeProductDescription
+                            html={item.description}
                             className="mt-2 text-sm text-gray-500 line-clamp-2"
-                            dangerouslySetInnerHTML={{ __html: item.description }}
                           />
                         )}
                       </div>

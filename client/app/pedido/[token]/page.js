@@ -7,6 +7,7 @@ import { ordersAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import { ArrowLeftIcon, InformationCircleIcon, MapPinIcon, DocumentTextIcon } from '@heroicons/react/20/solid'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
+import { SafeProductDescription } from '@/components/SafeHTML'
 
 function StatusTimeline({ status }) {
   const steps = useMemo(() => {
@@ -361,7 +362,7 @@ function PublicOrderContent() {
                         )}
 
                         {item.description && (
-                          <div className="mt-2 text-sm text-gray-500 line-clamp-2" dangerouslySetInnerHTML={{ __html: item.description }} />
+                          <SafeProductDescription html={item.description} className="mt-2 text-sm text-gray-500 line-clamp-2" />
                         )}
 
                         <div className="mt-3">

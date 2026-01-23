@@ -1,38 +1,28 @@
-###############################################
-# Kuadrat – Docker Compose: STAGING (pre) env #
-###############################################
-
-# Usage (staging environment):
-#   docker compose -f docker-compose.pre2.yml up --build -d
-#
-# This is a standalone staging configuration with security hardening.
-# Similar to production but with staging-specific settings.
-
 services:
   api:
     build:
       context: ./api
       dockerfile: Dockerfile
-    container_name: kuadrat-api-staging
+    container_name: kuadrat-api
     # Bind to localhost only - nginx will handle external traffic
     ports:
       - "127.0.0.1:3001:3001"
     environment:
-      NODE_ENV: staging
+      NODE_ENV: production
       PORT: 3001
     env_file:
-      - ./api/.env.staging
-    # STAGING: Only mount the uploads directory, not the entire app
+      - ./api/.env
+    # PRODUCTION: Only mount the uploads directory, not the entire app
     volumes:
-      - api_uploads_staging:/app/uploads
+      - api_uploads:/app/uploads
     # Security: Run with limited privileges
     security_opt:
       - no-new-privileges:true
-    # Restart policy for staging
+    # Restart policy for production
     restart: unless-stopped
     command: npm run start
     networks:
-      - kuadrat-network-staging
+      - kuadrat-network
     # Resource limits to prevent DoS
     deploy:
       resources:
@@ -46,7 +36,7 @@ services:
   client:
     build:
       context: ./client
-      dockerfile: Dockerfile.staging
+      dockerfile: Dockerfile.prod
       args:
         - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
@@ -63,16 +53,16 @@ services:
         - NEXT_PUBLIC_REVOLUT_MODE=${NEXT_PUBLIC_REVOLUT_MODE}
         - NEXT_PUBLIC_REVOLUT_PUBLIC_KEY=${NEXT_PUBLIC_REVOLUT_PUBLIC_KEY}
         - NEXT_PUBLIC_PAYMENT_TIMEOUT_MS=${NEXT_PUBLIC_PAYMENT_TIMEOUT_MS}
-    image: kuadrat-client-staging
-    container_name: kuadrat-client-staging
+    image: kuadrat-client
+    container_name: kuadrat-client
     # Bind to localhost only - nginx will handle external traffic
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      NODE_ENV: staging
+      NODE_ENV: production
     env_file:
-      - ./client/.env.staging
-    # STAGING: Use read-only filesystem with tmpfs for temporary files
+      - ./client/.env.production
+    # PRODUCTION: Use read-only filesystem with tmpfs for temporary files
     read_only: true
     tmpfs:
       - /tmp:size=100M,mode=1777
@@ -84,7 +74,7 @@ services:
     depends_on:
       - api
     networks:
-      - kuadrat-network-staging
+      - kuadrat-network
     deploy:
       resources:
         limits:
@@ -95,9 +85,9 @@ services:
           memory: 512M
 
 networks:
-  kuadrat-network-staging:
+  kuadrat-network:
     driver: bridge
 
 volumes:
-  api_uploads_staging:
+  api_uploads:
     driver: local

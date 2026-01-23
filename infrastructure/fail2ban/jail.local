@@ -1,0 +1,80 @@
+# Fail2ban configuration for Kuadrat application
+# Copy this file to /etc/fail2ban/jail.local on your EC2 instance
+
+[DEFAULT]
+# Ban hosts for 1 hour (3600 seconds)
+bantime = 3600
+
+# A host is banned if it has generated "maxretry" during the last "findtime"
+findtime = 600
+
+# Max number of failures before a ban
+maxretry = 5
+
+# Email notifications (optional - configure your email)
+# destemail = your-email@example.com
+# sendername = Fail2ban
+# action = %(action_mwl)s
+
+# Use iptables for banning
+banaction = iptables-multiport
+
+# Ignore localhost
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+bantime = 86400
+
+[nginx-http-auth]
+enabled = true
+filter = nginx-http-auth
+port = http,https
+logpath = /var/log/nginx/kuadrat_*error.log
+maxretry = 3
+
+[nginx-botsearch]
+enabled = true
+filter = nginx-botsearch
+port = http,https
+logpath = /var/log/nginx/kuadrat_*access.log
+maxretry = 2
+bantime = 86400
+
+[nginx-badbots]
+enabled = true
+filter = nginx-badbots
+port = http,https
+logpath = /var/log/nginx/kuadrat_*access.log
+maxretry = 1
+bantime = 604800
+
+[kuadrat-scanner]
+enabled = true
+filter = kuadrat-scanner
+port = http,https
+logpath = /var/log/nginx/kuadrat_*access.log
+maxretry = 3
+findtime = 300
+bantime = 86400
+
+[kuadrat-rce-attempt]
+enabled = true
+filter = kuadrat-rce-attempt
+port = http,https
+logpath = /var/log/nginx/kuadrat_*access.log
+maxretry = 1
+bantime = 604800
+
+[kuadrat-api-abuse]
+enabled = true
+filter = kuadrat-api-abuse
+port = http,https
+logpath = /var/log/nginx/kuadrat_api_access.log
+maxretry = 100
+findtime = 60
+bantime = 3600

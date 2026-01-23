@@ -8,6 +8,7 @@ import { useNotification } from '@/contexts/NotificationContext'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
 import AuthorModal from '@/components/AuthorModal'
 import ShippingSelectionModal from '@/components/ShippingSelectionModal'
+import { SafeProductDescription } from '@/components/SafeHTML'
 
 export default function ArtProductDetailPage({ params }) {
   const unwrappedParams = use(params)
@@ -187,9 +188,9 @@ export default function ArtProductDetailPage({ params }) {
 
             <div className="mt-6">
               <h3 className="sr-only">Descripción</h3>
-              <div
+              <SafeProductDescription
+                html={product.description}
                 className="space-y-6 text-base text-gray-700 prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: product.description }}
               />
             </div>
 

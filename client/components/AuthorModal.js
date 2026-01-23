@@ -3,6 +3,7 @@
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react'
 import { Fragment } from 'react'
 import { getAuthorImageUrl } from '@/lib/api'
+import { SafeAuthorBio } from '@/components/SafeHTML'
 
 export default function AuthorModal({ author, open, onClose }) {
   return (
@@ -52,9 +53,9 @@ export default function AuthorModal({ author, open, onClose }) {
                   )}
                   {author.bio && (
                     <div className="mt-4 text-left">
-                      <div
+                      <SafeAuthorBio
+                        html={author.bio}
                         className="text-sm text-gray-700 prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: author.bio }}
                       />
                     </div>
                   )}

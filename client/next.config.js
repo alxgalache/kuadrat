@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Enable standalone output for production Docker builds
+  output: 'standalone',
   images: {
     remotePatterns: [
       {
@@ -7,6 +9,44 @@ const nextConfig = {
         hostname: '**',
       },
     ],
+  },
+  async headers() {
+    // Build CSP connect-src based on environment
+    // In development, allow localhost API; in production/staging, use the configured API URL
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const apiOrigin = new URL(apiUrl).origin;
+
+    const cspConnectSrc = [
+      "'self'",
+      apiOrigin,
+      'https://api.pre.140d.art',
+      'https://api.140d.art',
+      'https://*.sentry.io',
+      'https://*.revolut.com',
+      'https://maps.googleapis.com',
+    ].join(' ');
+
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com",
+      "style-src 'self' 'unsafe-inline'",
+      `img-src 'self' data: https: http: blob: ${apiOrigin}`,
+      "font-src 'self'",
+      `connect-src ${cspConnectSrc}`,
+      "frame-src 'self' https://*.revolut.com",
+    ].join('; ');
+
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Content-Security-Policy', value: csp },
+        ],
+      },
+    ]
   },
 };
 

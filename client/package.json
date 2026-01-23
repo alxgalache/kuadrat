@@ -13,6 +13,7 @@
     "@heroicons/react": "^2.2.0",
     "@revolut/checkout": "^1.1.23",
     "@sentry/nextjs": "^10.32.1",
+    "dompurify": "^3.2.4",
     "next": "15.1.4",
     "postcode-validator": "^3.10.5",
     "quill": "^2.0.2",

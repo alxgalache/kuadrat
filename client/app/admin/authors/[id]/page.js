@@ -4,6 +4,7 @@ import { use, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { adminAPI, getAuthorImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
+import { SafeAuthorBio } from '@/components/SafeHTML'
 
 function AuthorProfilePageContent({ params }) {
   const unwrappedParams = use(params)
@@ -99,9 +100,9 @@ function AuthorProfilePageContent({ params }) {
         {author.bio && (
           <div className="mt-8">
             <h2 className="text-lg font-medium text-gray-900">Biografía</h2>
-            <div
+            <SafeAuthorBio
+              html={author.bio}
               className="mt-2 text-sm text-gray-700 prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: author.bio }}
             />
           </div>
         )}
