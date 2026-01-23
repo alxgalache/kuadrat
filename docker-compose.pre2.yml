@@ -63,6 +63,8 @@ services:
         - NEXT_PUBLIC_REVOLUT_MODE=${NEXT_PUBLIC_REVOLUT_MODE}
         - NEXT_PUBLIC_REVOLUT_PUBLIC_KEY=${NEXT_PUBLIC_REVOLUT_PUBLIC_KEY}
         - NEXT_PUBLIC_PAYMENT_TIMEOUT_MS=${NEXT_PUBLIC_PAYMENT_TIMEOUT_MS}
+        - WEB_APP_HIDDEN=${WEB_APP_HIDDEN}
+        - PUBLISHED_VISIBLE=${PUBLISHED_VISIBLE}
     image: kuadrat-client-staging
     container_name: kuadrat-client-staging
     # Bind to localhost only - nginx will handle external traffic
