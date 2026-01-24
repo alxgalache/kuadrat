@@ -168,6 +168,7 @@ export default function ShippingSelectionModal({
       shippingData = {
         methodId: method.id,
         methodName: method.name,
+        methodDescription: method.description || '',
         methodType: 'pickup',
         cost: method.cost,
         maxArticles: method.max_articles ?? 1,
@@ -183,6 +184,7 @@ export default function ShippingSelectionModal({
       shippingData = {
         methodId: method.id,
         methodName: method.name,
+        methodDescription: method.description || '',
         methodType: 'delivery',
         cost: method.cost,
         maxArticles: method.max_articles ?? 1,

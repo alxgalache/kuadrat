@@ -229,6 +229,21 @@ const createOrder = async (req, res, next) => {
       });
     }
 
+    // Build shipping line items from compactItems (one per product line, not grouped by method)
+    for (const it of compactItems) {
+      if (it.shipping && it.shipping.cost > 0) {
+        const shippingCostMinor = Math.round(it.shipping.cost * 100);
+        lineItems.push({
+          name: `Gastos de envío - ${it.shipping.methodName || 'Envío'}`,
+          type: 'service',
+          quantity: { value: 1 },
+          unit_price_amount: shippingCostMinor,
+          total_amount: shippingCostMinor,
+          description: htmlToPlainText(it.shipping.methodDescription || '', 500),
+        });
+      }
+    }
+
     const shippingTotal = computeShippingTotal(compactItems);
     const amountMinor = productsTotal + shippingTotal;
     if (amountMinor <= 0) {
@@ -683,6 +698,21 @@ const placeOrder = async (req, res, next) => {
         description: htmlToPlainText(src.description || '', 1000),
         url: productUrl,
       });
+    }
+
+    // Build shipping line items from compactItems (one per product line, not grouped by method)
+    for (const it of compactItems) {
+      if (it.shipping && it.shipping.cost > 0) {
+        const shippingCostMinor = Math.round(it.shipping.cost * 100);
+        lineItems.push({
+          name: `Gastos de envío - ${it.shipping.methodName || 'Envío'}`,
+          type: 'service',
+          quantity: { value: 1 },
+          unit_price_amount: shippingCostMinor,
+          total_amount: shippingCostMinor,
+          description: htmlToPlainText(it.shipping.methodDescription || '', 500),
+        });
+      }
     }
 
     const shippingTotal = computeShippingTotal(compactItems);

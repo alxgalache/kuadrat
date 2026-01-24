@@ -892,6 +892,10 @@ export default function ShoppingCartDrawer({open, onClose}) {
                         email: personalInfo.email,
                         phone: personalInfo.phone,
                     },
+                    buttonStyle: {
+                        variant: 'dark',
+                        cashback: false
+                    }
                 }
 
                 // Mount the Revolut Pay button
