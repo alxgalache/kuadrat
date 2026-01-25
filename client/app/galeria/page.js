@@ -289,7 +289,7 @@ export default function GalleryPage() {
                 >
                   <ul
                     role="list"
-                    className="px-4 grid grid-cols-1 gap-8 sm:px-6 sm:grid-cols-2 lg:px-0 lg:grid-cols-4"
+                    className="px-6 grid grid-cols-2 gap-4 sm:px-6 sm:gap-8 lg:px-0 lg:grid-cols-4"
                   >
                     {products.map((product) => (
                       <li key={product.id} className="inline-flex w-full flex-col text-center">
