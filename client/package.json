@@ -14,18 +14,18 @@
     "@revolut/checkout": "^1.1.23",
     "@sentry/nextjs": "^10.32.1",
     "dompurify": "^3.2.4",
-    "next": "15.1.4",
+    "next": "^16.1.4",
     "postcode-validator": "^3.10.5",
     "quill": "^2.0.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
     "react-dropzone": "^14.3.8",
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",
-    "eslint-config-next": "15.1.4",
+    "eslint-config-next": "^16.1.4",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17"
   }
