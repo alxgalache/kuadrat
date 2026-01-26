@@ -195,19 +195,19 @@ export default function ArtProductDetailPage({ params }) {
             </div>
 
             <div className="mt-6">
-              <p className="text-lg text-gray-400">
+              <p className="text-lg text-gray-700">
                   <span className="font-medium">Soporte:</span>{' '}
                   {product.type}
               </p>
               {product.seller_full_name && (
-                <p className="text-lg text-gray-400 mt-1">
+                <p className="text-lg text-gray-700 mt-1">
                   <span className="font-medium">Autor:</span>{' '}
                   {product.seller_full_name}
                   <button
                     onClick={handleViewAuthorBio}
-                    className="ml-2 text-gray-600 hover:text-gray-700 hover:underline"
+                    className="text-sm ml-2 text-gray-700 hover:text-gray-500 hover:underline"
                   >
-                    (info)
+                    (más información)
                   </button>
                 </p>
               )}

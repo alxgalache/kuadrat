@@ -153,10 +153,20 @@ const createOrder = async (req, res, next) => {
       }
     }
 
-    // Calculate total price (products only; shipping is tracked per item rows)
+    // Calculate total price including all products (with duplicates) and shipping costs
     let totalPrice = 0;
-    totalPrice += artProducts.reduce((sum, product) => sum + product.price, 0);
-    totalPrice += othersProducts.reduce((sum, product) => sum + product.price, 0);
+    for (const item of artItems) {
+      const product = artProducts.find(p => p.id === item.id);
+      if (product) {
+        totalPrice += product.price + (item.shipping?.cost || 0);
+      }
+    }
+    for (const item of othersItems) {
+      const product = othersProducts.find(p => p.id === item.id);
+      if (product) {
+        totalPrice += product.price + (item.shipping?.cost || 0);
+      }
+    }
 
     // ==========================
     // Revolut Order (pop-up flow)
@@ -629,10 +639,20 @@ const placeOrder = async (req, res, next) => {
       }
     }
 
-    // Calculate total price (products only; shipping tracked separately per item)
+    // Calculate total price including all products (with duplicates) and shipping costs
     let totalPrice = 0;
-    totalPrice += artProducts.reduce((sum, product) => sum + product.price, 0);
-    totalPrice += othersProducts.reduce((sum, product) => sum + product.price, 0);
+    for (const item of artItems) {
+      const product = artProducts.find(p => p.id === item.id);
+      if (product) {
+        totalPrice += product.price + (item.shipping?.cost || 0);
+      }
+    }
+    for (const item of othersItems) {
+      const product = othersProducts.find(p => p.id === item.id);
+      if (product) {
+        totalPrice += product.price + (item.shipping?.cost || 0);
+      }
+    }
 
     // Build compact items for Revolut (same grouping as legacy flow)
     const groupKey = (it) => `${it.type}|${it.id}|${it.type === 'other' ? (it.variantId || 'null') : 'na'}`;

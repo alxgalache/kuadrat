@@ -1176,6 +1176,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     <div className="flex flex-col items-center gap-3">
                         <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
                         <p className="text-sm text-gray-700">Procesando tu pedido...</p>
+                        <p className="text-sm text-gray-700">No recargues ni cierres la página hasta que se complete el proceso</p>
                     </div>
                 </div>
             )}

@@ -245,7 +245,7 @@ function PedidoCompletadoContent() {
   if (!ready) return null
 
   return (
-    <div className="relative isolate overflow-hidden bg-white min-h-screen">
+    <div className="relative isolate overflow-hidden bg-white">
       <div className="px-6 py-24 sm:py-32 lg:px-8">
         <div className="mx-auto max-w-2xl">
 

@@ -106,16 +106,53 @@ const generateBuyerEmailHTML = (orderDetails) => {
 
   const orderUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/pedido/${orderToken}`;
 
-  const itemsHTML = items.map(item => `
+  // Group items by product identifier and variant to consolidate duplicates
+  const groupedItems = items.reduce((acc, item) => {
+    // Create a unique key for grouping based on product ID and variant
+    // For art products: use art_id
+    // For other products: use other_id + other_var_id
+    const productId = item.product_type === 'art'
+      ? item.art_id
+      : item.other_id;
+
+    const variantId = item.product_type === 'other'
+      ? (item.other_var_id || 'none')
+      : 'none';
+
+    const variantKey = item.variant_key || 'none';
+    const price = item.price_at_purchase;
+
+    // Group by product ID, variant ID, variant key, and price (to handle edge cases)
+    const groupKey = `${item.product_type}_${productId}_${variantId}_${variantKey}_${price}`;
+
+    if (!acc[groupKey]) {
+      acc[groupKey] = {
+        ...item,
+        quantity: 1,
+        total_shipping_cost: item.shipping_cost || 0,
+      };
+    } else {
+      acc[groupKey].quantity += 1;
+      // Sum up shipping costs for multiple items
+      acc[groupKey].total_shipping_cost += (item.shipping_cost || 0);
+    }
+
+    return acc;
+  }, {});
+
+  const consolidatedItems = Object.values(groupedItems);
+
+  const itemsHTML = consolidatedItems.map(item => `
     <tr>
       <td style="padding: 12px 0; border-bottom: 1px solid #e5e7eb;">
         <div style="font-weight: 600; color: #111827; margin-bottom: 4px;">${item.name}</div>
         ${item.variant_key ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">${item.variant_key}</div>` : ''}
         ${item.type ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">Soporte: ${item.type}</div>` : ''}
-        <div style="font-size: 14px; color: #6b7280;">Precio: €${item.price_at_purchase.toFixed(2)}</div>
+        ${item.quantity > 1 ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px; font-weight: 600;">Cantidad: ${item.quantity}</div>` : ''}
+        <div style="font-size: 14px; color: #6b7280;">Precio: €${item.price_at_purchase.toFixed(2)}${item.quantity > 1 ? ` x ${item.quantity}` : ''}</div>
         ${item.shipping_method_name ? `
           <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">
-            Envío: ${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''} - €${(item.shipping_cost || 0).toFixed(2)}
+            Envío: ${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''} - €${item.total_shipping_cost.toFixed(2)}
           </div>
         ` : ''}
       </td>
@@ -228,16 +265,48 @@ const generateBuyerEmailHTML = (orderDetails) => {
 const generateSellerEmailHTML = (orderDetails, sellerItems) => {
   const { orderId, buyerEmail } = orderDetails;
 
-  const itemsHTML = sellerItems.map(item => `
+  // Group items by product identifier and variant to consolidate duplicates
+  const groupedItems = sellerItems.reduce((acc, item) => {
+    const productId = item.product_type === 'art'
+      ? item.art_id
+      : item.other_id;
+
+    const variantId = item.product_type === 'other'
+      ? (item.other_var_id || 'none')
+      : 'none';
+
+    const variantKey = item.variant_key || 'none';
+    const price = item.price_at_purchase;
+
+    const groupKey = `${item.product_type}_${productId}_${variantId}_${variantKey}_${price}`;
+
+    if (!acc[groupKey]) {
+      acc[groupKey] = {
+        ...item,
+        quantity: 1,
+        total_shipping_cost: item.shipping_cost || 0,
+      };
+    } else {
+      acc[groupKey].quantity += 1;
+      acc[groupKey].total_shipping_cost += (item.shipping_cost || 0);
+    }
+
+    return acc;
+  }, {});
+
+  const consolidatedItems = Object.values(groupedItems);
+
+  const itemsHTML = consolidatedItems.map(item => `
     <tr>
       <td style="padding: 12px 0; border-bottom: 1px solid #e5e7eb;">
         <div style="font-weight: 600; color: #111827; margin-bottom: 4px;">${item.name}</div>
         ${item.variant_key ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">${item.variant_key}</div>` : ''}
         ${item.type ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">Soporte: ${item.type}</div>` : ''}
-        <div style="font-size: 14px; color: #6b7280;">Precio: €${item.price_at_purchase.toFixed(2)}</div>
+        ${item.quantity > 1 ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px; font-weight: 600;">Cantidad: ${item.quantity}</div>` : ''}
+        <div style="font-size: 14px; color: #6b7280;">Precio: €${item.price_at_purchase.toFixed(2)}${item.quantity > 1 ? ` x ${item.quantity}` : ''}</div>
         ${item.shipping_method_name ? `
           <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">
-            Envío: ${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''} - €${(item.shipping_cost || 0).toFixed(2)}
+            Envío: ${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''} - €${item.total_shipping_cost.toFixed(2)}
           </div>
         ` : ''}
       </td>
@@ -344,16 +413,48 @@ const generateSellerEmailHTML = (orderDetails, sellerItems) => {
 const generateAdminEmailHTML = (orderDetails) => {
   const { orderId, items, totalPrice, buyerEmail, buyerPhone, sellers } = orderDetails;
 
-  const itemsHTML = items.map(item => `
+  // Group items by product identifier and variant to consolidate duplicates
+  const groupedItems = items.reduce((acc, item) => {
+    const productId = item.product_type === 'art'
+      ? item.art_id
+      : item.other_id;
+
+    const variantId = item.product_type === 'other'
+      ? (item.other_var_id || 'none')
+      : 'none';
+
+    const variantKey = item.variant_key || 'none';
+    const price = item.price_at_purchase;
+
+    const groupKey = `${item.product_type}_${productId}_${variantId}_${variantKey}_${price}`;
+
+    if (!acc[groupKey]) {
+      acc[groupKey] = {
+        ...item,
+        quantity: 1,
+        total_shipping_cost: item.shipping_cost || 0,
+      };
+    } else {
+      acc[groupKey].quantity += 1;
+      acc[groupKey].total_shipping_cost += (item.shipping_cost || 0);
+    }
+
+    return acc;
+  }, {});
+
+  const consolidatedItems = Object.values(groupedItems);
+
+  const itemsHTML = consolidatedItems.map(item => `
     <tr>
       <td style="padding: 12px 0; border-bottom: 1px solid #e5e7eb;">
         <div style="font-weight: 600; color: #111827; margin-bottom: 4px;">${item.name}</div>
         ${item.variant_key ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">${item.variant_key}</div>` : ''}
         ${item.type ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">Soporte: ${item.type}</div>` : ''}
-        <div style="font-size: 14px; color: #6b7280;">Precio: €${item.price_at_purchase.toFixed(2)}</div>
+        ${item.quantity > 1 ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px; font-weight: 600;">Cantidad: ${item.quantity}</div>` : ''}
+        <div style="font-size: 14px; color: #6b7280;">Precio: €${item.price_at_purchase.toFixed(2)}${item.quantity > 1 ? ` x ${item.quantity}` : ''}</div>
         ${item.shipping_method_name ? `
           <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">
-            Envío: ${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''} - €${(item.shipping_cost || 0).toFixed(2)}
+            Envío: ${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''} - €${item.total_shipping_cost.toFixed(2)}
           </div>
         ` : ''}
       </td>
