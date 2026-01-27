@@ -8,7 +8,8 @@ const crypto = require('crypto');
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 
 // Public site base URL used for product images/links in Revolut payload
-const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
+const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
+const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
 const REV_LOCATION_ID = process.env.REVOLUT_LOCATION_ID || null;
 
 // Helper to convert rich-text / HTML descriptions from DB into plain text
@@ -218,8 +219,8 @@ const createOrder = async (req, res, next) => {
       productsTotal += totalMinor;
 
       const imageUrl = it.type === 'art'
-        ? `${SITE_BASE_URL}/api/art/images/${encodeURIComponent(src.basename)}`
-        : `${SITE_BASE_URL}/api/others/images/${encodeURIComponent(src.basename)}`;
+        ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(src.basename)}`
+        : `${SITE_API_URL}/api/others/images/${encodeURIComponent(src.basename)}`;
       const productUrl = it.type === 'art'
         ? `${SITE_BASE_URL}/galeria/p/${src.slug}`
         : `${SITE_BASE_URL}/galeria/mas/p/${src.slug}`;
@@ -699,8 +700,8 @@ const placeOrder = async (req, res, next) => {
       productsTotal += totalMinor;
 
       const imageUrl = it.type === 'art'
-        ? `${SITE_BASE_URL}/api/art/images/${encodeURIComponent(src.basename)}`
-        : `${SITE_BASE_URL}/api/others/images/${encodeURIComponent(src.basename)}`;
+        ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(src.basename)}`
+        : `${SITE_API_URL}/api/others/images/${encodeURIComponent(src.basename)}`;
       const productUrl = it.type === 'art'
         ? `${SITE_BASE_URL}/galeria/p/${src.slug}`
         : `${SITE_BASE_URL}/galeria/mas/p/${src.slug}`;

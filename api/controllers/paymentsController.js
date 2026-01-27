@@ -10,7 +10,8 @@ const {
 } = require('../services/revolutService');
 const { sendPurchaseConfirmation } = require('../services/emailService');
 
-const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
+const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
+const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
 const REV_LOCATION_ID = process.env.REVOLUT_LOCATION_ID || null;
 const REVOLUT_WEBHOOK_SECRET = process.env.REVOLUT_WEBHOOK_SECRET || '';
 
@@ -127,8 +128,8 @@ function buildLineItems({ compactItems, artMap, otherMap }) {
     productsTotal += totalMinor;
 
     const imageUrl = item.type === 'art'
-      ? `${SITE_BASE_URL}/api/art/images/${encodeURIComponent(src.basename)}`
-      : `${SITE_BASE_URL}/api/others/images/${encodeURIComponent(src.basename)}`;
+      ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(src.basename)}`
+      : `${SITE_API_URL}/api/others/images/${encodeURIComponent(src.basename)}`;
     const productUrl = item.type === 'art'
       ? `${SITE_BASE_URL}/galeria/p/${slug}`
       : `${SITE_BASE_URL}/galeria/mas/p/${slug}`;

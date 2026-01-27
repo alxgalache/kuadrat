@@ -848,7 +848,7 @@ const sendBuyerToSellerContactEmail = async ({
 
 // Send tracking update email to buyer
 const sendTrackingUpdateEmail = async (order, products) => {
-  const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
+  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
   const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
   const buyerEmail = order.email;
   const orderUrl = `${CLIENT_URL}/pedido/${order.token}`;
@@ -981,7 +981,7 @@ const sendTrackingUpdateEmail = async (order, products) => {
 
 // Send items sent notification email to buyer
 const sendItemsSentEmail = async (order, products) => {
-  const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://140d.art';
+  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
   const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
   const buyerEmail = order.email;
   const orderUrl = `${CLIENT_URL}/pedido/${order.token}`;
@@ -993,8 +993,8 @@ const sendItemsSentEmail = async (order, products) => {
 
   const itemsHTML = products.map(item => {
     const imageUrl = item.product_type === 'art'
-      ? `${SITE_BASE_URL}/api/art/images/${encodeURIComponent(item.basename)}`
-      : `${SITE_BASE_URL}/api/others/images/${encodeURIComponent(item.basename)}`;
+      ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(item.basename)}`
+      : `${SITE_API_URL}/api/others/images/${encodeURIComponent(item.basename)}`;
 
     return `
     <tr>
