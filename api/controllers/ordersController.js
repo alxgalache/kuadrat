@@ -407,8 +407,9 @@ const createOrder = async (req, res, next) => {
           shipping_cost,
           shipping_method_name,
           shipping_method_type,
-          commission_amount
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          commission_amount,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -418,6 +419,7 @@ const createOrder = async (req, res, next) => {
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
           commissionAmount,
+          'pending',
         ],
       });
 
@@ -442,8 +444,9 @@ const createOrder = async (req, res, next) => {
           shipping_cost,
           shipping_method_name,
           shipping_method_type,
-          commission_amount
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          commission_amount,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -454,6 +457,7 @@ const createOrder = async (req, res, next) => {
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
           commissionAmount,
+          'pending',
         ],
       });
 
@@ -858,7 +862,8 @@ const placeOrder = async (req, res, next) => {
           shipping_cost,
           shipping_method_name,
           shipping_method_type,
-          commission_amount
+          commission_amount,
+          status
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
@@ -869,6 +874,7 @@ const placeOrder = async (req, res, next) => {
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
           commissionAmount,
+          'pending'
         ],
       });
     }
@@ -887,8 +893,9 @@ const placeOrder = async (req, res, next) => {
           shipping_cost,
           shipping_method_name,
           shipping_method_type,
-          commission_amount
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          commission_amount,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -899,6 +906,7 @@ const placeOrder = async (req, res, next) => {
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
           commissionAmount,
+          'pending'
         ],
       });
     }
@@ -1278,6 +1286,11 @@ const getOrderByToken = async (req, res, next) => {
           u.full_name as seller_name,
           u.email as seller_email,
           u.email_contact as seller_email_contact,
+          u.pickup_address as seller_pickup_address,
+          u.pickup_city as seller_pickup_city,
+          u.pickup_postal_code as seller_pickup_postal_code,
+          u.pickup_country as seller_pickup_country,
+          u.pickup_instructions as seller_pickup_instructions,
           'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
@@ -1300,6 +1313,11 @@ const getOrderByToken = async (req, res, next) => {
           u.full_name as seller_name,
           u.email as seller_email,
           u.email_contact as seller_email_contact,
+          u.pickup_address as seller_pickup_address,
+          u.pickup_city as seller_pickup_city,
+          u.pickup_postal_code as seller_pickup_postal_code,
+          u.pickup_country as seller_pickup_country,
+          u.pickup_instructions as seller_pickup_instructions,
           'other' as product_type
         FROM other_order_items ooi
         LEFT JOIN others o ON ooi.other_id = o.id
@@ -2204,6 +2222,16 @@ async function confirmOrderPayment(req, res, next) {
     await db.execute({
       sql: 'UPDATE orders SET status = ?, revolut_payment_id = ? WHERE id = ?',
       args: ['paid', payment_id, order_id],
+    });
+
+    // Update order items status to 'paid'
+    await db.execute({
+      sql: 'UPDATE art_order_items SET status = ? WHERE order_id = ?',
+      args: ['paid', order_id],
+    });
+    await db.execute({
+      sql: 'UPDATE other_order_items SET status = ? WHERE order_id = ?',
+      args: ['paid', order_id],
     });
 
     // Inventory updates

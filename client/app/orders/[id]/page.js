@@ -101,7 +101,7 @@ function ConfirmationDialog({ open, onClose, onConfirm, title, message, confirmi
         <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
           <DialogPanel
             transition
-            className="relative transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-lg sm:p-6 data-closed:sm:translate-y-0 data-closed:sm:scale-95"
+            className="relative transform overflow-hidden rounded-xl bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-xl sm:p-6 data-closed:sm:translate-y-0 data-closed:sm:scale-95"
           >
             <div className="sm:flex sm:items-start">
               <div className="mx-auto flex size-12 shrink-0 items-center justify-center rounded-full bg-gray-100 sm:mx-0 sm:size-10">
@@ -134,7 +134,7 @@ function ConfirmationDialog({ open, onClose, onConfirm, title, message, confirmi
                           disabled={confirming}
                       />
                       <label htmlFor="add-tracking" className="ml-2 text-sm text-gray-700">
-                        Añadir dirección de seguimiento
+                        Añadir enlace de seguimiento
                       </label>
                     </div>
 
@@ -477,13 +477,13 @@ function OrderDetailContent() {
                   </PopoverButton>
                   <PopoverPanel
                     transition
-                    className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-xl bg-white p-2 shadow-lg ring-1 ring-gray-900/5 transition data-closed:scale-95 data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
+                    className="absolute right-0 z-10 mt-2 w-80 origin-top-right rounded-xl bg-white p-2 shadow-lg ring-1 ring-gray-900/5 transition data-closed:scale-95 data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
                   >
                     <button
                       onClick={openOrderSentDialog}
                       className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
                     >
-                      Marcar pedido como enviado
+                      Marcar pedido como enviado o disponible
                     </button>
                   </PopoverPanel>
                 </Popover>
@@ -584,7 +584,7 @@ function OrderDetailContent() {
                                     disabled={item.status === 'sent'}
                                     className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
-                                    Marcar como enviado
+                                    Marcar como enviado o disponible para recogida en tienda
                                   </button>
                                 </PopoverPanel>
                               </Popover>
@@ -672,8 +672,8 @@ function OrderDetailContent() {
         open={itemSentDialog.open}
         onClose={() => setItemSentDialog({ open: false, item: null })}
         onConfirm={handleMarkItemSent}
-        title="Marcar producto como enviado"
-        message={`¿Estás seguro de que quieres marcar "${itemSentDialog.item?.name}" como enviado?`}
+        title="Marcar producto como enviado o disponible para su recogida"
+        message={`¿Estás seguro de que quieres marcar "${itemSentDialog.item?.name}" como enviado o disponible para su recogida en tienda?`}
         confirming={markingItemSent}
         withTracking={true}
       />
@@ -682,8 +682,8 @@ function OrderDetailContent() {
         open={orderSentDialog}
         onClose={() => setOrderSentDialog(false)}
         onConfirm={handleMarkOrderSent}
-        title="Marcar pedido como enviado"
-        message="¿Estás seguro de que quieres marcar todo el pedido como enviado?"
+        title="Marcar pedido como enviado o disponible para su recogida"
+        message="¿Estás seguro de que quieres marcar todo el pedido como enviado o disponible para su recogida en tienda?"
         confirming={markingOrderSent}
         withTracking={true}
       />

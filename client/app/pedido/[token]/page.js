@@ -168,6 +168,26 @@ function PublicOrderContent() {
     )
   }
 
+  const getItemStatusBadge = (status) => {
+    const statusConfig = {
+      pending_payment: { label: 'Pendiente de pago', class: 'bg-blue-100 text-blue-800' },
+      paid: { label: 'Pagado', class: 'bg-amber-100 text-amber-800' },
+      sent: { label: 'Enviado', class: 'bg-indigo-100 text-indigo-800' },
+      arrived: { label: 'Recibido', class: 'bg-emerald-100 text-emerald-800' },
+      confirmed: { label: 'Confirmado', class: 'bg-green-100 text-green-800' },
+      cancelled: { label: 'Cancelado', class: 'bg-red-100 text-red-800' },
+      reimbursed: { label: 'Reembolsado', class: 'bg-orange-100 text-orange-800' },
+    }
+
+    const config = statusConfig[status] || { label: status, class: 'bg-gray-100 text-gray-800' }
+
+    return (
+        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${config.class}`}>
+        {config.label}
+      </span>
+    )
+  }
+
   const getSubtotal = () => order.items.reduce((sum, item) => sum + item.price_at_purchase, 0)
   const getTotalShipping = () => order.items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0)
   const getGrandTotal = () => getSubtotal() + getTotalShipping()
@@ -193,6 +213,24 @@ function PublicOrderContent() {
     const regionLine = [province, country].filter(Boolean).join(' · ')
     if (regionLine) lines.push(regionLine)
     return lines
+  }
+
+  const getPickupAddressLines = (item) => {
+    const address = item.seller_pickup_address || ''
+    const pc = item.seller_pickup_postal_code || ''
+    const city = item.seller_pickup_city || ''
+    const country = item.seller_pickup_country || ''
+
+    const lines = []
+    if (address) lines.push(address)
+    const cityLine = [pc, city].filter(Boolean).join(' ')
+    if (cityLine) lines.push(cityLine)
+    if (country) lines.push(country)
+    return lines
+  }
+
+  const hasPickupAddress = (item) => {
+    return !!(item.seller_pickup_address || item.seller_pickup_city || item.seller_pickup_postal_code || item.seller_pickup_country)
   }
 
   const openContact = (item) => {
@@ -343,6 +381,7 @@ function PublicOrderContent() {
                               Tipo: {item.product_type === 'art' ? item.type : 'Otro'}
                               {item.variant_key && ` · ${item.variant_key}`}
                             </p>
+                            {item.status && getItemStatusBadge(item.status)}
                             {item.seller_name && (
                               <p className="mt-1 text-sm text-gray-500">Vendedor: {item.seller_name}</p>
                             )}
@@ -358,6 +397,33 @@ function PublicOrderContent() {
                               {item.shipping_method_type === 'pickup' && ' (Recogida)'}{' '}
                               · €{(item.shipping_cost || 0).toFixed(2)}
                             </p>
+                          </div>
+                        )}
+
+                        {item.shipping_method_type === 'pickup' && (
+                          <div className="mt-3 rounded-md bg-gray-50 px-3 py-3 border border-gray-200">
+                            <div className="flex items-start gap-2">
+                              <MapPinIcon className="h-5 w-5 text-gray-600 mt-0.5 shrink-0" aria-hidden="true" />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">Información de recogida</p>
+                                {hasPickupAddress(item) ? (
+                                  <div className="mt-1 space-y-0.5">
+                                    {getPickupAddressLines(item).map((line, idx) => (
+                                      <p key={idx} className="text-sm text-gray-800">
+                                        {line}
+                                      </p>
+                                    ))}
+                                    {item.seller_pickup_instructions && (
+                                      <p className="mt-2 text-sm text-gray-800">{item.seller_pickup_instructions}</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="mt-1 text-sm text-gray-800">
+                                    Información no disponible. Por favor contacta con el vendedor.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         )}
 

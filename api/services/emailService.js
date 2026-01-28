@@ -104,6 +104,7 @@ const getLogoSrc = () => {
 const generateBuyerEmailHTML = (orderDetails) => {
   const { orderId, items, totalPrice, orderToken } = orderDetails;
 
+  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
   const orderUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/pedido/${orderToken}`;
 
   // Group items by product identifier and variant to consolidate duplicates
@@ -142,22 +143,37 @@ const generateBuyerEmailHTML = (orderDetails) => {
 
   const consolidatedItems = Object.values(groupedItems);
 
-  const itemsHTML = consolidatedItems.map(item => `
+  const itemsHTML = consolidatedItems.map(item => {
+    const imageUrl = item.product_type === 'art'
+      ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(item.basename)}`
+      : `${SITE_API_URL}/api/others/images/${encodeURIComponent(item.basename)}`;
+
+    return `
     <tr>
-      <td style="padding: 12px 0; border-bottom: 1px solid #e5e7eb;">
-        <div style="font-weight: 600; color: #111827; margin-bottom: 4px;">${item.name}</div>
-        ${item.variant_key ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">${item.variant_key}</div>` : ''}
-        ${item.type ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">Soporte: ${item.type}</div>` : ''}
-        ${item.quantity > 1 ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px; font-weight: 600;">Cantidad: ${item.quantity}</div>` : ''}
-        <div style="font-size: 14px; color: #6b7280;">Precio: €${item.price_at_purchase.toFixed(2)}${item.quantity > 1 ? ` x ${item.quantity}` : ''}</div>
-        ${item.shipping_method_name ? `
-          <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">
-            Envío: ${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''} - €${item.total_shipping_cost.toFixed(2)}
-          </div>
-        ` : ''}
+      <td style="padding: 16px 0; border-bottom: 1px solid #e5e7eb;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td width="80" style="vertical-align: top; padding-right: 16px;">
+              <img src="${imageUrl}" alt="${item.name}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;">
+            </td>
+            <td style="vertical-align: top;">
+              <div style="font-weight: 600; color: #111827; margin-bottom: 4px;">${item.name}</div>
+              ${item.variant_key ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">${item.variant_key}</div>` : ''}
+              ${item.type ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">Soporte: ${item.type}</div>` : ''}
+              ${item.quantity > 1 ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px; font-weight: 600;">Cantidad: ${item.quantity}</div>` : ''}
+              <div style="font-size: 14px; color: #6b7280;">Precio: €${item.price_at_purchase.toFixed(2)}${item.quantity > 1 ? ` x ${item.quantity}` : ''}</div>
+              ${item.shipping_method_name ? `
+                <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">
+                  Envío: ${item.shipping_method_name}${item.shipping_method_type === 'pickup' ? ' (Recogida)' : ''} - €${item.total_shipping_cost.toFixed(2)}
+                </div>
+              ` : ''}
+            </td>
+          </tr>
+        </table>
       </td>
     </tr>
-  `).join('');
+    `;
+  }).join('');
 
   return `
 <!DOCTYPE html>
@@ -193,7 +209,7 @@ const generateBuyerEmailHTML = (orderDetails) => {
               <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Confirmación de pedido</h1>
 
               <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
-                Hemos recibido tu pedido y estamos procesándolo. Te informaremos por este medio sobre cualquier actualización
+                Hemos recibido tu pedido y estamos procesándolo. Te informaremos por este medio sobre cualquier actualización.
               </p>
 
               <!-- Order Details -->
@@ -1008,6 +1024,8 @@ const sendItemsSentEmail = async (order, products) => {
               <div style="font-weight: 600; color: #111827; margin-bottom: 4px;">${item.name}</div>
               ${item.variant_key ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">${item.variant_key}</div>` : ''}
               ${item.type ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">Soporte: ${item.type}</div>` : ''}
+              <div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">Método de envío: ${item.shipping_method_name}</div>
+              ${item.shipping_method_type && item.shipping_method_type.includes('pickup') ? `<div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">Accede al enlace del pedido más abajo para consultar la dirección</div>` : ''}
               ${item.tracking ? `
                 <div style="margin-top: 8px;">
                   <strong style="color: #111827; font-size: 14px;">Seguimiento:</strong><br>
@@ -1056,11 +1074,11 @@ const sendItemsSentEmail = async (order, products) => {
               <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Productos enviados</h1>
 
               <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
-                Los siguientes productos se han marcado por el vendedor como enviados:
+                Los siguientes productos se han marcado por el vendedor como enviados o disponibles para recogida en tienda:
               </p>
 
               <!-- Items -->
-              <h2 style="margin: 30px 0 15px; font-size: 18px; font-weight: 600; color: #111827;">Productos enviados</h2>
+              <h2 style="margin: 30px 0 15px; font-size: 18px; font-weight: 600; color: #111827;">Productos enviados o disponibles para recogida</h2>
               <table width="100%" cellpadding="0" cellspacing="0">
                 ${itemsHTML}
               </table>
