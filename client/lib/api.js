@@ -544,6 +544,32 @@ export const paymentsAPI = {
   },
 };
 
+// Stripe Payments API
+export const stripeAPI = {
+  createPaymentIntent: async (data) => {
+    return apiRequest('/payments/stripe/create-intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getPaymentStatus: async (paymentIntentId) => {
+    const timestamp = Date.now();
+    return apiRequest(`/payments/stripe/status/${encodeURIComponent(paymentIntentId)}?_t=${timestamp}`, {
+      method: 'GET',
+      skipAuthHandling: true,
+      cache: 'no-store',
+    });
+  },
+
+  cancelPaymentIntent: async (paymentIntentId) => {
+    return apiRequest('/payments/stripe/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ paymentIntentId }),
+    });
+  },
+};
+
 // Shipping API (public)
 export const shippingAPI = {
   getAvailableForProduct: async (productId, productType, country = null, postalCode = null) => {

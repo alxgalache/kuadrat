@@ -10,9 +10,14 @@ import Image from 'next/image'
 import {useCart} from '@/contexts/CartContext'
 import {useAuth} from '@/contexts/AuthContext'
 import {useBannerNotification} from '@/contexts/BannerNotificationContext'
-import {getArtImageUrl, getOthersImageUrl, ordersAPI, paymentsAPI} from '@/lib/api'
+import {getArtImageUrl, getOthersImageUrl, ordersAPI, paymentsAPI, stripeAPI} from '@/lib/api'
 import AddressAutocomplete from './AddressAutocomplete'
 import AddressManualInput from './AddressManualInput'
+import {getStripePromise} from '@/lib/stripe'
+import {Elements, useStripe, useElements} from '@stripe/react-stripe-js'
+import StripeCardPayment from './StripeCardPayment'
+import StripeExpressCheckout from './StripeExpressCheckout'
+import StripeLinkPayment from './StripeLinkPayment'
 
 // Key used to persist a pending Revolut order for a given cart in sessionStorage
 const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
@@ -26,7 +31,71 @@ const STEP_PAYMENT = 3
 const PAYMENT_METHOD_CARD = 'card'
 const PAYMENT_METHOD_GOOGLE_APPLE = 'google_apple'
 const PAYMENT_METHOD_REVOLUT = 'revolut'
+const PAYMENT_METHOD_LINK = 'link'
 const PAYMENT_METHOD_PAYPAL = 'paypal'
+
+// Payment provider (revolut or stripe) from env
+const PAYMENT_PROVIDER = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER || 'revolut'
+
+// Inner component for Stripe pay button - must be inside <Elements> to use hooks
+function StripePayButton({ isValid, isProcessing, onBeforeSubmit, onSuccess, onError, personalInfo }) {
+    const stripe = useStripe()
+    const elements = useElements()
+
+    const handleClick = async () => {
+        if (!stripe || !elements || !isValid || isProcessing) return
+
+        try {
+            await onBeforeSubmit()
+
+            const { error, paymentIntent } = await stripe.confirmPayment({
+                elements,
+                confirmParams: {
+                    return_url: `${window.location.origin}/pedido-completado`,
+                    payment_method_data: {
+                        billing_details: {
+                            name: personalInfo.fullName,
+                            email: personalInfo.email,
+                            phone: personalInfo.phone,
+                        },
+                    },
+                },
+                redirect: 'if_required',
+            })
+
+            if (error) {
+                onError(error.message || 'Error al procesar el pago')
+            } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+                await onSuccess(paymentIntent.id)
+            } else if (paymentIntent && paymentIntent.status === 'requires_action') {
+                // 3DS or other redirect - handled by Stripe automatically
+                // If redirect: 'if_required' didn't redirect, the payment needs more action
+                onError('El pago requiere verificación adicional. Por favor, inténtalo de nuevo.')
+            } else {
+                onError('Estado de pago inesperado. Por favor, inténtalo de nuevo.')
+            }
+        } catch (err) {
+            onError(err.message || 'Error al procesar el pago')
+        }
+    }
+
+    return (
+        <div className="mt-4">
+            <button
+                onClick={handleClick}
+                disabled={isProcessing || !isValid || !stripe}
+                className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                {isProcessing ? 'Procesando...' : 'Pagar'}
+            </button>
+            {!isValid && !isProcessing && (
+                <p className="mt-2 text-xs text-center text-gray-500">
+                    Por favor, completa los datos de pago para continuar
+                </p>
+            )}
+        </div>
+    )
+}
 
 export default function ShoppingCartDrawer({open, onClose}) {
     // Get address functionality mode from environment variable
@@ -63,6 +132,12 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
     // Revolut Pay state
     const [isRevolutPayMounted, setIsRevolutPayMounted] = useState(false)
+
+    // Stripe state
+    const [stripeClientSecret, setStripeClientSecret] = useState(null)
+    const [stripePaymentIntentId, setStripePaymentIntentId] = useState(null)
+    const [isStripeCardValid, setIsStripeCardValid] = useState(false)
+    const [isStripeExpressAvailable, setIsStripeExpressAvailable] = useState(false)
 
     // Refs
     const revolutModuleRef = useRef(null)
@@ -108,17 +183,22 @@ export default function ShoppingCartDrawer({open, onClose}) {
     // Handle item removal - behavior depends on current step
     const handleRemove = async (item) => {
         if (currentStep === STEP_PAYMENT) {
-            // In step 3: cancel any existing Revolut order and return to step 1
-            if (revolutOrderId) {
+            // In step 3: cancel any existing payment and return to step 1
+            if (PAYMENT_PROVIDER === 'stripe' && stripePaymentIntentId) {
+                try {
+                    await stripeAPI.cancelPaymentIntent(stripePaymentIntentId)
+                } catch (err) {
+                    console.warn('No se pudo cancelar el PaymentIntent de Stripe:', err)
+                }
+                cleanupStripeState()
+            } else if (revolutOrderId) {
                 try {
                     await paymentsAPI.cancelOrder(revolutOrderId)
                 } catch (err) {
                     console.warn('No se pudo cancelar la orden de Revolut:', err)
                 }
+                cleanupRevolutState()
             }
-
-            // Clean up Revolut state
-            cleanupRevolutState()
 
             // Remove item and return to step 1
             removeFromCart(item.productId, item.productType, item.variantId)
@@ -129,6 +209,14 @@ export default function ShoppingCartDrawer({open, onClose}) {
             removeFromCart(item.productId, item.productType, item.variantId)
         }
     }
+
+    // Clean up Stripe PaymentIntent state
+    const cleanupStripeState = useCallback(() => {
+        setStripeClientSecret(null)
+        setStripePaymentIntentId(null)
+        setIsStripeCardValid(false)
+        setIsStripeExpressAvailable(false)
+    }, [])
 
     // Clean up Revolut order state
     const cleanupRevolutState = useCallback(() => {
@@ -277,6 +365,15 @@ export default function ShoppingCartDrawer({open, onClose}) {
         }
     }, [cart, revolutCartSnapshot, currentStep, revolutOrderId, buildCompactItems, cleanupRevolutState])
 
+    // Clean up Stripe state when cart is cleared (e.g. after successful payment)
+    useEffect(() => {
+        if (PAYMENT_PROVIDER !== 'stripe') return
+        if (!stripePaymentIntentId) return
+        if (cart.length === 0) {
+            cleanupStripeState()
+        }
+    }, [cart.length, stripePaymentIntentId, cleanupStripeState])
+
     // Step 1 -> Step 2: Handle "Completar pedido" click
     const handleCheckout = () => {
         if (cart.length === 0) {
@@ -320,8 +417,17 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     const handleBackToAddress = () => {
-        // When going back from payment step, cancel Revolut order
-        if (revolutOrderId) {
+        // When going back from payment step, cancel active payment
+        if (PAYMENT_PROVIDER === 'stripe' && stripePaymentIntentId) {
+            ;(async () => {
+                try {
+                    await stripeAPI.cancelPaymentIntent(stripePaymentIntentId)
+                } catch (err) {
+                    console.warn('No se pudo cancelar el PaymentIntent de Stripe:', err)
+                }
+            })()
+            cleanupStripeState()
+        } else if (revolutOrderId) {
             ;(async () => {
                 try {
                     await paymentsAPI.cancelOrder(revolutOrderId)
@@ -425,10 +531,16 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
         setSelectedPaymentMethod(method)
 
-        // For both Card and Revolut Pay, we need a Revolut order
-        // Initialize if we don't have one, or reuse existing if cart matches
-        if (method === PAYMENT_METHOD_CARD || method === PAYMENT_METHOD_REVOLUT) {
-            await initializeRevolutOrder()
+        if (PAYMENT_PROVIDER === 'stripe') {
+            // For Stripe, initialize PaymentIntent when any method is selected
+            if (method === PAYMENT_METHOD_CARD || method === PAYMENT_METHOD_GOOGLE_APPLE || method === PAYMENT_METHOD_LINK) {
+                await initializeStripePayment()
+            }
+        } else {
+            // For Revolut, initialize order when Card or Revolut Pay is selected
+            if (method === PAYMENT_METHOD_CARD || method === PAYMENT_METHOD_REVOLUT) {
+                await initializeRevolutOrder()
+            }
         }
     }
 
@@ -483,6 +595,40 @@ export default function ShoppingCartDrawer({open, onClose}) {
         }
     }
 
+    // Initialize Stripe PaymentIntent
+    const initializeStripePayment = async () => {
+        // Reuse existing if we have one
+        if (stripeClientSecret && stripePaymentIntentId) {
+            return { clientSecret: stripeClientSecret, paymentIntentId: stripePaymentIntentId }
+        }
+
+        setIsInitializingPayment(true)
+
+        try {
+            const compactItems = buildCompactItems(cart)
+            const resp = await stripeAPI.createPaymentIntent({
+                items: compactItems,
+                currency: 'EUR',
+            })
+
+            if (!resp || !resp.clientSecret || !resp.paymentIntentId) {
+                throw new Error('No se pudo inicializar el pago con Stripe. Por favor, inténtalo de nuevo.')
+            }
+
+            setStripeClientSecret(resp.clientSecret)
+            setStripePaymentIntentId(resp.paymentIntentId)
+
+            return { clientSecret: resp.clientSecret, paymentIntentId: resp.paymentIntentId }
+        } catch (err) {
+            console.error('Error inicializando Stripe PaymentIntent:', err)
+            showBanner(err.message || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
+            setSelectedPaymentMethod(null)
+            return null
+        } finally {
+            setIsInitializingPayment(false)
+        }
+    }
+
     // Place order in our database (shared between Card and Revolut Pay)
     const placeOrderInDatabase = async () => {
         const orderItems = cart.flatMap(item => {
@@ -507,7 +653,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             ? invoicingAddress
             : (useSameAddressForInvoicing ? deliveryAddress : invoicingAddress)
 
-        const placed = await ordersAPI.placeOrder({
+        const orderPayload = {
             items: orderItems,
             email: personalInfo.email,
             phone: personalInfo.phone,
@@ -518,9 +664,17 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 email: personalInfo.email,
                 phone: personalInfo.phone,
             },
-            revolut_order_id: revolutOrderId,
-            revolut_order_token: revolutOrderToken,
-        })
+            payment_provider: PAYMENT_PROVIDER,
+        }
+
+        if (PAYMENT_PROVIDER === 'stripe') {
+            orderPayload.stripe_payment_intent_id = stripePaymentIntentId
+        } else {
+            orderPayload.revolut_order_id = revolutOrderId
+            orderPayload.revolut_order_token = revolutOrderToken
+        }
+
+        const placed = await ordersAPI.placeOrder(orderPayload)
 
         const createdOrderId = placed?.order?.id
         if (!createdOrderId) {
@@ -610,6 +764,58 @@ export default function ShoppingCartDrawer({open, onClose}) {
         } catch (err) {
             console.error('Error al colocar el pedido:', err)
             showBanner(err.message || 'Ha ocurrido un error al registrar el pedido. Inténtalo de nuevo.')
+            setIsProcessing(false)
+        }
+    }
+
+    // Handle Stripe payment success (called after stripe.confirmPayment succeeds)
+    const handleStripePaymentSuccess = async (paymentIntentId) => {
+        try {
+            const createdOrderId = currentOrderIdRef.current
+
+            if (!createdOrderId) {
+                throw new Error('No se pudo confirmar el pago: falta información del pedido.')
+            }
+
+            // Confirm payment on our API
+            await ordersAPI.updatePayment({
+                orderId: createdOrderId,
+                paymentId: paymentIntentId || stripePaymentIntentId,
+                provider: 'stripe',
+            })
+
+            const tokenKey = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+            if (typeof window !== 'undefined') {
+                sessionStorage.setItem(`order_token_${tokenKey}`, JSON.stringify({
+                    orderId: createdOrderId,
+                    email: personalInfo.email,
+                    provider: 'stripe',
+                    stripePaymentIntentId: paymentIntentId || stripePaymentIntentId,
+                }))
+            }
+
+            // Mark payment as succeeded to prevent cleanup effects from running
+            paymentSucceededRef.current = true
+            clearCart()
+            setCurrentStep(STEP_CART)
+            setSelectedPaymentMethod(null)
+            setPersonalInfo({fullName: '', email: '', phone: ''})
+            setDeliveryAddress({})
+            setInvoicingAddress({})
+            setUseSameAddressForInvoicing(true)
+            setStripeClientSecret(null)
+            setStripePaymentIntentId(null)
+            setIsStripeCardValid(false)
+            currentOrderIdRef.current = null
+
+            setTimeout(() => {
+                router.push(`/pedido-completado?token=${tokenKey}`)
+                onClose()
+            }, 50)
+        } catch (err) {
+            console.error('Error confirming Stripe payment:', err)
+            showBanner(err.message || 'No se pudo registrar el pedido tras el pago.')
+        } finally {
             setIsProcessing(false)
         }
     }
@@ -945,33 +1151,60 @@ export default function ShoppingCartDrawer({open, onClose}) {
         }
     }, [currentStep, selectedPaymentMethod, revolutPublicKey, revolutMode, personalInfo, getTotalPrice, showBanner, revolutOrderId, revolutOrderToken])
 
-    // Payment methods configuration
-    const paymentMethods = [
-        {
-            id: PAYMENT_METHOD_CARD,
-            title: 'Tarjeta',
-            icons: ['/parties/visa.png', '/parties/mastercard.png'],
-            disabled: false,
-        },
-        {
-            id: PAYMENT_METHOD_GOOGLE_APPLE,
-            title: 'Google Pay / Apple Pay',
-            icons: ['/parties/google-pay.png', '/parties/apple-pay.png'],
-            disabled: true,
-        },
-        {
-            id: PAYMENT_METHOD_REVOLUT,
-            title: 'Revolut Pay',
-            icons: ['/parties/revolut.png'],
-            disabled: false,
-        },
-        {
-            id: PAYMENT_METHOD_PAYPAL,
-            title: 'PayPal',
-            icons: ['/parties/paypal.png'],
-            disabled: true,
-        },
-    ]
+    // Payment methods configuration - varies by provider
+    const paymentMethods = PAYMENT_PROVIDER === 'stripe'
+        ? [
+            {
+                id: PAYMENT_METHOD_CARD,
+                title: 'Tarjeta',
+                icons: ['/parties/visa.png', '/parties/mastercard.png'],
+                disabled: false,
+            },
+            {
+                id: PAYMENT_METHOD_GOOGLE_APPLE,
+                title: 'Google Pay / Apple Pay',
+                icons: ['/parties/google-pay.png', '/parties/apple-pay.png'],
+                disabled: false,
+            },
+            {
+                id: PAYMENT_METHOD_LINK,
+                title: 'Link',
+                icons: ['/parties/link-icon.svg'],
+                disabled: false,
+            },
+            {
+                id: PAYMENT_METHOD_PAYPAL,
+                title: 'PayPal',
+                icons: ['/parties/paypal.png'],
+                disabled: true,
+            },
+        ]
+        : [
+            {
+                id: PAYMENT_METHOD_CARD,
+                title: 'Tarjeta',
+                icons: ['/parties/visa.png', '/parties/mastercard.png'],
+                disabled: false,
+            },
+            {
+                id: PAYMENT_METHOD_GOOGLE_APPLE,
+                title: 'Google Pay / Apple Pay',
+                icons: ['/parties/google-pay.png', '/parties/apple-pay.png'],
+                disabled: true,
+            },
+            {
+                id: PAYMENT_METHOD_REVOLUT,
+                title: 'Revolut Pay',
+                icons: ['/parties/revolut.png'],
+                disabled: false,
+            },
+            {
+                id: PAYMENT_METHOD_PAYPAL,
+                title: 'PayPal',
+                icons: ['/parties/paypal.png'],
+                disabled: true,
+            },
+        ]
 
     // Render cart items list (used in all steps)
     const renderCartItems = () => (
@@ -1305,8 +1538,93 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                 <div className="mb-6 space-y-6">
                                                     {renderPaymentMethodSelection()}
 
+                                                    {/* === STRIPE PROVIDER === */}
+                                                    {PAYMENT_PROVIDER === 'stripe' && stripeClientSecret && (
+                                                        <Elements
+                                                            stripe={getStripePromise()}
+                                                            options={{
+                                                                clientSecret: stripeClientSecret,
+                                                                appearance: {
+                                                                    theme: 'stripe',
+                                                                    variables: {
+                                                                        colorPrimary: '#000000',
+                                                                    },
+                                                                },
+                                                            }}
+                                                        >
+                                                            {/* Stripe Card payment */}
+                                                            {selectedPaymentMethod === PAYMENT_METHOD_CARD && (
+                                                                <div className="mt-4">
+                                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Datos de la tarjeta</h3>
+                                                                    <StripeCardPayment
+                                                                        onReady={() => {}}
+                                                                        onValidChange={(valid) => setIsStripeCardValid(valid)}
+                                                                    />
+                                                                </div>
+                                                            )}
+
+                                                            {/* Stripe Express Checkout (Google Pay / Apple Pay) */}
+                                                            {selectedPaymentMethod === PAYMENT_METHOD_GOOGLE_APPLE && (
+                                                                <div className="mt-4">
+                                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pago rápido</h3>
+                                                                    <StripeExpressCheckout
+                                                                        onConfirm={async () => {
+                                                                            setIsProcessing(true)
+                                                                            await placeOrderInDatabase()
+                                                                            await handleStripePaymentSuccess()
+                                                                        }}
+                                                                        onReady={(available) => setIsStripeExpressAvailable(available)}
+                                                                        onError={(msg) => {
+                                                                            showBanner(msg)
+                                                                            setIsProcessing(false)
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            )}
+
+                                                            {/* Stripe Link payment */}
+                                                            {selectedPaymentMethod === PAYMENT_METHOD_LINK && (
+                                                                <div className="mt-4">
+                                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pagar con Link</h3>
+                                                                    <StripeLinkPayment
+                                                                        email={personalInfo.email}
+                                                                        onReady={() => {}}
+                                                                        onValidChange={(valid) => setIsStripeCardValid(valid)}
+                                                                    />
+                                                                </div>
+                                                            )}
+
+                                                            {/* Stripe Pay button - inner component that has access to useStripe/useElements */}
+                                                            {(selectedPaymentMethod === PAYMENT_METHOD_CARD || selectedPaymentMethod === PAYMENT_METHOD_LINK) && (
+                                                                <StripePayButton
+                                                                    isValid={isStripeCardValid}
+                                                                    isProcessing={isProcessing}
+                                                                    onBeforeSubmit={async () => {
+                                                                        setIsProcessing(true)
+                                                                        await placeOrderInDatabase()
+                                                                    }}
+                                                                    onSuccess={handleStripePaymentSuccess}
+                                                                    onError={(msg) => {
+                                                                        showBanner(msg)
+                                                                        setIsProcessing(false)
+                                                                    }}
+                                                                    personalInfo={personalInfo}
+                                                                />
+                                                            )}
+                                                        </Elements>
+                                                    )}
+
+                                                    {/* Stripe initializing spinner */}
+                                                    {PAYMENT_PROVIDER === 'stripe' && !stripeClientSecret && selectedPaymentMethod && (
+                                                        <div className="flex items-center justify-center py-4">
+                                                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
+                                                            <span className="ml-2 text-sm text-gray-600">Cargando formulario de pago...</span>
+                                                        </div>
+                                                    )}
+
+                                                    {/* === REVOLUT PROVIDER === */}
                                                     {/* Card field - only shown when card payment is selected and initialized */}
-                                                    {selectedPaymentMethod === PAYMENT_METHOD_CARD && (
+                                                    {PAYMENT_PROVIDER === 'revolut' && selectedPaymentMethod === PAYMENT_METHOD_CARD && (
                                                         <div className="mt-4">
                                                             {isInitializingPayment ? (
                                                                 <div className="flex items-center justify-center py-4">
@@ -1330,7 +1648,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                     )}
 
                                                     {/* Revolut Pay button - only shown when Revolut Pay is selected */}
-                                                    {selectedPaymentMethod === PAYMENT_METHOD_REVOLUT && (
+                                                    {PAYMENT_PROVIDER === 'revolut' && selectedPaymentMethod === PAYMENT_METHOD_REVOLUT && (
                                                         <div className="mt-4">
                                                             {isInitializingPayment ? (
                                                                 <div className="flex items-center justify-center py-4">
@@ -1400,8 +1718,8 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
                                                 {currentStep === STEP_PAYMENT && (
                                                     <>
-                                                        {/* Card payment button */}
-                                                        {selectedPaymentMethod === PAYMENT_METHOD_CARD && (
+                                                        {/* Revolut Card payment button */}
+                                                        {PAYMENT_PROVIDER === 'revolut' && selectedPaymentMethod === PAYMENT_METHOD_CARD && (
                                                             <>
                                                                 {cardValidationErrors.length > 0 && (
                                                                     <div className="mb-3">
@@ -1428,11 +1746,14 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                         )}
 
                                                         {/* Revolut Pay - button is rendered by SDK, no extra button needed */}
-                                                        {selectedPaymentMethod === PAYMENT_METHOD_REVOLUT && !isRevolutPayMounted && !isInitializingPayment && (
+                                                        {PAYMENT_PROVIDER === 'revolut' && selectedPaymentMethod === PAYMENT_METHOD_REVOLUT && !isRevolutPayMounted && !isInitializingPayment && (
                                                             <p className="mt-2 text-xs text-center text-gray-500">
                                                                 Cargando botón de Revolut Pay...
                                                             </p>
                                                         )}
+
+                                                        {/* Stripe: pay button is rendered inside Elements above for card/link */}
+                                                        {/* Stripe: Express Checkout has its own button */}
 
                                                         {/* No payment method selected */}
                                                         {!selectedPaymentMethod && (

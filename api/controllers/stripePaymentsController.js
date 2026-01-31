@@ -1,0 +1,210 @@
+const { db } = require('../config/database');
+const { ApiError } = require('../middleware/errorHandler');
+const {
+  createPaymentIntent,
+  retrievePaymentIntent,
+  cancelPaymentIntent,
+  constructWebhookEvent,
+} = require('../services/stripeService');
+const {
+  loadProductsDetails,
+  buildLineItems,
+  computeShippingTotal,
+} = require('../utils/paymentHelpers');
+const { processOrderConfirmation } = require('./paymentsController');
+
+const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
+const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
+
+/**
+ * POST /api/payments/stripe/create-intent
+ * Creates a Stripe PaymentIntent for the given cart items.
+ * Body: { items: [...], currency: 'EUR' }
+ * Returns: { clientSecret, paymentIntentId, amount, currency }
+ */
+const createPaymentIntentEndpoint = async (req, res, next) => {
+  try {
+    const {
+      items: compactItems,
+      currency = 'EUR',
+    } = req.body || {};
+
+    if (!Array.isArray(compactItems) || compactItems.length === 0) {
+      throw new ApiError(400, 'items debe ser un array no vacío', 'Solicitud inválida');
+    }
+
+    // Load products from DB and validate
+    const { artMap, otherMap } = await loadProductsDetails(compactItems);
+    const { productsTotal } = buildLineItems({
+      compactItems,
+      artMap,
+      otherMap,
+      siteApiUrl: SITE_API_URL,
+      siteBaseUrl: SITE_BASE_URL,
+    });
+    const shippingTotal = computeShippingTotal(compactItems);
+    const amountMinor = productsTotal + shippingTotal;
+
+    if (amountMinor <= 0) {
+      throw new ApiError(400, 'El importe debe ser mayor que cero', 'Importe inválido');
+    }
+
+    // Store a compact cart snapshot in metadata for traceability
+    const cartSnapshot = JSON.stringify(compactItems.map(i => ({
+      type: i.type,
+      id: i.id,
+      ...(i.variantId ? { variantId: i.variantId } : {}),
+      qty: i.quantity || 1,
+    })));
+
+    const paymentIntent = await createPaymentIntent({
+      amount: amountMinor,
+      currency: currency.toLowerCase(),
+      metadata: {
+        cartSnapshot: cartSnapshot.slice(0, 500), // Stripe metadata value limit
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      amount: paymentIntent.amount,
+      currency: paymentIntent.currency,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/payments/stripe/webhook
+ * Handles Stripe webhook events for payment confirmation.
+ * No authentication - Stripe verifies via signature.
+ */
+const stripeWebhookEndpoint = async (req, res, next) => {
+  try {
+    const sig = req.headers['stripe-signature'];
+    const rawBody = req.rawBody || '';
+
+    let event;
+    try {
+      event = constructWebhookEvent(rawBody, sig);
+    } catch (err) {
+      console.error('Stripe webhook signature verification failed:', err.message);
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+
+    console.log('Stripe webhook received:', event.type);
+
+    if (event.type === 'payment_intent.succeeded') {
+      const paymentIntent = event.data.object;
+      const stripePaymentIntentId = paymentIntent.id;
+
+      // Find order by stripe_payment_intent_id
+      const orderRes = await db.execute({
+        sql: 'SELECT id, status FROM orders WHERE stripe_payment_intent_id = ?',
+        args: [stripePaymentIntentId],
+      });
+
+      if (orderRes.rows.length === 0) {
+        console.log(`Order not found for stripe_payment_intent_id: ${stripePaymentIntentId}`);
+        return res.status(200).json({ received: true, processed: false, reason: 'order not found' });
+      }
+
+      const order = orderRes.rows[0];
+
+      if (order.status === 'paid') {
+        console.log(`Order ${order.id} already paid, webhook acknowledged`);
+        return res.status(200).json({ received: true, processed: false, reason: 'already paid' });
+      }
+
+      try {
+        const result = await processOrderConfirmation(order.id, stripePaymentIntentId);
+        console.log(`Order ${order.id} confirmed via Stripe webhook:`, result);
+        return res.status(200).json({ received: true, processed: true, orderId: order.id });
+      } catch (confirmErr) {
+        console.error(`Failed to confirm order ${order.id}:`, confirmErr);
+        return res.status(200).json({ received: true, processed: false, reason: confirmErr.message });
+      }
+    }
+
+    // For other event types, acknowledge receipt
+    return res.status(200).json({ received: true, processed: false, reason: 'unhandled event type' });
+  } catch (err) {
+    console.error('Stripe webhook processing error:', err);
+    return res.status(200).json({ received: true, processed: false, error: err.message });
+  }
+};
+
+/**
+ * GET /api/payments/stripe/status/:paymentIntentId
+ * Returns the status of a Stripe PaymentIntent.
+ */
+const getStripePaymentStatusEndpoint = async (req, res, next) => {
+  try {
+    const { paymentIntentId } = req.params;
+    if (!paymentIntentId) {
+      throw new ApiError(400, 'Falta paymentIntentId', 'Solicitud inválida');
+    }
+
+    const paymentIntent = await retrievePaymentIntent(paymentIntentId);
+
+    // Also check if we have an order linked to this payment intent
+    const orderRes = await db.execute({
+      sql: 'SELECT id, status, token, email, guest_email FROM orders WHERE stripe_payment_intent_id = ?',
+      args: [paymentIntentId],
+    });
+
+    const order = orderRes.rows.length > 0 ? orderRes.rows[0] : null;
+
+    return res.status(200).json({
+      success: true,
+      paymentIntentId: paymentIntent.id,
+      status: paymentIntent.status,
+      amount: paymentIntent.amount,
+      currency: paymentIntent.currency,
+      // Order info if available
+      order: order ? {
+        id: order.id,
+        status: order.status,
+        token: order.token,
+        email: order.email || order.guest_email,
+        is_paid: order.status === 'paid',
+      } : null,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/payments/stripe/cancel
+ * Cancels a Stripe PaymentIntent.
+ * Body: { paymentIntentId: string }
+ */
+const cancelStripePaymentIntentEndpoint = async (req, res, next) => {
+  try {
+    const { paymentIntentId } = req.body || {};
+    if (!paymentIntentId) {
+      throw new ApiError(400, 'Falta paymentIntentId', 'Solicitud inválida');
+    }
+
+    const result = await cancelPaymentIntent(paymentIntentId);
+
+    return res.status(200).json({
+      success: true,
+      paymentIntentId: result.id,
+      status: result.status,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = {
+  createPaymentIntentEndpoint,
+  stripeWebhookEndpoint,
+  getStripePaymentStatusEndpoint,
+  cancelStripePaymentIntentEndpoint,
+};

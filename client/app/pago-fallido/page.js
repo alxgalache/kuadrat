@@ -4,6 +4,8 @@ import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { XCircleIcon } from '@heroicons/react/20/solid'
 
+const PAYMENT_PROVIDER = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER || 'revolut'
+
 function PagoFallidoContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -15,9 +17,20 @@ function PagoFallidoContent() {
   const failureReason = searchParams.get('_rp_fr')
   const revolutOrderId = searchParams.get('_rp_oid')
 
-  // Validate access - must have valid _rp_oid that matches pending order
+  // Stripe error params
+  const stripePaymentIntent = searchParams.get('payment_intent')
+  const stripeError = searchParams.get('error')
+
+  // Validate access
   useEffect(() => {
     if (typeof window === 'undefined') return
+
+    // Check for Stripe failure redirect
+    if (stripePaymentIntent && PAYMENT_PROVIDER === 'stripe') {
+      setIsValidAccess(true)
+      setIsChecking(false)
+      return
+    }
 
     // Check if we have a valid pending order for this Revolut order ID
     if (revolutOrderId) {
@@ -40,7 +53,7 @@ function PagoFallidoContent() {
     // Invalid access - redirect to home
     setIsChecking(false)
     router.replace('/')
-  }, [revolutOrderId, router])
+  }, [revolutOrderId, stripePaymentIntent, router])
 
   // Show nothing while checking
   if (isChecking) {
@@ -67,8 +80,8 @@ function PagoFallidoContent() {
                 <div className="mt-2 text-sm text-red-700">
                   <p>
                     No hemos podido procesar tu pago.
-                    {failureReason && (
-                      <> {failureReason}</>
+                    {(failureReason || stripeError) && (
+                      <> {failureReason || stripeError}</>
                     )}
                   </p>
                 </div>

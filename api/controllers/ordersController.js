@@ -550,14 +550,22 @@ const placeOrder = async (req, res, next) => {
       customer,
       revolut_order_id,
       revolut_order_token,
+      stripe_payment_intent_id,
+      payment_provider,
       currency = 'EUR',
       description = 'Pedido realizado en 140d Galería de Arte',
     } = req.body || {};
 
     const VAT_ES = parseFloat(process.env.TAX_VAT_ES || 0.21);
 
-    if (!revolut_order_id) {
+    // Determine provider: explicit field > env var > default
+    const provider = payment_provider || process.env.PAYMENT_PROVIDER || 'revolut';
+
+    if (provider === 'revolut' && !revolut_order_id) {
       throw new ApiError(400, 'Falta revolut_order_id en la solicitud', 'Solicitud inválida');
+    }
+    if (provider === 'stripe' && !stripe_payment_intent_id) {
+      throw new ApiError(400, 'Falta stripe_payment_intent_id en la solicitud', 'Solicitud inválida');
     }
 
     // Orders are always treated as guest orders; validate buyer email + optional phone
@@ -793,7 +801,7 @@ const placeOrder = async (req, res, next) => {
       }
     }
 
-    // 1) Persist order in DB with status 'pending' and revolut_order_id
+    // 1) Persist order in DB with status 'pending' and payment provider info
     const orderResult = await db.execute({
       sql: `INSERT INTO orders (
         email,
@@ -817,8 +825,10 @@ const placeOrder = async (req, res, next) => {
         invoicing_province,
         invoicing_country,
         revolut_order_id,
-        revolut_order_token
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        revolut_order_token,
+        payment_provider,
+        stripe_payment_intent_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         buyerEmail,
         buyerPhone ?? null,
@@ -840,8 +850,10 @@ const placeOrder = async (req, res, next) => {
         invoicing_address?.city ?? null,
         invoicing_address?.province ?? null,
         invoicing_address?.country ?? null,
-        revolut_order_id,
+        revolut_order_id || null,
         revolut_order_token || null,
+        provider,
+        stripe_payment_intent_id || null,
       ],
     });
 
@@ -864,7 +876,7 @@ const placeOrder = async (req, res, next) => {
           shipping_method_type,
           commission_amount,
           status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -911,20 +923,22 @@ const placeOrder = async (req, res, next) => {
       });
     }
 
-    // 3) PATCH Revolut order with full payload (amount, currency, description, line_items, customer, shipping, location)
-    const revPayload = {
-      amount: amountMinor,
-      currency,
-      capture_mode: 'automatic',
-      description,
-      merchant_order_ext_ref: `cart-${Date.now()}`,
-      line_items: lineItems,
-      ...(customerBlock ? { customer: customerBlock } : {}),
-      ...(shippingBlock ? { shipping: shippingBlock } : {}),
-      ...(REV_LOCATION_ID ? { location_id: REV_LOCATION_ID } : {}),
-    };
+    // 3) PATCH Revolut order with full payload (skip for Stripe - no equivalent needed)
+    if (provider === 'revolut' && revolut_order_id) {
+      const revPayload = {
+        amount: amountMinor,
+        currency,
+        capture_mode: 'automatic',
+        description,
+        merchant_order_ext_ref: `cart-${Date.now()}`,
+        line_items: lineItems,
+        ...(customerBlock ? { customer: customerBlock } : {}),
+        ...(shippingBlock ? { shipping: shippingBlock } : {}),
+        ...(REV_LOCATION_ID ? { location_id: REV_LOCATION_ID } : {}),
+      };
 
-    await updateRevolutOrder(revolut_order_id, revPayload);
+      await updateRevolutOrder(revolut_order_id, revPayload);
+    }
 
     // 4) Load order details (without sending any emails yet)
     const orderDetailsResult = await db.execute({
@@ -2188,12 +2202,12 @@ module.exports = {
 };
 
 // Confirm order payment (PUT /api/orders)
-// Body: { order_id: number, payment_id: string }
+// Body: { order_id: number, payment_id: string, provider?: string }
 async function confirmOrderPayment(req, res, next) {
   try {
-    const { order_id, payment_id } = req.body || {};
+    const { order_id, payment_id, provider: reqProvider } = req.body || {};
 
-    // Require fields explicitly (revolut_order_id is already stored at creation)
+    // Require fields explicitly
     if (!order_id || !payment_id) {
       throw new ApiError(400, 'Faltan parámetros requeridos: order_id y payment_id son obligatorios', 'Solicitud inválida');
     }
@@ -2204,25 +2218,42 @@ async function confirmOrderPayment(req, res, next) {
       throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
     }
     const order = orderRes.rows[0];
+    const provider = reqProvider || order.payment_provider || 'revolut';
 
     // If already paid, validate idempotency: IDs must match
     if (order.status === 'paid') {
-      if (order.revolut_payment_id && order.revolut_payment_id !== payment_id) {
-        throw new ApiError(409, 'El pedido ya está pagado con otro identificador de pago de Revolut', 'Conflicto de pago');
+      if (provider === 'stripe') {
+        if (order.stripe_payment_intent_id && order.stripe_payment_intent_id !== payment_id) {
+          throw new ApiError(409, 'El pedido ya está pagado con otro identificador de pago', 'Conflicto de pago');
+        }
+        await db.execute({
+          sql: 'UPDATE orders SET stripe_payment_method_id = COALESCE(stripe_payment_method_id, ?) WHERE id = ?',
+          args: [payment_id, order_id],
+        });
+      } else {
+        if (order.revolut_payment_id && order.revolut_payment_id !== payment_id) {
+          throw new ApiError(409, 'El pedido ya está pagado con otro identificador de pago de Revolut', 'Conflicto de pago');
+        }
+        await db.execute({
+          sql: 'UPDATE orders SET revolut_payment_id = COALESCE(revolut_payment_id, ?) WHERE id = ?',
+          args: [payment_id, order_id],
+        });
       }
-      // Ensure IDs are persisted if they were null previously
-      await db.execute({
-        sql: 'UPDATE orders SET revolut_payment_id = COALESCE(revolut_payment_id, ?) WHERE id = ?',
-        args: [payment_id, order_id],
-      });
       return res.status(200).json({ success: true, order: { id: order_id, status: 'paid' } });
     }
 
-    // Store Revolut ids and mark as paid (no remote verification per spec)
-    await db.execute({
-      sql: 'UPDATE orders SET status = ?, revolut_payment_id = ? WHERE id = ?',
-      args: ['paid', payment_id, order_id],
-    });
+    // Store payment ID and mark as paid
+    if (provider === 'stripe') {
+      await db.execute({
+        sql: 'UPDATE orders SET status = ?, stripe_payment_method_id = ? WHERE id = ?',
+        args: ['paid', payment_id, order_id],
+      });
+    } else {
+      await db.execute({
+        sql: 'UPDATE orders SET status = ?, revolut_payment_id = ? WHERE id = ?',
+        args: ['paid', payment_id, order_id],
+      });
+    }
 
     // Update order items status to 'paid'
     await db.execute({

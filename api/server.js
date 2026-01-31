@@ -31,6 +31,7 @@ const artRoutes = require('./routes/artRoutes');
 const othersRoutes = require('./routes/othersRoutes');
 const ordersRoutes = require('./routes/ordersRoutes');
 const paymentsRoutes = require('./routes/paymentsRoutes');
+const stripePaymentsRoutes = require('./routes/stripePaymentsRoutes');
 const usersRoutes = require('./routes/usersRoutes');
 const adminRoutes = require('./routes/admin');
 const sellerRoutes = require('./routes/sellerRoutes');
@@ -144,6 +145,7 @@ app.use('/api/art', artRoutes);
 app.use('/api/others', othersRoutes);
 app.use('/api/orders', sensitiveLimiter, ordersRoutes);
 app.use('/api/payments', paymentsRoutes); // Rate limiters applied per-endpoint in paymentsRoutes
+app.use('/api/payments/stripe', stripePaymentsRoutes); // Stripe payment routes
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/seller', sellerRoutes);

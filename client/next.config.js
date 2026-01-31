@@ -24,16 +24,18 @@ const nextConfig = {
       'https://*.sentry.io',
       'https://*.revolut.com',
       'https://maps.googleapis.com',
+      'https://api.stripe.com',
     ].join(' ');
 
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com https://js.stripe.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `img-src 'self' data: https: http: blob: ${apiOrigin}`,
       "font-src 'self' https://fonts.gstatic.com",
       `connect-src ${cspConnectSrc}`,
-      "frame-src 'self' https://*.revolut.com",
+      "frame-src 'self' https://*.revolut.com https://js.stripe.com",
+      "worker-src 'self' blob:",
     ].join('; ');
 
     return [

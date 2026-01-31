@@ -591,6 +591,34 @@ async function initializeDatabase() {
       }
     }
 
+    // Add Stripe payment columns to orders table
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN payment_provider TEXT DEFAULT 'revolut'`);
+      console.log('Added payment_provider column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('payment_provider column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN stripe_payment_intent_id TEXT`);
+      console.log('Added stripe_payment_intent_id column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('stripe_payment_intent_id column already exists or error:', err.message);
+      }
+    }
+
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN stripe_payment_method_id TEXT`);
+      console.log('Added stripe_payment_method_id column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('stripe_payment_method_id column already exists or error:', err.message);
+      }
+    }
+
     // Add commission_amount column to art_order_items table
     try {
       await db.execute(`ALTER TABLE art_order_items ADD COLUMN commission_amount REAL`);

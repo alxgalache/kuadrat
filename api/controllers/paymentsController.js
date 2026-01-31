@@ -9,6 +9,13 @@ const {
   cancelRevolutOrder,
 } = require('../services/revolutService');
 const { sendPurchaseConfirmation } = require('../services/emailService');
+// Shared helpers (also used by stripePaymentsController)
+const {
+  computeCartTotal: sharedComputeCartTotal,
+  loadProductsDetails: sharedLoadProductsDetails,
+  buildLineItems: sharedBuildLineItems,
+  computeShippingTotal: sharedComputeShippingTotal,
+} = require('../utils/paymentHelpers');
 
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
 const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
@@ -282,7 +289,8 @@ function verifyRevolutWebhookSignature(rawPayload, signatureHeader, timestampHea
 }
 
 // Helper: Process order confirmation (shared between webhook and manual confirmation)
-// This marks the order as paid, updates inventory, and sends emails
+// This marks the order as paid, updates inventory, and sends emails.
+// Provider-aware: stores the payment ID in the correct column based on payment_provider.
 async function processOrderConfirmation(orderId, paymentId) {
   // Load order
   const orderRes = await db.execute({ sql: 'SELECT * FROM orders WHERE id = ?', args: [orderId] });
@@ -290,25 +298,42 @@ async function processOrderConfirmation(orderId, paymentId) {
     throw new Error(`Order not found: ${orderId}`);
   }
   const order = orderRes.rows[0];
+  const provider = order.payment_provider || 'revolut';
 
   // If already paid, validate idempotency: IDs must match
   if (order.status === 'paid') {
-    if (order.revolut_payment_id && order.revolut_payment_id !== paymentId) {
-      throw new Error(`Order ${orderId} already paid with different payment ID`);
+    if (provider === 'stripe') {
+      if (order.stripe_payment_intent_id && order.stripe_payment_intent_id !== paymentId) {
+        throw new Error(`Order ${orderId} already paid with different Stripe payment ID`);
+      }
+      await db.execute({
+        sql: 'UPDATE orders SET stripe_payment_intent_id = COALESCE(stripe_payment_intent_id, ?) WHERE id = ?',
+        args: [paymentId, orderId],
+      });
+    } else {
+      if (order.revolut_payment_id && order.revolut_payment_id !== paymentId) {
+        throw new Error(`Order ${orderId} already paid with different payment ID`);
+      }
+      await db.execute({
+        sql: 'UPDATE orders SET revolut_payment_id = COALESCE(revolut_payment_id, ?) WHERE id = ?',
+        args: [paymentId, orderId],
+      });
     }
-    // Ensure IDs are persisted if they were null previously
-    await db.execute({
-      sql: 'UPDATE orders SET revolut_payment_id = COALESCE(revolut_payment_id, ?) WHERE id = ?',
-      args: [paymentId, orderId],
-    });
     return { success: true, order: { id: orderId, status: 'paid' }, alreadyPaid: true };
   }
 
-  // Store Revolut ids and mark as paid
-  await db.execute({
-    sql: 'UPDATE orders SET status = ?, revolut_payment_id = ? WHERE id = ?',
-    args: ['paid', paymentId, orderId],
-  });
+  // Store payment ID in the correct column and mark as paid
+  if (provider === 'stripe') {
+    await db.execute({
+      sql: 'UPDATE orders SET status = ?, stripe_payment_intent_id = ? WHERE id = ?',
+      args: ['paid', paymentId, orderId],
+    });
+  } else {
+    await db.execute({
+      sql: 'UPDATE orders SET status = ?, revolut_payment_id = ? WHERE id = ?',
+      args: ['paid', paymentId, orderId],
+    });
+  }
 
   // Inventory updates
   // 1) Mark art items as sold

@@ -3,8 +3,10 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCart } from '@/contexts/CartContext'
-import { paymentsAPI, ordersAPI } from '@/lib/api'
+import { paymentsAPI, ordersAPI, stripeAPI } from '@/lib/api'
 import { CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/20/solid'
+
+const PAYMENT_PROVIDER = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER || 'revolut'
 
 // Polling configuration with exponential backoff
 // We wait before first poll to give webhook time to process
@@ -31,6 +33,10 @@ function PedidoCompletadoContent() {
   // Get URL params
   const token = searchParams.get('token')
   const revolutOrderIdFromUrl = searchParams.get('_rp_oid')
+
+  // Stripe redirect params (from 3DS verification)
+  const stripePaymentIntentFromUrl = searchParams.get('payment_intent')
+  const stripeClientSecretFromUrl = searchParams.get('payment_intent_client_secret')
 
   // Validate access on mount
   useEffect(() => {
@@ -62,6 +68,11 @@ function PedidoCompletadoContent() {
       }
     }
 
+    // Check for Stripe 3DS redirect with payment_intent param
+    if (!valid && stripePaymentIntentFromUrl && PAYMENT_PROVIDER === 'stripe') {
+      valid = true
+    }
+
     if (!valid) {
       // Invalid access - redirect to home
       setIsCheckingAccess(false)
@@ -71,7 +82,73 @@ function PedidoCompletadoContent() {
 
     setIsValidAccess(true)
     setIsCheckingAccess(false)
-  }, [token, revolutOrderIdFromUrl, router])
+  }, [token, revolutOrderIdFromUrl, stripePaymentIntentFromUrl, router])
+
+  // Handle Stripe 3DS redirect
+  const handleStripeRedirect = useCallback(async () => {
+    if (!stripePaymentIntentFromUrl || PAYMENT_PROVIDER !== 'stripe') return false
+
+    // Prevent multiple executions
+    if (hasStartedRef.current) return true
+    hasStartedRef.current = true
+
+    setIsProcessing(true)
+    setProcessingMessage('Verificando tu pago con Stripe...')
+
+    try {
+      // Wait for webhook to process
+      await new Promise(r => setTimeout(r, INITIAL_WAIT_MS))
+
+      // Poll Stripe payment status
+      let attempt = 0
+      let interval = INITIAL_POLL_INTERVAL_MS
+
+      while (attempt < MAX_POLL_ATTEMPTS) {
+        try {
+          const statusResp = await stripeAPI.getPaymentStatus(stripePaymentIntentFromUrl)
+
+          if (statusResp.status === 'succeeded') {
+            // Payment succeeded - order should already be confirmed by webhook
+            if (statusResp.order?.status === 'paid') {
+              clearCart()
+              setReady(true)
+              setIsProcessing(false)
+              return true
+            }
+            // Payment succeeded but order not yet confirmed - keep polling
+            setProcessingMessage('Confirmando pedido...')
+          } else if (statusResp.status === 'canceled' || statusResp.status === 'requires_payment_method') {
+            setError('El pago no se ha completado. Por favor, inténtalo de nuevo.')
+            setIsProcessing(false)
+            setReady(true)
+            return true
+          }
+        } catch (pollErr) {
+          if (pollErr?.status !== 404 && pollErr?.status !== 429) {
+            console.error('Error polling Stripe payment status:', pollErr)
+          }
+        }
+
+        attempt++
+        if (attempt < MAX_POLL_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, interval))
+          interval = Math.min(Math.floor(interval * 1.4), MAX_POLL_INTERVAL_MS)
+        }
+      }
+
+      // If we reach here, we couldn't fully confirm but payment may have succeeded
+      clearCart()
+      setReady(true)
+      setIsProcessing(false)
+      return true
+    } catch (err) {
+      console.error('Error handling Stripe redirect:', err)
+      setError('Hubo un problema al verificar tu pago. Si completaste el pago, recibirás el email de confirmación en breve.')
+      setIsProcessing(false)
+      setReady(true)
+      return true
+    }
+  }, [stripePaymentIntentFromUrl, clearCart])
 
   // Check for Revolut Pay redirect and handle payment confirmation
   const handleRevolutPayRedirect = useCallback(async () => {
@@ -200,8 +277,17 @@ function PedidoCompletadoContent() {
   }, [isCheckingAccess, isValidAccess, revolutOrderIdFromUrl, clearCart])
 
   useEffect(() => {
+    if (isCheckingAccess || !isValidAccess) return
+
+    // Handle Stripe redirect first (3DS flow)
+    if (stripePaymentIntentFromUrl && PAYMENT_PROVIDER === 'stripe') {
+      handleStripeRedirect()
+      return
+    }
+
+    // Handle Revolut redirect
     handleRevolutPayRedirect()
-  }, [handleRevolutPayRedirect, isCheckingAccess, isValidAccess])
+  }, [handleRevolutPayRedirect, handleStripeRedirect, isCheckingAccess, isValidAccess, stripePaymentIntentFromUrl])
 
   // Also clear cart if coming from normal checkout flow with token
   useEffect(() => {

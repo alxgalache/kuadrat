@@ -4,6 +4,8 @@ import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { XCircleIcon } from '@heroicons/react/20/solid'
 
+const PAYMENT_PROVIDER = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER || 'revolut'
+
 function PagoCanceladoContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -12,10 +14,18 @@ function PagoCanceladoContent() {
   const [isChecking, setIsChecking] = useState(true)
 
   const revolutOrderId = searchParams.get('_rp_oid')
+  const stripePaymentIntent = searchParams.get('payment_intent')
 
-  // Validate access - must have valid _rp_oid that matches pending order
+  // Validate access
   useEffect(() => {
     if (typeof window === 'undefined') return
+
+    // Check for Stripe cancellation redirect
+    if (stripePaymentIntent && PAYMENT_PROVIDER === 'stripe') {
+      setIsValidAccess(true)
+      setIsChecking(false)
+      return
+    }
 
     // Check if we have a valid pending order for this Revolut order ID
     if (revolutOrderId) {
@@ -38,7 +48,7 @@ function PagoCanceladoContent() {
     // Invalid access - redirect to home
     setIsChecking(false)
     router.replace('/')
-  }, [revolutOrderId, router])
+  }, [revolutOrderId, stripePaymentIntent, router])
 
   // Show nothing while checking
   if (isChecking) {
