@@ -17,7 +17,6 @@ import {getStripePromise} from '@/lib/stripe'
 import {Elements, useStripe, useElements} from '@stripe/react-stripe-js'
 import StripeCardPayment from './StripeCardPayment'
 import StripeExpressCheckout from './StripeExpressCheckout'
-import StripeLinkPayment from './StripeLinkPayment'
 
 // Key used to persist a pending Revolut order for a given cart in sessionStorage
 const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
@@ -31,7 +30,6 @@ const STEP_PAYMENT = 3
 const PAYMENT_METHOD_CARD = 'card'
 const PAYMENT_METHOD_GOOGLE_APPLE = 'google_apple'
 const PAYMENT_METHOD_REVOLUT = 'revolut'
-const PAYMENT_METHOD_LINK = 'link'
 const PAYMENT_METHOD_PAYPAL = 'paypal'
 
 // Payment provider (revolut or stripe) from env
@@ -397,7 +395,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }
 
     // Step 2 -> Step 3: Handle "Ir al pago" click
-    const handleProceedToPaymentStep = () => {
+    const handleProceedToPaymentStep = async () => {
         if (!isPersonalInfoValid()) {
             showBanner('Por favor, completa la información personal con datos válidos')
             return
@@ -408,6 +406,11 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
         setCurrentStep(STEP_PAYMENT)
         setSelectedPaymentMethod(null)
+
+        // For Stripe, auto-initialize PaymentIntent immediately
+        if (PAYMENT_PROVIDER === 'stripe') {
+            await initializeStripePayment()
+        }
     }
 
     // Navigation handlers
@@ -524,20 +527,15 @@ export default function ShoppingCartDrawer({open, onClose}) {
         return true
     }
 
-    // Handle payment method selection
+    // Handle payment method selection (Revolut only - Stripe doesn't use method cards)
     const handlePaymentMethodSelect = async (method) => {
         // If selecting the same method, do nothing
         if (selectedPaymentMethod === method) return
 
         setSelectedPaymentMethod(method)
 
-        if (PAYMENT_PROVIDER === 'stripe') {
-            // For Stripe, initialize PaymentIntent when any method is selected
-            if (method === PAYMENT_METHOD_CARD || method === PAYMENT_METHOD_GOOGLE_APPLE || method === PAYMENT_METHOD_LINK) {
-                await initializeStripePayment()
-            }
-        } else {
-            // For Revolut, initialize order when Card or Revolut Pay is selected
+        // For Revolut, initialize order when Card or Revolut Pay is selected
+        if (PAYMENT_PROVIDER !== 'stripe') {
             if (method === PAYMENT_METHOD_CARD || method === PAYMENT_METHOD_REVOLUT) {
                 await initializeRevolutOrder()
             }
@@ -1152,59 +1150,33 @@ export default function ShoppingCartDrawer({open, onClose}) {
     }, [currentStep, selectedPaymentMethod, revolutPublicKey, revolutMode, personalInfo, getTotalPrice, showBanner, revolutOrderId, revolutOrderToken])
 
     // Payment methods configuration - varies by provider
-    const paymentMethods = PAYMENT_PROVIDER === 'stripe'
-        ? [
-            {
-                id: PAYMENT_METHOD_CARD,
-                title: 'Tarjeta',
-                icons: ['/parties/visa.png', '/parties/mastercard.png'],
-                disabled: false,
-            },
-            {
-                id: PAYMENT_METHOD_GOOGLE_APPLE,
-                title: 'Google Pay / Apple Pay',
-                icons: ['/parties/google-pay.png', '/parties/apple-pay.png'],
-                disabled: false,
-            },
-            {
-                id: PAYMENT_METHOD_LINK,
-                title: 'Link',
-                icons: ['/parties/link-icon.svg'],
-                disabled: false,
-            },
-            {
-                id: PAYMENT_METHOD_PAYPAL,
-                title: 'PayPal',
-                icons: ['/parties/paypal.png'],
-                disabled: true,
-            },
-        ]
-        : [
-            {
-                id: PAYMENT_METHOD_CARD,
-                title: 'Tarjeta',
-                icons: ['/parties/visa.png', '/parties/mastercard.png'],
-                disabled: false,
-            },
-            {
-                id: PAYMENT_METHOD_GOOGLE_APPLE,
-                title: 'Google Pay / Apple Pay',
-                icons: ['/parties/google-pay.png', '/parties/apple-pay.png'],
-                disabled: true,
-            },
-            {
-                id: PAYMENT_METHOD_REVOLUT,
-                title: 'Revolut Pay',
-                icons: ['/parties/revolut.png'],
-                disabled: false,
-            },
-            {
-                id: PAYMENT_METHOD_PAYPAL,
-                title: 'PayPal',
-                icons: ['/parties/paypal.png'],
-                disabled: true,
-            },
-        ]
+    // Payment method cards (only used for Revolut provider)
+    const paymentMethods = [
+        {
+            id: PAYMENT_METHOD_CARD,
+            title: 'Tarjeta',
+            icons: ['/parties/visa.png', '/parties/mastercard.png'],
+            disabled: false,
+        },
+        {
+            id: PAYMENT_METHOD_GOOGLE_APPLE,
+            title: 'Google Pay / Apple Pay',
+            icons: ['/parties/google-pay.png', '/parties/apple-pay.png'],
+            disabled: true,
+        },
+        {
+            id: PAYMENT_METHOD_REVOLUT,
+            title: 'Revolut Pay',
+            icons: ['/parties/revolut.png'],
+            disabled: false,
+        },
+        {
+            id: PAYMENT_METHOD_PAYPAL,
+            title: 'PayPal',
+            icons: ['/parties/paypal.png'],
+            disabled: true,
+        },
+    ]
 
     // Render cart items list (used in all steps)
     const renderCartItems = () => (
@@ -1536,86 +1508,89 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                             {/* Step 3: Payment Method Selection */}
                                             {currentStep === STEP_PAYMENT && (
                                                 <div className="mb-6 space-y-6">
-                                                    {renderPaymentMethodSelection()}
+                                                    {/* Revolut: show payment method cards */}
+                                                    {PAYMENT_PROVIDER !== 'stripe' && renderPaymentMethodSelection()}
 
                                                     {/* === STRIPE PROVIDER === */}
+                                                    {/* Stripe: show Express Checkout + PaymentElement directly (no method cards) */}
                                                     {PAYMENT_PROVIDER === 'stripe' && stripeClientSecret && (
                                                         <Elements
                                                             stripe={getStripePromise()}
                                                             options={{
                                                                 clientSecret: stripeClientSecret,
+                                                                fonts: [
+                                                                    { cssSrc: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap' },
+                                                                ],
                                                                 appearance: {
                                                                     theme: 'stripe',
                                                                     variables: {
                                                                         colorPrimary: '#000000',
+                                                                        fontFamily: 'Inter, system-ui, sans-serif',
                                                                     },
                                                                 },
                                                             }}
                                                         >
-                                                            {/* Stripe Card payment */}
-                                                            {selectedPaymentMethod === PAYMENT_METHOD_CARD && (
-                                                                <div className="mt-4">
-                                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Datos de la tarjeta</h3>
-                                                                    <StripeCardPayment
-                                                                        onReady={() => {}}
-                                                                        onValidChange={(valid) => setIsStripeCardValid(valid)}
-                                                                    />
-                                                                </div>
-                                                            )}
-
-                                                            {/* Stripe Express Checkout (Google Pay / Apple Pay) */}
-                                                            {selectedPaymentMethod === PAYMENT_METHOD_GOOGLE_APPLE && (
-                                                                <div className="mt-4">
-                                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pago rápido</h3>
-                                                                    <StripeExpressCheckout
-                                                                        onConfirm={async () => {
-                                                                            setIsProcessing(true)
+                                                            {/* Express Checkout (Google Pay / Apple Pay) - on top */}
+                                                            <div>
+                                                                <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pago exprés</h3>
+                                                                <StripeExpressCheckout
+                                                                    onConfirm={async () => {
+                                                                        setIsProcessing(true)
+                                                                        try {
                                                                             await placeOrderInDatabase()
                                                                             await handleStripePaymentSuccess()
-                                                                        }}
-                                                                        onReady={(available) => setIsStripeExpressAvailable(available)}
-                                                                        onError={(msg) => {
-                                                                            showBanner(msg)
+                                                                        } catch (err) {
+                                                                            showBanner(err.message || 'Error al procesar el pago')
                                                                             setIsProcessing(false)
-                                                                        }}
-                                                                    />
-                                                                </div>
-                                                            )}
-
-                                                            {/* Stripe Link payment */}
-                                                            {selectedPaymentMethod === PAYMENT_METHOD_LINK && (
-                                                                <div className="mt-4">
-                                                                    <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pagar con Link</h3>
-                                                                    <StripeLinkPayment
-                                                                        email={personalInfo.email}
-                                                                        onReady={() => {}}
-                                                                        onValidChange={(valid) => setIsStripeCardValid(valid)}
-                                                                    />
-                                                                </div>
-                                                            )}
-
-                                                            {/* Stripe Pay button - inner component that has access to useStripe/useElements */}
-                                                            {(selectedPaymentMethod === PAYMENT_METHOD_CARD || selectedPaymentMethod === PAYMENT_METHOD_LINK) && (
-                                                                <StripePayButton
-                                                                    isValid={isStripeCardValid}
-                                                                    isProcessing={isProcessing}
-                                                                    onBeforeSubmit={async () => {
-                                                                        setIsProcessing(true)
-                                                                        await placeOrderInDatabase()
+                                                                        }
                                                                     }}
-                                                                    onSuccess={handleStripePaymentSuccess}
+                                                                    onReady={(available) => setIsStripeExpressAvailable(available)}
                                                                     onError={(msg) => {
                                                                         showBanner(msg)
                                                                         setIsProcessing(false)
                                                                     }}
-                                                                    personalInfo={personalInfo}
                                                                 />
-                                                            )}
+                                                            </div>
+
+                                                            {/* Divider between express and standard payment */}
+                                                            <div className="relative my-4">
+                                                                <div className="absolute inset-0 flex items-center">
+                                                                    <div className="w-full border-t border-gray-200" />
+                                                                </div>
+                                                                <div className="relative flex justify-center text-sm">
+                                                                    <span className="bg-white px-4 text-gray-500">o</span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* PaymentElement (card, Link, Klarna, etc.) - below */}
+                                                            <div>
+                                                                <h3 className="text-sm font-bold underline text-gray-900 mb-2">Pago</h3>
+                                                                <StripeCardPayment
+                                                                    onReady={() => {}}
+                                                                    onValidChange={(valid) => setIsStripeCardValid(valid)}
+                                                                />
+                                                            </div>
+
+                                                            {/* Pay button */}
+                                                            <StripePayButton
+                                                                isValid={isStripeCardValid}
+                                                                isProcessing={isProcessing}
+                                                                onBeforeSubmit={async () => {
+                                                                    setIsProcessing(true)
+                                                                    await placeOrderInDatabase()
+                                                                }}
+                                                                onSuccess={handleStripePaymentSuccess}
+                                                                onError={(msg) => {
+                                                                    showBanner(msg)
+                                                                    setIsProcessing(false)
+                                                                }}
+                                                                personalInfo={personalInfo}
+                                                            />
                                                         </Elements>
                                                     )}
 
                                                     {/* Stripe initializing spinner */}
-                                                    {PAYMENT_PROVIDER === 'stripe' && !stripeClientSecret && selectedPaymentMethod && (
+                                                    {PAYMENT_PROVIDER === 'stripe' && !stripeClientSecret && (
                                                         <div className="flex items-center justify-center py-4">
                                                             <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"/>
                                                             <span className="ml-2 text-sm text-gray-600">Cargando formulario de pago...</span>
@@ -1752,11 +1727,10 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                             </p>
                                                         )}
 
-                                                        {/* Stripe: pay button is rendered inside Elements above for card/link */}
-                                                        {/* Stripe: Express Checkout has its own button */}
+                                                        {/* Stripe: pay button and express checkout are rendered inside Elements above */}
 
-                                                        {/* No payment method selected */}
-                                                        {!selectedPaymentMethod && (
+                                                        {/* No payment method selected (Revolut only) */}
+                                                        {PAYMENT_PROVIDER !== 'stripe' && !selectedPaymentMethod && (
                                                             <>
                                                                 <button
                                                                     disabled={true}
