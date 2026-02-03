@@ -37,6 +37,9 @@ const adminRoutes = require('./routes/admin');
 const sellerRoutes = require('./routes/sellerRoutes');
 const shippingRoutes = require('./routes/shippingRoutes');
 const testAccessRoutes = require('./routes/testAccessRoutes');
+const auctionRoutes = require('./routes/auctionRoutes');
+const setupAuctionSocket = require('./socket/auctionSocket');
+const startAuctionScheduler = require('./scheduler/auctionScheduler');
 
 // Initialize Express app
 const app = express();
@@ -94,34 +97,10 @@ app.use(prototypePollutionGuard);
 
 app.use(passport.initialize());
 
-// Socket.IO connection (ready for future auction implementation)
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
-
-  // Placeholder for future auction events
-  socket.on('join-auction', (auctionId) => {
-    socket.join(`auction-${auctionId}`);
-    console.log(`User ${socket.id} joined auction ${auctionId}`);
-  });
-
-  socket.on('leave-auction', (auctionId) => {
-    socket.leave(`auction-${auctionId}`);
-    console.log(`User ${socket.id} left auction ${auctionId}`);
-  });
-
-  // Placeholder for bidding (to be implemented)
-  socket.on('place-bid', (data) => {
-    console.log('Bid placed:', data);
-    // Future implementation: validate bid, update database, broadcast to room
-  });
-});
-
-// Make io accessible in routes (for future use)
+// Socket.IO - Auction real-time module
+const auctionSocket = setupAuctionSocket(io);
 app.set('io', io);
+app.set('auctionSocket', auctionSocket);
 
 // Health check route
 app.get('/health', (req, res) => {
@@ -151,6 +130,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/seller', sellerRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/test-access', testAccessRoutes);
+app.use('/api/auctions', auctionRoutes);
 
 // 404 handler
 app.use(notFound);
@@ -177,6 +157,9 @@ async function startServer() {
       console.log(`Server is running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV}`);
       console.log(`Socket.IO is ready for real-time communication`);
+
+      // Start auction lifecycle scheduler
+      startAuctionScheduler(app);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

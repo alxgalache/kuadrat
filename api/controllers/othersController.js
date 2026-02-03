@@ -24,6 +24,7 @@ const getAllOthersProducts = async (req, res, next) => {
       FROM others o
       LEFT JOIN users u ON o.seller_id = u.id
       WHERE o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved' AND o.removed = 0
+        AND (o.for_auction = 0 OR o.for_auction IS NULL)
     `;
     const args = [];
 
@@ -135,7 +136,7 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'others');
 
 const createOthersProduct = async (req, res, next) => {
   try {
-    const { name, description, price, variations, weight, dimensions } = req.body;
+    const { name, description, price, variations, weight, dimensions, for_auction } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -313,12 +314,13 @@ const createOthersProduct = async (req, res, next) => {
     const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
 
     // Insert others product
+    const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
     const result = await db.execute({
       sql: `
-        INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions, for_auction)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, basename, slug, weightValue, dimensionsValue],
+      args: [seller_id, name, description, priceNum, basename, slug, weightValue, dimensionsValue, forAuctionVal],
     });
 
     const productId = result.lastInsertRowid;
@@ -479,6 +481,7 @@ const getOthersProductsByAuthorSlug = async (req, res, next) => {
         FROM others o
         LEFT JOIN users u ON o.seller_id = u.id
         WHERE o.seller_id = ? AND o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved' AND o.removed = 0
+          AND (o.for_auction = 0 OR o.for_auction IS NULL)
         ORDER BY o.created_at DESC
       `,
       args: [author.id],

@@ -1330,6 +1330,181 @@ Una vez dentro, podrás empezar a subir tus artículos y gestionar tu catálogo 
   }
 };
 
+// ---------------------------------------------------------------------------
+// Auction Email Templates
+// ---------------------------------------------------------------------------
+
+const sendBidConfirmationEmail = async ({ email, firstName, bidPassword, auctionName, productName, bidAmount }) => {
+  const logoAttachment = getLogoAttachment();
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 40px;">
+    ${getLogoAttachment() ? '<img src="cid:logo" alt="140d" style="width: 120px; margin-bottom: 24px;">' : ''}
+    <h2 style="color: #111827; margin-bottom: 16px;">¡Puja registrada!</h2>
+    <p style="color: #374151; line-height: 1.6;">Hola <strong>${firstName}</strong>,</p>
+    <p style="color: #374151; line-height: 1.6;">Tu puja de <strong>${bidAmount}€</strong> en el producto <strong>${productName}</strong> de la subasta <strong>${auctionName}</strong> ha sido registrada correctamente.</p>
+    <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 24px 0;">
+      <p style="color: #92400e; margin: 0 0 8px 0; font-weight: bold;">Tu contraseña de puja:</p>
+      <p style="color: #92400e; margin: 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center;">${bidPassword}</p>
+      <p style="color: #92400e; margin: 8px 0 0 0; font-size: 12px;">Guarda esta contraseña. La necesitarás para volver a pujar sin tener que registrarte de nuevo.</p>
+    </div>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: `Puja registrada - ${auctionName}`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Error sending bid confirmation email:', error);
+    return { success: false };
+  }
+};
+
+const sendOutbidNotificationEmail = async ({ email, firstName, auctionName, productName, currentPrice, auctionUrl }) => {
+  const logoAttachment = getLogoAttachment();
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const url = auctionUrl || `${clientUrl}/subastas`;
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 40px;">
+    ${getLogoAttachment() ? '<img src="cid:logo" alt="140d" style="width: 120px; margin-bottom: 24px;">' : ''}
+    <h2 style="color: #111827; margin-bottom: 16px;">¡Te han superado!</h2>
+    <p style="color: #374151; line-height: 1.6;">Hola <strong>${firstName}</strong>,</p>
+    <p style="color: #374151; line-height: 1.6;">Otro pujador ha superado tu puja en <strong>${productName}</strong> de la subasta <strong>${auctionName}</strong>.</p>
+    <p style="color: #374151; line-height: 1.6;">El precio actual es de <strong>${currentPrice}€</strong>.</p>
+    <div style="text-align: center; margin: 24px 0;">
+      <a href="${url}" style="background-color: #111827; color: #ffffff; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold;">Volver a pujar</a>
+    </div>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: `Te han superado en ${productName} - ${auctionName}`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Error sending outbid notification email:', error);
+    return { success: false };
+  }
+};
+
+const sendAuctionWonEmail = async ({ email, firstName, auctionName, productName, winningAmount }) => {
+  const logoAttachment = getLogoAttachment();
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 40px;">
+    ${getLogoAttachment() ? '<img src="cid:logo" alt="140d" style="width: 120px; margin-bottom: 24px;">' : ''}
+    <h2 style="color: #111827; margin-bottom: 16px;">¡Enhorabuena, has ganado!</h2>
+    <p style="color: #374151; line-height: 1.6;">Hola <strong>${firstName}</strong>,</p>
+    <p style="color: #374151; line-height: 1.6;">Has ganado la puja del producto <strong>${productName}</strong> en la subasta <strong>${auctionName}</strong> con una puja de <strong>${winningAmount}€</strong>.</p>
+    <p style="color: #374151; line-height: 1.6;">El cobro se realizará automáticamente con el método de pago que registraste. Recibirás un email de confirmación cuando el pago se haya procesado.</p>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: `¡Has ganado! - ${productName}`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Error sending auction won email:', error);
+    return { success: false };
+  }
+};
+
+const sendAuctionEndedNoBidsEmail = async ({ sellerEmail, sellerName, auctionName, productName }) => {
+  const logoAttachment = getLogoAttachment();
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 40px;">
+    ${getLogoAttachment() ? '<img src="cid:logo" alt="140d" style="width: 120px; margin-bottom: 24px;">' : ''}
+    <h2 style="color: #111827; margin-bottom: 16px;">Subasta finalizada</h2>
+    <p style="color: #374151; line-height: 1.6;">Hola <strong>${sellerName}</strong>,</p>
+    <p style="color: #374151; line-height: 1.6;">La subasta <strong>${auctionName}</strong> ha finalizado. Tu producto <strong>${productName}</strong> no recibió pujas.</p>
+    <p style="color: #374151; line-height: 1.6;">El producto seguirá disponible para futuras subastas.</p>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: sellerEmail,
+      subject: `Subasta finalizada sin pujas - ${productName}`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Error sending auction ended no bids email:', error);
+    return { success: false };
+  }
+};
+
+const sendSCARequiredEmail = async ({ email, firstName, auctionName, productName, amount }) => {
+  const logoAttachment = getLogoAttachment();
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 40px;">
+    ${getLogoAttachment() ? '<img src="cid:logo" alt="140d" style="width: 120px; margin-bottom: 24px;">' : ''}
+    <h2 style="color: #111827; margin-bottom: 16px;">Acción requerida para completar el pago</h2>
+    <p style="color: #374151; line-height: 1.6;">Hola <strong>${firstName}</strong>,</p>
+    <p style="color: #374151; line-height: 1.6;">Has ganado <strong>${productName}</strong> en la subasta <strong>${auctionName}</strong> por <strong>${amount}€</strong>.</p>
+    <p style="color: #374151; line-height: 1.6;">Tu banco requiere una verificación adicional para procesar el cobro. Por favor, contacta con nosotros para completar el pago.</p>
+    <p style="color: #374151; line-height: 1.6;">Puedes escribirnos a <a href="mailto:info@140d.art" style="color: #111827;">info@140d.art</a>.</p>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: `Acción requerida - Pago de ${productName}`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Error sending SCA required email:', error);
+    return { success: false };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -1340,4 +1515,9 @@ module.exports = {
   sendItemsSentEmail,
   sendPasswordSetupEmail,
   sendAccountActivatedEmail,
+  sendBidConfirmationEmail,
+  sendOutbidNotificationEmail,
+  sendAuctionWonEmail,
+  sendAuctionEndedNoBidsEmail,
+  sendSCARequiredEmail,
 };

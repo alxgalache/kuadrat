@@ -44,6 +44,7 @@ const getVisibleAuthors = async (req, res, next) => {
         FROM users u
         INNER JOIN art a ON u.id = a.seller_id
         WHERE u.visible = 1 AND a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved'
+          AND (a.for_auction = 0 OR a.for_auction IS NULL)
         ORDER BY u.full_name ASC
       `;
     } else if (category === 'other') {
@@ -61,6 +62,7 @@ const getVisibleAuthors = async (req, res, next) => {
         FROM users u
         INNER JOIN others o ON u.id = o.seller_id
         WHERE u.visible = 1 AND o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved'
+          AND (o.for_auction = 0 OR o.for_auction IS NULL)
         ORDER BY u.full_name ASC
       `;
     } else {

@@ -719,6 +719,133 @@ export const adminAPI = {
       });
     },
   },
+
+  // Auction management
+  auctions: {
+    getAll: async (status) => {
+      const params = status ? `?status=${status}` : '';
+      return apiRequest(`/admin/auctions${params}`);
+    },
+
+    getById: async (id) => {
+      return apiRequest(`/admin/auctions/${id}`);
+    },
+
+    create: async (auctionData) => {
+      return apiRequest('/admin/auctions', {
+        method: 'POST',
+        body: JSON.stringify(auctionData),
+      });
+    },
+
+    update: async (id, auctionData) => {
+      return apiRequest(`/admin/auctions/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(auctionData),
+      });
+    },
+
+    delete: async (id) => {
+      return apiRequest(`/admin/auctions/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    start: async (id) => {
+      return apiRequest(`/admin/auctions/${id}/start`, {
+        method: 'POST',
+      });
+    },
+
+    cancel: async (id) => {
+      return apiRequest(`/admin/auctions/${id}/cancel`, {
+        method: 'POST',
+      });
+    },
+
+    getProductsForAuction: async (excludeAuctionId = null) => {
+      const params = excludeAuctionId ? `?excludeAuctionId=${excludeAuctionId}` : '';
+      return apiRequest(`/admin/products/for-auction${params}`);
+    },
+  },
+
+  // Postal codes management
+  postalCodes: {
+    getAll: async (country) => {
+      const params = country ? `?country=${country}` : '';
+      return apiRequest(`/admin/postal-codes${params}`);
+    },
+
+    search: async (query) => {
+      return apiRequest(`/admin/postal-codes/search?q=${encodeURIComponent(query)}`);
+    },
+
+    getByIds: async (ids) => {
+      if (!ids || ids.length === 0) return { postalCodes: [] };
+      return apiRequest(`/admin/postal-codes/by-ids?ids=${ids.join(',')}`);
+    },
+
+    create: async (data) => {
+      return apiRequest('/admin/postal-codes', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+  },
+};
+
+// Public Auctions API (no auth required)
+export const auctionsAPI = {
+  getByDateRange: async (from, to) => {
+    return apiRequest(`/auctions?from=${from}&to=${to}`);
+  },
+
+  getById: async (id) => {
+    return apiRequest(`/auctions/${id}`);
+  },
+
+  getProductBids: async (auctionId, productId, productType, limit = 20) => {
+    return apiRequest(`/auctions/${auctionId}/products/${productId}/${productType}/bids?limit=${limit}`);
+  },
+
+  registerBuyer: async (auctionId, buyerData) => {
+    return apiRequest(`/auctions/${auctionId}/register-buyer`, {
+      method: 'POST',
+      body: JSON.stringify(buyerData),
+    });
+  },
+
+  verifyBuyer: async (auctionId, email, bidPassword) => {
+    return apiRequest(`/auctions/${auctionId}/verify-buyer`, {
+      method: 'POST',
+      body: JSON.stringify({ email, bidPassword }),
+    });
+  },
+
+  setupPayment: async (auctionId, auctionBuyerId) => {
+    return apiRequest(`/auctions/${auctionId}/setup-payment`, {
+      method: 'POST',
+      body: JSON.stringify({ auctionBuyerId }),
+    });
+  },
+
+  confirmPayment: async (auctionId, auctionBuyerId, paymentIntentId) => {
+    return apiRequest(`/auctions/${auctionId}/confirm-payment`, {
+      method: 'POST',
+      body: JSON.stringify({ auctionBuyerId, paymentIntentId }),
+    });
+  },
+
+  placeBid: async (auctionId, bidData) => {
+    return apiRequest(`/auctions/${auctionId}/bid`, {
+      method: 'POST',
+      body: JSON.stringify(bidData),
+    });
+  },
+
+  getPostalCodes: async (auctionId, productId, productType) => {
+    return apiRequest(`/auctions/${auctionId}/postal-codes/${productId}/${productType}`);
+  },
 };
 
 // Seller API (requires seller role)

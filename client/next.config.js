@@ -16,11 +16,17 @@ const nextConfig = {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const apiOrigin = new URL(apiUrl).origin;
 
+    // WebSocket URLs derived from API origin
+    const wsOrigin = apiOrigin.replace(/^http/, 'ws');
+
     const cspConnectSrc = [
       "'self'",
       apiOrigin,
+      wsOrigin,
       'https://api.pre.140d.art',
       'https://api.140d.art',
+      'wss://api.pre.140d.art',
+      'wss://api.140d.art',
       'https://*.sentry.io',
       'https://*.revolut.com',
       'https://maps.googleapis.com',

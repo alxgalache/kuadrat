@@ -19,6 +19,7 @@ function PublishProductPageContent() {
     const [type, setType] = useState('')
     const [weight, setWeight] = useState('')
     const [dimensions, setDimensions] = useState('')
+    const [forAuction, setForAuction] = useState(false)
     const [imageFile, setImageFile] = useState(null)
     const [previewUrl, setPreviewUrl] = useState('')
     const [loading, setLoading] = useState(false)
@@ -268,6 +269,10 @@ function PublishProductPageContent() {
                 formData.append('dimensions', dimensions.trim())
             }
 
+            if (forAuction) {
+                formData.append('for_auction', '1')
+            }
+
             if (productCategory === 'art') {
                 // Submit to art API
                 formData.append('type', type.trim())
@@ -483,6 +488,21 @@ function PublishProductPageContent() {
                                                 />
                                             </div>
                                         </div>
+                                    </div>
+
+                                    {/* For Auction Toggle */}
+                                    <div className="flex items-center">
+                                        <input
+                                            id="forAuction"
+                                            name="forAuction"
+                                            type="checkbox"
+                                            checked={forAuction}
+                                            onChange={(e) => setForAuction(e.target.checked)}
+                                            className="size-4 rounded border-gray-300 text-black focus:ring-black"
+                                        />
+                                        <label htmlFor="forAuction" className="ml-3 text-sm/6 font-medium text-gray-900">
+                                            Disponible para subastas
+                                        </label>
                                     </div>
 
                                     {/* Stock/Variations for Others */}

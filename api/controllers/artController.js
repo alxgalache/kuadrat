@@ -24,6 +24,7 @@ const getAllArtProducts = async (req, res, next) => {
       FROM art a
       LEFT JOIN users u ON a.seller_id = u.id
       WHERE a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved' AND a.removed = 0
+        AND (a.for_auction = 0 OR a.for_auction IS NULL)
     `;
     const args = [];
 
@@ -112,7 +113,7 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'art');
 
 const createArtProduct = async (req, res, next) => {
   try {
-    const { name, description, price, type, weight, dimensions } = req.body;
+    const { name, description, price, type, weight, dimensions, for_auction } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -272,12 +273,13 @@ const createArtProduct = async (req, res, next) => {
     const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
 
     // Insert art product
+    const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
     const result = await db.execute({
       sql: `
-        INSERT INTO art (seller_id, name, description, price, type, basename, slug, weight, dimensions)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO art (seller_id, name, description, price, type, basename, slug, weight, dimensions, for_auction)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, type, basename, slug, weightValue, dimensionsValue],
+      args: [seller_id, name, description, priceNum, type, basename, slug, weightValue, dimensionsValue, forAuctionVal],
     });
 
     // Get the created product
@@ -396,6 +398,7 @@ const getArtProductsByAuthorSlug = async (req, res, next) => {
         FROM art a
         LEFT JOIN users u ON a.seller_id = u.id
         WHERE a.seller_id = ? AND a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved' AND a.removed = 0
+          AND (a.for_auction = 0 OR a.for_auction IS NULL)
         ORDER BY a.created_at DESC
       `,
       args: [author.id],

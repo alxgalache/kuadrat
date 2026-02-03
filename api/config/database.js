@@ -243,32 +243,161 @@ async function initializeDatabase() {
       )
     `);
 
-    // Create auctions table (for future functionality)
+    // Note: Legacy bids/auctions tables have been migrated to the new schema.
+    // The DROP TABLE statements were removed to prevent foreign key constraint errors
+    // since the new schema is now in use with data.
+
+    // Create postal_codes reference table (may already exist if created manually)
     await db.execute(`
-      CREATE TABLE IF NOT EXISTS auctions (
+      CREATE TABLE IF NOT EXISTS postal_codes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL UNIQUE,
-        start_date DATETIME NOT NULL,
-        end_date DATETIME NOT NULL,
-        starting_bid REAL NOT NULL,
-        current_highest_bid REAL,
-        winning_user_id INTEGER,
-        status TEXT NOT NULL DEFAULT 'scheduled',
-        FOREIGN KEY (product_id) REFERENCES products(id),
-        FOREIGN KEY (winning_user_id) REFERENCES users(id)
+        postal_code TEXT NOT NULL DEFAULT '0',
+        city TEXT,
+        province TEXT,
+        country TEXT NOT NULL DEFAULT 'ES'
       )
     `);
 
-    // Create bids table (for future functionality)
+    // Create auctions table
     await db.execute(`
-      CREATE TABLE IF NOT EXISTS bids (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        auction_id INTEGER NOT NULL,
+      CREATE TABLE IF NOT EXISTS auctions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        start_datetime DATETIME NOT NULL,
+        end_datetime DATETIME NOT NULL,
+        original_end_datetime DATETIME,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','active','finished','cancelled')),
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create auction_users table (seller/authors whose products are in the auction)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_users (
+        id TEXT PRIMARY KEY,
+        auction_id TEXT NOT NULL,
         user_id INTEGER NOT NULL,
+        FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+
+    // Create auction_arts table (art products assigned to an auction)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_arts (
+        id TEXT PRIMARY KEY,
+        auction_id TEXT NOT NULL,
+        art_id INTEGER NOT NULL,
+        start_price REAL NOT NULL,
+        current_price REAL,
+        end_price REAL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','sold','unsold')),
+        position INTEGER NOT NULL DEFAULT 0,
+        step_new_bid REAL NOT NULL DEFAULT 10,
+        FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE,
+        FOREIGN KEY (art_id) REFERENCES art(id)
+      )
+    `);
+
+    // Create auction_others table (other products assigned to an auction)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_others (
+        id TEXT PRIMARY KEY,
+        auction_id TEXT NOT NULL,
+        other_id INTEGER NOT NULL,
+        start_price REAL NOT NULL,
+        current_price REAL,
+        end_price REAL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','sold','unsold')),
+        position INTEGER NOT NULL DEFAULT 0,
+        step_new_bid REAL NOT NULL DEFAULT 10,
+        FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE,
+        FOREIGN KEY (other_id) REFERENCES others(id)
+      )
+    `);
+
+    // Create auction_buyers table (anonymous bidders)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_buyers (
+        id TEXT PRIMARY KEY,
+        auction_id TEXT NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        bid_password TEXT NOT NULL,
+        delivery_address_1 TEXT,
+        delivery_address_2 TEXT,
+        delivery_postal_code TEXT,
+        delivery_city TEXT,
+        delivery_province TEXT,
+        delivery_country TEXT,
+        delivery_lat REAL,
+        delivery_long REAL,
+        invoicing_address_1 TEXT,
+        invoicing_address_2 TEXT,
+        invoicing_postal_code TEXT,
+        invoicing_city TEXT,
+        invoicing_province TEXT,
+        invoicing_country TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create auction_bids table (polymorphic product reference)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_bids (
+        id TEXT PRIMARY KEY,
+        auction_id TEXT NOT NULL,
+        auction_buyer_id TEXT NOT NULL,
+        product_id INTEGER NOT NULL,
+        product_type TEXT NOT NULL CHECK(product_type IN ('art','other')),
         amount REAL NOT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (auction_id) REFERENCES auctions(id),
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE,
+        FOREIGN KEY (auction_buyer_id) REFERENCES auction_buyers(id)
+      )
+    `);
+
+    // Create auction_arts_postal_codes table (allowed postal codes per art product in auction)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_arts_postal_codes (
+        id TEXT PRIMARY KEY,
+        auction_id TEXT NOT NULL,
+        art_id INTEGER NOT NULL,
+        postal_code_id INTEGER NOT NULL,
+        FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE,
+        FOREIGN KEY (art_id) REFERENCES art(id),
+        FOREIGN KEY (postal_code_id) REFERENCES postal_codes(id)
+      )
+    `);
+
+    // Create auction_others_postal_codes table (allowed postal codes per other product in auction)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_others_postal_codes (
+        id TEXT PRIMARY KEY,
+        auction_id TEXT NOT NULL,
+        other_id INTEGER NOT NULL,
+        postal_code_id INTEGER NOT NULL,
+        FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE,
+        FOREIGN KEY (other_id) REFERENCES others(id),
+        FOREIGN KEY (postal_code_id) REFERENCES postal_codes(id)
+      )
+    `);
+
+    // Create auction_authorised_payment_data table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_authorised_payment_data (
+        id TEXT PRIMARY KEY,
+        auction_buyer_id TEXT NOT NULL,
+        name TEXT,
+        last_four TEXT,
+        stripe_setup_intent_id TEXT,
+        stripe_payment_method_id TEXT,
+        stripe_customer_id TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (auction_buyer_id) REFERENCES auction_buyers(id)
       )
     `);
 
@@ -636,6 +765,46 @@ async function initializeDatabase() {
     } catch (err) {
       if (!err.message.includes('duplicate column')) {
         console.log('commission_amount column already exists in other_order_items or error:', err.message);
+      }
+    }
+
+    // Add for_auction column to art table
+    try {
+      await db.execute(`ALTER TABLE art ADD COLUMN for_auction INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added for_auction column to art table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('for_auction column already exists in art table or error:', err.message);
+      }
+    }
+
+    // Add for_auction column to others table
+    try {
+      await db.execute(`ALTER TABLE others ADD COLUMN for_auction INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added for_auction column to others table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('for_auction column already exists in others table or error:', err.message);
+      }
+    }
+
+    // Add shipping_observations column to auction_arts table
+    try {
+      await db.execute(`ALTER TABLE auction_arts ADD COLUMN shipping_observations TEXT`);
+      console.log('Added shipping_observations column to auction_arts table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('shipping_observations column already exists in auction_arts table or error:', err.message);
+      }
+    }
+
+    // Add shipping_observations column to auction_others table
+    try {
+      await db.execute(`ALTER TABLE auction_others ADD COLUMN shipping_observations TEXT`);
+      console.log('Added shipping_observations column to auction_others table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('shipping_observations column already exists in auction_others table or error:', err.message);
       }
     }
 

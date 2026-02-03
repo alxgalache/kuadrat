@@ -8,6 +8,7 @@ const { authenticate } = require('../middleware/authorization')
 const adminAuth = require('../middleware/adminAuth')
 const { db } = require('../config/database')
 const { sendPasswordSetupEmail } = require('../services/emailService')
+const auctionAdminController = require('../controllers/auctionAdminController')
 
 // Configure multer for author avatar uploads
 const authorStorage = multer.diskStorage({
@@ -496,6 +497,13 @@ router.get('/authors/:id/products', async (req, res) => {
 // ===== PRODUCT ROUTES =====
 
 /**
+ * GET /api/admin/products/for-auction
+ * List products eligible for auction
+ * NOTE: Must be registered BEFORE the parameterized :id route
+ */
+router.get('/products/for-auction', auctionAdminController.getProductsForAuction);
+
+/**
  * GET /api/admin/products/:id
  * Get product details by ID
  */
@@ -533,7 +541,7 @@ router.get('/products/:id', async (req, res) => {
 router.put('/products/:id', productUpload.single('image'), async (req, res) => {
   try {
     const productId = req.params.id
-    const { name, description, price, type, visible, is_sold, status } = req.body
+    const { name, description, price, type, visible, is_sold, status, for_auction } = req.body
 
     // Verify product exists
     const checkResult = await db.execute({
@@ -566,9 +574,10 @@ router.put('/products/:id', productUpload.single('image'), async (req, res) => {
     }
 
     // Update product
+    const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0
     await db.execute({
       sql: `UPDATE products
-            SET name = ?, description = ?, price = ?, type = ?, basename = ?, visible = ?, is_sold = ?, status = ?
+            SET name = ?, description = ?, price = ?, type = ?, basename = ?, visible = ?, is_sold = ?, status = ?, for_auction = ?
             WHERE id = ?`,
       args: [
         name,
@@ -579,6 +588,7 @@ router.put('/products/:id', productUpload.single('image'), async (req, res) => {
         visible ? 1 : 0,
         is_sold ? 1 : 0,
         status,
+        forAuctionVal,
         productId
       ]
     })
@@ -692,5 +702,74 @@ router.put('/shipping/zones/:zoneId', updateShippingZone);
  * Delete a shipping zone
  */
 router.delete('/shipping/zones/:zoneId', deleteShippingZone);
+
+// ===== AUCTION ROUTES =====
+
+/**
+ * POST /api/admin/auctions
+ * Create a new auction
+ */
+router.post('/auctions', auctionAdminController.createAuction);
+
+/**
+ * GET /api/admin/auctions
+ * List all auctions
+ */
+router.get('/auctions', auctionAdminController.listAuctions);
+
+/**
+ * GET /api/admin/auctions/:id
+ * Get auction details
+ */
+router.get('/auctions/:id', auctionAdminController.getAuction);
+
+/**
+ * PUT /api/admin/auctions/:id
+ * Update auction
+ */
+router.put('/auctions/:id', auctionAdminController.updateAuction);
+
+/**
+ * DELETE /api/admin/auctions/:id
+ * Delete auction
+ */
+router.delete('/auctions/:id', auctionAdminController.deleteAuction);
+
+/**
+ * POST /api/admin/auctions/:id/start
+ * Start auction
+ */
+router.post('/auctions/:id/start', auctionAdminController.startAuction);
+
+/**
+ * POST /api/admin/auctions/:id/cancel
+ * Cancel auction
+ */
+router.post('/auctions/:id/cancel', auctionAdminController.cancelAuction);
+
+/**
+ * GET /api/admin/postal-codes/search
+ * Search postal codes by postal_code or city (async multi-select)
+ * NOTE: Must be registered BEFORE the base /postal-codes route
+ */
+router.get('/postal-codes/search', auctionAdminController.searchPostalCodes);
+
+/**
+ * GET /api/admin/postal-codes/by-ids
+ * Get postal codes by IDs (for loading pre-selected values)
+ */
+router.get('/postal-codes/by-ids', auctionAdminController.getPostalCodesByIds);
+
+/**
+ * GET /api/admin/postal-codes
+ * List all postal codes
+ */
+router.get('/postal-codes', auctionAdminController.listPostalCodes);
+
+/**
+ * POST /api/admin/postal-codes
+ * Create postal code
+ */
+router.post('/postal-codes', auctionAdminController.createPostalCode);
 
 module.exports = router
