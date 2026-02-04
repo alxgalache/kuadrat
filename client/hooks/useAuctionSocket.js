@@ -4,7 +4,18 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { io } from 'socket.io-client'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
-const SOCKET_URL = API_URL.replace('/api', '')
+
+// Extract just the origin (protocol + host) from the API URL
+const getSocketUrl = () => {
+  try {
+    const url = new URL(API_URL)
+    return url.origin
+  } catch {
+    // Fallback for malformed URLs - try simple string replacement
+    return API_URL.replace(/\/api\/?$/, '')
+  }
+}
+const SOCKET_URL = getSocketUrl()
 
 /**
  * Custom hook for real-time auction updates via Socket.IO.
@@ -34,6 +45,11 @@ export default function useAuctionSocket(auctionId) {
 
   useEffect(() => {
     if (!auctionId) return
+
+    // Debug: log the socket URL being used
+    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      console.log('[useAuctionSocket] Connecting to:', SOCKET_URL)
+    }
 
     const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
