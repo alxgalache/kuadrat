@@ -3,6 +3,7 @@ const { ApiError } = require('../middleware/errorHandler');
 const { sendPurchaseConfirmation, sendPaymentConfirmation, sendTrackingUpdateEmail, sendItemsSentEmail } = require('../services/emailService');
 const { sendBuyerToSellerContactEmail } = require('../services/emailService');
 const { createRevolutOrder, updateRevolutOrder } = require('../services/revolutService');
+const { updatePaymentIntent, findOrCreateCustomer } = require('../services/stripeService');
 const crypto = require('crypto');
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
@@ -827,8 +828,9 @@ const placeOrder = async (req, res, next) => {
         revolut_order_id,
         revolut_order_token,
         payment_provider,
-        stripe_payment_intent_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        stripe_payment_intent_id,
+        stripe_customer_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         buyerEmail,
         buyerPhone ?? null,
@@ -854,6 +856,7 @@ const placeOrder = async (req, res, next) => {
         revolut_order_token || null,
         provider,
         stripe_payment_intent_id || null,
+        null, // stripe_customer_id - populated below after findOrCreateCustomer
       ],
     });
 
@@ -923,7 +926,7 @@ const placeOrder = async (req, res, next) => {
       });
     }
 
-    // 3) PATCH Revolut order with full payload (skip for Stripe - no equivalent needed)
+    // 3) Enrich payment provider order/intent with customer and shipping data
     if (provider === 'revolut' && revolut_order_id) {
       const revPayload = {
         amount: amountMinor,
@@ -938,6 +941,72 @@ const placeOrder = async (req, res, next) => {
       };
 
       await updateRevolutOrder(revolut_order_id, revPayload);
+    }
+
+    if (provider === 'stripe' && stripe_payment_intent_id) {
+      // Find or create a Stripe Customer so every checkout is linked to a single customer record
+      let stripeCustomerId = null;
+      try {
+        const stripeCustomer = await findOrCreateCustomer({
+          email: buyerEmail,
+          name: customerBlock?.full_name || undefined,
+          phone: buyerPhone || undefined,
+        });
+        stripeCustomerId = stripeCustomer.id;
+
+        // Persist the Stripe customer ID in our DB order
+        await db.execute({
+          sql: `UPDATE orders SET stripe_customer_id = ? WHERE id = ?`,
+          args: [stripeCustomerId, orderId],
+        });
+      } catch (custErr) {
+        console.warn('Failed to find/create Stripe customer:', custErr.message);
+      }
+
+      // Build Stripe shipping object from delivery or invoicing address
+      const shippingAddr = delivery_address || invoicing_address;
+      const stripeShipping = shippingAddr ? {
+        name: customerBlock?.full_name || buyerEmail,
+        phone: buyerPhone || undefined,
+        address: {
+          line1: shippingAddr.line1 || '',
+          line2: shippingAddr.line2 || '',
+          city: shippingAddr.city || '',
+          state: shippingAddr.province || '',
+          postal_code: shippingAddr.postalCode || '',
+          country: (shippingAddr.country || 'ES').toUpperCase(),
+        },
+      } : undefined;
+
+      // Build metadata with invoicing address and customer info
+      const invAddr = invoicing_address || delivery_address;
+      const stripeMetadata = {
+        customer_name: customerBlock?.full_name || '',
+        customer_email: buyerEmail,
+        customer_phone: buyerPhone || '',
+        order_id: String(orderId),
+        ...(invAddr ? {
+          invoicing_line1: invAddr.line1 || '',
+          invoicing_line2: invAddr.line2 || '',
+          invoicing_city: invAddr.city || '',
+          invoicing_province: invAddr.province || '',
+          invoicing_postal_code: invAddr.postalCode || '',
+          invoicing_country: (invAddr.country || 'ES').toUpperCase(),
+        } : {}),
+      };
+
+      try {
+        await updatePaymentIntent(stripe_payment_intent_id, {
+          customer: stripeCustomerId || undefined,
+          shipping: stripeShipping,
+          receipt_email: buyerEmail,
+          description,
+          metadata: stripeMetadata,
+        });
+      } catch (stripeUpdateErr) {
+        // Log but don't fail the order - the payment can still proceed
+        console.warn('Failed to update Stripe PaymentIntent with customer data:', stripeUpdateErr.message);
+      }
     }
 
     // 4) Load order details (without sending any emails yet)

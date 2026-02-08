@@ -1334,24 +1334,79 @@ Una vez dentro, podrás empezar a subir tus artículos y gestionar tu catálogo 
 // Auction Email Templates
 // ---------------------------------------------------------------------------
 
-const sendBidConfirmationEmail = async ({ email, firstName, bidPassword, auctionName, productName, bidAmount }) => {
+const sendBidConfirmationEmail = async ({ email, firstName, bidPassword, auctionName, productName, bidAmount, productType, productBasename, sellerName }) => {
   const logoAttachment = getLogoAttachment();
+  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
+
+  const imageUrl = productBasename
+    ? (productType === 'art'
+        ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(productBasename)}`
+        : `${SITE_API_URL}/api/others/images/${encodeURIComponent(productBasename)}`)
+    : null;
+
   const html = `<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4;">
-  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 40px;">
-    ${getLogoAttachment() ? '<img src="cid:logo" alt="140d" style="width: 120px; margin-bottom: 24px;">' : ''}
-    <h2 style="color: #111827; margin-bottom: 16px;">¡Puja registrada!</h2>
-    <p style="color: #374151; line-height: 1.6;">Hola <strong>${firstName}</strong>,</p>
-    <p style="color: #374151; line-height: 1.6;">Tu puja de <strong>${bidAmount}€</strong> en el producto <strong>${productName}</strong> de la subasta <strong>${auctionName}</strong> ha sido registrada correctamente.</p>
-    <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 24px 0;">
-      <p style="color: #92400e; margin: 0 0 8px 0; font-weight: bold;">Tu contraseña de puja:</p>
-      <p style="color: #92400e; margin: 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center;">${bidPassword}</p>
-      <p style="color: #92400e; margin: 8px 0 0 0; font-size: 12px;">Guarda esta contraseña. La necesitarás para volver a pujar sin tener que registrarte de nuevo.</p>
-    </div>
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
-  </div>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Puja registrada</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 20px 40px 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">¡Puja registrada!</h1>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Hola <strong>${firstName}</strong>,</p>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Tu puja ha sido registrada correctamente en la subasta <strong>${auctionName}</strong>.</p>
+
+              <!-- Product card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 24px;">
+                <tr>
+                  ${imageUrl ? `<td width="120" style="vertical-align: top;">
+                    <img src="${imageUrl}" alt="${productName}" style="width: 120px; height: 120px; object-fit: cover; display: block;">
+                  </td>` : ''}
+                  <td style="vertical-align: top; padding: 16px;">
+                    <div style="font-weight: 600; color: #111827; font-size: 16px; margin-bottom: 4px;">${productName}</div>
+                    ${sellerName ? `<div style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">${sellerName}</div>` : ''}
+                    <div style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">Subasta: ${auctionName}</div>
+                    <div style="font-size: 18px; font-weight: 700; color: #111827; margin-top: 8px;">${bidAmount}\u00a0€</div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Password box -->
+              <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 0 0 24px;">
+                <p style="color: #92400e; margin: 0 0 8px 0; font-weight: bold;">Tu contraseña de puja:</p>
+                <p style="color: #92400e; margin: 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center;">${bidPassword}</p>
+                <p style="color: #92400e; margin: 8px 0 0 0; font-size: 12px;">Guarda esta contraseña. La necesitarás para volver a pujar sin tener que registrarte de nuevo.</p>
+              </div>
+
+              <p style="color: #6b7280; font-size: 12px; margin-top: 32px; text-align: center;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`;
 

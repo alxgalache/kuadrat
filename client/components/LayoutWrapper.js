@@ -7,6 +7,7 @@ import Footer from '@/components/Footer'
 // Routes where Navbar and Footer should be hidden
 const ROUTES_WITHOUT_LAYOUT = [
   '/user-activation',
+  '/legal',
 ]
 
 export default function LayoutWrapper({ children, isPublished }) {

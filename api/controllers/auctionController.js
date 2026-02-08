@@ -1,6 +1,7 @@
 const { ApiError } = require('../middleware/errorHandler');
 const auctionService = require('../services/auctionService');
 const stripeService = require('../services/stripeService');
+const { sendBidConfirmationEmail } = require('../services/emailService');
 
 // ---------------------------------------------------------------------------
 // GET /api/auctions?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -156,8 +157,8 @@ const setupPayment = async (req, res, next) => {
       throw new ApiError(404, 'Comprador no encontrado', 'Comprador no encontrado');
     }
 
-    // Create (or reuse) Stripe customer
-    const customer = await stripeService.createStripeCustomer({
+    // Find existing Stripe customer by email or create a new one
+    const customer = await stripeService.findOrCreateCustomer({
       email: buyer.email,
       name: `${buyer.first_name} ${buyer.last_name}`,
       metadata: { auction_id: id, auction_buyer_id: auctionBuyerId },
@@ -303,6 +304,22 @@ const placeBid = async (req, res, next) => {
         auctionSocket.broadcastAuctionExtended(id, { newEndDatetime: newEnd });
       }
     }
+
+    // Send bid confirmation email (non-blocking)
+    const auctionProduct = auction.products?.find(
+      (p) => (p.art_id === parseInt(productId, 10) || p.other_id === parseInt(productId, 10)) && p.product_type === productType
+    );
+    sendBidConfirmationEmail({
+      email: buyer.email,
+      firstName: buyer.first_name,
+      bidPassword: buyer.bid_password,
+      auctionName: auction.name,
+      productName: auctionProduct?.name || 'Producto',
+      bidAmount: bidAmount,
+      productType,
+      productBasename: auctionProduct?.basename || null,
+      sellerName: auctionProduct?.seller_name || null,
+    }).catch((err) => console.error('Error sending bid confirmation email:', err));
 
     res.status(200).json({
       success: true,

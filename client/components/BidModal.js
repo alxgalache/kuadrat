@@ -300,7 +300,11 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
           className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
         />
         <span className="text-sm text-gray-700">
-          Acepto los terminos y condiciones de la subasta y entiendo que cada puja es vinculante.
+          Acepto los{' '}
+          <a href="/legal/terminos-y-condiciones" target="_blank" rel="noopener noreferrer" className="underline font-medium text-gray-900 hover:text-gray-600">
+            términos y condiciones
+          </a>
+          {' '}de la subasta y entiendo que cada puja es vinculante.
         </span>
       </label>
       <label className="flex items-start gap-3 cursor-pointer">
@@ -311,7 +315,11 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
           className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
         />
         <span className="text-sm text-gray-700">
-          Acepto la politica de privacidad y el tratamiento de mis datos personales.
+          Acepto la{' '}
+          <a href="/legal/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="underline font-medium text-gray-900 hover:text-gray-600">
+            política de privacidad
+          </a>
+          {' '}y el tratamiento de mis datos personales.
         </span>
       </label>
       <button

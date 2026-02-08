@@ -748,6 +748,16 @@ async function initializeDatabase() {
       }
     }
 
+    // Add stripe_customer_id column to orders table
+    try {
+      await db.execute(`ALTER TABLE orders ADD COLUMN stripe_customer_id TEXT`);
+      console.log('Added stripe_customer_id column to orders table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('stripe_customer_id column already exists or error:', err.message);
+      }
+    }
+
     // Add commission_amount column to art_order_items table
     try {
       await db.execute(`ALTER TABLE art_order_items ADD COLUMN commission_amount REAL`);

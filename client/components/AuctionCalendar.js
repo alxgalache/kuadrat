@@ -89,7 +89,7 @@ export default function AuctionCalendar({ selectedDate, onSelectDate, auctionDat
   return (
     <div className="select-none">
       {/* Header: month navigation */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <button
           type="button"
           onClick={handlePrevMonth}

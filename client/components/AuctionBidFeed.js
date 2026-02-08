@@ -26,35 +26,39 @@ export default function AuctionBidFeed({ bids = [] }) {
   }
 
   return (
-    <div ref={feedRef} className="max-h-72 overflow-y-auto py-4">
-      <div className="relative pl-6">
-        {/* Vertical line */}
-        <div className="absolute left-2.5 top-0 bottom-0 w-px bg-gray-200" />
-
+    <div ref={feedRef} className="max-h-72 overflow-y-auto">
+      <ul role="list" className="space-y-6">
         {bids.map((bid, index) => (
-          <div
+          <li
             key={`${bid.created_at}-${index}`}
-            className="relative mb-4 last:mb-0 transition-opacity duration-300"
+            className="relative flex gap-x-4"
             style={{
               animation: index === 0 ? 'fadeSlideIn 0.3s ease-out' : 'none',
             }}
           >
-            {/* Circle dot */}
-            <div className="absolute -left-3.5 top-1 h-3 w-3 rounded-full border-2 border-gray-900 bg-white" />
-
-            <div className="ml-2">
-              <p className="text-sm text-gray-900">
-                <span className="font-semibold">{bid.buyer_first_name}</span>{' '}
-                {' realizo una puja de '}
-                <span className="font-semibold">{formatCurrency(bid.amount)}</span>
-              </p>
-              <p className="mt-0.5 text-xs text-gray-500">
-                {relativeTime(bid.created_at)}
-              </p>
+            <div
+              className={`absolute top-0 left-0 flex w-6 justify-center ${
+                index === bids.length - 1 ? 'h-6' : '-bottom-6'
+              }`}
+            >
+              <div className="w-px bg-gray-200" />
             </div>
-          </div>
+
+            <div className="relative flex size-6 flex-none items-center justify-center bg-white">
+              <div className="size-1.5 rounded-full bg-gray-100 ring ring-gray-300" />
+            </div>
+
+            <p className="flex-auto py-0.5 text-xs/5 text-gray-500">
+              <span className="font-medium text-gray-900">{bid.buyer_first_name}</span>
+              {' realizo una puja de '}
+              <span className="font-medium text-gray-900">{formatCurrency(bid.amount)}</span>
+            </p>
+            <time className="flex-none py-0.5 text-xs/5 text-gray-500">
+              {relativeTime(bid.created_at)}
+            </time>
+          </li>
         ))}
-      </div>
+      </ul>
 
       {/* Animation keyframe injected once */}
       <style jsx>{`

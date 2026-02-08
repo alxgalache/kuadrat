@@ -67,6 +67,11 @@ function getImageUrl(product) {
   return getOthersImageUrl(product.basename)
 }
 
+function stripHtmlTags(html) {
+  if (!html) return ''
+  return html.replace(/<[^>]*>/g, '')
+}
+
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
@@ -349,17 +354,27 @@ export default function SubastasPage() {
 
           {/* Right: product info + bid controls */}
           <div className="flex flex-col">
-            <h2 className="text-xl font-bold text-gray-900">{currentProduct?.name}</h2>
+            <h2 className="text-xl mt-2 font-bold text-gray-900">{currentProduct?.name}</h2>
 
             {currentProduct?.seller_name && (
               <p className="mt-1 text-sm text-gray-500">{currentProduct.seller_name}</p>
             )}
 
-            {currentProduct?.description && (
-              <div className="mt-3 text-sm text-gray-700">
-                <SafeProductDescription html={currentProduct.description} />
-              </div>
-            )}
+            {currentProduct?.description && (() => {
+              const plainText = stripHtmlTags(currentProduct.description)
+              if (plainText.length > 350) {
+                return (
+                  <div className="mt-4 text-sm text-gray-700">
+                    <p>{plainText.substring(0, 350)}(...)</p>
+                  </div>
+                )
+              }
+              return (
+                <div className="mt-3 text-sm text-gray-700">
+                  <SafeProductDescription html={currentProduct.description} />
+                </div>
+              )
+            })()}
 
             {currentProduct?.shipping_observations && (
               <div className="mt-3 rounded-md bg-amber-50 p-3">
@@ -379,7 +394,7 @@ export default function SubastasPage() {
             </div>
 
             {/* Bid button / ended message */}
-            <div className="mt-6">
+            <div className="mt-4">
               {auctionEnded ? (
                 <div className="rounded-md bg-gray-100 px-4 py-3 text-sm font-medium text-gray-600">
                   Subasta finalizada
@@ -388,28 +403,40 @@ export default function SubastasPage() {
                 <button
                   type="button"
                   onClick={() => setBidModalOpen(true)}
-                  className="w-full rounded-md bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 sm:w-auto"
+                  className="w-full rounded-md bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
                 >
                   Pujar {formatCurrency(displayNextBid)}
                 </button>
               )}
             </div>
 
-            {/* Connection indicator */}
-            {selectedAuction && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
-                <span className="text-xs text-gray-400">
-                  {isConnected ? 'En directo' : 'Conectando...'}
-                </span>
-              </div>
-            )}
           </div>
         </div>
 
         {/* Bid feed */}
         <div className="mt-10">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2">Historial de pujas</h3>
+          <div className="flex items-center mb-2">
+            <h3 className="text-sm font-semibold text-gray-900">Historial de pujas</h3>
+            {selectedAuction && !auctionEnded && (
+              <div className="ml-3 flex items-center gap-1.5">
+                {isConnected ? (
+                  <>
+                    <span className="inline-flex items-center gap-x-1.5 rounded-md px-2 text-xs font-medium text-gray-900 inset-ring inset-ring-gray-400">
+                      <svg viewBox="0 0 6 6" aria-hidden="true" className="size-1.5 fill-red-500 animate-ping">
+                        <circle r={3} cx={3} cy={3} />
+                      </svg>
+                      LIVE
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="h-3 w-3 rounded-full bg-gray-300" />
+                    <span className="text-xs text-gray-400">Conectando...</span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
           <AuctionBidFeed bids={allBids} />
         </div>
       </div>
@@ -419,9 +446,6 @@ export default function SubastasPage() {
   return (
     <div className="bg-white min-h-screen">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Page heading */}
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-8">Subastas</h1>
-
         {/* Mobile: filter toggle */}
         <div className="lg:hidden mb-4">
           <button
@@ -450,7 +474,7 @@ export default function SubastasPage() {
 
         <div className="flex gap-8">
           {/* Desktop sidebar */}
-          <aside className="hidden lg:block w-80 shrink-0">
+          <aside className="hidden lg:block w-64 shrink-0">
             <div className="sticky top-8">
               {renderSidebarContent()}
             </div>

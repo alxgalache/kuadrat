@@ -39,6 +39,84 @@ async function retrievePaymentIntent(paymentIntentId) {
 }
 
 /**
+ * Find an existing Stripe Customer by email, or create a new one.
+ * Prevents duplicate customers with the same email in Stripe.
+ * If found, updates name/phone if they differ from the stored values.
+ * @param {Object} params
+ * @param {string} params.email - Customer email (required)
+ * @param {string} [params.name] - Customer name
+ * @param {string} [params.phone] - Customer phone
+ * @param {Object} [params.metadata] - Metadata to attach (only used on creation)
+ * @returns {Promise<Object>} Stripe Customer object
+ */
+async function findOrCreateCustomer({ email, name, phone, metadata = {} }) {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is not configured');
+  }
+
+  const normalizedEmail = (email || '').toLowerCase().trim();
+  if (!normalizedEmail) {
+    throw new Error('Email is required to find or create a Stripe customer');
+  }
+
+  // Search for an existing customer with this email
+  const existing = await stripe.customers.list({
+    email: normalizedEmail,
+    limit: 1,
+  });
+
+  if (existing.data.length > 0) {
+    const customer = existing.data[0];
+
+    // Update name/phone if they changed
+    const updates = {};
+    if (name && name !== customer.name) updates.name = name;
+    if (phone && phone !== customer.phone) updates.phone = phone;
+
+    if (Object.keys(updates).length > 0) {
+      return stripe.customers.update(customer.id, updates);
+    }
+
+    return customer;
+  }
+
+  // No existing customer found - create a new one
+  return stripe.customers.create({
+    email: normalizedEmail,
+    ...(name ? { name } : {}),
+    ...(phone ? { phone } : {}),
+    metadata,
+  });
+}
+
+/**
+ * Update a PaymentIntent with additional data (customer, shipping, receipt_email, description, metadata).
+ * Used to enrich the PaymentIntent after the buyer fills in personal and address information.
+ * @param {string} paymentIntentId
+ * @param {Object} params
+ * @param {string} [params.customer] - Stripe Customer ID to attach
+ * @param {Object} [params.shipping] - Shipping info { name, phone, address: { line1, line2, city, state, postal_code, country } }
+ * @param {string} [params.receipt_email] - Email to send the receipt to
+ * @param {string} [params.description] - Description of the payment
+ * @param {Object} [params.metadata] - Additional metadata key-value pairs (merged with existing)
+ * @returns {Promise<Object>} Updated Stripe PaymentIntent object
+ */
+async function updatePaymentIntent(paymentIntentId, { customer, shipping, receipt_email, description, metadata } = {}) {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is not configured');
+  }
+
+  const updateData = {};
+  if (customer) updateData.customer = customer;
+  if (shipping) updateData.shipping = shipping;
+  if (receipt_email) updateData.receipt_email = receipt_email;
+  if (description) updateData.description = description;
+  if (metadata) updateData.metadata = metadata;
+
+  return stripe.paymentIntents.update(paymentIntentId, updateData);
+}
+
+/**
  * Cancel a PaymentIntent
  * @param {string} paymentIntentId
  * @returns {Promise<Object>} Cancelled PaymentIntent object
@@ -162,10 +240,12 @@ async function attachPaymentMethodToCustomer(paymentMethodId, customerId) {
 
 module.exports = {
   createPaymentIntent,
+  updatePaymentIntent,
   retrievePaymentIntent,
   cancelPaymentIntent,
   constructWebhookEvent,
   createStripeCustomer,
+  findOrCreateCustomer,
   createAuctionPaymentIntent,
   retrievePaymentMethod,
   chargeWinnerOffSession,

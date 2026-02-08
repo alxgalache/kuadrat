@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { Dialog, DialogPanel, Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { Bars3Icon, XMarkIcon, ShoppingCartIcon, UserCircleIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/contexts/AuthContext'
@@ -16,6 +16,13 @@ export default function Navbar() {
   const { isAuthenticated, logout, user } = useAuth()
   const { getTotalItems, animationTrigger } = useCart()
   const router = useRouter()
+  const pathname = usePathname()
+
+  const isNavActive = (href) => {
+    if (href === '/galeria/mas') return pathname.startsWith('/galeria/mas')
+    if (href === '/galeria') return pathname.startsWith('/galeria') && !pathname.startsWith('/galeria/mas')
+    return pathname.startsWith(href)
+  }
 
   const isAdmin = user?.role === 'admin'
   const isSeller = user?.role === 'seller'
@@ -62,11 +69,11 @@ export default function Navbar() {
         <div className="flex flex-1 items-center">
           <div className="hidden lg:flex lg:gap-x-12">
             {navigation.map((item) => (
-              <Link key={item.name} href={item.href} className="text-sm/6 font-semibold text-gray-900 hover:text-gray-600">
+              <Link key={item.name} href={item.href} className={`text-sm/6 font-semibold text-gray-900 hover:text-gray-600 ${isNavActive(item.href) ? 'underline underline-offset-4 decoration-2' : ''}`}>
                 {item.name}
               </Link>
             ))}
-            <Link href="/subastas" className="text-sm/6 font-semibold text-gray-900 hover:text-gray-600">
+            <Link href="/subastas" className={`text-sm/6 font-semibold text-gray-900 hover:text-gray-600 ${isNavActive('/subastas') ? 'underline underline-offset-4 decoration-2' : ''}`}>
               Subastas
             </Link>
             <div className="relative group">
@@ -336,7 +343,7 @@ export default function Navbar() {
                 key={item.name}
                 href={item.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                className={`-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50 ${isNavActive(item.href) ? 'underline underline-offset-4 decoration-2' : ''}`}
               >
                 {item.name}
               </Link>
@@ -344,7 +351,7 @@ export default function Navbar() {
             <Link
               href="/subastas"
               onClick={() => setMobileMenuOpen(false)}
-              className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+              className={`-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50 ${isNavActive('/subastas') ? 'underline underline-offset-4 decoration-2' : ''}`}
             >
               Subastas
             </Link>
