@@ -401,6 +401,51 @@ async function initializeDatabase() {
       )
     `);
 
+    // Create events table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS events (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        description TEXT,
+        event_datetime DATETIME NOT NULL,
+        duration_minutes INTEGER NOT NULL DEFAULT 60,
+        host_user_id INTEGER NOT NULL,
+        cover_image_url TEXT,
+        access_type TEXT NOT NULL DEFAULT 'free' CHECK(access_type IN ('free', 'paid')),
+        price REAL,
+        currency TEXT DEFAULT 'EUR',
+        format TEXT NOT NULL DEFAULT 'live' CHECK(format IN ('live', 'video')),
+        content_type TEXT NOT NULL DEFAULT 'streaming' CHECK(content_type IN ('streaming', 'video')),
+        category TEXT NOT NULL CHECK(category IN ('masterclass', 'charla', 'entrevista', 'ama')),
+        video_url TEXT,
+        max_attendees INTEGER,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','active','finished','cancelled')),
+        livekit_room_name TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (host_user_id) REFERENCES users(id)
+      )
+    `);
+
+    // Create event_attendees table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS event_attendees (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        access_token_hash TEXT,
+        stripe_payment_intent_id TEXT,
+        stripe_customer_id TEXT,
+        amount_paid REAL,
+        currency TEXT,
+        status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','paid','joined','cancelled')),
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+      )
+    `);
+
     // Run migrations to add new columns if they don't exist
     console.log('Running database migrations...');
 

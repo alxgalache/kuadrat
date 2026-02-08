@@ -31,6 +31,9 @@ const nextConfig = {
       'https://*.revolut.com',
       'https://maps.googleapis.com',
       'https://api.stripe.com',
+      // LiveKit Cloud (events/streaming)
+      'https://*.livekit.cloud',
+      'wss://*.livekit.cloud',
     ].join(' ');
 
     const csp = [
@@ -41,6 +44,7 @@ const nextConfig = {
       "font-src 'self' https://fonts.gstatic.com",
       `connect-src ${cspConnectSrc}`,
       "frame-src 'self' https://*.revolut.com https://js.stripe.com",
+      "media-src 'self' blob:",
       "worker-src 'self' blob:",
     ].join('; ');
 

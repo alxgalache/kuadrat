@@ -38,6 +38,7 @@ const sellerRoutes = require('./routes/sellerRoutes');
 const shippingRoutes = require('./routes/shippingRoutes');
 const testAccessRoutes = require('./routes/testAccessRoutes');
 const auctionRoutes = require('./routes/auctionRoutes');
+const eventRoutes = require('./routes/eventRoutes');
 const setupAuctionSocket = require('./socket/auctionSocket');
 const startAuctionScheduler = require('./scheduler/auctionScheduler');
 
@@ -131,6 +132,7 @@ app.use('/api/seller', sellerRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/test-access', testAccessRoutes);
 app.use('/api/auctions', auctionRoutes);
+app.use('/api/events', eventRoutes);
 
 // 404 handler
 app.use(notFound);

@@ -76,14 +76,9 @@ export default function Navbar() {
             <Link href="/subastas" className={`text-sm/6 font-semibold text-gray-900 hover:text-gray-600 ${isNavActive('/subastas') ? 'underline underline-offset-4 decoration-2' : ''}`}>
               Subastas
             </Link>
-            <div className="relative group">
-              <span className="text-sm/6 font-semibold text-gray-900 cursor-default">
-                Espacios
-              </span>
-              <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-lg ring-1 ring-gray-900/10 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                Próximamente...
-              </div>
-            </div>
+            <Link href="/espacios" className={`text-sm/6 font-semibold text-gray-900 hover:text-gray-600 ${isNavActive('/espacios') ? 'underline underline-offset-4 decoration-2' : ''}`}>
+              Espacios
+            </Link>
           </div>
           <div className="flex lg:hidden">
             <button
@@ -162,6 +157,13 @@ export default function Navbar() {
                         className="block p-2 hover:text-gray-600"
                       >
                         Subastas
+                      </Link>
+                      <Link
+                        href="/admin/espacios"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        Espacios
                       </Link>
                       <button
                         onClick={() => {
@@ -355,14 +357,13 @@ export default function Navbar() {
             >
               Subastas
             </Link>
-            <div className="-mx-3 rounded-lg px-3 py-2">
-              <span className="block text-base/7 font-semibold text-gray-900">
-                Espacios
-              </span>
-              <span className="mt-1 block text-sm text-gray-600">
-                Próximamente...
-              </span>
-            </div>
+            <Link
+              href="/espacios"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50 ${isNavActive('/espacios') ? 'underline underline-offset-4 decoration-2' : ''}`}
+            >
+              Espacios
+            </Link>
             {isAuthenticated && (
               <>
                 {isAdmin ? (
@@ -394,6 +395,13 @@ export default function Navbar() {
                       className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                     >
                       Subastas
+                    </Link>
+                    <Link
+                      href="/admin/espacios"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Espacios
                     </Link>
                   </>
                 ) : isSeller ? (

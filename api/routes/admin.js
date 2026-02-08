@@ -9,6 +9,7 @@ const adminAuth = require('../middleware/adminAuth')
 const { db } = require('../config/database')
 const { sendPasswordSetupEmail } = require('../services/emailService')
 const auctionAdminController = require('../controllers/auctionAdminController')
+const eventAdminController = require('../controllers/eventAdminController')
 
 // Configure multer for author avatar uploads
 const authorStorage = multer.diskStorage({
@@ -771,5 +772,79 @@ router.get('/postal-codes', auctionAdminController.listPostalCodes);
  * Create postal code
  */
 router.post('/postal-codes', auctionAdminController.createPostalCode);
+
+// ===== EVENT ROUTES =====
+
+/**
+ * POST /api/admin/events
+ * Create a new event
+ */
+router.post('/events', eventAdminController.createEvent);
+
+/**
+ * GET /api/admin/events
+ * List all events
+ */
+router.get('/events', eventAdminController.listEvents);
+
+/**
+ * GET /api/admin/events/:id
+ * Get event details
+ */
+router.get('/events/:id', eventAdminController.getEvent);
+
+/**
+ * PUT /api/admin/events/:id
+ * Update event
+ */
+router.put('/events/:id', eventAdminController.updateEvent);
+
+/**
+ * DELETE /api/admin/events/:id
+ * Delete event
+ */
+router.delete('/events/:id', eventAdminController.deleteEvent);
+
+/**
+ * POST /api/admin/events/:id/start
+ * Start event (creates LiveKit room)
+ */
+router.post('/events/:id/start', eventAdminController.startEvent);
+
+/**
+ * POST /api/admin/events/:id/end
+ * End event (cleans up LiveKit room)
+ */
+router.post('/events/:id/end', eventAdminController.endEvent);
+
+/**
+ * GET /api/admin/events/:id/attendees
+ * List attendees
+ */
+router.get('/events/:id/attendees', eventAdminController.getAttendees);
+
+/**
+ * GET /api/admin/events/:id/participants
+ * List LiveKit room participants
+ */
+router.get('/events/:id/participants', eventAdminController.listParticipants);
+
+/**
+ * POST /api/admin/events/:id/participants/:identity/promote
+ * Promote viewer to speaker
+ */
+router.post('/events/:id/participants/:identity/promote', eventAdminController.promoteParticipant);
+
+/**
+ * POST /api/admin/events/:id/participants/:identity/demote
+ * Demote speaker to viewer
+ */
+router.post('/events/:id/participants/:identity/demote', eventAdminController.demoteParticipant);
+
+/**
+ * POST /api/admin/events/:id/participants/:identity/mute
+ * Mute/unmute a participant's track
+ */
+router.post('/events/:id/participants/:identity/mute', eventAdminController.muteParticipant);
 
 module.exports = router

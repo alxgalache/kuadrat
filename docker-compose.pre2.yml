@@ -60,6 +60,7 @@ services:
         - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
         - WEB_APP_HIDDEN=${WEB_APP_HIDDEN}
         - PUBLISHED_VISIBLE=${PUBLISHED_VISIBLE}
+        - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL}
     image: kuadrat-client-staging
     container_name: kuadrat-client-staging
     # Bind to localhost only - nginx will handle external traffic

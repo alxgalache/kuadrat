@@ -792,6 +792,84 @@ export const adminAPI = {
       });
     },
   },
+
+  // Event management
+  events: {
+    getAll: async (status) => {
+      const params = status ? `?status=${status}` : '';
+      return apiRequest(`/admin/events${params}`);
+    },
+
+    getById: async (id) => {
+      return apiRequest(`/admin/events/${id}`);
+    },
+
+    create: async (eventData) => {
+      return apiRequest('/admin/events', {
+        method: 'POST',
+        body: JSON.stringify(eventData),
+      });
+    },
+
+    update: async (id, eventData) => {
+      return apiRequest(`/admin/events/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(eventData),
+      });
+    },
+
+    delete: async (id) => {
+      return apiRequest(`/admin/events/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    start: async (id) => {
+      return apiRequest(`/admin/events/${id}/start`, {
+        method: 'POST',
+      });
+    },
+
+    end: async (id) => {
+      return apiRequest(`/admin/events/${id}/end`, {
+        method: 'POST',
+      });
+    },
+
+    cancel: async (id) => {
+      return apiRequest(`/admin/events/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'cancelled' }),
+      });
+    },
+
+    getAttendees: async (id) => {
+      return apiRequest(`/admin/events/${id}/attendees`);
+    },
+
+    getParticipants: async (id) => {
+      return apiRequest(`/admin/events/${id}/participants`);
+    },
+
+    promoteParticipant: async (eventId, identity) => {
+      return apiRequest(`/admin/events/${eventId}/participants/${encodeURIComponent(identity)}/promote`, {
+        method: 'POST',
+      });
+    },
+
+    demoteParticipant: async (eventId, identity) => {
+      return apiRequest(`/admin/events/${eventId}/participants/${encodeURIComponent(identity)}/demote`, {
+        method: 'POST',
+      });
+    },
+
+    muteParticipant: async (eventId, identity, trackSid, muted) => {
+      return apiRequest(`/admin/events/${eventId}/participants/${encodeURIComponent(identity)}/mute`, {
+        method: 'POST',
+        body: JSON.stringify({ trackSid, muted }),
+      });
+    },
+  },
 };
 
 // Public Auctions API (no auth required)
@@ -845,6 +923,51 @@ export const auctionsAPI = {
 
   getPostalCodes: async (auctionId, productId, productType) => {
     return apiRequest(`/auctions/${auctionId}/postal-codes/${productId}/${productType}`);
+  },
+};
+
+// Public Events API (no auth required)
+export const eventsAPI = {
+  getByDateRange: async (from, to) => {
+    return apiRequest(`/events?from=${from}&to=${to}`);
+  },
+
+  getBySlug: async (slug) => {
+    return apiRequest(`/events/${slug}`);
+  },
+
+  register: async (eventId, { first_name, last_name, email }) => {
+    return apiRequest(`/events/${eventId}/register`, {
+      method: 'POST',
+      body: JSON.stringify({ first_name, last_name, email }),
+    });
+  },
+
+  pay: async (eventId, attendeeId) => {
+    return apiRequest(`/events/${eventId}/pay`, {
+      method: 'POST',
+      body: JSON.stringify({ attendeeId }),
+    });
+  },
+
+  confirmPayment: async (eventId, attendeeId, paymentIntentId) => {
+    return apiRequest(`/events/${eventId}/confirm-payment`, {
+      method: 'POST',
+      body: JSON.stringify({ attendeeId, paymentIntentId }),
+    });
+  },
+
+  getViewerToken: async (eventId, attendeeId, accessToken) => {
+    return apiRequest(`/events/${eventId}/token`, {
+      method: 'POST',
+      body: JSON.stringify({ attendeeId, accessToken }),
+    });
+  },
+
+  getHostToken: async (eventId) => {
+    return apiRequest(`/events/${eventId}/host-token`, {
+      method: 'POST',
+    });
   },
 };
 
