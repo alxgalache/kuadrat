@@ -95,7 +95,7 @@ export default function EspaciosPage() {
       .sort((a, b) => new Date(a.event_datetime) - new Date(b.event_datetime))
   }, [eventsForMonth])
 
-  // Sidebar content
+  // Sidebar content — Item 1: calendar only, no event list
   const renderSidebarContent = () => (
     <div>
       <EventCalendar
@@ -103,43 +103,6 @@ export default function EspaciosPage() {
         onSelectDate={(d) => setSelectedDate(d)}
         eventDates={eventsForMonth}
       />
-
-      <div className="mt-6">
-        <h3 className="text-sm font-semibold text-gray-900">
-          Eventos para el {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}
-        </h3>
-
-        {eventsForDate.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-500">No hay eventos para este día</p>
-        ) : (
-          <ul className="mt-3 space-y-3">
-            {eventsForDate.map((e) => (
-              <li key={e.id}>
-                <Link
-                  href={`/espacios/${e.slug}`}
-                  onClick={() => setMobileFilterOpen(false)}
-                  className="block w-full text-left rounded-lg p-3 bg-gray-200 text-gray-900 hover:bg-gray-300 transition-colors"
-                >
-                  <p className="text-sm font-semibold">{e.title}</p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {formatTime(e.event_datetime)} · {e.duration_minutes} min
-                  </p>
-                  <div className="mt-1 flex items-center gap-x-2">
-                    <span className="inline-flex items-center rounded-md bg-purple-50 px-1.5 py-0.5 text-xs font-medium text-purple-700">
-                      {categoryLabels[e.category] || e.category}
-                    </span>
-                    {e.access_type === 'paid' ? (
-                      <span className="text-xs text-amber-700 font-medium">{e.price} {e.currency}</span>
-                    ) : (
-                      <span className="text-xs text-green-700 font-medium">Gratis</span>
-                    )}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   )
 
@@ -153,37 +116,22 @@ export default function EspaciosPage() {
       )
     }
 
-    const displayEvents = eventsForDate.length > 0 ? eventsForDate : upcomingEvents
-
-    if (displayEvents.length === 0) {
-      return (
-        <div className="flex items-center justify-center py-24">
-          <p className="text-sm text-gray-500">No hay eventos para este día. Prueba otra fecha.</p>
-        </div>
-      )
+    if (eventsForDate.length === 0) {
+      return null
     }
 
     return (
       <div className="space-y-6">
-        {displayEvents.map((event) => (
+        {eventsForDate.map((event) => (
           <Link
             key={event.id}
             href={`/espacios/${event.slug}`}
             className="block group"
           >
-            <div className="rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-              {/* Cover image */}
-              {event.cover_image_url && (
-                <div className="aspect-[3/1] bg-gray-100 overflow-hidden">
-                  <img
-                    src={event.cover_image_url}
-                    alt={event.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                </div>
-              )}
-
-              <div className="p-5">
+            {/* Item 2: horizontal card with image on right + gradient — Item 3: no hover shadow */}
+            <div className="rounded-lg border border-gray-200 overflow-hidden flex flex-row">
+              {/* Content left (60%) */}
+              <div className="flex-1 min-w-0 p-5">
                 {/* Badges row */}
                 <div className="flex items-center gap-x-2 mb-2">
                   <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
@@ -217,19 +165,15 @@ export default function EspaciosPage() {
                   </p>
                 )}
 
-                {/* Meta row */}
+                {/* Meta row — Item 4: author moved here */}
                 <div className="mt-3 flex items-center gap-x-4 text-sm text-gray-500">
                   <span>{formatDate(event.event_datetime)}</span>
                   <span>{formatTime(event.event_datetime)}</span>
                   <span>{event.duration_minutes} min</span>
+                  {event.host_name && (
+                    <span>por <span className="font-medium text-gray-700">{event.host_name}</span></span>
+                  )}
                 </div>
-
-                {/* Host */}
-                {event.host_name && (
-                  <p className="mt-1 text-sm text-gray-500">
-                    por <span className="font-medium text-gray-700">{event.host_name}</span>
-                  </p>
-                )}
 
                 {/* Countdown / Status */}
                 <div className="mt-3">
@@ -239,6 +183,18 @@ export default function EspaciosPage() {
                   />
                 </div>
               </div>
+
+              {/* Image right (50%) — stretches to match text content height */}
+              {event.cover_image_url && (
+                <div className="relative w-[50%] hidden sm:block self-stretch">
+                  <img
+                    src={event.cover_image_url}
+                    alt={event.title}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent" />
+                </div>
+              )}
             </div>
           </Link>
         ))}
@@ -246,8 +202,9 @@ export default function EspaciosPage() {
     )
   }
 
+  // Item 5: min-h to fill screen without scrollbar on short content
   return (
-    <div className="bg-white min-h-screen">
+    <div className="bg-white min-h-[calc(100dvh-5rem-6rem)]">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Mobile: filter toggle */}
         <div className="lg:hidden mb-4">
@@ -262,7 +219,7 @@ export default function EspaciosPage() {
               </>
             ) : (
               <>
-                <FunnelIcon className="h-5 w-5" /> Calendario y eventos
+                <FunnelIcon className="h-5 w-5" /> Calendario
               </>
             )}
           </button>

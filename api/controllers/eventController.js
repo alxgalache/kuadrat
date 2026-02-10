@@ -291,6 +291,81 @@ const getHostToken = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/participants/:identity/promote
+// Grant canPublish permission (host-only)
+// ---------------------------------------------------------------------------
+const promoteParticipant = async (req, res, next) => {
+  try {
+    const { id, identity } = req.params;
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
+    if (event.status !== 'active') {
+      throw new ApiError(400, 'El evento no está activo', 'Evento no activo');
+    }
+
+    // Only the host can promote participants
+    if (!req.user || req.user.id !== event.host_user_id) {
+      throw new ApiError(403, 'Solo el host puede promover participantes', 'Acceso denegado');
+    }
+
+    if (!event.livekit_room_name) {
+      throw new ApiError(400, 'La sala no está disponible', 'Sala no disponible');
+    }
+
+    await livekitService.updateParticipantPermissions(event.livekit_room_name, identity, {
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/participants/:identity/demote
+// Revoke canPublish permission (host-only)
+// ---------------------------------------------------------------------------
+const demoteParticipant = async (req, res, next) => {
+  try {
+    const { id, identity } = req.params;
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
+    if (event.status !== 'active') {
+      throw new ApiError(400, 'El evento no está activo', 'Evento no activo');
+    }
+
+    if (!req.user || req.user.id !== event.host_user_id) {
+      throw new ApiError(403, 'Solo el host puede gestionar participantes', 'Acceso denegado');
+    }
+
+    if (!event.livekit_room_name) {
+      throw new ApiError(400, 'La sala no está disponible', 'Sala no disponible');
+    }
+
+    await livekitService.updateParticipantPermissions(event.livekit_room_name, identity, {
+      canPublish: false,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getEvents,
   getEventBySlug,
@@ -299,4 +374,6 @@ module.exports = {
   confirmPayment,
   getViewerToken,
   getHostToken,
+  promoteParticipant,
+  demoteParticipant,
 };

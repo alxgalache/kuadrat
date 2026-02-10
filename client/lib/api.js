@@ -969,6 +969,18 @@ export const eventsAPI = {
       method: 'POST',
     });
   },
+
+  promoteParticipant: async (eventId, identity) => {
+    return apiRequest(`/events/${eventId}/participants/${encodeURIComponent(identity)}/promote`, {
+      method: 'POST',
+    });
+  },
+
+  demoteParticipant: async (eventId, identity) => {
+    return apiRequest(`/events/${eventId}/participants/${encodeURIComponent(identity)}/demote`, {
+      method: 'POST',
+    });
+  },
 };
 
 // Seller API (requires seller role)

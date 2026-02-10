@@ -47,4 +47,16 @@ router.post('/:id/token', eventController.getViewerToken);
  */
 router.post('/:id/host-token', authenticate, eventController.getHostToken);
 
+/**
+ * POST /api/events/:id/participants/:identity/promote
+ * Grant canPublish permission (host-only)
+ */
+router.post('/:id/participants/:identity/promote', authenticate, eventController.promoteParticipant);
+
+/**
+ * POST /api/events/:id/participants/:identity/demote
+ * Revoke canPublish permission (host-only)
+ */
+router.post('/:id/participants/:identity/demote', authenticate, eventController.demoteParticipant);
+
 module.exports = router;

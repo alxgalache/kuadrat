@@ -147,7 +147,7 @@ export default function EventDetailPage({ params }) {
   // Active event with LiveKit room
   if (event.status === 'active' && livekitToken && livekitUrl) {
     return (
-      <div className="bg-white min-h-screen">
+      <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           {/* Event header */}
           <div className="mb-4 flex items-center justify-between">
@@ -161,12 +161,13 @@ export default function EventDetailPage({ params }) {
           </div>
 
           {/* LiveKit room */}
-          <div className="h-[calc(100vh-12rem)]">
+          <div>
             <EventLiveRoom
               token={livekitToken}
               serverUrl={livekitUrl}
               roomName={event.livekit_room_name}
               isHost={isHost}
+              eventId={event.id}
             />
           </div>
         </div>
@@ -174,139 +175,147 @@ export default function EventDetailPage({ params }) {
     )
   }
 
-  // Pre-event / finished view
+  // Item 6: Pre-event / finished view — two-column layout matching art product page
   return (
-    <div className="bg-white min-h-screen">
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Cover image */}
-        {event.cover_image_url && (
-          <div className="aspect-[2/1] rounded-lg overflow-hidden bg-gray-100 mb-8">
-            <img
-              src={event.cover_image_url}
-              alt={event.title}
-              className="w-full h-full object-cover"
-            />
-          </div>
-        )}
-
-        {/* Badges */}
-        <div className="flex items-center gap-x-2 mb-4">
-          <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700">
-            {categoryLabels[event.category] || event.category}
-          </span>
-          {event.access_type === 'paid' ? (
-            <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
-              {event.price} {event.currency}
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
-              Gratis
-            </span>
-          )}
-          {event.status === 'active' && (
-            <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
-              En directo
-            </span>
-          )}
-        </div>
-
-        {/* Title */}
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-          {event.title}
-        </h1>
-
-        {/* Meta */}
-        <div className="mt-4 flex flex-wrap items-center gap-x-6 text-sm text-gray-500">
-          <span>{formatDate(event.event_datetime)}</span>
-          <span>{formatTime(event.event_datetime)}</span>
-          <span>{event.duration_minutes} min</span>
-          <span>{attendeeCount} registrados</span>
-        </div>
-
-        {/* Host */}
-        {event.host_name && (
-          <p className="mt-3 text-sm text-gray-600">
-            Presentado por <span className="font-semibold text-gray-900">{event.host_name}</span>
-          </p>
-        )}
-
-        {/* Countdown */}
-        <div className="mt-6">
-          <EventCountdown eventDatetime={event.event_datetime} status={event.status} />
-        </div>
-
-        {/* Description */}
-        {event.description && (
-          <div className="mt-6">
-            <p className="text-gray-700 whitespace-pre-line">{event.description}</p>
-          </div>
-        )}
-
-        {/* Access section */}
-        {!['finished', 'cancelled'].includes(event.status) && (
-          <div className="mt-8 rounded-lg border border-gray-200 p-6">
-            {hasAccess ? (
-              <div className="text-center">
-                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-green-100 mb-3">
-                  <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                </div>
-                <p className="text-sm font-semibold text-gray-900">Ya tienes acceso</p>
-                <p className="mt-1 text-sm text-gray-500">
-                  {event.status === 'active'
-                    ? 'El evento está en directo. Recargando...'
-                    : 'Podrás acceder cuando el evento comience.'}
-                </p>
-                {event.status === 'active' && !livekitToken && (
-                  <button
-                    type="button"
-                    onClick={connectAsViewer}
-                    className="mt-3 rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700"
-                  >
-                    Conectar al directo
-                  </button>
-                )}
-              </div>
-            ) : isHost ? (
-              <div className="text-center">
-                <p className="text-sm font-semibold text-gray-900">Eres el host de este evento</p>
-                <p className="mt-1 text-sm text-gray-500">
-                  {event.status === 'active'
-                    ? 'Conectando como presentador...'
-                    : 'Podrás conectar cuando el administrador inicie el evento.'}
-                </p>
-              </div>
+    <div className="bg-white">
+      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24 lg:max-w-7xl lg:px-8">
+        <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
+          {/* Left column: Cover image */}
+          <div className="aspect-[2/1] lg:aspect-square w-full overflow-hidden rounded-lg bg-gray-200">
+            {event.cover_image_url ? (
+              <img
+                src={event.cover_image_url}
+                alt={event.title}
+                className="h-full w-full object-cover"
+              />
             ) : (
-              <div className="text-center">
-                <p className="text-sm font-semibold text-gray-900 mb-3">
-                  {event.access_type === 'paid'
-                    ? `Accede por ${event.price} ${event.currency}`
-                    : 'Regístrate para acceder'}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(true)}
-                  className="rounded-md bg-gray-900 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
-                >
-                  Acceder
-                </button>
+              <div className="flex w-full items-center justify-center">
+                <p className="text-sm text-gray-400">Sin imagen</p>
               </div>
             )}
           </div>
-        )}
 
-        {event.status === 'finished' && (
-          <div className="mt-8 rounded-lg bg-gray-50 p-6 text-center">
-            <p className="text-sm font-semibold text-gray-500">Este evento ha finalizado</p>
-          </div>
-        )}
+          {/* Right column: Event info */}
+          <div className="mt-10 px-4 sm:mt-16 sm:px-0 lg:mt-0">
+            {/* Title */}
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+              {event.title}
+            </h1>
 
-        {event.status === 'cancelled' && (
-          <div className="mt-8 rounded-lg bg-red-50 p-6 text-center">
-            <p className="text-sm font-semibold text-red-700">Este evento ha sido cancelado</p>
+            {/* Price */}
+            <div className="mt-3">
+              {event.access_type === 'paid' ? (
+                <p className="text-3xl tracking-tight text-gray-900">
+                  {event.price} {event.currency}
+                </p>
+              ) : (
+                <p className="text-3xl tracking-tight text-gray-900">Gratis</p>
+              )}
+            </div>
+
+            {/* Description */}
+            {event.description && (
+              <div className="mt-6">
+                <div className="space-y-6 text-base text-gray-700">
+                  <p className="whitespace-pre-line">{event.description}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Meta info */}
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center gap-x-2">
+                <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700">
+                  {categoryLabels[event.category] || event.category}
+                </span>
+                {event.status === 'active' && (
+                  <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
+                    En directo
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-6 text-sm text-gray-500">
+                <span>{formatDate(event.event_datetime)}</span>
+                <span>{formatTime(event.event_datetime)}</span>
+                <span>{event.duration_minutes} min</span>
+                <span>{attendeeCount} registrados</span>
+              </div>
+
+              {event.host_name && (
+                <p className="text-sm text-gray-600">
+                  Presentado por <span className="font-semibold text-gray-900">{event.host_name}</span>
+                </p>
+              )}
+            </div>
+
+            {/* Countdown */}
+            <div className="mt-6">
+              <EventCountdown eventDatetime={event.event_datetime} status={event.status} />
+            </div>
+
+            {/* Access section */}
+            {!['finished', 'cancelled'].includes(event.status) && (
+              <div className="mt-8">
+                {hasAccess ? (
+                  <div>
+                    <div className="flex items-center gap-x-2 mb-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100">
+                        <svg className="h-3.5 w-3.5 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">Ya tienes acceso</p>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      {event.status === 'active'
+                        ? 'El evento está en directo. Recargando...'
+                        : 'Podrás acceder cuando el evento comience.'}
+                    </p>
+                    {event.status === 'active' && !livekitToken && (
+                      <button
+                        type="button"
+                        onClick={connectAsViewer}
+                        className="mt-3 flex w-full items-center justify-center rounded-md bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900"
+                      >
+                        Conectar al directo
+                      </button>
+                    )}
+                  </div>
+                ) : isHost ? (
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Eres el host de este evento</p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {event.status === 'active'
+                        ? 'Conectando como presentador...'
+                        : 'Podrás conectar cuando el administrador inicie el evento.'}
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(true)}
+                    className="flex w-full items-center justify-center rounded-md bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900"
+                  >
+                    Acceder
+                  </button>
+                )}
+              </div>
+            )}
+
+            {event.status === 'finished' && (
+              <div className="mt-8 rounded-lg bg-gray-50 p-6 text-center">
+                <p className="text-sm font-semibold text-gray-500">Este evento ha finalizado</p>
+              </div>
+            )}
+
+            {event.status === 'cancelled' && (
+              <div className="mt-8 rounded-lg bg-red-50 p-6 text-center">
+                <p className="text-sm font-semibold text-red-700">Este evento ha sido cancelado</p>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Access Modal */}
