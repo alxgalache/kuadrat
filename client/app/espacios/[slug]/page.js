@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react'
 import dynamic from 'next/dynamic'
 import { eventsAPI } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
+import useEventSocket from '@/hooks/useEventSocket'
 import EventCountdown from '@/components/EventCountdown'
 import EventAccessModal from '@/components/EventAccessModal'
 
@@ -38,6 +39,14 @@ function formatTime(datetimeStr) {
   })
 }
 
+function formatDateShort(datetimeStr) {
+  if (!datetimeStr) return ''
+  const d = new Date(datetimeStr)
+  const day = d.getDate()
+  const month = d.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')
+  return `${day} ${month}`
+}
+
 export default function EventDetailPage({ params }) {
   const resolvedParams = use(params)
   const { slug } = resolvedParams
@@ -54,9 +63,26 @@ export default function EventDetailPage({ params }) {
   const [livekitUrl, setLivekitUrl] = useState(null)
   const [isHost, setIsHost] = useState(false)
 
+  // Real-time event status via Socket.IO
+  const { eventStarted, eventEnded } = useEventSocket(event?.id)
+
   useEffect(() => {
     loadEvent()
   }, [slug])
+
+  // When server broadcasts event_started, re-fetch to trigger auto-connect flow
+  useEffect(() => {
+    if (eventStarted) {
+      loadEvent()
+    }
+  }, [eventStarted])
+
+  // When server broadcasts event_ended, re-fetch to show finished state
+  useEffect(() => {
+    if (eventEnded) {
+      loadEvent()
+    }
+  }, [eventEnded])
 
   // Check for stored session
   useEffect(() => {
@@ -181,7 +207,7 @@ export default function EventDetailPage({ params }) {
       <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24 lg:max-w-7xl lg:px-8">
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
           {/* Left column: Cover image */}
-          <div className="aspect-[2/1] lg:aspect-square w-full overflow-hidden rounded-lg bg-gray-200">
+          <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200">
             {event.cover_image_url ? (
               <img
                 src={event.cover_image_url}
@@ -235,8 +261,9 @@ export default function EventDetailPage({ params }) {
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-x-6 text-sm text-gray-500">
-                <span>{formatDate(event.event_datetime)}</span>
+              <div className="flex flex-wrap items-center justify-between sm:justify-start sm:gap-x-6 text-sm text-gray-500">
+                <span className="hidden sm:inline">{formatDate(event.event_datetime)}</span>
+                <span className="sm:hidden">{formatDateShort(event.event_datetime)}</span>
                 <span>{formatTime(event.event_datetime)}</span>
                 <span>{event.duration_minutes} min</span>
                 <span>{attendeeCount} registrados</span>

@@ -40,6 +40,7 @@ const testAccessRoutes = require('./routes/testAccessRoutes');
 const auctionRoutes = require('./routes/auctionRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const setupAuctionSocket = require('./socket/auctionSocket');
+const setupEventSocket = require('./socket/eventSocket');
 const startAuctionScheduler = require('./scheduler/auctionScheduler');
 
 // Initialize Express app
@@ -102,6 +103,10 @@ app.use(passport.initialize());
 const auctionSocket = setupAuctionSocket(io);
 app.set('io', io);
 app.set('auctionSocket', auctionSocket);
+
+// Socket.IO - Event real-time module
+const eventSocket = setupEventSocket(io);
+app.set('eventSocket', eventSocket);
 
 // Health check route
 app.get('/health', (req, res) => {

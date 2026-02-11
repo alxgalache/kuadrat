@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
-import { FunnelIcon, XMarkIcon } from '@heroicons/react/20/solid'
 import { eventsAPI } from '@/lib/api'
 import EventCalendar from '@/components/EventCalendar'
 import EventCountdown from '@/components/EventCountdown'
@@ -39,6 +38,14 @@ function formatDate(datetimeStr) {
   })
 }
 
+function formatDateShort(datetimeStr) {
+  if (!datetimeStr) return ''
+  const d = new Date(datetimeStr)
+  const day = d.getDate()
+  const month = d.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')
+  return `${day} ${month}`
+}
+
 const categoryLabels = {
   masterclass: 'Masterclass',
   charla: 'Charla',
@@ -52,8 +59,6 @@ const categoryLabels = {
 export default function EspaciosPage() {
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const [eventsForMonth, setEventsForMonth] = useState([])
-  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
-
   const parsedDate = selectedDate ? new Date(selectedDate + 'T00:00:00') : new Date()
   const [calendarYear, setCalendarYear] = useState(parsedDate.getFullYear())
   const [calendarMonth, setCalendarMonth] = useState(parsedDate.getMonth())
@@ -117,7 +122,11 @@ export default function EspaciosPage() {
     }
 
     if (eventsForDate.length === 0) {
-      return null
+      return (
+        <div className="flex items-center justify-center py-24">
+          <p className="text-sm text-gray-500">No hay eventos para este día</p>
+        </div>
+      )
     }
 
     return (
@@ -165,9 +174,10 @@ export default function EspaciosPage() {
                   </p>
                 )}
 
-                {/* Meta row — Item 4: author moved here */}
-                <div className="mt-3 flex items-center gap-x-4 text-sm text-gray-500">
-                  <span>{formatDate(event.event_datetime)}</span>
+                {/* Meta row — short date on mobile, full on sm+ */}
+                <div className="mt-3 flex items-center justify-between sm:justify-start sm:gap-x-4 text-sm text-gray-500">
+                  <span className="hidden sm:inline">{formatDate(event.event_datetime)}</span>
+                  <span className="sm:hidden">{formatDateShort(event.event_datetime)}</span>
                   <span>{formatTime(event.event_datetime)}</span>
                   <span>{event.duration_minutes} min</span>
                   {event.host_name && (
@@ -206,31 +216,10 @@ export default function EspaciosPage() {
   return (
     <div className="bg-white min-h-[calc(100dvh-5rem-6rem)]">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Mobile: filter toggle */}
-        <div className="lg:hidden mb-4">
-          <button
-            type="button"
-            onClick={() => setMobileFilterOpen(!mobileFilterOpen)}
-            className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-          >
-            {mobileFilterOpen ? (
-              <>
-                <XMarkIcon className="h-5 w-5" /> Cerrar filtro
-              </>
-            ) : (
-              <>
-                <FunnelIcon className="h-5 w-5" /> Calendario
-              </>
-            )}
-          </button>
+        {/* Mobile calendar (always visible) */}
+        <div className="lg:hidden mb-6">
+          {renderSidebarContent()}
         </div>
-
-        {/* Mobile sidebar (collapsible) */}
-        {mobileFilterOpen && (
-          <div className="lg:hidden mb-6 rounded-lg border border-gray-200 p-4">
-            {renderSidebarContent()}
-          </div>
-        )}
 
         <div className="flex gap-8">
           {/* Desktop sidebar */}

@@ -190,6 +190,12 @@ const startEvent = async (req, res, next) => {
 
     const event = await eventService.startEvent(req.params.id, roomName);
 
+    // Notify clients waiting on the event detail page
+    const eventSocket = req.app.get('eventSocket');
+    if (eventSocket) {
+      eventSocket.broadcastEventStarted(req.params.id);
+    }
+
     res.status(200).json({
       success: true,
       title: 'Evento iniciado',
@@ -235,6 +241,12 @@ const endEvent = async (req, res, next) => {
     }
 
     const event = await eventService.endEvent(req.params.id);
+
+    // Notify clients that the event has ended
+    const eventSocket = req.app.get('eventSocket');
+    if (eventSocket) {
+      eventSocket.broadcastEventEnded(req.params.id);
+    }
 
     res.status(200).json({
       success: true,
