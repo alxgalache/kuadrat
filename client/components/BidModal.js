@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { XMarkIcon, CheckIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { loadStripe } from '@stripe/stripe-js'
@@ -32,7 +32,7 @@ const PHASE = {
  *
  * @param {{ isOpen: boolean, onClose: () => void, auction: object, product: object, onBidPlaced: () => void }} props
  */
-export default function BidModal({ isOpen, onClose, auction, product, onBidPlaced }) {
+export default function BidModal({ isOpen, onClose, auction, product, livePriceData, onBidPlaced }) {
   const [phase, setPhase] = useState(PHASE.CHOOSE)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -61,11 +61,20 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
   // Saved bid password shown on success
   const [savedBidPassword, setSavedBidPassword] = useState('')
 
+  // Live price change tracking
+  const [priceChangedWarning, setPriceChangedWarning] = useState(false)
+  const [animatePrice, setAnimatePrice] = useState(false)
+  const prevPriceRef = useRef(null)
+
   const productId = product?.art_id ?? product?.other_id
   const productType = product?.product_type
 
-  // Next bid amount
-  const nextBid = (product?.current_price ?? 0) + (product?.step_new_bid ?? 0)
+  // Effective prices: prefer live data over product prop
+  const effectiveCurrentPrice = livePriceData?.newPrice ?? product?.current_price ?? 0
+  const effectiveNextBid = livePriceData?.nextBidAmount ?? ((product?.current_price ?? 0) + (product?.step_new_bid ?? 0))
+
+  // Legacy alias for phases that don't need live tracking
+  const nextBid = effectiveNextBid
 
   // ------ Reset state when modal opens/closes ------
   useEffect(() => {
@@ -92,6 +101,9 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
       setSavedBidPassword('')
       setVerifyEmail('')
       setVerifyPassword('')
+      setPriceChangedWarning(false)
+      setAnimatePrice(false)
+      prevPriceRef.current = null
     }
   }, [isOpen, auction])
 
@@ -103,6 +115,18 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
         .catch(() => setAllowedPostalCodes([]))
     }
   }, [auction?.id, productId, productType])
+
+  // Detect live price changes while on CONFIRM phase
+  useEffect(() => {
+    if (phase === PHASE.CONFIRM && prevPriceRef.current !== null && effectiveCurrentPrice !== prevPriceRef.current) {
+      setPriceChangedWarning(true)
+      setAnimatePrice(true)
+      const timer = setTimeout(() => setAnimatePrice(false), 1000)
+      prevPriceRef.current = effectiveCurrentPrice
+      return () => clearTimeout(timer)
+    }
+    prevPriceRef.current = effectiveCurrentPrice
+  }, [effectiveCurrentPrice, phase])
 
   // ---- Sync copy-delivery checkbox ----
   useEffect(() => {
@@ -173,13 +197,15 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
   const handlePlaceBid = async () => {
     setLoading(true)
     setError('')
+    setPriceChangedWarning(false)
     try {
       await auctionsAPI.placeBid(auction.id, {
         auctionBuyerId: buyerSession.auctionBuyerId,
         bidPassword: buyerSession.bidPassword,
         productId,
         productType,
-        amount: nextBid,
+        amount: effectiveNextBid,
+        expectedPrice: effectiveCurrentPrice,
       })
       // If we don't yet have the password stored for display, show the one from session
       if (!savedBidPassword) {
@@ -188,7 +214,16 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
       setPhase(PHASE.SUCCESS)
       onBidPlaced?.()
     } catch (err) {
-      setError(err.message || 'No se pudo realizar la puja.')
+      const msg = err.message || ''
+      if (msg.includes('precio ha cambiado')) {
+        // The Socket.IO price_update should have already updated livePriceData
+        setPriceChangedWarning(true)
+        setAnimatePrice(true)
+        setTimeout(() => setAnimatePrice(false), 1000)
+        setError('El precio se actualizo. Revisa el nuevo importe y confirma de nuevo.')
+      } else {
+        setError(msg || 'No se pudo realizar la puja.')
+      }
     } finally {
       setLoading(false)
     }
@@ -594,8 +629,21 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
       <div className="rounded-lg bg-gray-50 p-4">
         <p className="text-sm text-gray-600">Estas a punto de pujar por:</p>
         <p className="mt-1 text-base font-semibold text-gray-900">{product?.name}</p>
-        <p className="mt-3 text-2xl font-bold text-gray-900">{formatCurrency(nextBid)}</p>
+        <p className={`mt-3 text-2xl font-bold transition-all duration-500 ${
+          animatePrice ? 'scale-110 text-red-600' : 'text-gray-900'
+        }`}>
+          {formatCurrency(effectiveNextBid)}
+        </p>
       </div>
+
+      {priceChangedWarning && (
+        <div className="rounded-md bg-amber-50 border border-amber-200 p-3">
+          <p className="text-sm font-medium text-amber-800">
+            El precio ha cambiado porque se acaba de realizar una puja
+          </p>
+        </div>
+      )}
+
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button
         type="button"
@@ -603,7 +651,7 @@ export default function BidModal({ isOpen, onClose, auction, product, onBidPlace
         disabled={loading}
         className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
       >
-        {loading ? 'Enviando puja...' : `Confirmar puja de ${formatCurrency(nextBid)}`}
+        {loading ? 'Enviando puja...' : `Confirmar puja de ${formatCurrency(effectiveNextBid)}`}
       </button>
       <button
         type="button"

@@ -383,7 +383,7 @@ async function getAuctionBuyer(buyerId) {
 // Bidding
 // ---------------------------------------------------------------------------
 
-async function placeBid(auctionId, auctionBuyerId, productId, productType, amount) {
+async function placeBid(auctionId, auctionBuyerId, productId, productType, amount, expectedPrice) {
   let tableName, productIdColumn;
 
   if (productType === 'art') {
@@ -408,6 +408,13 @@ async function placeBid(auctionId, auctionBuyerId, productId, productType, amoun
 
   const product = productResult.rows[0];
   const { start_price, current_price, step_new_bid } = product;
+
+  // Early check: if caller provided an expected price, validate it matches
+  if (expectedPrice !== undefined && expectedPrice !== null) {
+    if (parseFloat(expectedPrice) !== parseFloat(current_price)) {
+      throw new Error('El precio ha cambiado. Por favor, inténtalo de nuevo.');
+    }
+  }
 
   // Check if there are existing bids
   const bidCountResult = await db.execute({

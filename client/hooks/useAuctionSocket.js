@@ -59,7 +59,7 @@ export default function useAuctionSocket(auctionId) {
     socket.on('connect', () => {
       setIsConnected(true)
       // Join the auction-specific room
-      socket.emit('join_auction', auctionId)
+      socket.emit('join-auction', auctionId)
     })
 
     socket.on('disconnect', () => {

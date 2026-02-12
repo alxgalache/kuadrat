@@ -232,7 +232,7 @@ const confirmPayment = async (req, res, next) => {
 const placeBid = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { auctionBuyerId, productId, productType, amount } = req.body;
+    const { auctionBuyerId, productId, productType, amount, expectedPrice } = req.body;
 
     if (!auctionBuyerId || !productId || !productType || !amount) {
       throw new ApiError(400, 'Faltan datos obligatorios para la puja', 'Datos incompletos');
@@ -266,7 +266,8 @@ const placeBid = async (req, res, next) => {
     // Place the bid
     const bidAmount = parseFloat(amount);
     const { bid, updatedPrice } = await auctionService.placeBid(
-      id, auctionBuyerId, parseInt(productId, 10), productType, bidAmount
+      id, auctionBuyerId, parseInt(productId, 10), productType, bidAmount,
+      expectedPrice !== undefined && expectedPrice !== null ? parseFloat(expectedPrice) : undefined
     );
 
     // Broadcast via Socket.IO

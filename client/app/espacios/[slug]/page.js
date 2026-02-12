@@ -204,7 +204,7 @@ export default function EventDetailPage({ params }) {
   // Item 6: Pre-event / finished view — two-column layout matching art product page
   return (
     <div className="bg-white">
-      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24 lg:max-w-7xl lg:px-8">
+      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:max-w-7xl lg:px-8">
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
           {/* Left column: Cover image */}
           <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200">
