@@ -128,7 +128,7 @@ function NewShippingMethodContent() {
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                 placeholder="ej: Envío estándar España"
               />
             </div>
@@ -144,7 +144,7 @@ function NewShippingMethodContent() {
                 value={formData.description}
                 onChange={handleChange}
                 rows={3}
-                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                 placeholder="Descripción opcional del método de envío"
               />
             </div>
@@ -160,7 +160,7 @@ function NewShippingMethodContent() {
                 value={formData.type}
                 onChange={handleChange}
                 required
-                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
               >
                 <option value="delivery">Entrega a domicilio</option>
                 <option value="pickup">Recogida en tienda</option>
@@ -178,7 +178,7 @@ function NewShippingMethodContent() {
                 value={formData.article_type}
                 onChange={handleChange}
                 required
-                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
               >
                 <option value="all">Arte y otros productos</option>
                 <option value="art">Solo arte</option>
@@ -201,7 +201,7 @@ function NewShippingMethodContent() {
                 value={formData.max_weight}
                 onChange={handleChange}
                 min="1"
-                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                 placeholder="ej: 5000"
               />
               <p className="mt-1 text-sm text-gray-500">
@@ -220,7 +220,7 @@ function NewShippingMethodContent() {
                 name="max_dimensions"
                 value={formData.max_dimensions}
                 onChange={handleChange}
-                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                 placeholder="ej: 30x20x10"
               />
               <p className="mt-1 text-sm text-gray-500">
@@ -240,7 +240,7 @@ function NewShippingMethodContent() {
                 value={formData.max_articles}
                 onChange={handleChange}
                 min="1"
-                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                 placeholder="ej: 1"
               />
               <p className="mt-1 text-sm text-gray-500">
@@ -261,7 +261,7 @@ function NewShippingMethodContent() {
                 value={formData.estimated_delivery_days}
                 onChange={handleChange}
                 min="1"
-                className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                 placeholder="ej: 3"
               />
               <p className="mt-1 text-sm text-gray-500">
@@ -277,7 +277,7 @@ function NewShippingMethodContent() {
                 name="is_active"
                 checked={formData.is_active}
                 onChange={handleChange}
-                className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                className="size-4 rounded border-gray-300 text-black focus:ring-black"
               />
               <label htmlFor="is_active" className="ml-3 block text-sm font-medium text-gray-900">
                 Método activo

@@ -570,7 +570,7 @@ function AuctionDetailContent() {
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     required
-                    className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
                 </div>
 
@@ -583,7 +583,7 @@ function AuctionDetailContent() {
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
                     rows={3}
-                    className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
                 </div>
 
@@ -597,7 +597,7 @@ function AuctionDetailContent() {
                     value={editStartDatetime}
                     onChange={(e) => setEditStartDatetime(e.target.value)}
                     required
-                    className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
                 </div>
 
@@ -611,7 +611,7 @@ function AuctionDetailContent() {
                     value={editEndDatetime}
                     onChange={(e) => setEditEndDatetime(e.target.value)}
                     required
-                    className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
                 </div>
               </div>
@@ -624,7 +624,7 @@ function AuctionDetailContent() {
                   id="edit-status"
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
-                  className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                  className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                 >
                   <option value="draft">Borrador</option>
                   <option value="scheduled">Programada</option>
@@ -658,7 +658,7 @@ function AuctionDetailContent() {
                             id={`edit-product-${key}`}
                             checked={isSelected}
                             onChange={() => toggleProduct(product.id, product.product_type)}
-                            className="mt-1 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                            className="mt-1 size-4 rounded border-gray-300 text-black focus:ring-black"
                           />
                           <label htmlFor={`edit-product-${key}`} className="flex-1 cursor-pointer">
                             <div className="text-sm font-medium text-gray-900">{product.name}</div>
@@ -681,7 +681,7 @@ function AuctionDetailContent() {
                                   step="0.01"
                                   value={selectedProducts[key].start_price}
                                   onChange={(e) => updateProductField(key, 'start_price', e.target.value)}
-                                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                                   placeholder="0.00"
                                 />
                               </div>
@@ -695,7 +695,7 @@ function AuctionDetailContent() {
                                   step="0.01"
                                   value={selectedProducts[key].step_new_bid}
                                   onChange={(e) => updateProductField(key, 'step_new_bid', e.target.value)}
-                                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                                   placeholder="0.00"
                                 />
                               </div>
@@ -708,7 +708,7 @@ function AuctionDetailContent() {
                                   min="1"
                                   value={selectedProducts[key].position}
                                   onChange={(e) => updateProductField(key, 'position', e.target.value)}
-                                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                                   placeholder="1"
                                 />
                               </div>
@@ -735,7 +735,7 @@ function AuctionDetailContent() {
                                 value={selectedProducts[key].shipping_observations || ''}
                                 onChange={(e) => updateProductField(key, 'shipping_observations', e.target.value)}
                                 rows={2}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                                 placeholder="Restricciones o información adicional sobre el envío..."
                               />
                             </div>

@@ -1592,23 +1592,75 @@ const getOrderById = async (req, res, next) => {
   }
 };
 
-// Get all orders (admin only)
+// Get all orders (admin only) - with pagination and filters
 const getAllOrdersAdmin = async (req, res, next) => {
   try {
-    // Get all orders
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // Build dynamic WHERE clause
+    const conditions = [];
+    const args = [];
+
+    if (req.query.email) {
+      conditions.push('(o.email LIKE ? OR o.guest_email LIKE ?)');
+      const emailPattern = `%${req.query.email}%`;
+      args.push(emailPattern, emailPattern);
+    }
+
+    if (req.query.status) {
+      conditions.push('o.status = ?');
+      args.push(req.query.status);
+    }
+
+    if (req.query.date_from) {
+      conditions.push('o.created_at >= ?');
+      args.push(req.query.date_from);
+    }
+
+    if (req.query.date_to) {
+      conditions.push('o.created_at <= ?');
+      args.push(req.query.date_to + ' 23:59:59');
+    }
+
+    if (req.query.seller) {
+      const sellerPattern = `%${req.query.seller}%`;
+      conditions.push(`(
+        EXISTS (
+          SELECT 1 FROM art_order_items aoi
+          JOIN art a ON aoi.art_id = a.id
+          JOIN users u ON a.seller_id = u.id
+          WHERE aoi.order_id = o.id AND u.full_name LIKE ?
+        )
+        OR EXISTS (
+          SELECT 1 FROM other_order_items ooi
+          JOIN others ot ON ooi.other_id = ot.id
+          JOIN users u ON ot.seller_id = u.id
+          WHERE ooi.order_id = o.id AND u.full_name LIKE ?
+        )
+      )`);
+      args.push(sellerPattern, sellerPattern);
+    }
+
+    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    // Get total count
+    const countResult = await db.execute({
+      sql: `SELECT COUNT(*) as total FROM orders o ${whereClause}`,
+      args: [...args],
+    });
+    const total = countResult.rows[0].total;
+
+    // Get paginated orders
     const ordersResult = await db.execute({
-      sql: `
-        SELECT o.*
-        FROM orders o
-        ORDER BY o.created_at DESC
-      `,
-      args: [],
+      sql: `SELECT o.* FROM orders o ${whereClause} ORDER BY o.created_at DESC LIMIT ? OFFSET ?`,
+      args: [...args, limit, offset],
     });
 
     // Get items for each order with seller info
     const orders = [];
     for (const order of ordersResult.rows) {
-      // Get art order items with seller info
       const artItemsResult = await db.execute({
         sql: `
           SELECT
@@ -1627,7 +1679,6 @@ const getAllOrdersAdmin = async (req, res, next) => {
         args: [order.id],
       });
 
-      // Get others order items with seller info
       const othersItemsResult = await db.execute({
         sql: `
           SELECT
@@ -1656,6 +1707,9 @@ const getAllOrdersAdmin = async (req, res, next) => {
     res.status(200).json({
       success: true,
       orders,
+      total,
+      page,
+      limit,
     });
   } catch (error) {
     next(error);

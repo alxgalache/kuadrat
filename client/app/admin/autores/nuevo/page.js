@@ -210,7 +210,7 @@ function NewAuthorPageContent() {
                         required
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                       />
                     </div>
                   </div>
@@ -228,7 +228,7 @@ function NewAuthorPageContent() {
                         value={slug}
                         onChange={(e) => setSlug(e.target.value)}
                         placeholder="ej: john-doe"
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                       />
                       <p className="mt-1 text-xs text-gray-500">URL-friendly: minúsculas, sin espacios, solo letras, números y guiones</p>
                     </div>
@@ -246,7 +246,7 @@ function NewAuthorPageContent() {
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                       />
                     </div>
                   </div>
@@ -277,7 +277,7 @@ function NewAuthorPageContent() {
                         type="text"
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                       />
                     </div>
                   </div>
@@ -293,7 +293,7 @@ function NewAuthorPageContent() {
                         type="email"
                         value={emailContact}
                         onChange={(e) => setEmailContact(e.target.value)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                       />
                     </div>
                   </div>
@@ -317,7 +317,7 @@ function NewAuthorPageContent() {
                             type="text"
                             value={pickupAddress}
                             onChange={(e) => setPickupAddress(e.target.value)}
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                           />
                         </div>
                       </div>
@@ -334,7 +334,7 @@ function NewAuthorPageContent() {
                               type="text"
                               value={pickupCity}
                               onChange={(e) => setPickupCity(e.target.value)}
-                              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                             />
                           </div>
                         </div>
@@ -350,7 +350,7 @@ function NewAuthorPageContent() {
                               type="text"
                               value={pickupPostalCode}
                               onChange={(e) => setPickupPostalCode(e.target.value)}
-                              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                             />
                           </div>
                         </div>
@@ -367,7 +367,7 @@ function NewAuthorPageContent() {
                             type="text"
                             value={pickupCountry}
                             onChange={(e) => setPickupCountry(e.target.value)}
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                           />
                         </div>
                       </div>
@@ -384,7 +384,7 @@ function NewAuthorPageContent() {
                             value={pickupInstructions}
                             onChange={(e) => setPickupInstructions(e.target.value)}
                             placeholder="Ej: Llamar al timbre, horario de recogida, etc."
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                           />
                         </div>
                       </div>

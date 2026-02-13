@@ -399,6 +399,9 @@ function PublishProductPageContent() {
                                             <label htmlFor="price" className="block text-sm/6 font-medium text-gray-900">
                                                 Precio (€)
                                             </label>
+                                            <label className="block text-sm/6 font-medium text-gray-400">
+                                                Introduce el precio total, impuestos incluidos
+                                            </label>
                                             {showDecimalWarning && (
                                                 <p className="mt-1 text-xs text-amber-600">
                                                     Introduce punto para los decimales

@@ -225,7 +225,7 @@ function ProductEditPageContent({ params }) {
                         required
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                       />
                     </div>
                   </div>
@@ -259,7 +259,7 @@ function ProductEditPageContent({ params }) {
                           required
                           value={price}
                           onChange={(e) => setPrice(e.target.value)}
-                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                         />
                       </div>
                     </div>
@@ -280,7 +280,7 @@ function ProductEditPageContent({ params }) {
                           value={type}
                           onChange={(e) => setType(e.target.value)}
                           placeholder="Introduce el tipo de soporte"
-                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                         />
                       </div>
                     </div>
@@ -296,7 +296,7 @@ function ProductEditPageContent({ params }) {
                         name="status"
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
-                        className="col-start-1 row-start-1 w-full appearance-none rounded-md border border-gray-300 bg-white py-1.5 pr-8 pl-3 text-base text-gray-900 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 sm:text-sm/6"
+                        className="col-start-1 row-start-1 w-full appearance-none rounded-md border border-gray-300 bg-white py-1.5 pr-8 pl-3 text-base text-gray-900 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                       >
                         <option value="pending">Pendiente</option>
                         <option value="approved">Aprobado</option>
@@ -318,7 +318,7 @@ function ProductEditPageContent({ params }) {
                           type="checkbox"
                           checked={visible}
                           onChange={(e) => setVisible(e.target.checked)}
-                          className="size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                          className="size-4 rounded border-gray-300 text-black focus:ring-black"
                         />
                       </div>
                       <div className="ml-3 text-sm/6">
@@ -336,7 +336,7 @@ function ProductEditPageContent({ params }) {
                           type="checkbox"
                           checked={isSold}
                           onChange={(e) => setIsSold(e.target.checked)}
-                          className="size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                          className="size-4 rounded border-gray-300 text-black focus:ring-black"
                         />
                       </div>
                       <div className="ml-3 text-sm/6">
@@ -354,7 +354,7 @@ function ProductEditPageContent({ params }) {
                           type="checkbox"
                           checked={forAuction}
                           onChange={(e) => setForAuction(e.target.checked)}
-                          className="size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                          className="size-4 rounded border-gray-300 text-black focus:ring-black"
                         />
                       </div>
                       <div className="ml-3 text-sm/6">

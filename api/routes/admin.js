@@ -477,15 +477,48 @@ router.post('/authors/:id/upload-avatar', authorUpload.single('avatar'), async (
  */
 router.get('/authors/:id/products', async (req, res) => {
   try {
-    const result = await db.execute({
-      sql: `SELECT id, name, price, type, basename, status, visible, is_sold, created_at, seller_id
-            FROM products
-            WHERE seller_id = ?
-            ORDER BY created_at DESC`,
-      args: [req.params.id]
-    })
+    const sellerId = req.params.id;
 
-    res.json({ products: result.rows })
+    // Get art products
+    const artResult = await db.execute({
+      sql: `SELECT id, name, description, price, basename, slug, visible, is_sold, status, removed, created_at,
+            'art' as product_type
+            FROM art
+            WHERE seller_id = ? AND removed = 0
+            ORDER BY created_at DESC`,
+      args: [sellerId]
+    });
+
+    // Get others products
+    const othersResult = await db.execute({
+      sql: `SELECT id, name, description, price, basename, slug, visible, is_sold, status, removed, created_at,
+            'others' as product_type
+            FROM others
+            WHERE seller_id = ? AND removed = 0
+            ORDER BY created_at DESC`,
+      args: [sellerId]
+    });
+
+    // For each 'others' product, get its variations
+    const othersWithVariations = await Promise.all(
+      othersResult.rows.map(async (product) => {
+        const varsResult = await db.execute({
+          sql: 'SELECT id, key, value, stock FROM other_vars WHERE other_id = ?',
+          args: [product.id]
+        });
+        const totalStock = varsResult.rows.reduce((sum, v) => sum + (v.stock || 0), 0);
+        return { ...product, variations: varsResult.rows, total_stock: totalStock };
+      })
+    );
+
+    // Combine art and others products
+    const allProducts = [
+      ...artResult.rows.map(art => ({ ...art, total_stock: art.is_sold ? 0 : 1 })),
+      ...othersWithVariations
+    ];
+    allProducts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    res.json({ products: allProducts });
   } catch (error) {
     console.error('Error fetching author products:', error)
     res.status(500).json({
@@ -616,6 +649,167 @@ router.put('/products/:id', productUpload.single('image'), async (req, res) => {
     })
   }
 })
+
+/**
+ * PUT /api/admin/products/:id/visibility
+ * Toggle visibility of a product (art or others) - admin version (no ownership check)
+ */
+router.put('/products/:id/visibility', async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { product_type, visible } = req.body;
+
+    if (!product_type || (product_type !== 'art' && product_type !== 'others')) {
+      return res.status(400).json({
+        title: 'Error de validación',
+        message: 'Tipo de producto inválido'
+      });
+    }
+
+    const table = product_type === 'art' ? 'art' : 'others';
+    const productCheck = await db.execute({
+      sql: `SELECT id FROM ${table} WHERE id = ? AND removed = 0`,
+      args: [productId]
+    });
+
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({
+        title: 'No encontrado',
+        message: 'Producto no encontrado'
+      });
+    }
+
+    await db.execute({
+      sql: `UPDATE ${table} SET visible = ? WHERE id = ?`,
+      args: [visible ? 1 : 0, productId]
+    });
+
+    res.json({
+      title: visible ? 'Producto visible' : 'Producto oculto',
+      message: visible
+        ? 'El producto ahora es visible en la galería'
+        : 'El producto está oculto de la galería'
+    });
+  } catch (error) {
+    console.error('Error toggling product visibility:', error);
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudo cambiar la visibilidad del producto'
+    });
+  }
+});
+
+/**
+ * DELETE /api/admin/products/:id
+ * Soft delete a product (set removed = 1) - admin version (no ownership check)
+ */
+router.delete('/products/:id', async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { product_type } = req.body;
+
+    if (!product_type || (product_type !== 'art' && product_type !== 'others')) {
+      return res.status(400).json({
+        title: 'Error de validación',
+        message: 'Tipo de producto inválido'
+      });
+    }
+
+    const table = product_type === 'art' ? 'art' : 'others';
+    const productCheck = await db.execute({
+      sql: `SELECT id FROM ${table} WHERE id = ? AND removed = 0`,
+      args: [productId]
+    });
+
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({
+        title: 'No encontrado',
+        message: 'Producto no encontrado'
+      });
+    }
+
+    await db.execute({
+      sql: `UPDATE ${table} SET removed = 1, visible = 0 WHERE id = ?`,
+      args: [productId]
+    });
+
+    res.json({
+      title: 'Producto eliminado',
+      message: 'El producto ha sido eliminado y ya no es visible'
+    });
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudo eliminar el producto'
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/others/:id/variations
+ * Update variations for an 'others' product - admin version (no ownership check)
+ */
+router.put('/others/:id/variations', async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { variations } = req.body;
+
+    const productCheck = await db.execute({
+      sql: 'SELECT id FROM others WHERE id = ? AND removed = 0',
+      args: [productId]
+    });
+
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({
+        title: 'No encontrado',
+        message: 'Producto no encontrado'
+      });
+    }
+
+    const existingVars = await db.execute({
+      sql: 'SELECT id FROM other_vars WHERE other_id = ?',
+      args: [productId]
+    });
+    const existingVarIds = existingVars.rows.map(v => v.id);
+    const variationIds = [];
+
+    for (const variation of variations) {
+      if (variation.id && existingVarIds.includes(variation.id)) {
+        await db.execute({
+          sql: 'UPDATE other_vars SET key = ?, value = ?, stock = ? WHERE id = ?',
+          args: [variation.key || '', variation.value || '', variation.stock || 0, variation.id]
+        });
+        variationIds.push(variation.id);
+      } else {
+        const result = await db.execute({
+          sql: 'INSERT INTO other_vars (other_id, key, value, stock) VALUES (?, ?, ?, ?)',
+          args: [productId, variation.key || '', variation.value || '', variation.stock || 0]
+        });
+        variationIds.push(result.lastInsertRowid);
+      }
+    }
+
+    const varsToDelete = existingVarIds.filter(id => !variationIds.includes(id));
+    for (const varId of varsToDelete) {
+      await db.execute({
+        sql: 'DELETE FROM other_vars WHERE id = ?',
+        args: [varId]
+      });
+    }
+
+    res.json({
+      title: 'Actualizado',
+      message: 'Variaciones actualizadas correctamente'
+    });
+  } catch (error) {
+    console.error('Error updating variations:', error);
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudieron actualizar las variaciones'
+    });
+  }
+});
 
 // ===== ORDER ROUTES =====
 

@@ -650,12 +650,42 @@ export const adminAPI = {
         body: isFormData ? productData : JSON.stringify(productData),
       });
     },
+
+    toggleVisibility: async (id, productType, visible) => {
+      return apiRequest(`/admin/products/${id}/visibility`, {
+        method: 'PUT',
+        body: JSON.stringify({ product_type: productType, visible }),
+      });
+    },
+
+    delete: async (id, productType) => {
+      return apiRequest(`/admin/products/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ product_type: productType }),
+      });
+    },
+
+    updateVariations: async (id, variations) => {
+      return apiRequest(`/admin/others/${id}/variations`, {
+        method: 'PUT',
+        body: JSON.stringify({ variations }),
+      });
+    },
   },
 
   // Orders management
   orders: {
-    getAll: async () => {
-      return apiRequest('/admin/orders');
+    getAll: async (params = {}) => {
+      const query = new URLSearchParams();
+      if (params.page) query.set('page', params.page);
+      if (params.limit) query.set('limit', params.limit);
+      if (params.email) query.set('email', params.email);
+      if (params.seller) query.set('seller', params.seller);
+      if (params.date_from) query.set('date_from', params.date_from);
+      if (params.date_to) query.set('date_to', params.date_to);
+      if (params.status) query.set('status', params.status);
+      const qs = query.toString();
+      return apiRequest(`/admin/orders${qs ? '?' + qs : ''}`);
     },
 
     getById: async (id) => {

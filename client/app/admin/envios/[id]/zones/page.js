@@ -247,7 +247,7 @@ function ZonesManagementContent() {
                     value={formData.seller_id}
                     onChange={handleChange}
                     required
-                    className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   >
                     <option value="">Selecciona un vendedor</option>
                     {sellers.map(seller => (
@@ -271,7 +271,7 @@ function ZonesManagementContent() {
                     onChange={handleChange}
                     required
                     maxLength={2}
-                    className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm uppercase"
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6 uppercase"
                     placeholder="ES"
                   />
                   <p className="mt-1 text-sm text-gray-500">
@@ -290,7 +290,7 @@ function ZonesManagementContent() {
                     name="postal_code"
                     value={formData.postal_code}
                     onChange={handleChange}
-                    className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm"
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                     placeholder="Dejar vacío para todo el país"
                   />
                   <p className="mt-1 text-sm text-gray-500">
@@ -312,7 +312,7 @@ function ZonesManagementContent() {
                     step="0.01"
                     min="0"
                     disabled={method?.type === 'pickup'}
-                    className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-900 focus:ring-gray-900 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6 disabled:bg-gray-100 disabled:cursor-not-allowed"
                     placeholder="0.00"
                   />
                 </div>

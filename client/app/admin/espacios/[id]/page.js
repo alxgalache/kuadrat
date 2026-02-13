@@ -236,7 +236,7 @@ function EventDetailContent({ id }) {
                     type="text"
                     value={form.title}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
                 </div>
                 <div>
@@ -245,7 +245,7 @@ function EventDetailContent({ id }) {
                     rows={3}
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -254,7 +254,7 @@ function EventDetailContent({ id }) {
                     <select
                       value={form.category}
                       onChange={(e) => setForm({ ...form, category: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                     >
                       <option value="masterclass">Masterclass</option>
                       <option value="charla">Charla</option>
@@ -267,7 +267,7 @@ function EventDetailContent({ id }) {
                     <select
                       value={form.status}
                       onChange={(e) => setForm({ ...form, status: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                     >
                       <option value="draft">Borrador</option>
                       <option value="scheduled">Programado</option>
@@ -281,7 +281,7 @@ function EventDetailContent({ id }) {
                       type="datetime-local"
                       value={form.event_datetime}
                       onChange={(e) => setForm({ ...form, event_datetime: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                     />
                   </div>
                   <div>
@@ -291,7 +291,7 @@ function EventDetailContent({ id }) {
                       min="15"
                       value={form.duration_minutes}
                       onChange={(e) => setForm({ ...form, duration_minutes: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                     />
                   </div>
                 </div>
@@ -300,7 +300,7 @@ function EventDetailContent({ id }) {
                   <select
                     value={form.host_user_id}
                     onChange={(e) => setForm({ ...form, host_user_id: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   >
                     <option value="">Seleccionar...</option>
                     {sellers.map((s) => (
@@ -314,7 +314,7 @@ function EventDetailContent({ id }) {
                     <select
                       value={form.access_type}
                       onChange={(e) => setForm({ ...form, access_type: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                     >
                       <option value="free">Gratis</option>
                       <option value="paid">De pago</option>
@@ -330,7 +330,7 @@ function EventDetailContent({ id }) {
                           step="0.01"
                           value={form.price}
                           onChange={(e) => setForm({ ...form, price: e.target.value })}
-                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                         />
                       </div>
                       <div>
@@ -338,7 +338,7 @@ function EventDetailContent({ id }) {
                         <select
                           value={form.currency}
                           onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                         >
                           <option value="EUR">EUR</option>
                           <option value="USD">USD</option>
@@ -354,7 +354,7 @@ function EventDetailContent({ id }) {
                     type="url"
                     value={form.cover_image_url}
                     onChange={(e) => setForm({ ...form, cover_image_url: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
                 </div>
                 <div>
@@ -364,7 +364,7 @@ function EventDetailContent({ id }) {
                     min="1"
                     value={form.max_attendees}
                     onChange={(e) => setForm({ ...form, max_attendees: e.target.value })}
-                    className="mt-1 block w-full max-w-xs rounded-md border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 sm:text-sm"
+                    className="mt-1 block w-full max-w-xs rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
                 </div>
 
