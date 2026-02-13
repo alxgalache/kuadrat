@@ -7,6 +7,7 @@ import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
+import PostalCodeSelect from '@/components/PostalCodeSelect'
 
 function ZonesManagementContent() {
   const params = useParams()
@@ -20,7 +21,7 @@ function ZonesManagementContent() {
   const [formData, setFormData] = useState({
     seller_id: '',
     country: 'ES',
-    postal_code: '',
+    postal_codes: [],
     cost: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -84,19 +85,26 @@ function ZonesManagementContent() {
     setSubmitting(true)
 
     try {
-      const zoneData = {
-        seller_id: parseInt(formData.seller_id, 10),
-        country: formData.country.trim(),
-        postal_code: formData.postal_code.trim() || null,
-        cost,
-      }
+      const sellerId = parseInt(formData.seller_id, 10)
+      const country = formData.country.trim()
+      const postalCodeIds = formData.postal_codes.map(pc => pc.id)
 
       if (editingZone) {
-        // Update existing zone
-        await adminAPI.shipping.updateZone(editingZone.id, zoneData)
+        // Update existing zone with its postal codes
+        await adminAPI.shipping.updateZone(editingZone.id, {
+          seller_id: sellerId,
+          country,
+          postal_code_ids: postalCodeIds,
+          cost,
+        })
       } else {
-        // Create new zone
-        await adminAPI.shipping.createZone(params.id, zoneData)
+        // Create a single zone with all selected postal codes
+        await adminAPI.shipping.createZone(params.id, {
+          seller_id: sellerId,
+          country,
+          postal_code_ids: postalCodeIds,
+          cost,
+        })
       }
 
       // Reload zones
@@ -109,7 +117,7 @@ function ZonesManagementContent() {
       setFormData({
         seller_id: '',
         country: 'ES',
-        postal_code: '',
+        postal_codes: [],
         cost: '',
       })
     } catch (err) {
@@ -125,7 +133,7 @@ function ZonesManagementContent() {
     setFormData({
       seller_id: zone.seller_id.toString(),
       country: zone.country,
-      postal_code: zone.postal_code || '',
+      postal_codes: zone.postal_codes || [],
       cost: zone.cost.toString(),
     })
     setShowForm(true)
@@ -151,7 +159,7 @@ function ZonesManagementContent() {
     setFormData({
       seller_id: '',
       country: 'ES',
-      postal_code: '',
+      postal_codes: [],
       cost: '',
     })
     setError('')
@@ -279,22 +287,20 @@ function ZonesManagementContent() {
                   </p>
                 </div>
 
-                {/* Postal code */}
-                <div>
-                  <label htmlFor="postal_code" className="block text-sm font-medium text-gray-900">
-                    Código postal
+                {/* Postal codes */}
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-900">
+                    Códigos postales
                   </label>
-                  <input
-                    type="text"
-                    id="postal_code"
-                    name="postal_code"
-                    value={formData.postal_code}
-                    onChange={handleChange}
-                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                    placeholder="Dejar vacío para todo el país"
-                  />
+                  <div className="mt-2">
+                    <PostalCodeSelect
+                      value={formData.postal_codes}
+                      onChange={(postalCodes) => setFormData(prev => ({ ...prev, postal_codes: postalCodes }))}
+                      placeholder="Busca por código postal o ciudad (min. 3 caracteres)..."
+                    />
+                  </div>
                   <p className="mt-1 text-sm text-gray-500">
-                    Opcional. Si se omite, aplica a todo el país.
+                    Opcional. Si no se selecciona ninguno, la zona aplica a todo el país.
                   </p>
                 </div>
 
@@ -358,7 +364,7 @@ function ZonesManagementContent() {
                         País
                       </th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                        Código postal
+                        Códigos postales
                       </th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                         Costo
@@ -377,8 +383,22 @@ function ZonesManagementContent() {
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           {zone.country}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {zone.postal_code || 'Todo el país'}
+                        <td className="px-3 py-4 text-sm text-gray-500">
+                          {zone.postal_codes && zone.postal_codes.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {zone.postal_codes.map((pc) => (
+                                <span
+                                  key={pc.id}
+                                  className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700"
+                                  title={pc.city || ''}
+                                >
+                                  {pc.postal_code}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            'Todo el país'
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">
                           €{zone.cost.toFixed(2)}

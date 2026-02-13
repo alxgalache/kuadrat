@@ -286,18 +286,19 @@ const deleteShippingMethod = async (req, res, next) => {
 // =====================================
 
 // Get all zones for a shipping method (Admin only)
+// Returns zones with their associated postal codes from the junction table
 const getShippingZones = async (req, res, next) => {
   try {
     const { methodId } = req.params;
 
-    const result = await db.execute({
+    // Get all zones for this method
+    const zonesResult = await db.execute({
       sql: `
         SELECT
           sz.id,
           sz.shipping_method_id,
           sz.seller_id,
           sz.country,
-          sz.postal_code,
           sz.cost,
           sz.created_at,
           sz.updated_at,
@@ -307,14 +308,54 @@ const getShippingZones = async (req, res, next) => {
         FROM shipping_zones sz
         INNER JOIN users u ON sz.seller_id = u.id
         WHERE sz.shipping_method_id = ?
-        ORDER BY u.full_name ASC, sz.country ASC, sz.postal_code ASC
+        ORDER BY u.full_name ASC, sz.country ASC
       `,
       args: [methodId],
     });
 
+    // Get postal codes for all zones in this method
+    const postalCodesResult = await db.execute({
+      sql: `
+        SELECT
+          szpc.shipping_zone_id,
+          pc.id,
+          pc.postal_code,
+          pc.city,
+          pc.province,
+          pc.country as pc_country
+        FROM shipping_zones_postal_codes szpc
+        INNER JOIN postal_codes pc ON szpc.postal_code_id = pc.id
+        INNER JOIN shipping_zones sz ON szpc.shipping_zone_id = sz.id
+        WHERE sz.shipping_method_id = ?
+        ORDER BY pc.postal_code ASC
+      `,
+      args: [methodId],
+    });
+
+    // Group postal codes by zone_id
+    const postalCodesByZone = {};
+    for (const pc of postalCodesResult.rows) {
+      if (!postalCodesByZone[pc.shipping_zone_id]) {
+        postalCodesByZone[pc.shipping_zone_id] = [];
+      }
+      postalCodesByZone[pc.shipping_zone_id].push({
+        id: pc.id,
+        postal_code: pc.postal_code,
+        city: pc.city,
+        province: pc.province,
+        country: pc.pc_country,
+      });
+    }
+
+    // Attach postal codes to each zone
+    const zones = zonesResult.rows.map(zone => ({
+      ...zone,
+      postal_codes: postalCodesByZone[zone.id] || [],
+    }));
+
     res.status(200).json({
       success: true,
-      zones: result.rows,
+      zones,
     });
   } catch (error) {
     next(error);
@@ -322,10 +363,11 @@ const getShippingZones = async (req, res, next) => {
 };
 
 // Create a new shipping zone (Admin only)
+// Accepts postal_code_ids array for the junction table
 const createShippingZone = async (req, res, next) => {
   try {
     const { methodId } = req.params;
-    const { seller_id, country, postal_code, cost } = req.body;
+    const { seller_id, country, postal_code_ids, cost } = req.body;
 
     // Validate required fields
     if (!seller_id || cost === undefined || cost === null) {
@@ -345,41 +387,15 @@ const createShippingZone = async (req, res, next) => {
     const methodType = methodExists.rows[0].type;
 
     // For pickup methods, cost must be 0
-    // Country and postal_code are optional - if postal_code is empty, applies to whole country
     if (methodType === 'pickup') {
       if (parseFloat(cost) !== 0) {
         throw new ApiError(400, 'El costo de recogida debe ser 0', 'Costo de recogida inválido');
       }
-      // Validate postal code format if both country and postal_code are provided
-      if (country && postal_code) {
-        const isValid = postcodeValidator(postal_code, country);
-        if (!isValid) {
-          throw new ApiError(
-            400,
-            `Código postal inválido para ${country}`,
-            'Código postal inválido'
-          );
-        }
-      }
     }
 
-    // For delivery methods, validate country and postal code
-    if (methodType === 'delivery') {
-      if (!country) {
-        throw new ApiError(400, 'País es obligatorio para métodos de entrega', 'País requerido');
-      }
-
-      // Validate postal code format if provided
-      if (postal_code) {
-        const isValid = postcodeValidator(postal_code, country);
-        if (!isValid) {
-          throw new ApiError(
-            400,
-            `Código postal inválido para ${country}`,
-            'Código postal inválido'
-          );
-        }
-      }
+    // For delivery methods, country is required
+    if (methodType === 'delivery' && !country) {
+      throw new ApiError(400, 'País es obligatorio para métodos de entrega', 'País requerido');
     }
 
     // Check if seller exists
@@ -392,48 +408,37 @@ const createShippingZone = async (req, res, next) => {
       throw new ApiError(404, 'Vendedor no encontrado', 'Vendedor no encontrado');
     }
 
-    // Check for duplicate zone
-    const duplicate = await db.execute({
-      sql: `
-        SELECT id FROM shipping_zones
-        WHERE shipping_method_id = ?
-          AND seller_id = ?
-          AND (country = ? OR (country IS NULL AND ? IS NULL))
-          AND (postal_code = ? OR (postal_code IS NULL AND ? IS NULL))
-      `,
-      args: [
-        methodId,
-        seller_id,
-        country || null,
-        country || null,
-        postal_code || null,
-        postal_code || null,
-      ],
-    });
-
-    if (duplicate.rows.length > 0) {
-      throw new ApiError(409, 'Esta zona de envío ya existe', 'Zona de envío duplicada');
-    }
-
+    // Insert the zone
     const result = await db.execute({
       sql: `
         INSERT INTO shipping_zones (
           shipping_method_id,
           seller_id,
           country,
-          postal_code,
           cost,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `,
-      args: [methodId, seller_id, country || null, postal_code || null, cost],
+      args: [methodId, seller_id, country || null, cost],
     });
+
+    const zoneId = result.lastInsertRowid.toString();
+
+    // Insert postal code associations
+    if (postal_code_ids && postal_code_ids.length > 0) {
+      for (const pcId of postal_code_ids) {
+        await db.execute({
+          sql: 'INSERT INTO shipping_zones_postal_codes (shipping_zone_id, postal_code_id) VALUES (?, ?)',
+          args: [zoneId, pcId],
+        });
+      }
+    }
 
     res.status(201).json({
       success: true,
       message: 'Zona de envío creada exitosamente',
-      zoneId: result.lastInsertRowid.toString(),
+      zoneId,
     });
   } catch (error) {
     next(error);
@@ -444,7 +449,7 @@ const createShippingZone = async (req, res, next) => {
 const updateShippingZone = async (req, res, next) => {
   try {
     const { zoneId } = req.params;
-    const { seller_id, country, postal_code, cost } = req.body;
+    const { seller_id, country, postal_code_ids, cost } = req.body;
 
     // Check if zone exists and get method type
     const existing = await db.execute({
@@ -468,15 +473,7 @@ const updateShippingZone = async (req, res, next) => {
       throw new ApiError(400, 'El costo de recogida debe ser 0', 'Costo de recogida inválido');
     }
 
-    // Validate postal code if provided for delivery
-    if (methodType === 'delivery' && postal_code && country) {
-      const isValid = postcodeValidator(postal_code, country);
-      if (!isValid) {
-        throw new ApiError(400, `Código postal inválido para ${country}`, 'Código postal inválido');
-      }
-    }
-
-    // Build update query dynamically to handle null values properly
+    // Build update query dynamically
     const updates = [];
     const args = [];
 
@@ -488,11 +485,6 @@ const updateShippingZone = async (req, res, next) => {
     if (country !== undefined) {
       updates.push('country = ?');
       args.push(country);
-    }
-
-    if (postal_code !== undefined) {
-      updates.push('postal_code = ?');
-      args.push(postal_code || null);
     }
 
     if (cost !== undefined) {
@@ -515,6 +507,25 @@ const updateShippingZone = async (req, res, next) => {
         `,
         args,
       });
+    }
+
+    // Update postal code associations if provided
+    if (postal_code_ids !== undefined) {
+      // Remove existing associations
+      await db.execute({
+        sql: 'DELETE FROM shipping_zones_postal_codes WHERE shipping_zone_id = ?',
+        args: [zoneId],
+      });
+
+      // Insert new associations
+      if (postal_code_ids && postal_code_ids.length > 0) {
+        for (const pcId of postal_code_ids) {
+          await db.execute({
+            sql: 'INSERT INTO shipping_zones_postal_codes (shipping_zone_id, postal_code_id) VALUES (?, ?)',
+            args: [zoneId, pcId],
+          });
+        }
+      }
     }
 
     res.status(200).json({
@@ -541,6 +552,7 @@ const deleteShippingZone = async (req, res, next) => {
       throw new ApiError(404, 'Zona de envío no encontrada', 'Zona de envío no encontrada');
     }
 
+    // Junction table records are auto-deleted via ON DELETE CASCADE
     await db.execute({
       sql: 'DELETE FROM shipping_zones WHERE id = ?',
       args: [zoneId],
@@ -682,85 +694,127 @@ const getAvailableShipping = async (req, res, next) => {
         }
       }
 
-      // First, try to find postal code specific rate
-      let deliveryQuery;
-      let deliveryArgs;
-
+      // Find delivery methods for this seller+country.
+      // A zone matches if:
+      //   1. It has no postal codes (applies to entire country), OR
+      //   2. It has postal codes and one of them matches the buyer's postal code
+      //
+      // We prefer a specific postal code match over a country-wide zone.
       if (postalCode) {
-        deliveryQuery = `
-          SELECT DISTINCT
-            sm.id,
-            sm.name,
-            sm.description,
-            sm.type,
-            sm.article_type,
-            sm.max_weight,
-            sm.max_dimensions,
-            sm.max_articles,
-            sm.estimated_delivery_days,
-            sz.cost,
-            sz.postal_code
-          FROM shipping_methods sm
-          INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-          WHERE sm.type = 'delivery'
-            AND sm.is_active = 1
-            AND (sm.article_type = 'all' OR sm.article_type = ?)
-            AND sz.seller_id = ?
-            AND sz.country = ?
-            AND (sz.postal_code = ? OR sz.postal_code IS NULL)
-          ORDER BY sz.postal_code DESC
-        `;
-        deliveryArgs = [productType, sellerId, country, postalCode];
-      } else {
-        deliveryQuery = `
-          SELECT DISTINCT
-            sm.id,
-            sm.name,
-            sm.description,
-            sm.type,
-            sm.article_type,
-            sm.max_weight,
-            sm.max_dimensions,
-            sm.max_articles,
-            sm.estimated_delivery_days,
-            sz.cost,
-            sz.postal_code
-          FROM shipping_methods sm
-          INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-          WHERE sm.type = 'delivery'
-            AND sm.is_active = 1
-            AND (sm.article_type = 'all' OR sm.article_type = ?)
-            AND sz.seller_id = ?
-            AND sz.country = ?
-            AND sz.postal_code IS NULL
-        `;
-        deliveryArgs = [productType, sellerId, country];
-      }
+        // Query zones that either have a matching postal code or have no postal codes (country-wide)
+        const deliveryResult = await db.execute({
+          sql: `
+            SELECT
+              sm.id,
+              sm.name,
+              sm.description,
+              sm.type,
+              sm.article_type,
+              sm.max_weight,
+              sm.max_dimensions,
+              sm.max_articles,
+              sm.estimated_delivery_days,
+              sz.cost,
+              sz.id as zone_id,
+              pc.postal_code as matched_postal_code
+            FROM shipping_methods sm
+            INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
+            LEFT JOIN shipping_zones_postal_codes szpc ON sz.id = szpc.shipping_zone_id
+            LEFT JOIN postal_codes pc ON szpc.postal_code_id = pc.id AND pc.postal_code = ?
+            WHERE sm.type = 'delivery'
+              AND sm.is_active = 1
+              AND (sm.article_type = 'all' OR sm.article_type = ?)
+              AND sz.seller_id = ?
+              AND sz.country = ?
+              AND (
+                szpc.id IS NULL
+                OR pc.id IS NOT NULL
+              )
+          `,
+          args: [postalCode, productType, sellerId, country],
+        });
 
-      const deliveryResult = await db.execute({
-        sql: deliveryQuery,
-        args: deliveryArgs,
-      });
+        // Check which zones have postal codes at all (to distinguish country-wide from specific)
+        const zoneIds = [...new Set(deliveryResult.rows.map(r => r.zone_id))];
+        const zoneHasPostalCodes = {};
 
-      // Filter by postal code specificity (prefer postal code match over country-wide)
-      const groupedByMethod = {};
-      deliveryResult.rows.forEach((row) => {
-        if (!groupedByMethod[row.id] || row.postal_code) {
-          groupedByMethod[row.id] = row;
+        if (zoneIds.length > 0) {
+          for (const zid of zoneIds) {
+            const countResult = await db.execute({
+              sql: 'SELECT COUNT(*) as cnt FROM shipping_zones_postal_codes WHERE shipping_zone_id = ?',
+              args: [zid],
+            });
+            zoneHasPostalCodes[zid] = countResult.rows[0].cnt > 0;
+          }
         }
-      });
 
-      deliveryMethods = Object.values(groupedByMethod)
-        .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
-        .map((method) => ({
-          id: method.id,
-          name: method.name,
-          description: method.description,
-          type: method.type,
-          cost: method.cost,
-          max_articles: method.max_articles,
-          estimated_delivery_days: method.estimated_delivery_days,
-        }));
+        // Group by method, preferring specific postal code match over country-wide
+        const groupedByMethod = {};
+        for (const row of deliveryResult.rows) {
+          const hasSpecificMatch = row.matched_postal_code !== null;
+          const isCountryWide = !zoneHasPostalCodes[row.zone_id];
+
+          if (!groupedByMethod[row.id]) {
+            groupedByMethod[row.id] = { ...row, _isSpecific: hasSpecificMatch };
+          } else if (hasSpecificMatch && !groupedByMethod[row.id]._isSpecific) {
+            // Prefer specific match over country-wide
+            groupedByMethod[row.id] = { ...row, _isSpecific: true };
+          }
+        }
+
+        deliveryMethods = Object.values(groupedByMethod)
+          .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
+          .map((method) => ({
+            id: method.id,
+            name: method.name,
+            description: method.description,
+            type: method.type,
+            cost: method.cost,
+            max_articles: method.max_articles,
+            estimated_delivery_days: method.estimated_delivery_days,
+          }));
+      } else {
+        // No postal code provided — only return country-wide zones (zones with no postal codes)
+        const deliveryResult = await db.execute({
+          sql: `
+            SELECT DISTINCT
+              sm.id,
+              sm.name,
+              sm.description,
+              sm.type,
+              sm.article_type,
+              sm.max_weight,
+              sm.max_dimensions,
+              sm.max_articles,
+              sm.estimated_delivery_days,
+              sz.cost
+            FROM shipping_methods sm
+            INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
+            WHERE sm.type = 'delivery'
+              AND sm.is_active = 1
+              AND (sm.article_type = 'all' OR sm.article_type = ?)
+              AND sz.seller_id = ?
+              AND sz.country = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM shipping_zones_postal_codes szpc
+                WHERE szpc.shipping_zone_id = sz.id
+              )
+          `,
+          args: [productType, sellerId, country],
+        });
+
+        deliveryMethods = deliveryResult.rows
+          .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
+          .map((method) => ({
+            id: method.id,
+            name: method.name,
+            description: method.description,
+            type: method.type,
+            cost: method.cost,
+            max_articles: method.max_articles,
+            estimated_delivery_days: method.estimated_delivery_days,
+          }));
+      }
     }
 
     res.status(200).json({

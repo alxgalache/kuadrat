@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
-import AsyncSelect from 'react-select/async'
+import { useState, useEffect, useRef } from 'react'
+import Select from 'react-select'
 import { adminAPI } from '@/lib/api'
 
 /**
@@ -10,6 +10,7 @@ import { adminAPI } from '@/lib/api'
  * - Displays format: "28001 - Madrid"
  * - 300ms debounce
  * - Max 50 results from API
+ * - Dropdown stays open and populated when selecting options
  *
  * @param {Array} value - Array of selected postal code objects { id, postal_code, city, ... }
  * @param {Function} onChange - Callback with updated selection array
@@ -23,6 +24,8 @@ export default function PostalCodeSelect({
   isDisabled = false
 }) {
   const [inputValue, setInputValue] = useState('')
+  const [options, setOptions] = useState([])
+  const [isLoading, setIsLoading] = useState(false)
   const debounceTimerRef = useRef(null)
 
   // Convert postal code object to react-select option format
@@ -35,41 +38,54 @@ export default function PostalCodeSelect({
   // Convert react-select option back to postal code object
   const fromOption = (opt) => opt.data
 
-  // Load options from API with search query (with debounce)
-  const loadOptions = useCallback((inputValue) => {
-    return new Promise((resolve) => {
-      // Clear any pending debounce timer
+  // Fetch options when inputValue changes (with debounce)
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
+
+    if (!inputValue || inputValue.length < 3) {
+      setOptions([])
+      setIsLoading(false)
+      return
+    }
+
+    setIsLoading(true)
+
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const response = await adminAPI.postalCodes.search(inputValue)
+        if (response.success && response.postalCodes) {
+          setOptions(response.postalCodes.map(toOption))
+        } else {
+          setOptions([])
+        }
+      } catch (error) {
+        console.error('Error searching postal codes:', error)
+        setOptions([])
+      } finally {
+        setIsLoading(false)
+      }
+    }, 300)
+
+    return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
-
-      // If input is less than 3 characters, resolve immediately with empty array
-      if (!inputValue || inputValue.length < 3) {
-        resolve([])
-        return
-      }
-
-      // Debounce the API call by 300ms
-      debounceTimerRef.current = setTimeout(async () => {
-        try {
-          const response = await adminAPI.postalCodes.search(inputValue)
-          if (response.success && response.postalCodes) {
-            resolve(response.postalCodes.map(toOption))
-          } else {
-            resolve([])
-          }
-        } catch (error) {
-          console.error('Error searching postal codes:', error)
-          resolve([])
-        }
-      }, 300)
-    })
-  }, [])
+    }
+  }, [inputValue])
 
   // Handle selection change
   const handleChange = (selectedOptions) => {
     const postalCodes = selectedOptions ? selectedOptions.map(fromOption) : []
     onChange(postalCodes)
+  }
+
+  // Only update input on actual typing — ignore clear actions from selection
+  const handleInputChange = (newValue, actionMeta) => {
+    if (actionMeta.action === 'input-change') {
+      setInputValue(newValue)
+    }
   }
 
   // Custom styles to match Tailwind design
@@ -141,7 +157,7 @@ export default function PostalCodeSelect({
   }
 
   // Custom messages
-  const noOptionsMessage = ({ inputValue }) => {
+  const noOptionsMessage = () => {
     if (!inputValue || inputValue.length < 3) {
       return 'Escribe al menos 3 caracteres para buscar'
     }
@@ -151,15 +167,14 @@ export default function PostalCodeSelect({
   const loadingMessage = () => 'Buscando...'
 
   return (
-    <AsyncSelect
+    <Select
       isMulti
-      cacheOptions
-      defaultOptions={false}
-      loadOptions={loadOptions}
+      options={options}
+      isLoading={isLoading}
       value={value.map(toOption)}
       onChange={handleChange}
       inputValue={inputValue}
-      onInputChange={(newValue) => setInputValue(newValue)}
+      onInputChange={handleInputChange}
       placeholder={placeholder}
       isDisabled={isDisabled}
       styles={customStyles}
@@ -167,6 +182,7 @@ export default function PostalCodeSelect({
       loadingMessage={loadingMessage}
       classNamePrefix="postal-select"
       closeMenuOnSelect={false}
+      filterOption={() => true}
     />
   )
 }

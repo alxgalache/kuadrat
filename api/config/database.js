@@ -863,6 +863,60 @@ async function initializeDatabase() {
       }
     }
 
+    // Create shipping_zones_postal_codes junction table (n-to-n: zones <-> postal_codes)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS shipping_zones_postal_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shipping_zone_id INTEGER NOT NULL,
+        postal_code_id INTEGER NOT NULL,
+        FOREIGN KEY (shipping_zone_id) REFERENCES shipping_zones(id) ON DELETE CASCADE,
+        FOREIGN KEY (postal_code_id) REFERENCES postal_codes(id)
+      )
+    `);
+
+    // Unique index to prevent duplicate zone-postal_code pairs
+    try {
+      await db.execute(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_szpc_zone_postal
+        ON shipping_zones_postal_codes(shipping_zone_id, postal_code_id)
+      `);
+    } catch (err) {
+      // Index may already exist
+    }
+
+    // Migration: move existing shipping_zones.postal_code data to the junction table
+    try {
+      // Find zones that have a postal_code value and haven't been migrated yet
+      const zonesToMigrate = await db.execute(`
+        SELECT sz.id as zone_id, sz.postal_code, pc.id as postal_code_id
+        FROM shipping_zones sz
+        INNER JOIN postal_codes pc ON pc.postal_code = sz.postal_code
+        WHERE sz.postal_code IS NOT NULL
+          AND sz.postal_code != ''
+          AND NOT EXISTS (
+            SELECT 1 FROM shipping_zones_postal_codes szpc
+            WHERE szpc.shipping_zone_id = sz.id
+          )
+      `);
+
+      for (const row of zonesToMigrate.rows) {
+        try {
+          await db.execute({
+            sql: 'INSERT INTO shipping_zones_postal_codes (shipping_zone_id, postal_code_id) VALUES (?, ?)',
+            args: [row.zone_id, row.postal_code_id],
+          });
+        } catch (insertErr) {
+          // Skip duplicates
+        }
+      }
+
+      if (zonesToMigrate.rows.length > 0) {
+        console.log(`Migrated ${zonesToMigrate.rows.length} shipping zone postal codes to junction table`);
+      }
+    } catch (err) {
+      console.log('Shipping zones postal code migration skipped or error:', err.message);
+    }
+
     console.log('Database schema initialized successfully!');
   } catch (error) {
     console.error('Error initializing database:', error);
