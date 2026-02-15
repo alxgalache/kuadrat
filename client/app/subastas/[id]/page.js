@@ -194,32 +194,32 @@ export default function SubastaDetailPage({ params }) {
 
         {/* Product navigation */}
         {products.length > 1 && (
-          <div className="flex items-center justify-between mb-6">
-            <button
-              type="button"
-              onClick={handlePrevProduct}
-              disabled={selectedProductIndex === 0}
-              className="p-1 inline-flex items-center gap-1 text-sm font-medium text-gray-900 hover:text-gray-600 disabled:text-gray-300 disabled:cursor-default"
-            >
-              <ChevronLeftIcon className="h-5 w-5" />
-              <span className="hidden sm:inline">Anterior</span>
-            </button>
+            <div className="flex items-center justify-between mb-6 rounded-lg bg-gray-50 ring-1 ring-gray-200 px-4 py-3">
+              <button
+                  type="button"
+                  onClick={handlePrevProduct}
+                  disabled={selectedProductIndex === 0}
+                  className="inline-flex items-center gap-1 rounded-md bg-gray-800 px-2.5 py-1.5 text-sm font-semibold text-white shadow-xs hover:bg-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-800 disabled:opacity-30 disabled:cursor-default"
+              >
+                <ChevronLeftIcon aria-hidden="true" className="size-5" />
+                <span className="hidden sm:inline">Anterior</span>
+              </button>
 
-            <span className="text-sm font-medium text-gray-900 text-center">
-              <span className="hidden sm:inline">{currentProduct?.name} </span>
-              ({selectedProductIndex + 1} de {products.length})
-            </span>
+              <div className="text-center min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate hidden sm:block">{currentProduct?.name}</p>
+                <p className="text-xs text-gray-500">{selectedProductIndex + 1} de {products.length}</p>
+              </div>
 
-            <button
-              type="button"
-              onClick={handleNextProduct}
-              disabled={selectedProductIndex === products.length - 1}
-              className="p-1 inline-flex items-center gap-1 text-sm font-medium text-gray-900 hover:text-gray-600 disabled:text-gray-300 disabled:cursor-default"
-            >
-              <span className="hidden sm:inline">Siguiente</span>
-              <ChevronRightIcon className="h-5 w-5" />
-            </button>
-          </div>
+              <button
+                  type="button"
+                  onClick={handleNextProduct}
+                  disabled={selectedProductIndex === products.length - 1}
+                  className="inline-flex items-center gap-1 rounded-md bg-gray-800 px-2.5 py-1.5 text-sm font-semibold text-white shadow-xs hover:bg-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-800 disabled:opacity-30 disabled:cursor-default"
+              >
+                <span className="hidden sm:inline">Siguiente</span>
+                <ChevronRightIcon aria-hidden="true" className="size-5" />
+              </button>
+            </div>
         )}
 
         {/* Three-column layout */}

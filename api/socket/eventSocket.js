@@ -15,6 +15,16 @@ module.exports = function setupEventSocket(io) {
       if (!eventId) return;
       socket.leave(`event-${eventId}`);
     });
+
+    // Chat message for video events (LiveKit events use LiveKit's built-in chat)
+    socket.on("chat_message", ({ eventId, sender, message }) => {
+      if (!eventId || !message) return;
+      io.to(`event-${eventId}`).emit("chat_message", {
+        sender: sender || 'Anónimo',
+        message,
+        timestamp: new Date().toISOString(),
+      });
+    });
   });
 
   // Return broadcast helper functions

@@ -70,6 +70,35 @@ const productUpload = multer({
   }
 })
 
+// Configure multer for event video uploads
+const eventVideoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '../uploads/events')
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true })
+    }
+    cb(null, uploadDir)
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    const ext = path.extname(file.originalname)
+    cb(null, 'event-' + uniqueSuffix + ext)
+  }
+})
+
+const eventVideoUpload = multer({
+  storage: eventVideoStorage,
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime']
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(new Error('Invalid file type. Only MP4, WebM and MOV are allowed'))
+    }
+  }
+})
+
 // Apply authenticate and adminAuth middleware to all admin routes
 router.use(authenticate, adminAuth)
 
@@ -1040,5 +1069,11 @@ router.post('/events/:id/participants/:identity/demote', eventAdminController.de
  * Mute/unmute a participant's track
  */
 router.post('/events/:id/participants/:identity/mute', eventAdminController.muteParticipant);
+
+/**
+ * POST /api/admin/events/:id/upload-video
+ * Upload a video file for a video-format event
+ */
+router.post('/events/:id/upload-video', eventVideoUpload.single('video'), eventAdminController.uploadVideo);
 
 module.exports = router

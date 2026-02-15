@@ -12,6 +12,12 @@ const { authenticate } = require('../middleware/authorization');
 router.get('/', eventController.getEvents);
 
 /**
+ * GET /api/events/videos/:filename
+ * Serve uploaded event video files
+ */
+router.get('/videos/:filename', eventController.getEventVideo);
+
+/**
  * GET /api/events/:slug
  * Get event details by slug
  */

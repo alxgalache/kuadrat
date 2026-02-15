@@ -12,6 +12,9 @@ export const getOthersImageUrl = (basename) => `${API_URL}/others/images/${encod
 // Helper to build author profile image URL by filename
 export const getAuthorImageUrl = (filename) => `${API_URL}/users/authors/images/${encodeURIComponent(filename)}`;
 
+// Helper to build event video URL by filename (for uploaded videos)
+export const getEventVideoUrl = (filename) => `${API_URL}/events/videos/${encodeURIComponent(filename)}`;
+
 // Helper function to get auth token from localStorage
 const getAuthToken = () => {
   if (typeof window !== 'undefined') {
@@ -899,6 +902,15 @@ export const adminAPI = {
         body: JSON.stringify({ trackSid, muted }),
       });
     },
+
+    uploadVideo: async (eventId, file) => {
+      const formData = new FormData();
+      formData.append('video', file);
+      return apiRequest(`/admin/events/${eventId}/upload-video`, {
+        method: 'POST',
+        body: formData,
+      });
+    },
   },
 };
 
@@ -937,10 +949,10 @@ export const auctionsAPI = {
     });
   },
 
-  confirmPayment: async (auctionId, auctionBuyerId, paymentIntentId) => {
+  confirmPayment: async (auctionId, auctionBuyerId, setupIntentId) => {
     return apiRequest(`/auctions/${auctionId}/confirm-payment`, {
       method: 'POST',
-      body: JSON.stringify({ auctionBuyerId, paymentIntentId }),
+      body: JSON.stringify({ auctionBuyerId, setupIntentId }),
     });
   },
 

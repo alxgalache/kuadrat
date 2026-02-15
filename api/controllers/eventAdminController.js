@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 
@@ -173,22 +175,30 @@ const startEvent = async (req, res, next) => {
       });
     }
 
-    // Create LiveKit room
-    const roomName = `event-${current.id}`;
-    try {
-      await livekitService.createRoom(roomName, {
-        maxParticipants: current.max_attendees || 0,
-      });
-    } catch (lkError) {
-      console.error('Error creating LiveKit room:', lkError);
-      return res.status(500).json({
-        success: false,
-        title: 'Error de sala',
-        message: 'No se pudo crear la sala de streaming',
-      });
-    }
+    let event;
 
-    const event = await eventService.startEvent(req.params.id, roomName);
+    if (current.format === 'video') {
+      // Video format: store the start timestamp, no LiveKit room needed
+      event = await eventService.startEvent(req.params.id, {
+        videoStartedAt: new Date().toISOString(),
+      });
+    } else {
+      // Live format: create LiveKit room
+      const roomName = `event-${current.id}`;
+      try {
+        await livekitService.createRoom(roomName, {
+          maxParticipants: current.max_attendees || 0,
+        });
+      } catch (lkError) {
+        console.error('Error creating LiveKit room:', lkError);
+        return res.status(500).json({
+          success: false,
+          title: 'Error de sala',
+          message: 'No se pudo crear la sala de streaming',
+        });
+      }
+      event = await eventService.startEvent(req.params.id, { livekitRoomName: roomName });
+    }
 
     // Notify clients waiting on the event detail page
     const eventSocket = req.app.get('eventSocket');
@@ -230,8 +240,8 @@ const endEvent = async (req, res, next) => {
       });
     }
 
-    // Delete LiveKit room
-    if (current.livekit_room_name) {
+    // Delete LiveKit room (only for live format events)
+    if (current.format !== 'video' && current.livekit_room_name) {
       try {
         await livekitService.deleteRoom(current.livekit_room_name);
       } catch (lkError) {
@@ -392,6 +402,56 @@ const listParticipants = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/admin/events/:id/upload-video
+// Upload a video file for a video-format event
+// ---------------------------------------------------------------------------
+const uploadVideo = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        title: 'Error de validación',
+        message: 'No se proporcionó ningún archivo de vídeo',
+      });
+    }
+
+    const current = await eventService.getEventById(req.params.id);
+    if (!current) {
+      fs.unlinkSync(req.file.path);
+      return res.status(404).json({
+        success: false,
+        title: 'No encontrado',
+        message: 'Evento no encontrado',
+      });
+    }
+
+    // Delete previous uploaded video if it exists
+    if (current.video_url && current.video_url.startsWith('uploaded:')) {
+      const oldFilename = current.video_url.replace('uploaded:', '');
+      const oldPath = path.join(__dirname, '../uploads/events', oldFilename);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
+    const videoUrl = `uploaded:${req.file.filename}`;
+    await eventService.updateEvent(req.params.id, { video_url: videoUrl });
+
+    res.status(200).json({
+      success: true,
+      title: 'Vídeo subido',
+      message: 'El archivo de vídeo se ha subido correctamente',
+      video_url: videoUrl,
+    });
+  } catch (error) {
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
+    }
+    next(error);
+  }
+};
+
 module.exports = {
   createEvent,
   listEvents,
@@ -401,6 +461,7 @@ module.exports = {
   startEvent,
   endEvent,
   getAttendees,
+  uploadVideo,
   promoteParticipant,
   demoteParticipant,
   muteParticipant,

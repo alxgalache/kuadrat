@@ -211,7 +211,55 @@ async function getAuctionsByDateRange(from, to) {
           ORDER BY a.start_datetime ASC`,
     args: [to, from],
   });
-  return result.rows;
+
+  const auctions = result.rows;
+
+  // Fetch seller breakdown per auction (products per seller)
+  if (auctions.length > 0) {
+    const auctionIds = auctions.map((a) => a.id);
+    const placeholders = auctionIds.map(() => '?').join(', ');
+
+    const sellersResult = await db.execute({
+      sql: `SELECT auction_id, seller_id, seller_name, SUM(cnt) AS product_count
+            FROM (
+              SELECT aa.auction_id, a.seller_id, u.full_name AS seller_name, COUNT(*) AS cnt
+              FROM auction_arts aa
+              JOIN art a ON aa.art_id = a.id
+              LEFT JOIN users u ON a.seller_id = u.id
+              WHERE aa.auction_id IN (${placeholders})
+              GROUP BY aa.auction_id, a.seller_id
+              UNION ALL
+              SELECT ao.auction_id, o.seller_id, u.full_name AS seller_name, COUNT(*) AS cnt
+              FROM auction_others ao
+              JOIN others o ON ao.other_id = o.id
+              LEFT JOIN users u ON o.seller_id = u.id
+              WHERE ao.auction_id IN (${placeholders})
+              GROUP BY ao.auction_id, o.seller_id
+            )
+            GROUP BY auction_id, seller_id
+            ORDER BY product_count DESC`,
+      args: [...auctionIds, ...auctionIds],
+    });
+
+    // Group sellers by auction
+    const sellersByAuction = {};
+    for (const row of sellersResult.rows) {
+      if (!sellersByAuction[row.auction_id]) {
+        sellersByAuction[row.auction_id] = [];
+      }
+      sellersByAuction[row.auction_id].push({
+        sellerId: row.seller_id,
+        sellerName: row.seller_name,
+        productCount: row.product_count,
+      });
+    }
+
+    for (const auction of auctions) {
+      auction.sellers_summary = sellersByAuction[auction.id] || [];
+    }
+  }
+
+  return auctions;
 }
 
 async function getAuctionsForDate(date) {

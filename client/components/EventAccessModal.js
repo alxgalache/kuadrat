@@ -56,10 +56,12 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         setAccessToken(data.accessToken)
       }
 
+      const nameInfo = { firstName: firstName.trim(), lastName: lastName.trim() }
+
       // For returning attendees, we check if they already have access
       if (data.isExisting && data.attendee.status === 'paid') {
         // Already paid, grant access directly
-        storeSession(event.id, { attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken })
+        storeSession(event.id, { attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken, ...nameInfo })
         onAccessGranted?.({ attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken })
         setPhase(PHASE.SUCCESS)
         setLoading(false)
@@ -72,13 +74,13 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         setClientSecret(payData.clientSecret)
         // Store session with accessToken (if new)
         if (data.accessToken) {
-          storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken })
+          storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken, ...nameInfo })
         }
         setPhase(PHASE.PAYMENT)
       } else {
         // Free event - store and grant access
         if (data.accessToken) {
-          storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken })
+          storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken, ...nameInfo })
         }
         onAccessGranted?.({ attendeeId: data.attendee.id, accessToken: data.accessToken || getStoredSession(event.id)?.accessToken })
         setPhase(PHASE.SUCCESS)

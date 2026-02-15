@@ -21,6 +21,9 @@ function EventDetailContent({ id }) {
   const [sellers, setSellers] = useState([])
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
+  const [videoSource, setVideoSource] = useState('url')
+  const [videoFile, setVideoFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     loadEvent()
@@ -84,6 +87,13 @@ function EventDetailContent({ id }) {
   const enterEditMode = async () => {
     const data = await adminAPI.authors.getAll()
     setSellers(data.authors || [])
+    // Detect if current video is an uploaded file
+    if (event?.video_url?.startsWith('uploaded:')) {
+      setVideoSource('file')
+    } else {
+      setVideoSource('url')
+    }
+    setVideoFile(null)
     setEditMode(true)
   }
 
@@ -98,15 +108,23 @@ function EventDetailContent({ id }) {
         price: form.access_type === 'paid' ? parseFloat(form.price) : null,
         max_attendees: form.max_attendees ? parseInt(form.max_attendees, 10) : null,
         cover_image_url: form.cover_image_url || null,
-        video_url: form.video_url || null,
+        video_url: (form.format === 'video' && videoSource === 'url') ? (form.video_url || null) : (form.video_url?.startsWith('uploaded:') ? form.video_url : null),
       }
       await adminAPI.events.update(id, payload)
+
+      // Upload new video file if selected
+      if (form.format === 'video' && videoSource === 'file' && videoFile) {
+        setUploading(true)
+        await adminAPI.events.uploadVideo(id, videoFile)
+      }
+
       setEditMode(false)
       await loadEvent()
     } catch (err) {
       setError(err.message || 'No se pudo actualizar el evento')
     } finally {
       setSaving(false)
+      setUploading(false)
     }
   }
 
@@ -187,6 +205,7 @@ function EventDetailContent({ id }) {
     charla: 'Charla',
     entrevista: 'Entrevista',
     ama: 'AMA',
+    video: 'Video',
   }
 
   if (loading) {
@@ -260,6 +279,7 @@ function EventDetailContent({ id }) {
                       <option value="charla">Charla</option>
                       <option value="entrevista">Entrevista</option>
                       <option value="ama">AMA</option>
+                      <option value="video">Video</option>
                     </select>
                   </div>
                   <div>
@@ -348,6 +368,86 @@ function EventDetailContent({ id }) {
                     </>
                   )}
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Formato</label>
+                    <select
+                      value={form.format}
+                      onChange={(e) => setForm({ ...form, format: e.target.value })}
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                    >
+                      <option value="live">En directo</option>
+                      <option value="video">Vídeo pregrabado</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Tipo de contenido</label>
+                    <select
+                      value={form.content_type}
+                      onChange={(e) => setForm({ ...form, content_type: e.target.value })}
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                    >
+                      <option value="streaming">Streaming</option>
+                      <option value="video">Vídeo</option>
+                    </select>
+                  </div>
+                </div>
+                {form.format === 'video' && (
+                  <div className="space-y-3">
+                    <fieldset>
+                      <legend className="block text-sm font-medium text-gray-700">Origen del vídeo</legend>
+                      <div className="mt-2 flex gap-x-6">
+                        <label className="flex items-center gap-x-2 text-sm text-gray-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="editVideoSource"
+                            value="url"
+                            checked={videoSource === 'url'}
+                            onChange={() => setVideoSource('url')}
+                            className="h-4 w-4 border-gray-300 text-gray-900 focus:ring-black"
+                          />
+                          URL del vídeo
+                        </label>
+                        <label className="flex items-center gap-x-2 text-sm text-gray-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="editVideoSource"
+                            value="file"
+                            checked={videoSource === 'file'}
+                            onChange={() => setVideoSource('file')}
+                            className="h-4 w-4 border-gray-300 text-gray-900 focus:ring-black"
+                          />
+                          Subir archivo
+                        </label>
+                      </div>
+                    </fieldset>
+
+                    {videoSource === 'url' ? (
+                      <div key="edit-video-url">
+                        <input
+                          type="url"
+                          value={form.video_url?.startsWith('uploaded:') ? '' : (form.video_url || '')}
+                          onChange={(e) => setForm({ ...form, video_url: e.target.value })}
+                          placeholder="https://..."
+                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                        />
+                      </div>
+                    ) : (
+                      <div key="edit-video-file">
+                        {form.video_url?.startsWith('uploaded:') && !videoFile && (
+                          <p className="text-sm text-green-700 mb-2">Archivo subido actualmente. Selecciona otro para reemplazar.</p>
+                        )}
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm,video/quicktime"
+                          onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+                          className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-gray-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-gray-700"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">MP4, WebM o MOV. Máximo 500 MB.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">URL imagen de portada</label>
                   <input
@@ -377,10 +477,10 @@ function EventDetailContent({ id }) {
                   </button>
                   <button
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saving || uploading}
                     className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
                   >
-                    {saving ? 'Guardando...' : 'Guardar'}
+                    {uploading ? 'Subiendo vídeo...' : saving ? 'Guardando...' : 'Guardar'}
                   </button>
                 </div>
               </div>

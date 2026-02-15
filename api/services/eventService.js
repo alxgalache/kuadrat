@@ -246,10 +246,23 @@ async function getAttendeeCount(eventId) {
 // Event Lifecycle
 // ---------------------------------------------------------------------------
 
-async function startEvent(id, livekitRoomName) {
+async function startEvent(id, { livekitRoomName = null, videoStartedAt = null } = {}) {
+  const setClauses = ["status = 'active'"];
+  const args = [];
+
+  if (livekitRoomName) {
+    setClauses.push('livekit_room_name = ?');
+    args.push(livekitRoomName);
+  }
+  if (videoStartedAt) {
+    setClauses.push('video_started_at = ?');
+    args.push(videoStartedAt);
+  }
+
+  args.push(id);
   await db.execute({
-    sql: `UPDATE events SET status = 'active', livekit_room_name = ? WHERE id = ?`,
-    args: [livekitRoomName, id],
+    sql: `UPDATE events SET ${setClauses.join(', ')} WHERE id = ?`,
+    args,
   });
   return getEventById(id);
 }

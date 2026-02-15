@@ -164,17 +164,15 @@ const setupPayment = async (req, res, next) => {
       metadata: { auction_id: id, auction_buyer_id: auctionBuyerId },
     });
 
-    // Create 1 EUR PaymentIntent with setup_future_usage
-    const paymentIntent = await stripeService.createAuctionPaymentIntent({
+    // Create a SetupIntent to verify and save the payment method (no charge)
+    const setupIntent = await stripeService.createAuctionSetupIntent({
       customerId: customer.id,
-      amount: 100, // 1 EUR in cents
-      currency: 'eur',
       metadata: { auction_id: id, auction_buyer_id: auctionBuyerId },
     });
 
     res.status(200).json({
       success: true,
-      clientSecret: paymentIntent.client_secret,
+      clientSecret: setupIntent.client_secret,
       customerId: customer.id,
     });
   } catch (error) {
@@ -187,9 +185,9 @@ const setupPayment = async (req, res, next) => {
 // ---------------------------------------------------------------------------
 const confirmPayment = async (req, res, next) => {
   try {
-    const { auctionBuyerId, paymentIntentId, paymentMethodId, customerId } = req.body;
+    const { auctionBuyerId, setupIntentId, customerId } = req.body;
 
-    if (!auctionBuyerId || !paymentIntentId) {
+    if (!auctionBuyerId || !setupIntentId) {
       throw new ApiError(400, 'Datos de pago incompletos', 'Datos incompletos');
     }
 
@@ -197,6 +195,10 @@ const confirmPayment = async (req, res, next) => {
     if (!buyer) {
       throw new ApiError(404, 'Comprador no encontrado', 'Comprador no encontrado');
     }
+
+    // Retrieve the SetupIntent to get the saved payment method
+    const setupIntent = await stripeService.retrieveSetupIntent(setupIntentId);
+    const paymentMethodId = setupIntent.payment_method;
 
     // Retrieve payment method details
     let pmName = null;
@@ -215,7 +217,7 @@ const confirmPayment = async (req, res, next) => {
     await auctionService.savePaymentData(auctionBuyerId, {
       name: pmName,
       lastFour: pmLastFour,
-      stripeSetupIntentId: paymentIntentId,
+      stripeSetupIntentId: setupIntentId,
       stripePaymentMethodId: paymentMethodId || null,
       stripeCustomerId: customerId || null,
     });

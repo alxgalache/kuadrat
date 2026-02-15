@@ -53,6 +53,22 @@ function formatTime(datetimeStr) {
   })
 }
 
+function formatProductSellers(productCount, sellersSummary) {
+  if (!sellersSummary || sellersSummary.length === 0) {
+    return `${productCount} pieza${productCount !== 1 ? 's' : ''}`
+  }
+
+  const mainSeller = sellersSummary[0]
+  const mainName = mainSeller.sellerName || 'Autor desconocido'
+  const otherSellersCount = sellersSummary.length - 1
+
+  if (otherSellersCount === 0) {
+    return `${productCount} pieza${productCount !== 1 ? 's' : ''} de ${mainName}`
+  }
+
+  return `${productCount} piezas de ${mainName} y ${otherSellersCount} más`
+}
+
 const statusLabels = {
   active: { label: 'En curso', bg: 'bg-green-50', text: 'text-green-700' },
   scheduled: { label: 'Programada', bg: 'bg-blue-50', text: 'text-blue-700' },
@@ -147,7 +163,7 @@ export default function SubastasPage() {
                   </span>
                   {a.product_count > 0 && (
                     <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                      {a.product_count} pieza{a.product_count !== 1 ? 's' : ''}
+                      {formatProductSellers(a.product_count, a.sellers_summary)}
                     </span>
                   )}
                 </div>

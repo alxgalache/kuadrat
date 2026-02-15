@@ -605,7 +605,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     return (
       <div className="space-y-4">
         <p className="text-sm text-gray-600">
-          Se realizara un cargo de 1 EUR como validacion de tu metodo de pago. Este cargo sera reembolsado automaticamente.
+          Se verificara tu metodo de pago sin realizar ningun cargo. Tu tarjeta quedara guardada para futuros pagos en caso de ganar la subasta.
         </p>
         <Elements stripe={stripePromise} options={{ clientSecret }}>
           <StripePaymentStep
@@ -790,7 +790,7 @@ function StripePaymentStep({ auctionId, auctionBuyerId, onSuccess, onError }) {
     setLoading(true)
     onError('')
     try {
-      const { error: stripeError, paymentIntent } = await stripe.confirmPayment({
+      const { error: stripeError, setupIntent } = await stripe.confirmSetup({
         elements,
         redirect: 'if_required',
       })
@@ -801,15 +801,15 @@ function StripePaymentStep({ auctionId, auctionBuyerId, onSuccess, onError }) {
         return
       }
 
-      if (paymentIntent && paymentIntent.status === 'succeeded') {
+      if (setupIntent && setupIntent.status === 'succeeded') {
         // Confirm on our backend
-        await auctionsAPI.confirmPayment(auctionId, auctionBuyerId, paymentIntent.id)
+        await auctionsAPI.confirmPayment(auctionId, auctionBuyerId, setupIntent.id)
         onSuccess()
       } else {
-        onError('El pago no se pudo completar. Intentalo de nuevo.')
+        onError('La verificacion no se pudo completar. Intentalo de nuevo.')
       }
     } catch (err) {
-      onError(err.message || 'Error al procesar el pago.')
+      onError(err.message || 'Error al verificar el metodo de pago.')
     } finally {
       setLoading(false)
     }
@@ -823,7 +823,7 @@ function StripePaymentStep({ auctionId, auctionBuyerId, onSuccess, onError }) {
         disabled={!stripe || loading}
         className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
       >
-        {loading ? 'Procesando...' : 'Validar metodo de pago'}
+        {loading ? 'Verificando...' : 'Verificar metodo de pago'}
       </button>
     </form>
   )

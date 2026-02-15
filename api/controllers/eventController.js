@@ -1,7 +1,11 @@
+const path = require('path');
+const fs = require('fs');
 const { ApiError } = require('../middleware/errorHandler');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const stripeService = require('../services/stripeService');
+
+const EVENTS_VIDEOS_DIR = path.join(__dirname, '..', 'uploads', 'events');
 
 // ---------------------------------------------------------------------------
 // GET /api/events?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -366,9 +370,34 @@ const demoteParticipant = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// GET /api/events/videos/:filename
+// Serve uploaded event video files
+// ---------------------------------------------------------------------------
+const getEventVideo = async (req, res, next) => {
+  try {
+    const { filename } = req.params;
+
+    if (!/^[A-Za-z0-9_-]+\.(mp4|webm|mov)$/i.test(filename)) {
+      throw new ApiError(400, 'Nombre de archivo inválido', 'Solicitud inválida');
+    }
+
+    const filePath = path.join(EVENTS_VIDEOS_DIR, filename);
+
+    if (!fs.existsSync(filePath)) {
+      throw new ApiError(404, 'Vídeo no encontrado', 'Vídeo no encontrado');
+    }
+
+    res.sendFile(filePath);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getEvents,
   getEventBySlug,
+  getEventVideo,
   registerAttendee,
   createPayment,
   confirmPayment,

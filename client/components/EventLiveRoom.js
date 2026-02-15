@@ -9,6 +9,7 @@ import {
   useTracks,
   useChat,
   useLocalParticipant,
+  useIsSpeaking,
   StartAudio,
 } from '@livekit/components-react'
 import '@livekit/components-styles'
@@ -75,6 +76,11 @@ function RoomContent({ isHost, eventId }) {
     return () => observer.disconnect()
   }, [])
 
+  // Find host participant for speaking detection
+  const hostParticipant = useMemo(() => {
+    return participants.find(p => p.identity?.startsWith('host-'))
+  }, [participants])
+
   // Prefer screen share over camera for host
   const hostTracks = useMemo(() => {
     const all = tracks.filter(t =>
@@ -135,7 +141,7 @@ function RoomContent({ isHost, eventId }) {
       {/* Left column: video + participant grid + controls */}
       <div className="flex-1 min-h-0 flex flex-col" ref={videoAreaRef}>
         {/* Host video */}
-        <div className="bg-black rounded-lg overflow-hidden aspect-video w-full relative">
+        <HostVideoContainer participant={hostParticipant}>
           {hostTracks.length > 0 ? (
             <VideoTrack
               trackRef={hostTracks[0]}
@@ -167,7 +173,7 @@ function RoomContent({ isHost, eventId }) {
               </svg>
             </button>
           )}
-        </div>
+        </HostVideoContainer>
 
         {/* Promoted viewers grid */}
         {promotedTracks.length > 0 && (
@@ -313,19 +319,70 @@ function ToggleSwitch({ checked, onChange }) {
 }
 
 // ---------------------------------------------------------------------------
-// Participant grid — below host video, bigger squares with name
+// Host video container with speaking animation
+// ---------------------------------------------------------------------------
+function HostVideoContainer({ participant, children }) {
+  if (!participant) {
+    return (
+      <div className="bg-black rounded-lg overflow-hidden aspect-video w-full relative">
+        {children}
+        <SpeakingPulseStyle />
+      </div>
+    )
+  }
+  return (
+    <HostVideoContainerInner participant={participant}>
+      {children}
+    </HostVideoContainerInner>
+  )
+}
+
+function HostVideoContainerInner({ participant, children }) {
+  const isSpeaking = useIsSpeaking(participant)
+
+  return (
+    <div
+      className={`bg-black rounded-lg overflow-hidden aspect-video w-full relative transition-shadow duration-300 ${
+        isSpeaking ? 'ring-2 ring-green-400' : ''
+      }`}
+      style={isSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+    >
+      {children}
+      <SpeakingPulseStyle />
+    </div>
+  )
+}
+
+function SpeakingPulseStyle() {
+  return (
+    <style jsx global>{`
+      @keyframes speaking-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4); }
+        50% { box-shadow: 0 0 0 5px rgba(74, 222, 128, 0.15); }
+      }
+    `}</style>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Participant grid — includes local user tile with "(Tu)" label
 // ---------------------------------------------------------------------------
 function ParticipantGrid({ participants, isHost, eventId }) {
-  const remoteParticipants = participants.filter(p => !p.isLocal)
+  // Include all participants (local + remote), excluding host
+  const gridParticipants = participants.filter(p => !p.identity?.startsWith('host-'))
 
-  // Sort: hand raised first
+  // Sort: local participant last, hand raised first among remote
   const sorted = useMemo(() => {
-    return [...remoteParticipants].sort((a, b) => {
+    return [...gridParticipants].sort((a, b) => {
+      // Local always at the end
+      if (a.isLocal && !b.isLocal) return 1
+      if (!a.isLocal && b.isLocal) return -1
+      // Hand raised first
       const aHand = a.attributes?.handRaised === 'true' ? 1 : 0
       const bHand = b.attributes?.handRaised === 'true' ? 1 : 0
       return bHand - aHand
     })
-  }, [remoteParticipants])
+  }, [gridParticipants])
 
   const handlePromote = useCallback(async (identity) => {
     if (!isHost || !eventId) return
@@ -350,78 +407,138 @@ function ParticipantGrid({ participants, isHost, eventId }) {
   return (
     <div className="mt-3">
       <div className="flex flex-wrap gap-2">
-        {sorted.map((p) => {
-          const handRaised = p.attributes?.handRaised === 'true'
-          const canPublish = p.permissions?.canPublish
-          const isPublishing = p.audioTrackPublications?.size > 0
-          const initial = (p.name || p.identity || '?').charAt(0).toUpperCase()
-          const displayName = p.name || p.identity || '?'
-          // Show first name + last initial, or truncate long names
-          const shortName = displayName.length > 12 ? displayName.slice(0, 11) + '...' : displayName
-
-          return (
-            <div key={p.identity} className="flex flex-col items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isHost) return
-                  if (canPublish) {
-                    handleDemote(p.identity)
-                  } else {
-                    handlePromote(p.identity)
-                  }
-                }}
-                className={`relative w-14 h-14 rounded-lg flex items-center justify-center text-lg font-semibold ${
-                  canPublish
-                    ? 'bg-green-50 text-green-800 ring-1 ring-green-300 cursor-pointer hover:bg-green-100'
-                    : isHost
-                      ? handRaised
-                        ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-300 cursor-pointer hover:bg-amber-100'
-                        : 'bg-gray-100 text-gray-700 cursor-pointer hover:bg-gray-200'
-                      : 'bg-gray-100 text-gray-700 cursor-default'
-                }`}
-                title={
-                  isHost && canPublish
-                    ? `Silenciar a ${displayName}`
-                    : isHost
-                      ? `Dar la palabra a ${displayName}`
-                      : displayName
-                }
-              >
-                {initial}
-
-                {/* Hand raised icon — top left */}
-                {handRaised && (
-                  <span className="absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400">
-                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l-.075 5.925m3.075-5.925v3m0-3a1.575 1.575 0 013.15 0v3m-3.15 0l-.075 3.925M14.1 7.575v3m0-3a1.575 1.575 0 013.15 0v4.725M6.9 7.575a1.575 1.575 0 00-3.15 0v6.525c0 3.06 1.827 5.625 4.725 6.825a10.49 10.49 0 006.15 0c2.898-1.2 4.725-3.765 4.725-6.825V7.575" />
-                    </svg>
-                  </span>
-                )}
-
-                {/* Muted icon — top right */}
-                {!isPublishing && (
-                  <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-300">
-                    <svg className="h-3 w-3 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
-                    </svg>
-                  </span>
-                )}
-
-                {/* Speaking indicator — green ring when canPublish and publishing */}
-                {canPublish && isPublishing && (
-                  <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
-                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-                    </svg>
-                  </span>
-                )}
-              </button>
-              <span className="text-xs text-gray-600 text-center max-w-16 truncate">{shortName}</span>
-            </div>
-          )
-        })}
+        {sorted.map((p) => (
+          <ParticipantTile
+            key={p.identity}
+            participant={p}
+            isHost={isHost}
+            onPromote={handlePromote}
+            onDemote={handleDemote}
+          />
+        ))}
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Individual participant tile with speaking detection
+// ---------------------------------------------------------------------------
+function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
+  const isSpeaking = useIsSpeaking(p)
+  const { localParticipant } = useLocalParticipant()
+
+  const isLocal = p.isLocal
+  const handRaised = p.attributes?.handRaised === 'true'
+  const canPublish = p.permissions?.canPublish
+  const isPublishing = p.audioTrackPublications?.size > 0
+  const initial = isLocal ? 'T' : (p.name || p.identity || '?').charAt(0).toUpperCase()
+  const displayName = isLocal ? '(Tu)' : (p.name || p.identity || '?')
+  const shortName = isLocal ? '(Tu)' : (displayName.length > 12 ? displayName.slice(0, 11) + '...' : displayName)
+
+  const handleSelfMute = useCallback(async () => {
+    if (!localParticipant || !isLocal) return
+    try {
+      await localParticipant.setMicrophoneEnabled(false)
+    } catch (err) {
+      console.warn('Error muting self:', err)
+    }
+  }, [localParticipant, isLocal])
+
+  const handleClick = useCallback(() => {
+    if (isLocal) {
+      // Local user: only allow self-mute when promoted
+      if (canPublish && isPublishing) {
+        handleSelfMute()
+      }
+      return
+    }
+    if (!isHost) return
+    if (canPublish) {
+      onDemote(p.identity)
+    } else {
+      onPromote(p.identity)
+    }
+  }, [isLocal, isHost, canPublish, isPublishing, handleSelfMute, onPromote, onDemote, p.identity])
+
+  const getTitle = () => {
+    if (isLocal) {
+      if (canPublish && isPublishing) return 'Silenciar tu micrófono'
+      if (!canPublish) return 'Levanta la mano para hablar'
+      return '(Tu)'
+    }
+    if (isHost && canPublish) return `Silenciar a ${displayName}`
+    if (isHost) return `Dar la palabra a ${displayName}`
+    return displayName
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <button
+        type="button"
+        onClick={handleClick}
+        className={`relative w-14 h-14 rounded-lg flex items-center justify-center text-lg font-semibold transition-shadow duration-300 ${
+          isLocal
+            ? canPublish
+              ? 'bg-blue-50 text-blue-800 ring-1 ring-blue-300 cursor-pointer hover:bg-blue-100'
+              : 'bg-blue-50 text-blue-700 ring-1 ring-blue-200 cursor-default'
+            : canPublish
+              ? 'bg-green-50 text-green-800 ring-1 ring-green-300 cursor-pointer hover:bg-green-100'
+              : isHost
+                ? handRaised
+                  ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-300 cursor-pointer hover:bg-amber-100'
+                  : 'bg-gray-100 text-gray-700 cursor-pointer hover:bg-gray-200'
+                : 'bg-gray-100 text-gray-700 cursor-default'
+        }`}
+        style={isSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+        title={getTitle()}
+      >
+        {initial}
+
+        {/* Hand raised icon — top left */}
+        {handRaised && !isLocal && (
+          <span className="absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400">
+            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l-.075 5.925m3.075-5.925v3m0-3a1.575 1.575 0 013.15 0v3m-3.15 0l-.075 3.925M14.1 7.575v3m0-3a1.575 1.575 0 013.15 0v4.725M6.9 7.575a1.575 1.575 0 00-3.15 0v6.525c0 3.06 1.827 5.625 4.725 6.825a10.49 10.49 0 006.15 0c2.898-1.2 4.725-3.765 4.725-6.825V7.575" />
+            </svg>
+          </span>
+        )}
+
+        {/* Muted icon — top right (for non-local when not publishing) */}
+        {!isLocal && !isPublishing && !isSpeaking && (
+          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-300">
+            <svg className="h-3 w-3 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+            </svg>
+          </span>
+        )}
+
+        {/* Local user mute indicator */}
+        {isLocal && canPublish && isPublishing && (
+          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500">
+            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+            </svg>
+          </span>
+        )}
+        {isLocal && (!canPublish || !isPublishing) && (
+          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-300">
+            <svg className="h-3 w-3 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+            </svg>
+          </span>
+        )}
+
+        {/* Speaking indicator — green ring when canPublish and publishing (remote only) */}
+        {!isLocal && canPublish && isPublishing && !isSpeaking && (
+          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
+            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+            </svg>
+          </span>
+        )}
+      </button>
+      <span className={`text-xs text-center max-w-16 truncate ${isLocal ? 'text-blue-600 font-medium' : 'text-gray-600'}`}>{shortName}</span>
     </div>
   )
 }

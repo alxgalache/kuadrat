@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { io } from 'socket.io-client'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
@@ -16,17 +16,19 @@ const getSocketUrl = () => {
 const SOCKET_URL = getSocketUrl()
 
 /**
- * Custom hook for real-time event status updates via Socket.IO.
+ * Custom hook for real-time event status updates and chat via Socket.IO.
  *
  * Connects to the event room and listens for start/end notifications
  * so the detail page can auto-transition to the live stream.
+ * Also supports chat messaging for video-format events.
  *
  * @param {string|number} eventId - The event to subscribe to
- * @returns {{ eventStarted: boolean, eventEnded: boolean }}
+ * @returns {{ eventStarted: boolean, eventEnded: boolean, chatMessages: Array, sendChatMessage: Function }}
  */
 export default function useEventSocket(eventId) {
   const [eventStarted, setEventStarted] = useState(false)
   const [eventEnded, setEventEnded] = useState(false)
+  const [chatMessages, setChatMessages] = useState([])
   const socketRef = useRef(null)
 
   useEffect(() => {
@@ -49,11 +51,20 @@ export default function useEventSocket(eventId) {
       setEventEnded(true)
     })
 
+    socket.on('chat_message', (msg) => {
+      setChatMessages((prev) => [...prev, msg])
+    })
+
     return () => {
       socket.disconnect()
       socketRef.current = null
     }
   }, [eventId])
 
-  return { eventStarted, eventEnded }
+  const sendChatMessage = useCallback((sender, message) => {
+    if (!socketRef.current || !eventId || !message) return
+    socketRef.current.emit('chat_message', { eventId, sender, message })
+  }, [eventId])
+
+  return { eventStarted, eventEnded, chatMessages, sendChatMessage }
 }

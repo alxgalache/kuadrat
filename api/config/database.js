@@ -417,11 +417,12 @@ async function initializeDatabase() {
         currency TEXT DEFAULT 'EUR',
         format TEXT NOT NULL DEFAULT 'live' CHECK(format IN ('live', 'video')),
         content_type TEXT NOT NULL DEFAULT 'streaming' CHECK(content_type IN ('streaming', 'video')),
-        category TEXT NOT NULL CHECK(category IN ('masterclass', 'charla', 'entrevista', 'ama')),
+        category TEXT NOT NULL CHECK(category IN ('masterclass', 'charla', 'entrevista', 'ama', 'video')),
         video_url TEXT,
         max_attendees INTEGER,
         status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','active','finished','cancelled')),
         livekit_room_name TEXT,
+        video_started_at DATETIME,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (host_user_id) REFERENCES users(id)
       )
@@ -915,6 +916,56 @@ async function initializeDatabase() {
       }
     } catch (err) {
       console.log('Shipping zones postal code migration skipped or error:', err.message);
+    }
+
+    // Add video_started_at to events if it doesn't exist
+    try {
+      await db.execute(`ALTER TABLE events ADD COLUMN video_started_at DATETIME`);
+      console.log('Added video_started_at column to events table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('video_started_at column already exists or error:', err.message);
+      }
+    }
+
+    // Migrate events table to add 'video' to category CHECK constraint
+    try {
+      const hasVideo = await db.execute(`SELECT COUNT(*) as cnt FROM events WHERE category = 'video'`);
+      // Test if the constraint allows 'video' by checking table info
+      const tableInfo = await db.execute(`PRAGMA table_info(events)`);
+      const categoryCol = tableInfo.rows.find(r => r.name === 'category');
+      // If the CHECK doesn't include 'video', recreate the table
+      if (categoryCol && !String(categoryCol.type || '').includes('video')) {
+        await db.execute(`CREATE TABLE IF NOT EXISTS events_new (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          slug TEXT NOT NULL UNIQUE,
+          description TEXT,
+          event_datetime DATETIME NOT NULL,
+          duration_minutes INTEGER NOT NULL DEFAULT 60,
+          host_user_id INTEGER NOT NULL,
+          cover_image_url TEXT,
+          access_type TEXT NOT NULL DEFAULT 'free' CHECK(access_type IN ('free', 'paid')),
+          price REAL,
+          currency TEXT DEFAULT 'EUR',
+          format TEXT NOT NULL DEFAULT 'live' CHECK(format IN ('live', 'video')),
+          content_type TEXT NOT NULL DEFAULT 'streaming' CHECK(content_type IN ('streaming', 'video')),
+          category TEXT NOT NULL CHECK(category IN ('masterclass', 'charla', 'entrevista', 'ama', 'video')),
+          video_url TEXT,
+          max_attendees INTEGER,
+          status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','active','finished','cancelled')),
+          livekit_room_name TEXT,
+          video_started_at DATETIME,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (host_user_id) REFERENCES users(id)
+        )`);
+        await db.execute(`INSERT OR IGNORE INTO events_new SELECT id, title, slug, description, event_datetime, duration_minutes, host_user_id, cover_image_url, access_type, price, currency, format, content_type, category, video_url, max_attendees, status, livekit_room_name, video_started_at, created_at FROM events`);
+        await db.execute(`DROP TABLE events`);
+        await db.execute(`ALTER TABLE events_new RENAME TO events`);
+        console.log('Migrated events table to include video category');
+      }
+    } catch (err) {
+      console.log('Events category migration skipped or error:', err.message);
     }
 
     console.log('Database schema initialized successfully!');

@@ -158,24 +158,31 @@ async function createStripeCustomer({ email, name, metadata = {} }) {
 }
 
 /**
- * Create a PaymentIntent for the 1 EUR auction registration fee with setup_future_usage
+ * Create a SetupIntent to verify and save a payment method without any charge.
+ * Used for auction bidder registration - validates the card and saves it for
+ * future off-session charges (e.g. charging the auction winner).
  * @param {Object} params
  * @param {string} params.customerId - Stripe Customer ID
- * @param {number} [params.amount=100] - Amount in minor units (default 100 = 1 EUR)
- * @param {string} [params.currency='eur'] - Currency code
  * @param {Object} [params.metadata] - Metadata to attach
- * @returns {Promise<Object>} Stripe PaymentIntent object
+ * @returns {Promise<Object>} Stripe SetupIntent object
  */
-async function createAuctionPaymentIntent({ customerId, amount = 100, currency = 'eur', metadata = {} }) {
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount, // 100 = 1 EUR in cents
-    currency: currency.toLowerCase(),
+async function createAuctionSetupIntent({ customerId, metadata = {} }) {
+  const setupIntent = await stripe.setupIntents.create({
     customer: customerId,
-    setup_future_usage: 'off_session',
+    usage: 'off_session',
     automatic_payment_methods: { enabled: true },
     metadata,
   });
-  return paymentIntent;
+  return setupIntent;
+}
+
+/**
+ * Retrieve a SetupIntent by ID
+ * @param {string} setupIntentId
+ * @returns {Promise<Object>} Stripe SetupIntent object
+ */
+async function retrieveSetupIntent(setupIntentId) {
+  return stripe.setupIntents.retrieve(setupIntentId);
 }
 
 /**
@@ -246,7 +253,8 @@ module.exports = {
   constructWebhookEvent,
   createStripeCustomer,
   findOrCreateCustomer,
-  createAuctionPaymentIntent,
+  createAuctionSetupIntent,
+  retrieveSetupIntent,
   retrievePaymentMethod,
   chargeWinnerOffSession,
   attachPaymentMethodToCustomer,

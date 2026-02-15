@@ -51,6 +51,7 @@ const categoryLabels = {
   charla: 'Charla',
   entrevista: 'Entrevista',
   ama: 'AMA',
+  video: 'Video',
 }
 
 // ---------------------------------------------------------------------------

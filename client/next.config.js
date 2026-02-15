@@ -44,7 +44,7 @@ const nextConfig = {
       "font-src 'self' https://fonts.gstatic.com",
       `connect-src ${cspConnectSrc}`,
       "frame-src 'self' https://*.revolut.com https://js.stripe.com",
-      "media-src 'self' blob:",
+      `media-src 'self' blob: https: ${apiOrigin}`,
       "worker-src 'self' blob:",
     ].join('; ');
 

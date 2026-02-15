@@ -53,7 +53,7 @@ export default function AuctionBidFeed({ bids = [] }) {
               {' realizo una puja de '}
               <span className="font-medium text-gray-900">{formatCurrency(bid.amount)}</span>
             </p>
-            <time className="flex-none py-0.5 text-xs/5 text-gray-500">
+            <time className="mr-2 flex-none py-0.5 text-xs/5 text-gray-500">
               {relativeTime(bid.created_at)}
             </time>
           </li>
@@ -90,7 +90,9 @@ function formatCurrency(amount) {
 /** Produce a Spanish relative-time string */
 function relativeTime(dateStr) {
   const now = Date.now()
-  const then = new Date(dateStr).getTime()
+  // DB stores CURRENT_TIMESTAMP in UTC; append 'Z' so JS parses as UTC
+  const normalized = dateStr && !dateStr.endsWith('Z') && !dateStr.includes('+') ? dateStr + 'Z' : dateStr
+  const then = new Date(normalized).getTime()
   const diffMs = now - then
 
   if (diffMs < 0) return 'ahora'

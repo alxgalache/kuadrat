@@ -23,12 +23,15 @@ function NewEventPageContent() {
   const [contentType, setContentType] = useState('streaming')
   const [category, setCategory] = useState('charla')
   const [videoUrl, setVideoUrl] = useState('')
+  const [videoSource, setVideoSource] = useState('url') // 'url' or 'file'
+  const [videoFile, setVideoFile] = useState(null)
   const [maxAttendees, setMaxAttendees] = useState('')
   const [status, setStatus] = useState('draft')
 
   const [sellers, setSellers] = useState([])
   const [loadingSellers, setLoadingSellers] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -63,7 +66,7 @@ function NewEventPageContent() {
     setSaving(true)
 
     try {
-      await adminAPI.events.create({
+      const result = await adminAPI.events.create({
         title,
         description,
         event_datetime: eventDatetime,
@@ -76,16 +79,23 @@ function NewEventPageContent() {
         format,
         content_type: contentType,
         category,
-        video_url: videoUrl || null,
+        video_url: (format === 'video' && videoSource === 'url') ? (videoUrl || null) : null,
         max_attendees: maxAttendees ? parseInt(maxAttendees, 10) : null,
         status,
       })
+
+      // Upload video file if selected
+      if (format === 'video' && videoSource === 'file' && videoFile && result.event?.id) {
+        setUploading(true)
+        await adminAPI.events.uploadVideo(result.event.id, videoFile)
+      }
 
       router.push('/admin/espacios')
     } catch (err) {
       setError(err.message || 'No se pudo crear el evento')
     } finally {
       setSaving(false)
+      setUploading(false)
     }
   }
 
@@ -160,6 +170,7 @@ function NewEventPageContent() {
                     <option value="charla">Charla</option>
                     <option value="entrevista">Entrevista</option>
                     <option value="ama">AMA</option>
+                    <option value="video">Video</option>
                   </select>
                 </div>
 
@@ -283,18 +294,57 @@ function NewEventPageContent() {
             </div>
 
             {format === 'video' && (
-              <div className="mt-4">
-                <label htmlFor="videoUrl" className="block text-sm font-medium text-gray-700">
-                  URL del vídeo
-                </label>
-                <input
-                  type="url"
-                  id="videoUrl"
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                />
+              <div className="mt-4 space-y-3">
+                <fieldset>
+                  <legend className="block text-sm font-medium text-gray-700">Origen del vídeo</legend>
+                  <div className="mt-2 flex gap-x-6">
+                    <label className="flex items-center gap-x-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="videoSource"
+                        value="url"
+                        checked={videoSource === 'url'}
+                        onChange={() => setVideoSource('url')}
+                        className="h-4 w-4 border-gray-300 text-gray-900 focus:ring-black"
+                      />
+                      URL del vídeo
+                    </label>
+                    <label className="flex items-center gap-x-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="videoSource"
+                        value="file"
+                        checked={videoSource === 'file'}
+                        onChange={() => setVideoSource('file')}
+                        className="h-4 w-4 border-gray-300 text-gray-900 focus:ring-black"
+                      />
+                      Subir archivo
+                    </label>
+                  </div>
+                </fieldset>
+
+                {videoSource === 'url' ? (
+                  <div key="video-url">
+                    <input
+                      type="url"
+                      id="videoUrl"
+                      value={videoUrl}
+                      onChange={(e) => setVideoUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                    />
+                  </div>
+                ) : (
+                  <div key="video-file">
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime"
+                      onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-gray-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-gray-700"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">MP4, WebM o MOV. Máximo 500 MB.</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -394,10 +444,10 @@ function NewEventPageContent() {
             </Link>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || uploading}
               className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
             >
-              {saving ? 'Guardando...' : 'Crear evento'}
+              {uploading ? 'Subiendo vídeo...' : saving ? 'Guardando...' : 'Crear evento'}
             </button>
           </div>
         </form>

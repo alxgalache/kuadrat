@@ -53,7 +53,7 @@ export default function Footer() {
   return (
     <footer className="bg-white">
       <div className="mx-auto max-w-7xl px-6 py-12 md:flex md:items-center md:justify-between lg:px-8">
-        <div className="flex justify-center gap-x-6 md:order-2">
+        <div className="mb-8 md:mb-0 flex justify-center gap-x-6 md:order-2">
           {navigation.map((item) => (
             <a
               key={item.name}
@@ -67,9 +67,13 @@ export default function Footer() {
             </a>
           ))}
         </div>
-        <p className="mt-8 text-center text-sm/6 text-gray-600 md:order-1 md:mt-0">
+        <span className="mt-8 text-center text-sm/6 text-gray-600 md:order-1 md:mt-0">
           &copy; 2026 140d Galería de Arte. Todos los derechos reservados.
-        </p>
+          {' · '}
+          <a href="/legal/terminos-y-condiciones" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Términos y condiciones</a>
+          {' · '}
+          <a href="/legal/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Política de privacidad</a>
+        </span>
       </div>
     </footer>
   )

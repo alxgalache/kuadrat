@@ -1,16 +1,20 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, useMemo, use } from 'react'
 import dynamic from 'next/dynamic'
-import { eventsAPI } from '@/lib/api'
+import { eventsAPI, getEventVideoUrl } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import useEventSocket from '@/hooks/useEventSocket'
 import EventCountdown from '@/components/EventCountdown'
 import EventAccessModal from '@/components/EventAccessModal'
 
-// Dynamic import for EventLiveRoom (uses browser-only APIs)
+// Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
   () => import('@/components/EventLiveRoom'),
+  { ssr: false }
+)
+const EventVideoPlayer = dynamic(
+  () => import('@/components/EventVideoPlayer'),
   { ssr: false }
 )
 
@@ -19,6 +23,7 @@ const categoryLabels = {
   charla: 'Charla',
   entrevista: 'Entrevista',
   ama: 'AMA',
+  video: 'Video',
 }
 
 function formatDate(datetimeStr) {
@@ -63,8 +68,8 @@ export default function EventDetailPage({ params }) {
   const [livekitUrl, setLivekitUrl] = useState(null)
   const [isHost, setIsHost] = useState(false)
 
-  // Real-time event status via Socket.IO
-  const { eventStarted, eventEnded } = useEventSocket(event?.id)
+  // Real-time event status and chat via Socket.IO
+  const { eventStarted, eventEnded, chatMessages, sendChatMessage } = useEventSocket(event?.id)
 
   useEffect(() => {
     loadEvent()
@@ -99,9 +104,10 @@ export default function EventDetailPage({ params }) {
     }
   }, [event, user])
 
-  // Auto-connect to LiveKit when event is active and user has access
+  // Auto-connect to LiveKit when event is active and user has access (live format only)
   useEffect(() => {
     if (!event || event.status !== 'active' || livekitToken) return
+    if (event.format === 'video') return // Video events don't use LiveKit
 
     if (isHost) {
       connectAsHost()
@@ -148,11 +154,21 @@ export default function EventDetailPage({ params }) {
   const handleAccessGranted = ({ attendeeId, accessToken }) => {
     setHasAccess(true)
     setModalOpen(false)
-    // If event is active, connect immediately
-    if (event.status === 'active') {
+    // If event is active and live format, connect to LiveKit immediately
+    if (event.status === 'active' && event.format !== 'video') {
       connectAsViewer()
     }
+    // Video format events will auto-render since hasAccess is now true
   }
+
+  // Resolve video URL (handle uploaded: prefix)
+  const resolvedVideoUrl = useMemo(() => {
+    if (!event?.video_url) return null
+    if (event.video_url.startsWith('uploaded:')) {
+      return getEventVideoUrl(event.video_url.replace('uploaded:', ''))
+    }
+    return event.video_url
+  }, [event?.video_url])
 
   if (loading) {
     return (
@@ -166,6 +182,44 @@ export default function EventDetailPage({ params }) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
         <p className="text-sm text-red-500">{error || 'Evento no encontrado'}</p>
+      </div>
+    )
+  }
+
+  // Active video event — synchronized video player + chat
+  if (event.status === 'active' && event.format === 'video' && resolvedVideoUrl && (hasAccess || isHost)) {
+    return (
+      <div className="bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+          {/* Event header */}
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-x-3">
+              <h1 className="text-xl font-bold text-gray-900">{event.title}</h1>
+              <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                En directo
+              </span>
+            </div>
+            <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
+          </div>
+
+          {/* Video player + chat layout */}
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1 min-h-0">
+              <EventVideoPlayer
+                videoUrl={resolvedVideoUrl}
+                videoStartedAt={event.video_started_at}
+                eventTitle={event.title}
+              />
+            </div>
+
+            {/* Chat sidebar */}
+            <VideoChatPanel
+              chatMessages={chatMessages}
+              sendChatMessage={sendChatMessage}
+              eventId={event.id}
+            />
+          </div>
+        </div>
       </div>
     )
   }
@@ -352,6 +406,65 @@ export default function EventDetailPage({ params }) {
         event={event}
         onAccessGranted={handleAccessGranted}
       />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Chat panel for video events (uses Socket.IO instead of LiveKit)
+// ---------------------------------------------------------------------------
+function VideoChatPanel({ chatMessages, sendChatMessage, eventId }) {
+  const [message, setMessage] = useState('')
+  const messagesEndRef = useRef(null)
+
+  // Get sender name from stored session
+  const senderName = useMemo(() => {
+    const session = getStoredSession(eventId)
+    if (session?.firstName && session?.lastName) {
+      return `${session.firstName} ${session.lastName}`
+    }
+    return 'Anónimo'
+  }, [eventId])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages.length])
+
+  const handleSend = (e) => {
+    e.preventDefault()
+    if (!message.trim()) return
+    sendChatMessage(senderName, message.trim())
+    setMessage('')
+  }
+
+  return (
+    <div className="lg:w-80 flex-shrink-0 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white" style={{ height: 'calc(56.25vw * 0.6)', maxHeight: '500px' }}>
+      <div className="px-4 py-3 border-b border-gray-200">
+        <h3 className="text-sm font-semibold text-gray-900">Chat</h3>
+      </div>
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 min-h-0">
+          {chatMessages.length === 0 && (
+            <p className="text-xs text-gray-400 italic">Sin mensajes todavía</p>
+          )}
+          {chatMessages.map((msg, i) => (
+            <div key={i} className="text-sm">
+              <span className="font-medium text-gray-900">{msg.sender}</span>
+              <span className="text-gray-600 ml-1">{msg.message}</span>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+        <form onSubmit={handleSend} className="border-t border-gray-200 px-4 py-3">
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Escribe un mensaje..."
+            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
+          />
+        </form>
+      </div>
     </div>
   )
 }
