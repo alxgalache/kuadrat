@@ -136,7 +136,7 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'others');
 
 const createOthersProduct = async (req, res, next) => {
   try {
-    const { name, description, price, variations, weight, dimensions, for_auction } = req.body;
+    const { name, description, price, variations, weight, dimensions, for_auction, ai_generated } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -315,12 +315,13 @@ const createOthersProduct = async (req, res, next) => {
 
     // Insert others product
     const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
+    const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
     const result = await db.execute({
       sql: `
-        INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions, for_auction)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions, for_auction, ai_generated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, basename, slug, weightValue, dimensionsValue, forAuctionVal],
+      args: [seller_id, name, description, priceNum, basename, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal],
     });
 
     const productId = result.lastInsertRowid;

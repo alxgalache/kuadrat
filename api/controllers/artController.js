@@ -113,7 +113,7 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'art');
 
 const createArtProduct = async (req, res, next) => {
   try {
-    const { name, description, price, type, weight, dimensions, for_auction } = req.body;
+    const { name, description, price, type, weight, dimensions, for_auction, ai_generated } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -274,12 +274,13 @@ const createArtProduct = async (req, res, next) => {
 
     // Insert art product
     const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
+    const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
     const result = await db.execute({
       sql: `
-        INSERT INTO art (seller_id, name, description, price, type, basename, slug, weight, dimensions, for_auction)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO art (seller_id, name, description, price, type, basename, slug, weight, dimensions, for_auction, ai_generated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, type, basename, slug, weightValue, dimensionsValue, forAuctionVal],
+      args: [seller_id, name, description, priceNum, type, basename, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal],
     });
 
     // Get the created product

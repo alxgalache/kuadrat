@@ -6,6 +6,7 @@ import { artAPI, ordersAPI, authAPI, authorsAPI, getArtImageUrl } from '@/lib/ap
 import { useCart } from '@/contexts/CartContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
+import { InformationCircleIcon } from '@heroicons/react/20/solid'
 import AuthorModal from '@/components/AuthorModal'
 import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
@@ -212,6 +213,21 @@ export default function ArtProductDetailPage({ params }) {
                 </p>
               )}
             </div>
+
+            {product.ai_generated === 1 && (
+              <div className="mt-6 rounded-md bg-blue-50 p-4">
+                <div className="flex">
+                  <div className="shrink-0">
+                    <InformationCircleIcon aria-hidden="true" className="size-5 text-blue-400" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-blue-700">
+                      Para la creación de este producto se ha utilizado parcial o totalmente Inteligencia Artificial.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mt-10 flex flex-col gap-4">
               {isSoldOut ? (

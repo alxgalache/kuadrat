@@ -20,6 +20,7 @@ function PublishProductPageContent() {
     const [weight, setWeight] = useState('')
     const [dimensions, setDimensions] = useState('')
     const [forAuction, setForAuction] = useState(false)
+    const [aiGenerated, setAiGenerated] = useState(false)
     const [imageFile, setImageFile] = useState(null)
     const [previewUrl, setPreviewUrl] = useState('')
     const [loading, setLoading] = useState(false)
@@ -272,6 +273,9 @@ function PublishProductPageContent() {
             if (forAuction) {
                 formData.append('for_auction', '1')
             }
+            if (aiGenerated) {
+                formData.append('ai_generated', '1')
+            }
 
             if (productCategory === 'art') {
                 // Submit to art API
@@ -505,6 +509,21 @@ function PublishProductPageContent() {
                                         />
                                         <label htmlFor="forAuction" className="ml-3 text-sm/6 font-medium text-gray-900">
                                             Disponible para subastas
+                                        </label>
+                                    </div>
+
+                                    {/* AI Generated Toggle */}
+                                    <div className="flex items-center">
+                                        <input
+                                            id="aiGenerated"
+                                            name="aiGenerated"
+                                            type="checkbox"
+                                            checked={aiGenerated}
+                                            onChange={(e) => setAiGenerated(e.target.checked)}
+                                            className="size-4 rounded border-gray-300 text-black focus:ring-black"
+                                        />
+                                        <label htmlFor="aiGenerated" className="ml-3 text-sm/6 font-medium text-gray-900">
+                                            Se ha utilizado Inteligencia Artificial en la creación de este producto
                                         </label>
                                     </div>
 

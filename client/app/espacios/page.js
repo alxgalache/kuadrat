@@ -117,7 +117,7 @@ export default function EspaciosPage() {
     if (upcomingEvents.length === 0 && eventsForMonth.length === 0) {
       return (
         <div className="flex items-center justify-center py-24">
-          <p className="text-sm text-gray-500">No hay eventos programados este mes</p>
+          <p className="text-sm text-gray-500">No hay eventos programados en el día seleccionado</p>
         </div>
       )
     }

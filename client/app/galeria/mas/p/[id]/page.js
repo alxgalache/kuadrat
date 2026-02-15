@@ -6,6 +6,7 @@ import { othersAPI, ordersAPI, authAPI, authorsAPI, getOthersImageUrl } from '@/
 import { useCart } from '@/contexts/CartContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
+import { InformationCircleIcon } from '@heroicons/react/20/solid'
 import AuthorModal from '@/components/AuthorModal'
 import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
@@ -230,6 +231,21 @@ export default function OthersProductDetailPage({ params }) {
                 </p>
               )}
             </div>
+
+            {product.ai_generated === 1 && (
+              <div className="mt-6 rounded-md bg-blue-50 p-4">
+                <div className="flex">
+                  <div className="shrink-0">
+                    <InformationCircleIcon aria-hidden="true" className="size-5 text-blue-400" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-blue-700">
+                      Para la creación de este producto se ha utilizado parcial o totalmente Inteligencia Artificial.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Variations - NOTE: User will customize this section */}
             {product.variations && product.variations.length > 0 && product.is_sold !== 1 && totalStock > 0 && (

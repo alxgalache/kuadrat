@@ -968,6 +968,26 @@ async function initializeDatabase() {
       console.log('Events category migration skipped or error:', err.message);
     }
 
+    // Add ai_generated column to art table
+    try {
+      await db.execute(`ALTER TABLE art ADD COLUMN ai_generated INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added ai_generated column to art table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('ai_generated column already exists in art table or error:', err.message);
+      }
+    }
+
+    // Add ai_generated column to others table
+    try {
+      await db.execute(`ALTER TABLE others ADD COLUMN ai_generated INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added ai_generated column to others table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('ai_generated column already exists in others table or error:', err.message);
+      }
+    }
+
     console.log('Database schema initialized successfully!');
   } catch (error) {
     console.error('Error initializing database:', error);
