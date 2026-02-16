@@ -388,7 +388,38 @@ const getEventVideo = async (req, res, next) => {
       throw new ApiError(404, 'Vídeo no encontrado', 'Vídeo no encontrado');
     }
 
-    res.sendFile(filePath);
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    const ext = path.extname(filename).toLowerCase();
+    const mimeTypes = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+    const range = req.headers.range;
+
+    if (range) {
+      // HTTP 206 Partial Content for range requests
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+
+      const stream = fs.createReadStream(filePath, { start, end });
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': contentType,
+      });
+      stream.pipe(res);
+    } else {
+      // Full file response
+      res.writeHead(200, {
+        'Content-Length': fileSize,
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+      });
+      fs.createReadStream(filePath).pipe(res);
+    }
   } catch (error) {
     next(error);
   }

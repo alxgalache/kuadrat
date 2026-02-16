@@ -74,8 +74,14 @@ app.use(userAgentFilter);
 // Log suspicious activity
 app.use(suspiciousActivityLogger);
 
-// Limit request size (10MB default, prevents large payload attacks)
-app.use(requestSizeLimiter(15 * 1024 * 1024)); // Match express.json limit
+// Limit request size (prevents large payload attacks)
+// Skip for video upload routes which use multer with their own size limits
+app.use((req, res, next) => {
+  if (req.path.match(/^\/api\/admin\/events\/[^/]+\/upload-video$/)) {
+    return next();
+  }
+  return requestSizeLimiter(15 * 1024 * 1024)(req, res, next);
+});
 
 // Apply general rate limiter to all requests
 app.use(generalLimiter);

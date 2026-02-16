@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 /**
  * Synchronized video player for video-format events.
@@ -17,6 +17,18 @@ export default function EventVideoPlayer({ videoUrl, videoStartedAt, eventTitle 
   const [videoReady, setVideoReady] = useState(false)
   const [videoError, setVideoError] = useState(false)
   const [videoEnded, setVideoEnded] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+  const MAX_RETRIES = 3
+
+  // Enforce HTTPS for external URLs (S3 presigned URLs, etc.)
+  const safeVideoUrl = useMemo(() => {
+    if (!videoUrl) return null
+    // Only enforce HTTPS for external URLs (not same-origin API calls)
+    if (videoUrl.startsWith('http://') && !videoUrl.includes('localhost') && !videoUrl.includes('127.0.0.1')) {
+      return videoUrl.replace('http://', 'https://')
+    }
+    return videoUrl
+  }, [videoUrl])
 
   // Calculate elapsed seconds since the event started
   const getElapsedSeconds = useCallback(() => {
@@ -65,11 +77,29 @@ export default function EventVideoPlayer({ videoUrl, videoStartedAt, eventTitle 
   // Check if video has ended based on elapsed time (for late joiners)
   useEffect(() => {
     const elapsed = getElapsedSeconds()
-    // If we don't know duration yet, just check with a large threshold
     if (videoRef.current?.duration && elapsed >= videoRef.current.duration) {
       setVideoEnded(true)
     }
   }, [getElapsedSeconds])
+
+  // Loading timeout — if video hasn't loaded metadata within 15s, retry
+  useEffect(() => {
+    if (videoReady || videoError || videoEnded) return
+
+    const timeout = setTimeout(() => {
+      if (!videoReady && retryCount < MAX_RETRIES && videoRef.current) {
+        console.warn(`[VideoPlayer] Load timeout, retrying (${retryCount + 1}/${MAX_RETRIES})`)
+        setRetryCount(prev => prev + 1)
+        // Force reload by resetting the src
+        const video = videoRef.current
+        video.load()
+      } else if (retryCount >= MAX_RETRIES) {
+        setVideoError(true)
+      }
+    }, 15000)
+
+    return () => clearTimeout(timeout)
+  }, [videoReady, videoError, videoEnded, retryCount])
 
   const handleLoadedMetadata = useCallback(() => {
     setVideoReady(true)
@@ -80,8 +110,17 @@ export default function EventVideoPlayer({ videoUrl, videoStartedAt, eventTitle 
   }, [])
 
   const handleError = useCallback(() => {
-    setVideoError(true)
-  }, [])
+    // Retry on error before giving up
+    if (retryCount < MAX_RETRIES && videoRef.current) {
+      console.warn(`[VideoPlayer] Load error, retrying (${retryCount + 1}/${MAX_RETRIES})`)
+      setRetryCount(prev => prev + 1)
+      setTimeout(() => {
+        if (videoRef.current) videoRef.current.load()
+      }, 1000 * (retryCount + 1)) // Exponential-ish backoff
+    } else {
+      setVideoError(true)
+    }
+  }, [retryCount])
 
   const toggleMute = useCallback(() => {
     if (!videoRef.current) return
@@ -146,9 +185,11 @@ export default function EventVideoPlayer({ videoUrl, videoStartedAt, eventTitle 
     >
       <video
         ref={videoRef}
-        src={videoUrl}
+        src={safeVideoUrl}
         muted={muted}
         playsInline
+        crossOrigin="anonymous"
+        preload="auto"
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleVideoEnded}
         onError={handleError}
