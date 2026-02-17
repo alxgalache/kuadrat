@@ -968,6 +968,29 @@ async function initializeDatabase() {
       console.log('Events category migration skipped or error:', err.message);
     }
 
+    // Add event_bans table for spam/abuse tracking
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS event_bans (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        email TEXT,
+        ip_address TEXT,
+        reason TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Add ip_address column to event_attendees
+    try {
+      await db.execute(`ALTER TABLE event_attendees ADD COLUMN ip_address TEXT`);
+      console.log('Added ip_address column to event_attendees table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('ip_address column already exists in event_attendees or error:', err.message);
+      }
+    }
+
     // Add ai_generated column to art table
     try {
       await db.execute(`ALTER TABLE art ADD COLUMN ai_generated INTEGER NOT NULL DEFAULT 0`);

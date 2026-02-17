@@ -1023,6 +1023,18 @@ export const eventsAPI = {
       method: 'POST',
     });
   },
+
+  reportSpam: async (eventId, identity, reporterAttendeeId = null, reporterAccessToken = null) => {
+    const body = {};
+    if (reporterAttendeeId && reporterAccessToken) {
+      body.reporterAttendeeId = reporterAttendeeId;
+      body.reporterAccessToken = reporterAccessToken;
+    }
+    return apiRequest(`/events/${eventId}/participants/${encodeURIComponent(identity)}/report-spam`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
 };
 
 // Seller API (requires seller role)

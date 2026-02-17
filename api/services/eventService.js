@@ -275,6 +275,45 @@ async function endEvent(id) {
   return getEventById(id);
 }
 
+// ---------------------------------------------------------------------------
+// Bans
+// ---------------------------------------------------------------------------
+
+async function banAttendee(eventId, email, ipAddress, reason) {
+  const id = generateUUID();
+  await db.execute({
+    sql: `INSERT INTO event_bans (id, event_id, email, ip_address, reason) VALUES (?, ?, ?, ?, ?)`,
+    args: [id, eventId, email || null, ipAddress || null, reason || 'spam'],
+  });
+  return id;
+}
+
+async function isEmailBanned(eventId, email) {
+  if (!email) return false;
+  const result = await db.execute({
+    sql: 'SELECT id FROM event_bans WHERE event_id = ? AND email = ? LIMIT 1',
+    args: [eventId, email],
+  });
+  return result.rows.length > 0;
+}
+
+async function isIpBanned(eventId, ipAddress) {
+  if (!ipAddress) return false;
+  const result = await db.execute({
+    sql: 'SELECT id FROM event_bans WHERE event_id = ? AND ip_address = ? LIMIT 1',
+    args: [eventId, ipAddress],
+  });
+  return result.rows.length > 0;
+}
+
+async function updateAttendeeIp(attendeeId, ipAddress) {
+  if (!ipAddress) return;
+  await db.execute({
+    sql: 'UPDATE event_attendees SET ip_address = ? WHERE id = ?',
+    args: [ipAddress, attendeeId],
+  });
+}
+
 module.exports = {
   createEvent,
   updateEvent,
@@ -292,6 +331,10 @@ module.exports = {
   getAttendeeCount,
   startEvent,
   endEvent,
+  banAttendee,
+  isEmailBanned,
+  isIpBanned,
+  updateAttendeeIp,
   // Exposed for token verification
   hashAccessToken,
 };

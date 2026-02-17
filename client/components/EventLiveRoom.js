@@ -10,13 +10,18 @@ import {
   useChat,
   useLocalParticipant,
   useIsSpeaking,
+  useRoomContext,
   StartAudio,
 } from '@livekit/components-react'
 import '@livekit/components-styles'
-import { Track } from 'livekit-client'
+import { Track, RoomEvent, DisconnectReason } from 'livekit-client'
 import { eventsAPI } from '@/lib/api'
 
-export default function EventLiveRoom({ token, serverUrl, roomName, isHost = false, eventId }) {
+// Spam threshold: more than this many messages in the given window triggers a kick
+const SPAM_MAX_MESSAGES = 10
+const SPAM_WINDOW_MS = 10000
+
+export default function EventLiveRoom({ token, serverUrl, roomName, isHost = false, eventId, onKicked }) {
   if (!token || !serverUrl) {
     return (
       <div className="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
@@ -41,15 +46,17 @@ export default function EventLiveRoom({ token, serverUrl, roomName, isHost = fal
         label="Haz clic para activar el audio"
         className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-md bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-lg hover:bg-gray-700 transition-colors"
       />
-      <RoomContent isHost={isHost} eventId={eventId} />
+      <RoomContent isHost={isHost} eventId={eventId} onKicked={onKicked} />
       <RoomAudioRenderer />
     </LiveKitRoom>
   )
 }
 
-function RoomContent({ isHost, eventId }) {
+function RoomContent({ isHost, eventId, onKicked }) {
   const participants = useParticipants()
   const { localParticipant } = useLocalParticipant()
+  const room = useRoomContext()
+  const { chatMessages, send, isSending } = useChat()
   const tracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: false },
@@ -61,6 +68,83 @@ function RoomContent({ isHost, eventId }) {
   const [handRaised, setHandRaised] = useState(false)
   const videoAreaRef = useRef(null)
   const [videoAreaHeight, setVideoAreaHeight] = useState(null)
+  const [kickedIdentities, setKickedIdentities] = useState(new Set())
+  const messageTimestamps = useRef({})
+  const kickedRef = useRef(new Set())
+
+  // Read attendee session from localStorage for spam reporting
+  const attendeeSession = useMemo(() => {
+    try {
+      const raw = localStorage.getItem(`event_attendee_${eventId}`)
+      return raw ? JSON.parse(raw) : null
+    } catch { return null }
+  }, [eventId])
+
+  // Detect kick (PARTICIPANT_REMOVED disconnect reason)
+  useEffect(() => {
+    if (!room || isHost) return
+    const handleDisconnect = (reason) => {
+      if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
+        onKicked?.()
+      }
+    }
+    room.on(RoomEvent.Disconnected, handleDisconnect)
+    return () => room.off(RoomEvent.Disconnected, handleDisconnect)
+  }, [room, isHost, onKicked])
+
+  // Spam detection: track message frequency per identity
+  const prevMsgCount = useRef(0)
+  useEffect(() => {
+    if (chatMessages.length <= prevMsgCount.current) {
+      prevMsgCount.current = chatMessages.length
+      return
+    }
+    // Process only new messages
+    const newMessages = chatMessages.slice(prevMsgCount.current)
+    prevMsgCount.current = chatMessages.length
+
+    const now = Date.now()
+    for (const msg of newMessages) {
+      const identity = msg.from?.identity
+      if (!identity || kickedRef.current.has(identity)) continue
+
+      if (!messageTimestamps.current[identity]) {
+        messageTimestamps.current[identity] = []
+      }
+      messageTimestamps.current[identity].push(now)
+      // Remove timestamps outside the window
+      messageTimestamps.current[identity] = messageTimestamps.current[identity].filter(
+        t => now - t <= SPAM_WINDOW_MS
+      )
+      // Check threshold
+      if (messageTimestamps.current[identity].length > SPAM_MAX_MESSAGES) {
+        handleSpamDetected(identity)
+      }
+    }
+  }, [chatMessages.length])
+
+  const handleSpamDetected = useCallback(async (identity) => {
+    if (kickedRef.current.has(identity)) return
+    kickedRef.current.add(identity)
+    setKickedIdentities(prev => new Set([...prev, identity]))
+
+    try {
+      await eventsAPI.reportSpam(
+        eventId,
+        identity,
+        attendeeSession?.attendeeId,
+        attendeeSession?.accessToken
+      )
+    } catch (err) {
+      console.error('Error reporting spam:', err)
+    }
+  }, [eventId, attendeeSession])
+
+  // Filter messages: exclude kicked identities
+  const filteredMessages = useMemo(() => {
+    if (kickedIdentities.size === 0) return chatMessages
+    return chatMessages.filter(msg => !kickedIdentities.has(msg.from?.identity))
+  }, [chatMessages, kickedIdentities])
 
   // Measure the host video area height to sync chat height
   // Ignore height changes while in fullscreen to avoid broken chat height on exit
@@ -111,7 +195,7 @@ function RoomContent({ isHost, eventId }) {
     }
   }, [localParticipant, handRaised])
 
-  // Auto-enable mic when promoted (viewer gets canPublish)
+  // Auto-enable mic and lower hand when promoted (viewer gets canPublish)
   const prevCanPublish = useRef(localParticipant?.permissions?.canPublish)
   useEffect(() => {
     if (!localParticipant || isHost) return
@@ -120,9 +204,16 @@ function RoomContent({ isHost, eventId }) {
       localParticipant.setMicrophoneEnabled(true).catch(err => {
         console.warn('Could not enable mic after promotion:', err)
       })
+      // Auto-lower hand when promoted
+      if (handRaised) {
+        setHandRaised(false)
+        localParticipant.setAttributes({ handRaised: '' }).catch(err => {
+          console.warn('Could not lower hand after promotion:', err)
+        })
+      }
     }
     prevCanPublish.current = canPublish
-  }, [localParticipant?.permissions?.canPublish, isHost])
+  }, [localParticipant?.permissions?.canPublish, isHost, handRaised])
 
   // Fullscreen for viewer
   const handleFullscreen = useCallback(() => {
@@ -236,7 +327,11 @@ function RoomContent({ isHost, eventId }) {
           <h3 className="text-sm font-semibold text-gray-900">Chat</h3>
           <p className="text-xs text-gray-500">{participants.length} conectados</p>
         </div>
-        <ChatPanel />
+        <ChatPanel
+          chatMessages={filteredMessages}
+          send={send}
+          isSending={isSending}
+        />
       </div>
     </div>
   )
@@ -366,14 +461,22 @@ function SpeakingPulseStyle() {
 
 // ---------------------------------------------------------------------------
 // Participant grid — includes local user tile with "(Tu)" label
+// For viewers: also includes the host tile (black styling, no controls)
 // ---------------------------------------------------------------------------
 function ParticipantGrid({ participants, isHost, eventId }) {
-  // Include all participants (local + remote), excluding host
-  const gridParticipants = participants.filter(p => !p.identity?.startsWith('host-'))
+  // Host view: exclude host from grid (they see their own video above)
+  // Viewer view: include all participants (host + viewers)
+  const gridParticipants = isHost
+    ? participants.filter(p => !p.identity?.startsWith('host-'))
+    : participants
 
-  // Sort: local participant last, hand raised first among remote
+  // Sort: host first (viewer view only), local participant last, hand raised first among others
   const sorted = useMemo(() => {
     return [...gridParticipants].sort((a, b) => {
+      // Host always first
+      const aHost = a.identity?.startsWith('host-') ? 1 : 0
+      const bHost = b.identity?.startsWith('host-') ? 1 : 0
+      if (aHost !== bHost) return bHost - aHost
       // Local always at the end
       if (a.isLocal && !b.isLocal) return 1
       if (!a.isLocal && b.isLocal) return -1
@@ -422,16 +525,34 @@ function ParticipantGrid({ participants, isHost, eventId }) {
 }
 
 // ---------------------------------------------------------------------------
-// Individual participant tile with speaking detection
+// Individual participant tile
 // ---------------------------------------------------------------------------
 function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
   const isSpeaking = useIsSpeaking(p)
-  const { localParticipant } = useLocalParticipant()
+  const { localParticipant, isMicrophoneEnabled } = useLocalParticipant()
 
   const isLocal = p.isLocal
+  const isHostParticipant = p.identity?.startsWith('host-')
   const handRaised = p.attributes?.handRaised === 'true'
   const canPublish = p.permissions?.canPublish
-  const isPublishing = p.audioTrackPublications?.size > 0
+
+  // Track if this participant was ever promoted (to show red after demotion)
+  const wasPromoted = useRef(false)
+  if (canPublish) wasPromoted.current = true
+
+  // Determine mic state:
+  // - Local user: use isMicrophoneEnabled from useLocalParticipant (reactive)
+  // - Remote user: check audio track publications for non-muted tracks
+  const isMicActive = isLocal
+    ? isMicrophoneEnabled
+    : (() => {
+        if (!p.audioTrackPublications || p.audioTrackPublications.size === 0) return false
+        for (const pub of p.audioTrackPublications.values()) {
+          if (!pub.isMuted) return true
+        }
+        return false
+      })()
+
   const initial = isLocal ? 'T' : (p.name || p.identity || '?').charAt(0).toUpperCase()
   const displayName = isLocal ? '(Tu)' : (p.name || p.identity || '?')
   const shortName = isLocal ? '(Tu)' : (displayName.length > 12 ? displayName.slice(0, 11) + '...' : displayName)
@@ -446,9 +567,11 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
   }, [localParticipant, isLocal])
 
   const handleClick = useCallback(() => {
+    // Host tile: no click action for viewers
+    if (isHostParticipant) return
     if (isLocal) {
-      // Local user: only allow self-mute when promoted
-      if (canPublish && isPublishing) {
+      // Local user: only allow self-mute when promoted and mic is on
+      if (canPublish && isMicActive) {
         handleSelfMute()
       }
       return
@@ -459,11 +582,12 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
     } else {
       onPromote(p.identity)
     }
-  }, [isLocal, isHost, canPublish, isPublishing, handleSelfMute, onPromote, onDemote, p.identity])
+  }, [isLocal, isHost, isHostParticipant, canPublish, isMicActive, handleSelfMute, onPromote, onDemote, p.identity])
 
   const getTitle = () => {
+    if (isHostParticipant) return `Host: ${displayName}`
     if (isLocal) {
-      if (canPublish && isPublishing) return 'Silenciar tu micrófono'
+      if (canPublish && isMicActive) return 'Silenciar tu micrófono'
       if (!canPublish) return 'Levanta la mano para hablar'
       return '(Tu)'
     }
@@ -472,31 +596,103 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
     return displayName
   }
 
+  // Build tile classes based on role and state
+  const getTileClasses = () => {
+    // Host participant tile (visible to viewers): black styling, no interactivity
+    if (isHostParticipant) {
+      return 'bg-gray-50 text-gray-900 ring-2 ring-gray-900 cursor-default'
+    }
+    // Local user tile: blue scheme
+    if (isLocal) {
+      if (canPublish) {
+        return isMicActive
+          ? 'bg-green-50 text-green-800 ring-2 ring-green-400 cursor-pointer hover:bg-green-100'
+          : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
+      }
+      return 'bg-blue-50 text-blue-700 ring-1 ring-blue-200 cursor-default'
+    }
+    // Remote promoted participant: green (mic on) or red (mic off)
+    if (canPublish) {
+      return isMicActive
+        ? 'bg-green-50 text-green-800 ring-2 ring-green-400 cursor-pointer hover:bg-green-100'
+        : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
+    }
+    // Remote demoted (was promoted before): red styling like muted speaker
+    if (wasPromoted.current) {
+      return isHost
+        ? 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
+        : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
+    }
+    // Remote non-promoted: gray (host can click to promote) or default
+    if (isHost) {
+      return handRaised
+        ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-300 cursor-pointer hover:bg-amber-100'
+        : 'bg-gray-100 text-gray-700 cursor-pointer hover:bg-gray-200'
+    }
+    return 'bg-gray-100 text-gray-700 cursor-default'
+  }
+
+  // Mic icon for top-right badge
+  const renderMicBadge = () => {
+    // Host tile: no mic badge
+    if (isHostParticipant) return null
+
+    // Active mic icon (green for remote, blue for local)
+    if (canPublish && isMicActive) {
+      const bgColor = isLocal ? 'bg-blue-500' : 'bg-green-500'
+      return (
+        <span className={`absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ${bgColor}`}>
+          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+          </svg>
+        </span>
+      )
+    }
+
+    // Muted/crossed-out icon: promoted but mic off, OR not promoted
+    if (canPublish && !isMicActive) {
+      return (
+        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-400">
+          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+          </svg>
+        </span>
+      )
+    }
+
+    // Demoted (was promoted): red muted icon
+    if (wasPromoted.current) {
+      return (
+        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-400">
+          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+          </svg>
+        </span>
+      )
+    }
+
+    // Never promoted: gray muted icon
+    return (
+      <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-300">
+        <svg className="h-3 w-3 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+        </svg>
+      </span>
+    )
+  }
+
   return (
     <div className="flex flex-col items-center gap-1">
       <button
         type="button"
         onClick={handleClick}
-        className={`relative w-14 h-14 rounded-lg flex items-center justify-center text-lg font-semibold transition-shadow duration-300 ${
-          isLocal
-            ? canPublish
-              ? 'bg-blue-50 text-blue-800 ring-1 ring-blue-300 cursor-pointer hover:bg-blue-100'
-              : 'bg-blue-50 text-blue-700 ring-1 ring-blue-200 cursor-default'
-            : canPublish
-              ? 'bg-green-50 text-green-800 ring-1 ring-green-300 cursor-pointer hover:bg-green-100'
-              : isHost
-                ? handRaised
-                  ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-300 cursor-pointer hover:bg-amber-100'
-                  : 'bg-gray-100 text-gray-700 cursor-pointer hover:bg-gray-200'
-                : 'bg-gray-100 text-gray-700 cursor-default'
-        }`}
-        style={isSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+        className={`relative w-14 h-14 rounded-lg flex items-center justify-center text-lg font-semibold transition-shadow duration-300 ${getTileClasses()}`}
         title={getTitle()}
       >
         {initial}
 
-        {/* Hand raised icon — top left */}
-        {handRaised && !isLocal && (
+        {/* Hand raised icon — top left (hidden when promoted, since hand was answered) */}
+        {handRaised && !isLocal && !isHostParticipant && !canPublish && (
           <span className="absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400">
             <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l-.075 5.925m3.075-5.925v3m0-3a1.575 1.575 0 013.15 0v3m-3.15 0l-.075 3.925M14.1 7.575v3m0-3a1.575 1.575 0 013.15 0v4.725M6.9 7.575a1.575 1.575 0 00-3.15 0v6.525c0 3.06 1.827 5.625 4.725 6.825a10.49 10.49 0 006.15 0c2.898-1.2 4.725-3.765 4.725-6.825V7.575" />
@@ -504,41 +700,14 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
           </span>
         )}
 
-        {/* Muted icon — top right (for non-local when not publishing) */}
-        {!isLocal && !isPublishing && !isSpeaking && (
-          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-300">
-            <svg className="h-3 w-3 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
-            </svg>
-          </span>
-        )}
-
-        {/* Local user mute indicator */}
-        {isLocal && canPublish && isPublishing && (
-          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500">
-            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-            </svg>
-          </span>
-        )}
-        {isLocal && (!canPublish || !isPublishing) && (
-          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-300">
-            <svg className="h-3 w-3 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
-            </svg>
-          </span>
-        )}
-
-        {/* Speaking indicator — green ring when canPublish and publishing (remote only) */}
-        {!isLocal && canPublish && isPublishing && !isSpeaking && (
-          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
-            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-            </svg>
-          </span>
-        )}
+        {/* Mic badge (top-right) */}
+        {renderMicBadge()}
       </button>
-      <span className={`text-xs text-center max-w-16 truncate ${isLocal ? 'text-blue-600 font-medium' : 'text-gray-600'}`}>{shortName}</span>
+      <span className={`text-xs text-center max-w-16 truncate ${
+        isHostParticipant ? 'text-gray-900 font-semibold'
+        : isLocal ? 'text-blue-600 font-medium'
+        : 'text-gray-600'
+      }`}>{isHostParticipant ? 'Host' : shortName}</span>
     </div>
   )
 }
@@ -546,8 +715,7 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
 // ---------------------------------------------------------------------------
 // Chat
 // ---------------------------------------------------------------------------
-function ChatPanel() {
-  const { chatMessages, send, isSending } = useChat()
+function ChatPanel({ chatMessages, send, isSending }) {
   const [message, setMessage] = useState('')
   const messagesEndRef = useRef(null)
 

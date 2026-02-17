@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo, use } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, use } from 'react'
 import dynamic from 'next/dynamic'
 import { eventsAPI, getEventVideoUrl } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
@@ -67,6 +67,7 @@ export default function EventDetailPage({ params }) {
   const [livekitToken, setLivekitToken] = useState(null)
   const [livekitUrl, setLivekitUrl] = useState(null)
   const [isHost, setIsHost] = useState(false)
+  const [kicked, setKicked] = useState(false)
 
   // Real-time event status and chat via Socket.IO
   const { eventStarted, eventEnded, chatMessages, sendChatMessage } = useEventSocket(event?.id)
@@ -161,6 +162,20 @@ export default function EventDetailPage({ params }) {
     // Video format events will auto-render since hasAccess is now true
   }
 
+  const handleKicked = useCallback(() => {
+    setKicked(true)
+    setLivekitToken(null)
+    setLivekitUrl(null)
+    // Clear stored session so banned user can't reconnect
+    if (event?.id) {
+      try { localStorage.removeItem(`event_attendee_${event.id}`) } catch {}
+    }
+    // Redirect to home after a short delay
+    setTimeout(() => {
+      window.location.href = '/'
+    }, 4000)
+  }, [event?.id])
+
   // Resolve video URL (handle uploaded: prefix)
   const resolvedVideoUrl = useMemo(() => {
     if (!event?.video_url) return null
@@ -224,6 +239,26 @@ export default function EventDetailPage({ params }) {
     )
   }
 
+  // Kicked notification
+  if (kicked) {
+    return (
+      <div className="bg-white min-h-screen flex items-center justify-center">
+        <div className="mx-auto max-w-md px-6 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
+            <svg className="h-7 w-7 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+          </div>
+          <p className="mt-4 text-lg font-semibold text-gray-900">Has sido expulsado del stream</p>
+          <p className="mt-2 text-sm text-gray-600">
+            Has sido expulsado del stream por realizar spam en el chat o comentarios inapropiados.
+          </p>
+          <p className="mt-4 text-xs text-gray-400">Redirigiendo a la página principal...</p>
+        </div>
+      </div>
+    )
+  }
+
   // Active event with LiveKit room
   if (event.status === 'active' && livekitToken && livekitUrl) {
     return (
@@ -248,6 +283,7 @@ export default function EventDetailPage({ params }) {
               roomName={event.livekit_room_name}
               isHost={isHost}
               eventId={event.id}
+              onKicked={handleKicked}
             />
           </div>
         </div>

@@ -302,6 +302,7 @@ const promoteParticipant = async (req, res, next) => {
         canPublish: true,
         canSubscribe: true,
         canPublishData: true,
+        canUpdateOwnMetadata: true,
       }
     );
 
@@ -332,6 +333,7 @@ const demoteParticipant = async (req, res, next) => {
         canPublish: false,
         canSubscribe: true,
         canPublishData: true,
+        canUpdateOwnMetadata: true,
       }
     );
 

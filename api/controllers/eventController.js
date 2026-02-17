@@ -1,9 +1,14 @@
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 const { ApiError } = require('../middleware/errorHandler');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const stripeService = require('../services/stripeService');
+
+function getClientIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
+}
 
 const EVENTS_VIDEOS_DIR = path.join(__dirname, '..', 'uploads', 'events');
 
@@ -74,6 +79,10 @@ const registerAttendee = async (req, res, next) => {
     const { attendee, accessToken, isExisting } = await eventService.registerAttendee(id, {
       first_name, last_name, email,
     });
+
+    // Store the client IP for ban enforcement
+    const clientIp = getClientIp(req);
+    await eventService.updateAttendeeIp(attendee.id, clientIp);
 
     res.status(isExisting ? 200 : 201).json({
       success: true,
@@ -232,6 +241,17 @@ const getViewerToken = async (req, res, next) => {
       throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
     }
 
+    // Check if attendee is banned (by email or IP)
+    const emailBanned = await eventService.isEmailBanned(id, attendee.email);
+    if (emailBanned) {
+      throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
+    }
+    const clientIp = getClientIp(req);
+    const ipBanned = await eventService.isIpBanned(id, clientIp);
+    if (ipBanned) {
+      throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
+    }
+
     if (!event.livekit_room_name) {
       throw new ApiError(400, 'La sala aún no está disponible', 'Sala no disponible');
     }
@@ -325,6 +345,7 @@ const promoteParticipant = async (req, res, next) => {
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
+      canUpdateOwnMetadata: true,
     });
 
     res.status(200).json({ success: true });
@@ -362,6 +383,7 @@ const demoteParticipant = async (req, res, next) => {
       canPublish: false,
       canSubscribe: true,
       canPublishData: true,
+      canUpdateOwnMetadata: true,
     });
 
     res.status(200).json({ success: true });
@@ -425,6 +447,81 @@ const getEventVideo = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/participants/:identity/report-spam
+// Report a spammer — kicks from LiveKit and bans by email + IP
+// ---------------------------------------------------------------------------
+const reportSpam = async (req, res, next) => {
+  try {
+    const { id, identity } = req.params;
+    const { reporterAttendeeId, reporterAccessToken } = req.body;
+
+    if (identity.startsWith('host-')) {
+      throw new ApiError(400, 'No se puede reportar al host', 'Error');
+    }
+
+    const event = await eventService.getEventById(id);
+    if (!event || event.status !== 'active' || !event.livekit_room_name) {
+      throw new ApiError(400, 'Evento no disponible', 'Error');
+    }
+
+    // Validate reporter: valid attendee OR authenticated host (JWT)
+    let isValidReporter = false;
+
+    if (reporterAttendeeId && reporterAccessToken) {
+      const reporter = await eventService.getAttendeeByAccessToken(id, reporterAccessToken);
+      if (reporter && reporter.id === reporterAttendeeId) {
+        isValidReporter = true;
+      }
+    }
+
+    if (!isValidReporter) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+          if (decoded.id === event.host_user_id) {
+            isValidReporter = true;
+          }
+        } catch (e) {
+          // Invalid JWT
+        }
+      }
+    }
+
+    if (!isValidReporter) {
+      throw new ApiError(403, 'No autorizado para reportar', 'Acceso denegado');
+    }
+
+    // Extract attendee ID from identity (viewer-{attendeeId})
+    const spammerAttendeeId = identity.replace('viewer-', '');
+    const spammer = await eventService.getAttendeeById(spammerAttendeeId);
+    if (!spammer || spammer.event_id !== id) {
+      throw new ApiError(404, 'Participante no encontrado', 'Error');
+    }
+
+    // Check if already banned
+    const alreadyBanned = await eventService.isEmailBanned(id, spammer.email);
+    if (alreadyBanned) {
+      return res.status(200).json({ success: true, alreadyBanned: true });
+    }
+
+    // Ban by email and IP
+    await eventService.banAttendee(id, spammer.email, spammer.ip_address, 'spam');
+
+    // Kick from LiveKit room
+    try {
+      await livekitService.removeParticipant(event.livekit_room_name, identity);
+    } catch (err) {
+      console.warn('Error removing participant from LiveKit:', err.message);
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getEvents,
   getEventBySlug,
@@ -436,4 +533,5 @@ module.exports = {
   getHostToken,
   promoteParticipant,
   demoteParticipant,
+  reportSpam,
 };

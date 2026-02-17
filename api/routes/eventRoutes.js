@@ -65,4 +65,11 @@ router.post('/:id/participants/:identity/promote', authenticate, eventController
  */
 router.post('/:id/participants/:identity/demote', authenticate, eventController.demoteParticipant);
 
+/**
+ * POST /api/events/:id/participants/:identity/report-spam
+ * Report a spammer — kicks from LiveKit and bans by email + IP
+ * Authentication: valid attendee credentials in body, or JWT for host
+ */
+router.post('/:id/participants/:identity/report-spam', eventController.reportSpam);
+
 module.exports = router;
