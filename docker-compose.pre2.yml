@@ -22,9 +22,9 @@ services:
       PORT: 3001
     env_file:
       - ./api/.env.staging
-    # STAGING: Only mount the uploads directory, not the entire app
+    # STAGING: Bind mount for uploads — accessible via SFTP at /home/axgalache/uploads
     volumes:
-      - api_uploads_staging:/app/uploads
+      - /home/ubuntu/uploads:/app/uploads
     # Security: Run with limited privileges
     security_opt:
       - no-new-privileges:true
@@ -96,6 +96,3 @@ networks:
   kuadrat-network-staging:
     driver: bridge
 
-volumes:
-  api_uploads_staging:
-    driver: local
