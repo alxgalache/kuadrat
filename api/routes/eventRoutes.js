@@ -12,10 +12,16 @@ const { authenticate } = require('../middleware/authorization');
 router.get('/', eventController.getEvents);
 
 /**
- * GET /api/events/videos/:filename
- * Serve uploaded event video files
+ * POST /api/events/:id/video-token
+ * Get a short-lived signed token to access the event video
  */
-router.get('/videos/:filename', eventController.getEventVideo);
+router.post('/:id/video-token', eventController.getVideoToken);
+
+/**
+ * GET /api/events/:id/video/:filename?vtoken=...
+ * Serve uploaded event video files (protected by signed token)
+ */
+router.get('/:id/video/:filename', eventController.getEventVideo);
 
 /**
  * GET /api/events/:slug
@@ -67,9 +73,15 @@ router.post('/:id/participants/:identity/demote', authenticate, eventController.
 
 /**
  * POST /api/events/:id/participants/:identity/report-spam
- * Report a spammer — kicks from LiveKit and bans by email + IP
+ * Report a spammer — chat-bans (canPublishData=false), stays in room
  * Authentication: valid attendee credentials in body, or JWT for host
  */
 router.post('/:id/participants/:identity/report-spam', eventController.reportSpam);
+
+/**
+ * POST /api/events/:id/participants/:identity/ban-from-chat
+ * Host manually bans a participant from chat (requires auth)
+ */
+router.post('/:id/participants/:identity/ban-from-chat', authenticate, eventController.banFromChat);
 
 module.exports = router;

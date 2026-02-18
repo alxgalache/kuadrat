@@ -36,8 +36,12 @@ async function generateHostToken(roomName, identity, name) {
 
 /**
  * Generate a LiveKit token for a viewer (can only watch/listen + send data).
+ * @param {string} roomName
+ * @param {string} identity
+ * @param {string} name
+ * @param {{ chatBanned?: boolean }} [options]
  */
-async function generateViewerToken(roomName, identity, name) {
+async function generateViewerToken(roomName, identity, name, options = {}) {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity,
     name,
@@ -49,7 +53,7 @@ async function generateViewerToken(roomName, identity, name) {
     room: roomName,
     canPublish: false,
     canSubscribe: true,
-    canPublishData: true,
+    canPublishData: options.chatBanned ? false : true,
     canUpdateOwnMetadata: true,
   });
 

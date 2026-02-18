@@ -314,6 +314,21 @@ async function updateAttendeeIp(attendeeId, ipAddress) {
   });
 }
 
+async function markAttendeeChatBanned(attendeeId) {
+  await db.execute({
+    sql: 'UPDATE event_attendees SET chat_banned = 1 WHERE id = ?',
+    args: [attendeeId],
+  });
+}
+
+async function isAttendeeChatBanned(attendeeId) {
+  const result = await db.execute({
+    sql: 'SELECT chat_banned FROM event_attendees WHERE id = ? LIMIT 1',
+    args: [attendeeId],
+  });
+  return result.rows.length > 0 && result.rows[0].chat_banned === 1;
+}
+
 module.exports = {
   createEvent,
   updateEvent,
@@ -335,6 +350,8 @@ module.exports = {
   isEmailBanned,
   isIpBanned,
   updateAttendeeIp,
+  markAttendeeChatBanned,
+  isAttendeeChatBanned,
   // Exposed for token verification
   hashAccessToken,
 };

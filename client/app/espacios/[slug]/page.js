@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback, use } from 'react'
 import dynamic from 'next/dynamic'
-import { eventsAPI, getEventVideoUrl } from '@/lib/api'
+import { eventsAPI, authorsAPI, getProtectedEventVideoUrl } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import useEventSocket from '@/hooks/useEventSocket'
 import EventCountdown from '@/components/EventCountdown'
 import EventAccessModal from '@/components/EventAccessModal'
+import AuthorModal from '@/components/AuthorModal'
 
 // Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
@@ -68,6 +69,10 @@ export default function EventDetailPage({ params }) {
   const [livekitUrl, setLivekitUrl] = useState(null)
   const [isHost, setIsHost] = useState(false)
   const [kicked, setKicked] = useState(false)
+  const [hostAuthor, setHostAuthor] = useState(null)
+  const [hostModalOpen, setHostModalOpen] = useState(false)
+  const [videoToken, setVideoToken] = useState(null)
+  const [videoTokenFilename, setVideoTokenFilename] = useState(null)
 
   // Real-time event status and chat via Socket.IO
   const { eventStarted, eventEnded, chatMessages, sendChatMessage } = useEventSocket(event?.id)
@@ -176,14 +181,56 @@ export default function EventDetailPage({ params }) {
     }, 4000)
   }, [event?.id])
 
-  // Resolve video URL (handle uploaded: prefix)
+  // Fetch signed video token when user has access to a video-format event
+  useEffect(() => {
+    if (!event || event.format !== 'video' || !event.video_url?.startsWith('uploaded:')) return
+    if (!hasAccess && !isHost) return
+    fetchVideoToken()
+  }, [event?.id, event?.format, event?.video_url, hasAccess, isHost])
+
+  const fetchVideoToken = async () => {
+    const session = getStoredSession(event.id)
+    try {
+      const data = await eventsAPI.getVideoToken(
+        event.id,
+        session?.attendeeId || null,
+        session?.accessToken || null
+      )
+      setVideoToken(data.vtoken)
+      setVideoTokenFilename(data.filename)
+    } catch (err) {
+      console.error('Error getting video token:', err)
+    }
+  }
+
+  const handleViewHostAuthor = async () => {
+    if (!event?.host_slug) return
+    try {
+      const data = await authorsAPI.getBySlug(event.host_slug)
+      if (data?.author) {
+        setHostAuthor(data.author)
+        setHostModalOpen(true)
+      }
+    } catch (err) {
+      console.error('Failed to load host author:', err)
+    }
+  }
+
+  // Resolve video URL — external URLs used directly; uploaded files need a signed token (fetched async)
   const resolvedVideoUrl = useMemo(() => {
     if (!event?.video_url) return null
-    if (event.video_url.startsWith('uploaded:')) {
-      return getEventVideoUrl(event.video_url.replace('uploaded:', ''))
-    }
+    if (event.video_url.startsWith('uploaded:')) return null // handled by video token flow
     return event.video_url
   }, [event?.video_url])
+
+  // Protected URL for uploaded videos (requires signed vtoken)
+  const protectedVideoUrl = useMemo(() => {
+    if (!videoToken || !videoTokenFilename || !event?.id) return null
+    return getProtectedEventVideoUrl(event.id, videoTokenFilename, videoToken)
+  }, [videoToken, videoTokenFilename, event?.id])
+
+  // The final video URL to pass to the player
+  const activeVideoUrl = protectedVideoUrl || resolvedVideoUrl
 
   if (loading) {
     return (
@@ -202,7 +249,7 @@ export default function EventDetailPage({ params }) {
   }
 
   // Active video event — synchronized video player + chat
-  if (event.status === 'active' && event.format === 'video' && resolvedVideoUrl && (hasAccess || isHost)) {
+  if (event.status === 'active' && event.format === 'video' && (hasAccess || isHost)) {
     return (
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
@@ -218,22 +265,29 @@ export default function EventDetailPage({ params }) {
           </div>
 
           {/* Video player + chat layout */}
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1 min-h-0">
-              <EventVideoPlayer
-                videoUrl={resolvedVideoUrl}
-                videoStartedAt={event.video_started_at}
-                eventTitle={event.title}
+          {activeVideoUrl ? (
+            <div className="flex flex-col lg:flex-row gap-4">
+              <div className="flex-1 min-h-0">
+                <EventVideoPlayer
+                  videoUrl={activeVideoUrl}
+                  videoStartedAt={event.video_started_at}
+                  eventTitle={event.title}
+                />
+              </div>
+
+              {/* Chat sidebar */}
+              <VideoChatPanel
+                chatMessages={chatMessages}
+                sendChatMessage={sendChatMessage}
+                eventId={event.id}
               />
             </div>
-
-            {/* Chat sidebar */}
-            <VideoChatPanel
-              chatMessages={chatMessages}
-              sendChatMessage={sendChatMessage}
-              eventId={event.id}
-            />
-          </div>
+          ) : (
+            <div className="flex items-center justify-center py-16">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 mr-3" />
+              <p className="text-sm text-gray-500">Cargando vídeo...</p>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -361,7 +415,18 @@ export default function EventDetailPage({ params }) {
 
               {event.host_name && (
                 <p className="text-sm text-gray-600">
-                  Presentado por <span className="font-semibold text-gray-900">{event.host_name}</span>
+                  Presentado por{' '}
+                  {event.host_slug ? (
+                    <button
+                      type="button"
+                      onClick={handleViewHostAuthor}
+                      className="font-semibold text-gray-900 hover:underline"
+                    >
+                      {event.host_name}
+                    </button>
+                  ) : (
+                    <span className="font-semibold text-gray-900">{event.host_name}</span>
+                  )}
                 </p>
               )}
             </div>
@@ -441,6 +506,13 @@ export default function EventDetailPage({ params }) {
         onClose={() => setModalOpen(false)}
         event={event}
         onAccessGranted={handleAccessGranted}
+      />
+
+      {/* Host author modal */}
+      <AuthorModal
+        author={hostAuthor}
+        open={hostModalOpen}
+        onClose={() => setHostModalOpen(false)}
       />
     </div>
   )

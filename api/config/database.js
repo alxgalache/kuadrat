@@ -991,6 +991,16 @@ async function initializeDatabase() {
       }
     }
 
+    // Add chat_banned column to event_attendees
+    try {
+      await db.execute(`ALTER TABLE event_attendees ADD COLUMN chat_banned INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added chat_banned column to event_attendees table');
+    } catch (err) {
+      if (!err.message.includes('duplicate column')) {
+        console.log('chat_banned column already exists in event_attendees or error:', err.message);
+      }
+    }
+
     // Add ai_generated column to art table
     try {
       await db.execute(`ALTER TABLE art ADD COLUMN ai_generated INTEGER NOT NULL DEFAULT 0`);

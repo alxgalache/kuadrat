@@ -68,9 +68,9 @@ function RoomContent({ isHost, eventId, onKicked }) {
   const [handRaised, setHandRaised] = useState(false)
   const videoAreaRef = useRef(null)
   const [videoAreaHeight, setVideoAreaHeight] = useState(null)
-  const [kickedIdentities, setKickedIdentities] = useState(new Set())
+  const [chatBannedIdentities, setChatBannedIdentities] = useState(new Set())
   const messageTimestamps = useRef({})
-  const kickedRef = useRef(new Set())
+  const chatBannedRef = useRef(new Set())
 
   // Read attendee session from localStorage for spam reporting
   const attendeeSession = useMemo(() => {
@@ -106,7 +106,7 @@ function RoomContent({ isHost, eventId, onKicked }) {
     const now = Date.now()
     for (const msg of newMessages) {
       const identity = msg.from?.identity
-      if (!identity || kickedRef.current.has(identity)) continue
+      if (!identity || chatBannedRef.current.has(identity)) continue
 
       if (!messageTimestamps.current[identity]) {
         messageTimestamps.current[identity] = []
@@ -124,9 +124,9 @@ function RoomContent({ isHost, eventId, onKicked }) {
   }, [chatMessages.length])
 
   const handleSpamDetected = useCallback(async (identity) => {
-    if (kickedRef.current.has(identity)) return
-    kickedRef.current.add(identity)
-    setKickedIdentities(prev => new Set([...prev, identity]))
+    if (chatBannedRef.current.has(identity)) return
+    chatBannedRef.current.add(identity)
+    setChatBannedIdentities(prev => new Set([...prev, identity]))
 
     try {
       await eventsAPI.reportSpam(
@@ -140,11 +140,26 @@ function RoomContent({ isHost, eventId, onKicked }) {
     }
   }, [eventId, attendeeSession])
 
-  // Filter messages: exclude kicked identities
+  // Host can manually ban a participant from chat
+  const handleHostBanFromChat = useCallback(async (identity) => {
+    if (chatBannedRef.current.has(identity)) return
+    chatBannedRef.current.add(identity)
+    setChatBannedIdentities(prev => new Set([...prev, identity]))
+    try {
+      await eventsAPI.banFromChat(eventId, identity)
+    } catch (err) {
+      console.error('Error banning from chat:', err)
+    }
+  }, [eventId])
+
+  // Filter messages: exclude chat-banned identities
   const filteredMessages = useMemo(() => {
-    if (kickedIdentities.size === 0) return chatMessages
-    return chatMessages.filter(msg => !kickedIdentities.has(msg.from?.identity))
-  }, [chatMessages, kickedIdentities])
+    if (chatBannedIdentities.size === 0) return chatMessages
+    return chatMessages.filter(msg => !chatBannedIdentities.has(msg.from?.identity))
+  }, [chatMessages, chatBannedIdentities])
+
+  // Detect if local user has been chat-banned (canPublishData revoked)
+  const isLocalChatBanned = localParticipant?.permissions?.canPublishData === false
 
   // Measure the host video area height to sync chat height
   // Ignore height changes while in fullscreen to avoid broken chat height on exit
@@ -186,12 +201,14 @@ function RoomContent({ isHost, eventId, onKicked }) {
 
   const toggleHandRaise = useCallback(async () => {
     if (!localParticipant) return
+    if (localParticipant.permissions?.canUpdateOwnMetadata === false) return
     const newValue = !handRaised
     setHandRaised(newValue)
     try {
       await localParticipant.setAttributes({ handRaised: newValue ? 'true' : '' })
     } catch (err) {
-      console.error('Error setting hand raise:', err)
+      console.warn('Error setting hand raise:', err)
+      setHandRaised(!newValue) // revert on failure
     }
   }, [localParticipant, handRaised])
 
@@ -204,8 +221,8 @@ function RoomContent({ isHost, eventId, onKicked }) {
       localParticipant.setMicrophoneEnabled(true).catch(err => {
         console.warn('Could not enable mic after promotion:', err)
       })
-      // Auto-lower hand when promoted
-      if (handRaised) {
+      // Auto-lower hand when promoted (guard with permission check)
+      if (handRaised && localParticipant.permissions?.canUpdateOwnMetadata !== false) {
         setHandRaised(false)
         localParticipant.setAttributes({ handRaised: '' }).catch(err => {
           console.warn('Could not lower hand after promotion:', err)
@@ -331,6 +348,9 @@ function RoomContent({ isHost, eventId, onKicked }) {
           chatMessages={filteredMessages}
           send={send}
           isSending={isSending}
+          isHost={isHost}
+          isChatBanned={isLocalChatBanned}
+          onHostBanFromChat={handleHostBanFromChat}
         />
       </div>
     </div>
@@ -637,11 +657,10 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
     // Host tile: no mic badge
     if (isHostParticipant) return null
 
-    // Active mic icon (green for remote, blue for local)
+    // Active mic icon (green for all promoted users)
     if (canPublish && isMicActive) {
-      const bgColor = isLocal ? 'bg-blue-500' : 'bg-green-500'
       return (
-        <span className={`absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ${bgColor}`}>
+        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
           <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
           </svg>
@@ -691,8 +710,8 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
       >
         {initial}
 
-        {/* Hand raised icon — top left (hidden when promoted, since hand was answered) */}
-        {handRaised && !isLocal && !isHostParticipant && !canPublish && (
+        {/* Hand raised icon — top left (hidden when promoted or was previously promoted) */}
+        {handRaised && !isLocal && !isHostParticipant && !canPublish && !wasPromoted.current && (
           <span className="absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400">
             <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l-.075 5.925m3.075-5.925v3m0-3a1.575 1.575 0 013.15 0v3m-3.15 0l-.075 3.925M14.1 7.575v3m0-3a1.575 1.575 0 013.15 0v4.725M6.9 7.575a1.575 1.575 0 00-3.15 0v6.525c0 3.06 1.827 5.625 4.725 6.825a10.49 10.49 0 006.15 0c2.898-1.2 4.725-3.765 4.725-6.825V7.575" />
@@ -715,19 +734,38 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
 // ---------------------------------------------------------------------------
 // Chat
 // ---------------------------------------------------------------------------
-function ChatPanel({ chatMessages, send, isSending }) {
+function ChatPanel({ chatMessages, send, isSending, isHost, isChatBanned, onHostBanFromChat }) {
   const [message, setMessage] = useState('')
   const messagesEndRef = useRef(null)
+  const [openMenuFor, setOpenMenuFor] = useState(null)
+  const menuRef = useRef(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages.length])
 
+  // Close three-dot menu when clicking outside
+  useEffect(() => {
+    if (openMenuFor === null) return
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setOpenMenuFor(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [openMenuFor])
+
   const handleSend = (e) => {
     e.preventDefault()
-    if (!message.trim() || isSending) return
+    if (!message.trim() || isSending || isChatBanned) return
     send(message.trim())
     setMessage('')
+  }
+
+  const handleBanFromChat = (identity, index) => {
+    setOpenMenuFor(null)
+    onHostBanFromChat?.(identity)
   }
 
   return (
@@ -737,27 +775,67 @@ function ChatPanel({ chatMessages, send, isSending }) {
         {chatMessages.length === 0 && (
           <p className="text-xs text-gray-400 italic">Sin mensajes todavía</p>
         )}
-        {chatMessages.map((msg, i) => (
-          <div key={i} className="text-sm">
-            <span className="font-medium text-gray-900">
-              {msg.from?.name || msg.from?.identity || 'Anónimo'}
-            </span>
-            <span className="text-gray-600 ml-1">{msg.message}</span>
-          </div>
-        ))}
+        {chatMessages.map((msg, i) => {
+          const senderIdentity = msg.from?.identity
+          const isHostMsg = senderIdentity?.startsWith('host-')
+          return (
+            <div key={i} className="text-sm flex items-start gap-x-1">
+              <div className="flex-1 min-w-0">
+                <span className="font-medium text-gray-900">
+                  {msg.from?.name || senderIdentity || 'Anónimo'}
+                </span>
+                <span className="text-gray-600 ml-1 break-words">{msg.message}</span>
+              </div>
+              {/* Three-dot menu — host only, not for host messages */}
+              {isHost && !isHostMsg && senderIdentity && (
+                <div className="relative flex-shrink-0 mt-0.5" ref={openMenuFor === i ? menuRef : null}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenuFor(openMenuFor === i ? null : i)}
+                    className="text-gray-300 hover:text-gray-500 p-0.5 rounded"
+                    title="Opciones"
+                  >
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                    </svg>
+                  </button>
+                  {openMenuFor === i && (
+                    <div className="absolute right-0 top-5 z-20 min-w-max rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => handleBanFromChat(senderIdentity, i)}
+                        className="block w-full px-4 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+                      >
+                        Expulsar del chat
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <form onSubmit={handleSend} className="border-t border-gray-200 px-4 py-3">
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Escribe un mensaje..."
-          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
-        />
-      </form>
+      {/* Input or chat-banned warning */}
+      {isChatBanned ? (
+        <div className="border-t border-gray-200 px-4 py-3">
+          <p className="text-xs text-center text-red-600 font-medium">
+            Has sido expulsado del chat por comportamiento inapropiado.
+          </p>
+        </div>
+      ) : (
+        <form onSubmit={handleSend} className="border-t border-gray-200 px-4 py-3">
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Escribe un mensaje..."
+            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
+          />
+        </form>
+      )}
     </div>
   )
 }

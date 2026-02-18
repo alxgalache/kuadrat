@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { ApiError } = require('../middleware/errorHandler');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
@@ -256,9 +257,12 @@ const getViewerToken = async (req, res, next) => {
       throw new ApiError(400, 'La sala aún no está disponible', 'Sala no disponible');
     }
 
+    // Check if attendee is chat-banned (issue token with canPublishData=false)
+    const chatBanned = await eventService.isAttendeeChatBanned(attendeeId);
+
     const identity = `viewer-${attendee.id}`;
     const name = `${attendee.first_name} ${attendee.last_name}`;
-    const token = await livekitService.generateViewerToken(event.livekit_room_name, identity, name);
+    const token = await livekitService.generateViewerToken(event.livekit_room_name, identity, name, { chatBanned });
 
     // Mark as joined
     await eventService.updateAttendeeStatus(attendeeId, 'joined');
@@ -393,12 +397,107 @@ const demoteParticipant = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
-// GET /api/events/videos/:filename
-// Serve uploaded event video files
+// Helpers for signed video tokens
+// ---------------------------------------------------------------------------
+function createVideoToken(eventId, subject) {
+  const expiry = Date.now() + 2 * 60 * 60 * 1000; // 2 hours
+  const payload = `${eventId}:${subject}:${expiry}`;
+  const sig = crypto.createHmac('sha256', process.env.JWT_SECRET).update(payload).digest('hex');
+  return Buffer.from(`${payload}:${sig}`).toString('base64url');
+}
+
+function verifyVideoToken(token, eventId) {
+  try {
+    const raw = Buffer.from(token, 'base64url').toString('utf8');
+    // Format: eventId:subject:expiry:hexsig — hex has no colons, UUIDs have no colons
+    const parts = raw.split(':');
+    if (parts.length !== 4) return null;
+    const [tEventId, tSubject, tExpiry, tSig] = parts;
+    if (tEventId !== eventId) return null;
+    if (Date.now() > parseInt(tExpiry, 10)) return null;
+    const payload = `${tEventId}:${tSubject}:${tExpiry}`;
+    const expected = crypto.createHmac('sha256', process.env.JWT_SECRET).update(payload).digest('hex');
+    if (!crypto.timingSafeEqual(Buffer.from(tSig, 'hex'), Buffer.from(expected, 'hex'))) return null;
+    return { eventId: tEventId, subject: tSubject };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/video-token
+// Get a short-lived signed token to access the event video
+// ---------------------------------------------------------------------------
+const getVideoToken = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attendeeId, accessToken } = req.body;
+
+    const event = await eventService.getEventById(id);
+    if (!event || event.format !== 'video' || !event.video_url) {
+      throw new ApiError(400, 'No hay vídeo disponible para este evento', 'Error');
+    }
+
+    if (!['active', 'finished'].includes(event.status)) {
+      throw new ApiError(400, 'El evento no está disponible', 'Error');
+    }
+
+    let subject = null;
+
+    // Try attendee credentials from body
+    if (attendeeId && accessToken) {
+      const attendee = await eventService.getAttendeeByAccessToken(id, accessToken);
+      if (attendee && attendee.id === attendeeId) {
+        if (event.access_type === 'paid' && attendee.status !== 'paid') {
+          throw new ApiError(403, 'Se requiere pago para acceder al vídeo', 'Pago requerido');
+        }
+        subject = attendeeId;
+      }
+    }
+
+    // Fall back to host/admin JWT
+    if (!subject) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+          if (decoded.id === event.host_user_id || decoded.role === 'admin') {
+            subject = `host-${decoded.id}`;
+          }
+        } catch { /* invalid JWT */ }
+      }
+    }
+
+    if (!subject) {
+      throw new ApiError(403, 'No tienes acceso a este vídeo', 'Acceso denegado');
+    }
+
+    const vtoken = createVideoToken(id, subject);
+    const filename = event.video_url.replace('uploaded:', '');
+
+    res.status(200).json({ success: true, vtoken, filename });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/events/:id/video/:filename
+// Serve uploaded event video files (requires valid signed vtoken query param)
 // ---------------------------------------------------------------------------
 const getEventVideo = async (req, res, next) => {
   try {
-    const { filename } = req.params;
+    const { id, filename } = req.params;
+    const { vtoken } = req.query;
+
+    // Validate signed token
+    if (!vtoken) {
+      throw new ApiError(401, 'Token de acceso requerido', 'No autorizado');
+    }
+    const decoded = verifyVideoToken(vtoken, id);
+    if (!decoded) {
+      throw new ApiError(401, 'Token inválido o expirado', 'No autorizado');
+    }
 
     if (!/^[A-Za-z0-9_-]+\.(mp4|webm|mov)$/i.test(filename)) {
       throw new ApiError(400, 'Nombre de archivo inválido', 'Solicitud inválida');
@@ -419,7 +518,6 @@ const getEventVideo = async (req, res, next) => {
     const range = req.headers.range;
 
     if (range) {
-      // HTTP 206 Partial Content for range requests
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
@@ -431,17 +529,76 @@ const getEventVideo = async (req, res, next) => {
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
         'Content-Type': contentType,
+        'Cache-Control': 'no-store',
+        'Content-Disposition': 'inline',
       });
       stream.pipe(res);
     } else {
-      // Full file response
       res.writeHead(200, {
         'Content-Length': fileSize,
         'Content-Type': contentType,
         'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+        'Content-Disposition': 'inline',
       });
       fs.createReadStream(filePath).pipe(res);
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/participants/:identity/ban-from-chat
+// Host bans a participant from the chat (no kick, stays in room)
+// ---------------------------------------------------------------------------
+const banFromChat = async (req, res, next) => {
+  try {
+    const { id, identity } = req.params;
+
+    if (identity.startsWith('host-')) {
+      throw new ApiError(400, 'No se puede expulsar al host del chat', 'Error');
+    }
+
+    const event = await eventService.getEventById(id);
+    if (!event || event.status !== 'active' || !event.livekit_room_name) {
+      throw new ApiError(400, 'Evento no disponible', 'Error');
+    }
+
+    // Only host or admin can ban from chat
+    if (!req.user || (req.user.id !== event.host_user_id && req.user.role !== 'admin')) {
+      throw new ApiError(403, 'Solo el host puede expulsar del chat', 'Acceso denegado');
+    }
+
+    // Extract attendeeId from identity (viewer-{attendeeId})
+    const attendeeId = identity.replace('viewer-', '');
+    const attendee = await eventService.getAttendeeById(attendeeId);
+    if (!attendee || attendee.event_id !== id) {
+      throw new ApiError(404, 'Participante no encontrado', 'Error');
+    }
+
+    // Already chat-banned?
+    const alreadyBanned = await eventService.isAttendeeChatBanned(attendeeId);
+    if (alreadyBanned) {
+      return res.status(200).json({ success: true, alreadyBanned: true });
+    }
+
+    // Revoke canPublishData in LiveKit
+    try {
+      await livekitService.updateParticipantPermissions(event.livekit_room_name, identity, {
+        canPublish: false,
+        canSubscribe: true,
+        canPublishData: false,
+        canUpdateOwnMetadata: true,
+      });
+    } catch (err) {
+      console.warn('Error updating participant permissions in LiveKit:', err.message);
+    }
+
+    // Persist in DB
+    await eventService.markAttendeeChatBanned(attendeeId);
+
+    res.status(200).json({ success: true });
   } catch (error) {
     next(error);
   }
@@ -500,21 +657,29 @@ const reportSpam = async (req, res, next) => {
       throw new ApiError(404, 'Participante no encontrado', 'Error');
     }
 
-    // Check if already banned
-    const alreadyBanned = await eventService.isEmailBanned(id, spammer.email);
-    if (alreadyBanned) {
+    // Check if already chat-banned
+    const alreadyChatBanned = await eventService.isAttendeeChatBanned(spammerAttendeeId);
+    if (alreadyChatBanned) {
       return res.status(200).json({ success: true, alreadyBanned: true });
     }
 
-    // Ban by email and IP
-    await eventService.banAttendee(id, spammer.email, spammer.ip_address, 'spam');
-
-    // Kick from LiveKit room
+    // Chat-ban: revoke canPublishData in LiveKit (stays in room, can't chat)
     try {
-      await livekitService.removeParticipant(event.livekit_room_name, identity);
+      await livekitService.updateParticipantPermissions(event.livekit_room_name, identity, {
+        canPublish: false,
+        canSubscribe: true,
+        canPublishData: false,
+        canUpdateOwnMetadata: true,
+      });
     } catch (err) {
-      console.warn('Error removing participant from LiveKit:', err.message);
+      console.warn('Error updating participant permissions in LiveKit:', err.message);
     }
+
+    // Persist chat ban in DB (survives reconnection)
+    await eventService.markAttendeeChatBanned(spammerAttendeeId);
+
+    // Also record in event_bans for email+IP tracking (prevents token re-issuance with chat)
+    await eventService.banAttendee(id, spammer.email, spammer.ip_address, 'spam');
 
     res.status(200).json({ success: true });
   } catch (error) {
@@ -525,6 +690,7 @@ const reportSpam = async (req, res, next) => {
 module.exports = {
   getEvents,
   getEventBySlug,
+  getVideoToken,
   getEventVideo,
   registerAttendee,
   createPayment,
@@ -534,4 +700,5 @@ module.exports = {
   promoteParticipant,
   demoteParticipant,
   reportSpam,
+  banFromChat,
 };

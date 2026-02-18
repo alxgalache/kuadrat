@@ -12,8 +12,9 @@ export const getOthersImageUrl = (basename) => `${API_URL}/others/images/${encod
 // Helper to build author profile image URL by filename
 export const getAuthorImageUrl = (filename) => `${API_URL}/users/authors/images/${encodeURIComponent(filename)}`;
 
-// Helper to build event video URL by filename (for uploaded videos)
-export const getEventVideoUrl = (filename) => `${API_URL}/events/videos/${encodeURIComponent(filename)}`;
+// Build a protected event video URL (requires short-lived vtoken from getVideoToken)
+export const getProtectedEventVideoUrl = (eventId, filename, vtoken) =>
+  `${API_URL}/events/${encodeURIComponent(eventId)}/video/${encodeURIComponent(filename)}?vtoken=${encodeURIComponent(vtoken)}`;
 
 // Helper function to get auth token from localStorage
 const getAuthToken = () => {
@@ -1031,6 +1032,24 @@ export const eventsAPI = {
       body.reporterAccessToken = reporterAccessToken;
     }
     return apiRequest(`/events/${eventId}/participants/${encodeURIComponent(identity)}/report-spam`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  banFromChat: async (eventId, identity) => {
+    return apiRequest(`/events/${eventId}/participants/${encodeURIComponent(identity)}/ban-from-chat`, {
+      method: 'POST',
+    });
+  },
+
+  getVideoToken: async (eventId, attendeeId = null, accessToken = null) => {
+    const body = {};
+    if (attendeeId && accessToken) {
+      body.attendeeId = attendeeId;
+      body.accessToken = accessToken;
+    }
+    return apiRequest(`/events/${eventId}/video-token`, {
       method: 'POST',
       body: JSON.stringify(body),
     });
