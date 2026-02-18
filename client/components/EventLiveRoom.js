@@ -11,7 +11,6 @@ import {
   useLocalParticipant,
   useIsSpeaking,
   useRoomContext,
-  StartAudio,
 } from '@livekit/components-react'
 import '@livekit/components-styles'
 import { Track, RoomEvent, DisconnectReason } from 'livekit-client'
@@ -42,13 +41,50 @@ export default function EventLiveRoom({ token, serverUrl, roomName, isHost = fal
       }}
       className="h-full"
     >
-      <StartAudio
-        label="Haz clic para activar el audio"
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-md bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-lg hover:bg-gray-700 transition-colors"
-      />
+      <AudioActivationOverlay />
       <RoomContent isHost={isHost} eventId={eventId} onKicked={onKicked} />
       <RoomAudioRenderer />
     </LiveKitRoom>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Audio activation overlay — modal that prompts the user to enable audio
+// (required by browsers that block autoplay until user interaction)
+// ---------------------------------------------------------------------------
+function AudioActivationOverlay() {
+  const room = useRoomContext()
+  const [canPlay, setCanPlay] = useState(room.canPlaybackAudio)
+
+  useEffect(() => {
+    const update = () => setCanPlay(room.canPlaybackAudio)
+    room.on(RoomEvent.AudioPlaybackStatusChanged, update)
+    return () => room.off(RoomEvent.AudioPlaybackStatusChanged, update)
+  }, [room])
+
+  if (canPlay) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-sm mx-4">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+          <svg className="h-7 w-7 text-gray-700" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-1">Activar audio</h3>
+        <p className="text-sm text-gray-500 mb-6">
+          Tu navegador requiere una interacción para reproducir el audio del evento.
+        </p>
+        <button
+          type="button"
+          onClick={() => room.startAudio()}
+          className="w-full rounded-lg bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2"
+        >
+          Haz clic para activar el audio
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -622,14 +658,14 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
     if (isHostParticipant) {
       return 'bg-gray-50 text-gray-900 ring-2 ring-gray-900 cursor-default'
     }
-    // Local user tile: blue scheme
+    // Local user tile
     if (isLocal) {
       if (canPublish) {
         return isMicActive
           ? 'bg-green-50 text-green-800 ring-2 ring-green-400 cursor-pointer hover:bg-green-100'
           : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
       }
-      return 'bg-blue-50 text-blue-700 ring-1 ring-blue-200 cursor-default'
+      return 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
     }
     // Remote promoted participant: green (mic on) or red (mic off)
     if (canPublish) {
@@ -643,13 +679,13 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
         ? 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
         : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
     }
-    // Remote non-promoted: gray (host can click to promote) or default
+    // Remote non-promoted: red muted styling (host can click to promote)
     if (isHost) {
       return handRaised
         ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-300 cursor-pointer hover:bg-amber-100'
-        : 'bg-gray-100 text-gray-700 cursor-pointer hover:bg-gray-200'
+        : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
     }
-    return 'bg-gray-100 text-gray-700 cursor-default'
+    return 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
   }
 
   // Mic icon for top-right badge
@@ -690,10 +726,10 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
       )
     }
 
-    // Never promoted: gray muted icon
+    // Never promoted: red muted icon (matches muted state)
     return (
-      <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-300">
-        <svg className="h-3 w-3 text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+      <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-400">
+        <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
         </svg>
       </span>
@@ -724,7 +760,7 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
       </button>
       <span className={`text-xs text-center max-w-16 truncate ${
         isHostParticipant ? 'text-gray-900 font-semibold'
-        : isLocal ? 'text-blue-600 font-medium'
+        : isLocal ? 'text-red-600 font-medium'
         : 'text-gray-600'
       }`}>{isHostParticipant ? 'Host' : shortName}</span>
     </div>

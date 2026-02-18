@@ -349,7 +349,7 @@ const promoteParticipant = async (req, res, next) => {
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
-      canUpdateOwnMetadata: true,
+      canUpdateMetadata: true,
     });
 
     res.status(200).json({ success: true });
@@ -387,7 +387,7 @@ const demoteParticipant = async (req, res, next) => {
       canPublish: false,
       canSubscribe: true,
       canPublishData: true,
-      canUpdateOwnMetadata: true,
+      canUpdateMetadata: true,
     });
 
     res.status(200).json({ success: true });
@@ -589,7 +589,7 @@ const banFromChat = async (req, res, next) => {
         canPublish: false,
         canSubscribe: true,
         canPublishData: false,
-        canUpdateOwnMetadata: true,
+        canUpdateMetadata: true,
       });
     } catch (err) {
       console.warn('Error updating participant permissions in LiveKit:', err.message);
@@ -669,7 +669,7 @@ const reportSpam = async (req, res, next) => {
         canPublish: false,
         canSubscribe: true,
         canPublishData: false,
-        canUpdateOwnMetadata: true,
+        canUpdateMetadata: true,
       });
     } catch (err) {
       console.warn('Error updating participant permissions in LiveKit:', err.message);
