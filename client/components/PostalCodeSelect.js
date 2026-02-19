@@ -4,6 +4,17 @@ import { useState, useEffect, useRef } from 'react'
 import Select, { components } from 'react-select'
 import { adminAPI } from '@/lib/api'
 
+// Country code → full name mapping (mirrors backend COUNTRY_NAMES)
+const COUNTRY_NAMES = {
+  ES: 'España',
+  PT: 'Portugal',
+  FR: 'Francia',
+  IT: 'Italia',
+  DE: 'Alemania',
+  GB: 'Reino Unido',
+  AD: 'Andorra',
+}
+
 /**
  * Generate a unique key for a postal ref (used as react-select option value).
  */
@@ -17,7 +28,10 @@ function refKey(ref) {
  * Generate a display label for a postal ref.
  */
 function refLabel(ref) {
-  if (ref.ref_type === 'country') return `País · ${ref.ref_value}`
+  if (ref.ref_type === 'country') {
+    const name = COUNTRY_NAMES[ref.ref_value] || ref.ref_value
+    return `País · ${name} (${ref.ref_value})`
+  }
   if (ref.ref_type === 'province') return `Provincia · ${ref.ref_value}`
   return `${ref.postal_code} - ${ref.city || 'Sin ciudad'}`
 }
@@ -40,7 +54,7 @@ function refLabel(ref) {
 export default function PostalCodeSelect({
   value = [],
   onChange,
-  placeholder = 'Escribe para buscar (min. 3 caracteres)...',
+  placeholder = 'Buscar por CP, ciudad, provincia o país (min. 3 car.)...',
   isDisabled = false
 }) {
   const [inputValue, setInputValue] = useState('')
@@ -124,7 +138,7 @@ export default function PostalCodeSelect({
             >
               {ref.ref_type === 'country' ? 'País' : 'Provincia'}
             </span>
-            <span>{ref.ref_value}</span>
+            <span>{ref.ref_type === 'country' ? `${COUNTRY_NAMES[ref.ref_value] || ref.ref_value} (${ref.ref_value})` : ref.ref_value}</span>
           </span>
         </components.Option>
       )
@@ -142,7 +156,7 @@ export default function PostalCodeSelect({
             <span className="inline-flex items-center rounded px-1 py-0 text-[10px] font-semibold bg-blue-100 text-blue-800">
               País
             </span>
-            {ref.ref_value}
+            {COUNTRY_NAMES[ref.ref_value] || ref.ref_value} ({ref.ref_value})
           </span>
         </components.MultiValueLabel>
       )

@@ -699,27 +699,47 @@ async function listPostalCodes(country) {
  * @param {number} limit - Max individual postal code results (default 50)
  * @returns {Array} Mixed results with ref_type field
  */
+// Static mapping of country codes to full names for search matching.
+// Allows typing "España" (3+ chars) to find country code "ES".
+const COUNTRY_NAMES = {
+  ES: 'España',
+  PT: 'Portugal',
+  FR: 'Francia',
+  IT: 'Italia',
+  DE: 'Alemania',
+  GB: 'Reino Unido',
+  AD: 'Andorra',
+};
+
 async function searchPostalCodes(query, limit = 50) {
   if (!query || query.length < 3) {
     return [];
   }
 
   const searchPattern = `%${query}%`;
+  const queryLower = query.toLowerCase();
   const results = [];
 
-  // 1. Search matching countries
-  const countryResult = await db.execute({
-    sql: `SELECT DISTINCT country FROM postal_codes
-          WHERE country LIKE ?
-          ORDER BY country ASC
-          LIMIT 5`,
-    args: [searchPattern],
-  });
-  for (const row of countryResult.rows) {
-    results.push({
-      ref_type: 'country',
-      ref_value: row.country,
+  // 1. Search matching countries by full name (e.g. "Esp" → "España" → "ES")
+  const matchedCountryCodes = Object.entries(COUNTRY_NAMES)
+    .filter(([, name]) => name.toLowerCase().includes(queryLower))
+    .map(([code]) => code);
+
+  if (matchedCountryCodes.length > 0) {
+    const placeholders = matchedCountryCodes.map(() => '?').join(', ');
+    const countryResult = await db.execute({
+      sql: `SELECT DISTINCT country FROM postal_codes
+            WHERE country IN (${placeholders})
+            ORDER BY country ASC
+            LIMIT 5`,
+      args: matchedCountryCodes,
     });
+    for (const row of countryResult.rows) {
+      results.push({
+        ref_type: 'country',
+        ref_value: row.country,
+      });
+    }
   }
 
   // 2. Search matching provinces
