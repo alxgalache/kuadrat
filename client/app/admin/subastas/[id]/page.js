@@ -67,43 +67,18 @@ function AuctionDetailContent() {
       const productsData = await adminAPI.auctions.getProductsForAuction(params.id)
       setAvailableProducts(productsData.products || [])
 
-      // Pre-select current auction products and load their postal codes
+      // Pre-select current auction products with their postal refs
       const currentProducts = {}
       if (auction.products && auction.products.length > 0) {
-        // Collect all postal code IDs that need to be loaded
-        const allPostalCodeIds = []
-        auction.products.forEach(p => {
-          if (p.postal_code_ids && p.postal_code_ids.length > 0) {
-            allPostalCodeIds.push(...p.postal_code_ids)
-          }
-        })
-
-        // Load postal codes by IDs if any exist
-        let postalCodesMap = {}
-        if (allPostalCodeIds.length > 0) {
-          const uniqueIds = [...new Set(allPostalCodeIds)]
-          const postalCodesData = await adminAPI.postalCodes.getByIds(uniqueIds)
-          if (postalCodesData.postalCodes) {
-            postalCodesData.postalCodes.forEach(pc => {
-              postalCodesMap[pc.id] = pc
-            })
-          }
-        }
-
-        // Build selected products with postal code objects
         auction.products.forEach(p => {
           const key = `${p.product_type}_${p.product_id}`
-          const postalCodes = (p.postal_code_ids || [])
-            .map(id => postalCodesMap[id])
-            .filter(Boolean)
-
           currentProducts[key] = {
             product_id: p.product_id,
             product_type: p.product_type,
             start_price: p.start_price || '',
             step_new_bid: p.step_new_bid || '',
             position: p.position || 1,
-            postal_codes: postalCodes,
+            postal_refs: p.postal_refs || [],
             shipping_observations: p.shipping_observations || '',
           }
         })
@@ -226,7 +201,7 @@ function AuctionDetailContent() {
           start_price: '',
           step_new_bid: '',
           position: Object.keys(prev).length + 1,
-          postal_codes: [],
+          postal_refs: [],
           shipping_observations: '',
         },
       }
@@ -243,12 +218,12 @@ function AuctionDetailContent() {
     }))
   }
 
-  const updateProductPostalCodes = (key, postalCodes) => {
+  const updateProductPostalRefs = (key, postalRefs) => {
     setSelectedProducts(prev => ({
       ...prev,
       [key]: {
         ...prev[key],
-        postal_codes: postalCodes,
+        postal_refs: postalRefs,
       },
     }))
   }
@@ -332,7 +307,7 @@ function AuctionDetailContent() {
           start_price: parseFloat(p.start_price),
           step_new_bid: parseFloat(p.step_new_bid),
           position: parseInt(p.position, 10) || 1,
-          postal_code_ids: (p.postal_codes || []).map(pc => pc.id),
+          postal_refs: p.postal_refs || [],
           shipping_observations: p.shipping_observations?.trim() || null,
         })),
       }
@@ -720,9 +695,9 @@ function AuctionDetailContent() {
                                 Códigos postales de envío
                               </label>
                               <PostalCodeSelect
-                                value={selectedProducts[key].postal_codes || []}
-                                onChange={(postalCodes) => updateProductPostalCodes(key, postalCodes)}
-                                placeholder="Busca por código postal o ciudad (min. 3 caracteres)..."
+                                value={selectedProducts[key].postal_refs || []}
+                                onChange={(postalRefs) => updateProductPostalRefs(key, postalRefs)}
+                                placeholder="Busca por código postal, ciudad, provincia o país (min. 3 caracteres)..."
                               />
                             </div>
 

@@ -358,26 +358,30 @@ async function initializeDatabase() {
       )
     `);
 
-    // ── Auction arts postal codes ────────────────────────────
+    // ── Auction arts postal codes (polymorphic refs) ─────────
     await db.execute(`
       CREATE TABLE IF NOT EXISTS auction_arts_postal_codes (
         id TEXT PRIMARY KEY,
         auction_id TEXT NOT NULL,
         art_id INTEGER NOT NULL,
-        postal_code_id INTEGER NOT NULL,
+        ref_type TEXT NOT NULL DEFAULT 'postal_code',
+        postal_code_id INTEGER,
+        ref_value TEXT,
         FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE,
         FOREIGN KEY (art_id) REFERENCES art(id),
         FOREIGN KEY (postal_code_id) REFERENCES postal_codes(id)
       )
     `);
 
-    // ── Auction others postal codes ──────────────────────────
+    // ── Auction others postal codes (polymorphic refs) ──────
     await db.execute(`
       CREATE TABLE IF NOT EXISTS auction_others_postal_codes (
         id TEXT PRIMARY KEY,
         auction_id TEXT NOT NULL,
         other_id INTEGER NOT NULL,
-        postal_code_id INTEGER NOT NULL,
+        ref_type TEXT NOT NULL DEFAULT 'postal_code',
+        postal_code_id INTEGER,
+        ref_value TEXT,
         FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE,
         FOREIGN KEY (other_id) REFERENCES others(id),
         FOREIGN KEY (postal_code_id) REFERENCES postal_codes(id)
@@ -460,12 +464,14 @@ async function initializeDatabase() {
       )
     `);
 
-    // ── Shipping zones postal codes ──────────────────────────
+    // ── Shipping zones postal codes (polymorphic refs) ───────
     await db.execute(`
       CREATE TABLE IF NOT EXISTS shipping_zones_postal_codes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         shipping_zone_id INTEGER NOT NULL,
-        postal_code_id INTEGER NOT NULL,
+        ref_type TEXT NOT NULL DEFAULT 'postal_code',
+        postal_code_id INTEGER,
+        ref_value TEXT,
         FOREIGN KEY (shipping_zone_id) REFERENCES shipping_zones(id) ON DELETE CASCADE,
         FOREIGN KEY (postal_code_id) REFERENCES postal_codes(id)
       )
@@ -478,7 +484,9 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_postal ON shipping_zones(postal_code)`);
     await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_token ON orders(token)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_users_password_setup_token ON users(password_setup_token)`);
-    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_szpc_zone_postal ON shipping_zones_postal_codes(shipping_zone_id, postal_code_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_szpc_zone_ref ON shipping_zones_postal_codes(shipping_zone_id, ref_type)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_code_country ON postal_codes(postal_code, country)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_province_country ON postal_codes(province, country)`);
 
     // ── Initialize orders auto-increment to start from 1000 ──
     try {

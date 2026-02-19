@@ -313,44 +313,54 @@ const getShippingZones = async (req, res, next) => {
       args: [methodId],
     });
 
-    // Get postal codes for all zones in this method
-    const postalCodesResult = await db.execute({
+    // Get postal refs for all zones in this method
+    const refsResult = await db.execute({
       sql: `
         SELECT
           szpc.shipping_zone_id,
-          pc.id,
+          szpc.ref_type,
+          szpc.postal_code_id,
+          szpc.ref_value,
           pc.postal_code,
           pc.city,
           pc.province,
           pc.country as pc_country
         FROM shipping_zones_postal_codes szpc
-        INNER JOIN postal_codes pc ON szpc.postal_code_id = pc.id
+        LEFT JOIN postal_codes pc ON szpc.postal_code_id = pc.id AND szpc.ref_type = 'postal_code'
         INNER JOIN shipping_zones sz ON szpc.shipping_zone_id = sz.id
         WHERE sz.shipping_method_id = ?
-        ORDER BY pc.postal_code ASC
+        ORDER BY szpc.ref_type ASC, pc.postal_code ASC
       `,
       args: [methodId],
     });
 
-    // Group postal codes by zone_id
-    const postalCodesByZone = {};
-    for (const pc of postalCodesResult.rows) {
-      if (!postalCodesByZone[pc.shipping_zone_id]) {
-        postalCodesByZone[pc.shipping_zone_id] = [];
+    // Group refs by zone_id
+    const refsByZone = {};
+    for (const row of refsResult.rows) {
+      if (!refsByZone[row.shipping_zone_id]) {
+        refsByZone[row.shipping_zone_id] = [];
       }
-      postalCodesByZone[pc.shipping_zone_id].push({
-        id: pc.id,
-        postal_code: pc.postal_code,
-        city: pc.city,
-        province: pc.province,
-        country: pc.pc_country,
-      });
+      if (row.ref_type === 'postal_code') {
+        refsByZone[row.shipping_zone_id].push({
+          ref_type: 'postal_code',
+          id: row.postal_code_id,
+          postal_code: row.postal_code,
+          city: row.city,
+          province: row.province,
+          country: row.pc_country,
+        });
+      } else {
+        refsByZone[row.shipping_zone_id].push({
+          ref_type: row.ref_type,
+          ref_value: row.ref_value,
+        });
+      }
     }
 
-    // Attach postal codes to each zone
+    // Attach postal refs to each zone
     const zones = zonesResult.rows.map(zone => ({
       ...zone,
-      postal_codes: postalCodesByZone[zone.id] || [],
+      postal_refs: refsByZone[zone.id] || [],
     }));
 
     res.status(200).json({
@@ -363,11 +373,11 @@ const getShippingZones = async (req, res, next) => {
 };
 
 // Create a new shipping zone (Admin only)
-// Accepts postal_code_ids array for the junction table
+// Accepts postal_refs array for the junction table
 const createShippingZone = async (req, res, next) => {
   try {
     const { methodId } = req.params;
-    const { seller_id, country, postal_code_ids, cost } = req.body;
+    const { seller_id, country, postal_refs, cost } = req.body;
 
     // Validate required fields
     if (!seller_id || cost === undefined || cost === null) {
@@ -425,12 +435,17 @@ const createShippingZone = async (req, res, next) => {
 
     const zoneId = result.lastInsertRowid.toString();
 
-    // Insert postal code associations
-    if (postal_code_ids && postal_code_ids.length > 0) {
-      for (const pcId of postal_code_ids) {
+    // Insert postal ref associations
+    if (postal_refs && postal_refs.length > 0) {
+      for (const ref of postal_refs) {
         await db.execute({
-          sql: 'INSERT INTO shipping_zones_postal_codes (shipping_zone_id, postal_code_id) VALUES (?, ?)',
-          args: [zoneId, pcId],
+          sql: 'INSERT INTO shipping_zones_postal_codes (shipping_zone_id, ref_type, postal_code_id, ref_value) VALUES (?, ?, ?, ?)',
+          args: [
+            zoneId,
+            ref.ref_type || 'postal_code',
+            ref.ref_type === 'postal_code' ? (ref.postal_code_id || ref.id) : null,
+            ref.ref_type !== 'postal_code' ? ref.ref_value : null,
+          ],
         });
       }
     }
@@ -449,7 +464,7 @@ const createShippingZone = async (req, res, next) => {
 const updateShippingZone = async (req, res, next) => {
   try {
     const { zoneId } = req.params;
-    const { seller_id, country, postal_code_ids, cost } = req.body;
+    const { seller_id, country, postal_refs, cost } = req.body;
 
     // Check if zone exists and get method type
     const existing = await db.execute({
@@ -509,8 +524,8 @@ const updateShippingZone = async (req, res, next) => {
       });
     }
 
-    // Update postal code associations if provided
-    if (postal_code_ids !== undefined) {
+    // Update postal ref associations if provided
+    if (postal_refs !== undefined) {
       // Remove existing associations
       await db.execute({
         sql: 'DELETE FROM shipping_zones_postal_codes WHERE shipping_zone_id = ?',
@@ -518,11 +533,16 @@ const updateShippingZone = async (req, res, next) => {
       });
 
       // Insert new associations
-      if (postal_code_ids && postal_code_ids.length > 0) {
-        for (const pcId of postal_code_ids) {
+      if (postal_refs && postal_refs.length > 0) {
+        for (const ref of postal_refs) {
           await db.execute({
-            sql: 'INSERT INTO shipping_zones_postal_codes (shipping_zone_id, postal_code_id) VALUES (?, ?)',
-            args: [zoneId, pcId],
+            sql: 'INSERT INTO shipping_zones_postal_codes (shipping_zone_id, ref_type, postal_code_id, ref_value) VALUES (?, ?, ?, ?)',
+            args: [
+              zoneId,
+              ref.ref_type || 'postal_code',
+              ref.ref_type === 'postal_code' ? (ref.postal_code_id || ref.id) : null,
+              ref.ref_type !== 'postal_code' ? ref.ref_value : null,
+            ],
           });
         }
       }
@@ -686,7 +706,7 @@ const getAvailableShipping = async (req, res, next) => {
     let deliveryMethods = [];
 
     if (country) {
-      // Validate postal code if provided
+      // Validate postal code format if provided
       if (postalCode) {
         const isValid = postcodeValidator(postalCode, country);
         if (!isValid) {
@@ -696,15 +716,16 @@ const getAvailableShipping = async (req, res, next) => {
 
       // Find delivery methods for this seller+country.
       // A zone matches if:
-      //   1. It has no postal codes (applies to entire country), OR
-      //   2. It has postal codes and one of them matches the buyer's postal code
+      //   1. It has no postal refs (applies to entire country), OR
+      //   2. It has a postal_code ref that matches the buyer's postal code
+      //   3. It has a province ref and the buyer's postal code belongs to that province
+      //   4. It has a country ref and the buyer's postal code belongs to that country
       //
-      // We prefer a specific postal code match over a country-wide zone.
+      // Priority: postal_code > province > country > no refs (zone-wide)
       if (postalCode) {
-        // Query zones that either have a matching postal code or have no postal codes (country-wide)
         const deliveryResult = await db.execute({
           sql: `
-            SELECT
+            SELECT DISTINCT
               sm.id,
               sm.name,
               sm.description,
@@ -715,50 +736,57 @@ const getAvailableShipping = async (req, res, next) => {
               sm.max_articles,
               sm.estimated_delivery_days,
               sz.cost,
-              sz.id as zone_id,
-              pc.postal_code as matched_postal_code
+              sz.id as zone_id
             FROM shipping_methods sm
             INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-            LEFT JOIN shipping_zones_postal_codes szpc ON sz.id = szpc.shipping_zone_id
-            LEFT JOIN postal_codes pc ON szpc.postal_code_id = pc.id AND pc.postal_code = ?
             WHERE sm.type = 'delivery'
               AND sm.is_active = 1
               AND (sm.article_type = 'all' OR sm.article_type = ?)
               AND sz.seller_id = ?
               AND sz.country = ?
               AND (
-                szpc.id IS NULL
-                OR pc.id IS NOT NULL
+                -- Zone has no postal refs (applies to entire country)
+                NOT EXISTS (
+                  SELECT 1 FROM shipping_zones_postal_codes szpc WHERE szpc.shipping_zone_id = sz.id
+                )
+                OR
+                -- Direct postal_code ref match
+                EXISTS (
+                  SELECT 1 FROM shipping_zones_postal_codes szpc
+                  JOIN postal_codes pc ON szpc.postal_code_id = pc.id
+                  WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'postal_code'
+                    AND pc.postal_code = ? AND pc.country = ?
+                )
+                OR
+                -- Province ref match
+                EXISTS (
+                  SELECT 1 FROM shipping_zones_postal_codes szpc
+                  WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'province'
+                    AND EXISTS (
+                      SELECT 1 FROM postal_codes pc
+                      WHERE pc.postal_code = ? AND pc.country = ? AND pc.province = szpc.ref_value
+                    )
+                )
+                OR
+                -- Country ref match
+                EXISTS (
+                  SELECT 1 FROM shipping_zones_postal_codes szpc
+                  WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'country'
+                    AND EXISTS (
+                      SELECT 1 FROM postal_codes pc
+                      WHERE pc.postal_code = ? AND pc.country = szpc.ref_value
+                    )
+                )
               )
           `,
-          args: [postalCode, productType, sellerId, country],
+          args: [productType, sellerId, country, postalCode, country, postalCode, country, postalCode],
         });
 
-        // Check which zones have postal codes at all (to distinguish country-wide from specific)
-        const zoneIds = [...new Set(deliveryResult.rows.map(r => r.zone_id))];
-        const zoneHasPostalCodes = {};
-
-        if (zoneIds.length > 0) {
-          for (const zid of zoneIds) {
-            const countResult = await db.execute({
-              sql: 'SELECT COUNT(*) as cnt FROM shipping_zones_postal_codes WHERE shipping_zone_id = ?',
-              args: [zid],
-            });
-            zoneHasPostalCodes[zid] = countResult.rows[0].cnt > 0;
-          }
-        }
-
-        // Group by method, preferring specific postal code match over country-wide
+        // Determine match specificity per zone for priority logic
         const groupedByMethod = {};
         for (const row of deliveryResult.rows) {
-          const hasSpecificMatch = row.matched_postal_code !== null;
-          const isCountryWide = !zoneHasPostalCodes[row.zone_id];
-
-          if (!groupedByMethod[row.id]) {
-            groupedByMethod[row.id] = { ...row, _isSpecific: hasSpecificMatch };
-          } else if (hasSpecificMatch && !groupedByMethod[row.id]._isSpecific) {
-            // Prefer specific match over country-wide
-            groupedByMethod[row.id] = { ...row, _isSpecific: true };
+          if (!groupedByMethod[row.id] || row.cost < groupedByMethod[row.id].cost) {
+            groupedByMethod[row.id] = row;
           }
         }
 
@@ -774,7 +802,7 @@ const getAvailableShipping = async (req, res, next) => {
             estimated_delivery_days: method.estimated_delivery_days,
           }));
       } else {
-        // No postal code provided — only return country-wide zones (zones with no postal codes)
+        // No postal code provided — only return zones with no postal refs (country-wide)
         const deliveryResult = await db.execute({
           sql: `
             SELECT DISTINCT

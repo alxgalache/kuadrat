@@ -344,6 +344,7 @@ const placeBid = async (req, res, next) => {
 
 // ---------------------------------------------------------------------------
 // GET /api/auctions/:id/postal-codes/:productId/:productType
+// Returns postal refs (not expanded postal codes) for a product.
 // ---------------------------------------------------------------------------
 const getPostalCodes = async (req, res, next) => {
   try {
@@ -353,11 +354,38 @@ const getPostalCodes = async (req, res, next) => {
       throw new ApiError(400, 'Tipo de producto inválido', 'Solicitud inválida');
     }
 
-    const postalCodes = await auctionService.getPostalCodesForProduct(
+    const postalCodes = await auctionService.getPostalRefsForProduct(
       id, parseInt(productId, 10), productType
     );
 
     res.status(200).json({ success: true, postalCodes });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/auctions/:id/validate-postal-code/:productId/:productType?postalCode=...
+// Validates whether a buyer's postal code is allowed for a product.
+// ---------------------------------------------------------------------------
+const validatePostalCode = async (req, res, next) => {
+  try {
+    const { id, productId, productType } = req.params;
+    const { postalCode } = req.query;
+
+    if (!['art', 'other'].includes(productType)) {
+      throw new ApiError(400, 'Tipo de producto inválido', 'Solicitud inválida');
+    }
+
+    if (!postalCode) {
+      throw new ApiError(400, 'Código postal requerido', 'Solicitud inválida');
+    }
+
+    const result = await auctionService.validatePostalCodeForProduct(
+      id, parseInt(productId, 10), productType, postalCode
+    );
+
+    res.status(200).json({ success: true, ...result });
   } catch (error) {
     next(error);
   }
@@ -373,4 +401,5 @@ module.exports = {
   confirmPayment,
   placeBid,
   getPostalCodes,
+  validatePostalCode,
 };

@@ -134,29 +134,15 @@ async function getAuctionById(id) {
     args: [id],
   });
 
-  // Get postal codes for each product
+  // Get postal refs for each product
   for (const art of artsResult.rows) {
-    const pcResult = await db.execute({
-      sql: `SELECT pc.* FROM auction_arts_postal_codes aapc
-            JOIN postal_codes pc ON aapc.postal_code_id = pc.id
-            WHERE aapc.auction_id = ? AND aapc.art_id = ?`,
-      args: [id, art.art_id],
-    });
-    art.postal_codes = pcResult.rows;
-    art.postal_code_ids = pcResult.rows.map(pc => pc.id);
+    art.postal_refs = await getPostalRefsForProduct(id, art.art_id, 'art');
     art.product_type = 'art';
     art.product_id = art.art_id;
   }
 
   for (const other of othersResult.rows) {
-    const pcResult = await db.execute({
-      sql: `SELECT pc.* FROM auction_others_postal_codes aopc
-            JOIN postal_codes pc ON aopc.postal_code_id = pc.id
-            WHERE aopc.auction_id = ? AND aopc.other_id = ?`,
-      args: [id, other.other_id],
-    });
-    other.postal_codes = pcResult.rows;
-    other.postal_code_ids = pcResult.rows.map(pc => pc.id);
+    other.postal_refs = await getPostalRefsForProduct(id, other.other_id, 'other');
     other.product_type = 'other';
     other.product_id = other.other_id;
   }
@@ -320,33 +306,34 @@ async function removeProductFromAuction(auctionId, productId, productType) {
   }
 }
 
-async function setProductPostalCodes(auctionId, productId, productType, postalCodeIds) {
-  if (productType === 'art') {
-    await db.execute({
-      sql: 'DELETE FROM auction_arts_postal_codes WHERE auction_id = ? AND art_id = ?',
-      args: [auctionId, productId],
-    });
-    for (const pcId of postalCodeIds) {
-      const id = generateUUID();
-      await db.execute({
-        sql: 'INSERT INTO auction_arts_postal_codes (id, auction_id, art_id, postal_code_id) VALUES (?, ?, ?, ?)',
-        args: [id, auctionId, productId, pcId],
-      });
-    }
-  } else if (productType === 'other') {
-    await db.execute({
-      sql: 'DELETE FROM auction_others_postal_codes WHERE auction_id = ? AND other_id = ?',
-      args: [auctionId, productId],
-    });
-    for (const pcId of postalCodeIds) {
-      const id = generateUUID();
-      await db.execute({
-        sql: 'INSERT INTO auction_others_postal_codes (id, auction_id, other_id, postal_code_id) VALUES (?, ?, ?, ?)',
-        args: [id, auctionId, productId, pcId],
-      });
-    }
-  } else {
+async function setProductPostalCodes(auctionId, productId, productType, postalRefs) {
+  const table = productType === 'art' ? 'auction_arts_postal_codes' : 'auction_others_postal_codes';
+  const fkCol = productType === 'art' ? 'art_id' : 'other_id';
+
+  if (!['art', 'other'].includes(productType)) {
     throw new Error(`Invalid product type: '${productType}'`);
+  }
+
+  // Delete existing refs
+  await db.execute({
+    sql: `DELETE FROM ${table} WHERE auction_id = ? AND ${fkCol} = ?`,
+    args: [auctionId, productId],
+  });
+
+  // Insert new refs
+  for (const ref of postalRefs) {
+    const id = generateUUID();
+    await db.execute({
+      sql: `INSERT INTO ${table} (id, auction_id, ${fkCol}, ref_type, postal_code_id, ref_value) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [
+        id,
+        auctionId,
+        productId,
+        ref.ref_type || 'postal_code',
+        ref.ref_type === 'postal_code' ? (ref.postal_code_id || ref.id) : null,
+        ref.ref_type !== 'postal_code' ? ref.ref_value : null,
+      ],
+    });
   }
 }
 
@@ -655,25 +642,39 @@ async function extendAuction(id, minutes) {
 // Postal Codes
 // ---------------------------------------------------------------------------
 
-async function getPostalCodesForProduct(auctionId, productId, productType) {
-  let sql, args;
+async function getPostalRefsForProduct(auctionId, productId, productType) {
+  const table = productType === 'art' ? 'auction_arts_postal_codes' : 'auction_others_postal_codes';
+  const fkCol = productType === 'art' ? 'art_id' : 'other_id';
 
-  if (productType === 'art') {
-    sql = `SELECT pc.* FROM auction_arts_postal_codes aapc
-           JOIN postal_codes pc ON aapc.postal_code_id = pc.id
-           WHERE aapc.auction_id = ? AND aapc.art_id = ?`;
-    args = [auctionId, productId];
-  } else if (productType === 'other') {
-    sql = `SELECT pc.* FROM auction_others_postal_codes aopc
-           JOIN postal_codes pc ON aopc.postal_code_id = pc.id
-           WHERE aopc.auction_id = ? AND aopc.other_id = ?`;
-    args = [auctionId, productId];
-  } else {
+  if (!['art', 'other'].includes(productType)) {
     throw new Error(`Invalid product type: '${productType}'`);
   }
 
-  const result = await db.execute({ sql, args });
-  return result.rows;
+  const result = await db.execute({
+    sql: `SELECT t.ref_type, t.postal_code_id, t.ref_value,
+                 pc.postal_code, pc.city, pc.province, pc.country
+          FROM ${table} t
+          LEFT JOIN postal_codes pc ON t.postal_code_id = pc.id AND t.ref_type = 'postal_code'
+          WHERE t.auction_id = ? AND t.${fkCol} = ?`,
+    args: [auctionId, productId],
+  });
+
+  return result.rows.map(row => {
+    if (row.ref_type === 'postal_code') {
+      return {
+        ref_type: 'postal_code',
+        id: row.postal_code_id,
+        postal_code: row.postal_code,
+        city: row.city,
+        province: row.province,
+        country: row.country,
+      };
+    }
+    return {
+      ref_type: row.ref_type,
+      ref_value: row.ref_value,
+    };
+  });
 }
 
 async function listPostalCodes(country) {
@@ -692,10 +693,11 @@ async function listPostalCodes(country) {
 }
 
 /**
- * Search postal codes by postal_code or city (for async multi-select).
+ * Search postal codes, provinces, and countries (for async multi-select).
+ * Returns country and province group results first, then individual postal codes.
  * @param {string} query - Search term (min 3 chars)
- * @param {number} limit - Max results (default 50)
- * @returns {Array} Matching postal codes
+ * @param {number} limit - Max individual postal code results (default 50)
+ * @returns {Array} Mixed results with ref_type field
  */
 async function searchPostalCodes(query, limit = 50) {
   if (!query || query.length < 3) {
@@ -703,16 +705,55 @@ async function searchPostalCodes(query, limit = 50) {
   }
 
   const searchPattern = `%${query}%`;
+  const results = [];
 
-  const result = await db.execute({
+  // 1. Search matching countries
+  const countryResult = await db.execute({
+    sql: `SELECT DISTINCT country FROM postal_codes
+          WHERE country LIKE ?
+          ORDER BY country ASC
+          LIMIT 5`,
+    args: [searchPattern],
+  });
+  for (const row of countryResult.rows) {
+    results.push({
+      ref_type: 'country',
+      ref_value: row.country,
+    });
+  }
+
+  // 2. Search matching provinces
+  const provinceResult = await db.execute({
+    sql: `SELECT DISTINCT province, country FROM postal_codes
+          WHERE province LIKE ?
+          ORDER BY province ASC
+          LIMIT 5`,
+    args: [searchPattern],
+  });
+  for (const row of provinceResult.rows) {
+    results.push({
+      ref_type: 'province',
+      ref_value: row.province,
+      country: row.country,
+    });
+  }
+
+  // 3. Search individual postal codes (by postal_code, city, or province)
+  const pcResult = await db.execute({
     sql: `SELECT * FROM postal_codes
-          WHERE postal_code LIKE ? OR city LIKE ?
+          WHERE postal_code LIKE ? OR city LIKE ? OR province LIKE ?
           ORDER BY postal_code ASC
           LIMIT ?`,
-    args: [searchPattern, searchPattern, limit],
+    args: [searchPattern, searchPattern, searchPattern, limit],
   });
+  for (const row of pcResult.rows) {
+    results.push({
+      ref_type: 'postal_code',
+      ...row,
+    });
+  }
 
-  return result.rows;
+  return results;
 }
 
 /**
@@ -732,6 +773,109 @@ async function getPostalCodesByIds(ids) {
   });
 
   return result.rows;
+}
+
+/**
+ * Resolve an array of postal refs back to their display format.
+ * Used to pre-populate the PostalCodeSelect with saved refs.
+ * @param {Array} refs - [{ ref_type, postal_code_id?, ref_value? }, ...]
+ * @returns {Array} Refs with display data
+ */
+async function getPostalRefsByRefs(refs) {
+  if (!refs || refs.length === 0) return [];
+
+  const results = [];
+
+  for (const ref of refs) {
+    if (ref.ref_type === 'postal_code' && ref.postal_code_id) {
+      const r = await db.execute({
+        sql: 'SELECT * FROM postal_codes WHERE id = ?',
+        args: [ref.postal_code_id],
+      });
+      if (r.rows.length > 0) {
+        results.push({ ref_type: 'postal_code', ...r.rows[0] });
+      }
+    } else if (ref.ref_type === 'province' && ref.ref_value) {
+      results.push({
+        ref_type: 'province',
+        ref_value: ref.ref_value,
+        country: ref.country || null,
+      });
+    } else if (ref.ref_type === 'country' && ref.ref_value) {
+      results.push({
+        ref_type: 'country',
+        ref_value: ref.ref_value,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Validate whether a given postal code string is allowed by a set of postal refs.
+ * Used by BidModal to check delivery address validity.
+ * @param {string} auctionId
+ * @param {number} productId
+ * @param {string} productType - 'art' or 'other'
+ * @param {string} postalCode - The buyer's postal code string
+ * @returns {{ valid: boolean }}
+ */
+async function validatePostalCodeForProduct(auctionId, productId, productType, postalCode) {
+  const table = productType === 'art' ? 'auction_arts_postal_codes' : 'auction_others_postal_codes';
+  const fkCol = productType === 'art' ? 'art_id' : 'other_id';
+
+  // Check if there are any refs at all
+  const countResult = await db.execute({
+    sql: `SELECT COUNT(*) as cnt FROM ${table} WHERE auction_id = ? AND ${fkCol} = ?`,
+    args: [auctionId, productId],
+  });
+
+  if (countResult.rows[0].cnt === 0) {
+    return { valid: true }; // No restrictions
+  }
+
+  // Check direct postal_code ref
+  const pcMatch = await db.execute({
+    sql: `SELECT 1 FROM ${table} t
+          JOIN postal_codes pc ON t.postal_code_id = pc.id
+          WHERE t.auction_id = ? AND t.${fkCol} = ?
+            AND t.ref_type = 'postal_code'
+            AND pc.postal_code = ?
+          LIMIT 1`,
+    args: [auctionId, productId, postalCode],
+  });
+  if (pcMatch.rows.length > 0) return { valid: true };
+
+  // Check province ref
+  const provMatch = await db.execute({
+    sql: `SELECT 1 FROM ${table} t
+          WHERE t.auction_id = ? AND t.${fkCol} = ?
+            AND t.ref_type = 'province'
+            AND EXISTS (
+              SELECT 1 FROM postal_codes pc
+              WHERE pc.postal_code = ? AND pc.province = t.ref_value
+            )
+          LIMIT 1`,
+    args: [auctionId, productId, postalCode],
+  });
+  if (provMatch.rows.length > 0) return { valid: true };
+
+  // Check country ref
+  const countryMatch = await db.execute({
+    sql: `SELECT 1 FROM ${table} t
+          WHERE t.auction_id = ? AND t.${fkCol} = ?
+            AND t.ref_type = 'country'
+            AND EXISTS (
+              SELECT 1 FROM postal_codes pc
+              WHERE pc.postal_code = ? AND pc.country = t.ref_value
+            )
+          LIMIT 1`,
+    args: [auctionId, productId, postalCode],
+  });
+  if (countryMatch.rows.length > 0) return { valid: true };
+
+  return { valid: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -796,10 +940,12 @@ module.exports = {
   startAuction,
   endAuction,
   extendAuction,
-  getPostalCodesForProduct,
+  getPostalRefsForProduct,
   listPostalCodes,
   searchPostalCodes,
   getPostalCodesByIds,
+  getPostalRefsByRefs,
+  validatePostalCodeForProduct,
   getBuyerPaymentData,
   savePaymentData,
 };

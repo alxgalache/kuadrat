@@ -40,13 +40,14 @@ const createAuction = async (req, res, next) => {
           shippingObservations: product.shipping_observations || null,
         });
 
-        // Set postal codes for each product
-        if (product.postal_code_ids && product.postal_code_ids.length > 0) {
+        // Set postal refs for each product
+        const refs = product.postal_refs || [];
+        if (refs.length > 0) {
           await auctionService.setProductPostalCodes(
             auction.id,
             product.id,
             product.type,
-            product.postal_code_ids
+            refs
           );
         }
       }
@@ -187,8 +188,9 @@ const updateAuction = async (req, res, next) => {
           shippingObservations: product.shipping_observations || null,
         });
 
-        if (product.postal_code_ids && product.postal_code_ids.length > 0) {
-          await auctionService.setProductPostalCodes(id, product.product_id || product.id, product.product_type || product.type, product.postal_code_ids);
+        const refs = product.postal_refs || [];
+        if (refs.length > 0) {
+          await auctionService.setProductPostalCodes(id, product.product_id || product.id, product.product_type || product.type, refs);
         }
       }
     }
@@ -389,7 +391,8 @@ const createPostalCode = async (req, res, next) => {
 
 /**
  * GET /api/admin/postal-codes/search?q=...
- * Search postal codes by postal_code or city (async multi-select)
+ * Search postal codes, provinces, and countries (async multi-select).
+ * Returns mixed results with ref_type field.
  */
 const searchPostalCodes = async (req, res, next) => {
   try {
@@ -438,6 +441,33 @@ const getPostalCodesByIds = async (req, res, next) => {
     }
 
     const postalCodes = await auctionService.getPostalCodesByIds(idArray);
+
+    res.status(200).json({
+      success: true,
+      postalCodes,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/admin/postal-codes/by-refs
+ * Resolve an array of postal refs back to their display format.
+ * Body: { refs: [{ ref_type, postal_code_id?, ref_value?, country? }] }
+ */
+const getPostalCodesByRefs = async (req, res, next) => {
+  try {
+    const { refs } = req.body;
+
+    if (!refs || !Array.isArray(refs) || refs.length === 0) {
+      return res.status(200).json({
+        success: true,
+        postalCodes: [],
+      });
+    }
+
+    const postalCodes = await auctionService.getPostalRefsByRefs(refs);
 
     res.status(200).json({
       success: true,
@@ -526,6 +556,7 @@ module.exports = {
   listPostalCodes,
   searchPostalCodes,
   getPostalCodesByIds,
+  getPostalCodesByRefs,
   createPostalCode,
   getProductsForAuction,
 };

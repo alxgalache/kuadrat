@@ -55,7 +55,7 @@ function NewAuctionPageContent() {
           start_price: '',
           step_new_bid: '',
           position: Object.keys(prev).length + 1,
-          postal_codes: [], // Store full postal code objects
+          postal_refs: [],
           shipping_observations: '',
         },
       }
@@ -72,12 +72,12 @@ function NewAuctionPageContent() {
     }))
   }
 
-  const updateProductPostalCodes = (key, postalCodes) => {
+  const updateProductPostalRefs = (key, postalRefs) => {
     setSelectedProducts(prev => ({
       ...prev,
       [key]: {
         ...prev[key],
-        postal_codes: postalCodes,
+        postal_refs: postalRefs,
       },
     }))
   }
@@ -133,7 +133,7 @@ function NewAuctionPageContent() {
         start_price: parseFloat(p.start_price),
         step_new_bid: parseFloat(p.step_new_bid),
         position: parseInt(p.position, 10) || 0,
-        postal_code_ids: p.postal_codes.map(pc => pc.id),
+        postal_refs: p.postal_refs || [],
         shipping_observations: p.shipping_observations?.trim() || null,
       }))
 
@@ -352,9 +352,9 @@ function NewAuctionPageContent() {
                               Códigos postales de envío
                             </label>
                             <PostalCodeSelect
-                              value={selectedProducts[key].postal_codes || []}
-                              onChange={(postalCodes) => updateProductPostalCodes(key, postalCodes)}
-                              placeholder="Busca por código postal o ciudad (min. 3 caracteres)..."
+                              value={selectedProducts[key].postal_refs || []}
+                              onChange={(postalRefs) => updateProductPostalRefs(key, postalRefs)}
+                              placeholder="Busca por código postal, ciudad, provincia o país (min. 3 caracteres)..."
                             />
                           </div>
 

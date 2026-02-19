@@ -21,7 +21,7 @@ function ZonesManagementContent() {
   const [formData, setFormData] = useState({
     seller_id: '',
     country: 'ES',
-    postal_codes: [],
+    postal_refs: [],
     cost: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -87,22 +87,19 @@ function ZonesManagementContent() {
     try {
       const sellerId = parseInt(formData.seller_id, 10)
       const country = formData.country.trim()
-      const postalCodeIds = formData.postal_codes.map(pc => pc.id)
 
       if (editingZone) {
-        // Update existing zone with its postal codes
         await adminAPI.shipping.updateZone(editingZone.id, {
           seller_id: sellerId,
           country,
-          postal_code_ids: postalCodeIds,
+          postal_refs: formData.postal_refs,
           cost,
         })
       } else {
-        // Create a single zone with all selected postal codes
         await adminAPI.shipping.createZone(params.id, {
           seller_id: sellerId,
           country,
-          postal_code_ids: postalCodeIds,
+          postal_refs: formData.postal_refs,
           cost,
         })
       }
@@ -117,7 +114,7 @@ function ZonesManagementContent() {
       setFormData({
         seller_id: '',
         country: 'ES',
-        postal_codes: [],
+        postal_refs: [],
         cost: '',
       })
     } catch (err) {
@@ -133,7 +130,7 @@ function ZonesManagementContent() {
     setFormData({
       seller_id: zone.seller_id.toString(),
       country: zone.country,
-      postal_codes: zone.postal_codes || [],
+      postal_refs: zone.postal_refs || [],
       cost: zone.cost.toString(),
     })
     setShowForm(true)
@@ -294,9 +291,9 @@ function ZonesManagementContent() {
                   </label>
                   <div className="mt-2">
                     <PostalCodeSelect
-                      value={formData.postal_codes}
-                      onChange={(postalCodes) => setFormData(prev => ({ ...prev, postal_codes: postalCodes }))}
-                      placeholder="Busca por código postal o ciudad (min. 3 caracteres)..."
+                      value={formData.postal_refs}
+                      onChange={(postalRefs) => setFormData(prev => ({ ...prev, postal_refs: postalRefs }))}
+                      placeholder="Busca por código postal, ciudad, provincia o país (min. 3 caracteres)..."
                     />
                   </div>
                   <p className="mt-1 text-sm text-gray-500">
@@ -384,17 +381,39 @@ function ZonesManagementContent() {
                           {zone.country}
                         </td>
                         <td className="px-3 py-4 text-sm text-gray-500">
-                          {zone.postal_codes && zone.postal_codes.length > 0 ? (
+                          {zone.postal_refs && zone.postal_refs.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
-                              {zone.postal_codes.map((pc) => (
-                                <span
-                                  key={pc.id}
-                                  className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700"
-                                  title={pc.city || ''}
-                                >
-                                  {pc.postal_code}
-                                </span>
-                              ))}
+                              {zone.postal_refs.map((ref, idx) => {
+                                if (ref.ref_type === 'country') {
+                                  return (
+                                    <span
+                                      key={`country-${ref.ref_value}-${idx}`}
+                                      className="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+                                    >
+                                      País · {ref.ref_value}
+                                    </span>
+                                  )
+                                }
+                                if (ref.ref_type === 'province') {
+                                  return (
+                                    <span
+                                      key={`province-${ref.ref_value}-${idx}`}
+                                      className="inline-flex items-center rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                                    >
+                                      Prov · {ref.ref_value}
+                                    </span>
+                                  )
+                                }
+                                return (
+                                  <span
+                                    key={`pc-${ref.id}-${idx}`}
+                                    className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700"
+                                    title={ref.city || ''}
+                                  >
+                                    {ref.postal_code}
+                                  </span>
+                                )
+                              })}
                             </div>
                           ) : (
                             'Todo el país'

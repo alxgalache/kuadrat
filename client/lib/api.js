@@ -785,6 +785,14 @@ export const adminAPI = {
       return apiRequest(`/admin/postal-codes/by-ids?ids=${ids.join(',')}`);
     },
 
+    getByRefs: async (refs) => {
+      if (!refs || refs.length === 0) return { postalCodes: [] };
+      return apiRequest('/admin/postal-codes/by-refs', {
+        method: 'POST',
+        body: JSON.stringify({ refs }),
+      });
+    },
+
     create: async (data) => {
       return apiRequest('/admin/postal-codes', {
         method: 'POST',
@@ -932,6 +940,10 @@ export const auctionsAPI = {
 
   getPostalCodes: async (auctionId, productId, productType) => {
     return apiRequest(`/auctions/${auctionId}/postal-codes/${productId}/${productType}`);
+  },
+
+  validatePostalCode: async (auctionId, productId, productType, postalCode) => {
+    return apiRequest(`/auctions/${auctionId}/validate-postal-code/${productId}/${productType}?postalCode=${encodeURIComponent(postalCode)}`);
   },
 };
 

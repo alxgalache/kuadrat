@@ -54,8 +54,14 @@ router.post('/:id/bid', auctionController.placeBid);
 
 /**
  * GET /api/auctions/:id/postal-codes/:productId/:productType
- * Get allowed postal codes for a product in an auction
+ * Get allowed postal refs for a product in an auction
  */
 router.get('/:id/postal-codes/:productId/:productType', auctionController.getPostalCodes);
+
+/**
+ * GET /api/auctions/:id/validate-postal-code/:productId/:productType?postalCode=...
+ * Validate whether a buyer's postal code is allowed for a product
+ */
+router.get('/:id/validate-postal-code/:productId/:productType', auctionController.validatePostalCode);
 
 module.exports = router;

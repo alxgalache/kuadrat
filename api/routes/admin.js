@@ -985,6 +985,12 @@ router.get('/postal-codes/search', auctionAdminController.searchPostalCodes);
 router.get('/postal-codes/by-ids', auctionAdminController.getPostalCodesByIds);
 
 /**
+ * POST /api/admin/postal-codes/by-refs
+ * Resolve postal refs to display format (for pre-populating select)
+ */
+router.post('/postal-codes/by-refs', auctionAdminController.getPostalCodesByRefs);
+
+/**
  * GET /api/admin/postal-codes
  * List all postal codes
  */

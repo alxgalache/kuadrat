@@ -76,6 +76,18 @@ The database schema is defined in `api/config/database.js`. This file is the **s
 * For a fresh deployment, `initializeDatabase()` creates the complete schema from scratch. For an existing database, all statements are no-ops.
 * If a schema change requires modifying an existing column (rename, change type, add constraint), that must be handled manually via Turso CLI or a one-off script — SQLite does not support `ALTER TABLE` for column modifications.
 
+## Postal Code References (Polymorphic Pivot Tables)
+
+The three pivot tables `shipping_zones_postal_codes`, `auction_arts_postal_codes`, and `auction_others_postal_codes` use a **polymorphic reference pattern** to support individual postal codes, entire provinces, or entire countries:
+
+* `ref_type` — `'postal_code'` | `'province'` | `'country'`
+* `postal_code_id` — set only when `ref_type = 'postal_code'` (FK to `postal_codes.id`)
+* `ref_value` — province name or country code when `ref_type` is `'province'` or `'country'`
+
+This avoids storing thousands of individual postal code rows when an entire province or country is selected. Validation always resolves through the `postal_codes` table using the buyer's postal code input.
+
+One-off migration script: `api/migrations/migrate_postal_refs.js` (drops and recreates the pivot tables).
+
 ## Final Instructions
 
 * Generate all file contents based on the provided specifications.

@@ -48,7 +48,9 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     address_1: '', address_2: '', postal_code: '', city: '', province: '', country: 'ES',
   })
   const [copyDelivery, setCopyDelivery] = useState(false)
-  const [allowedPostalCodes, setAllowedPostalCodes] = useState([])
+  const [postalCodeValid, setPostalCodeValid] = useState(null) // null = not checked, true/false
+  const [hasPostalRestrictions, setHasPostalRestrictions] = useState(false)
+  const postalValidationRef = useRef(null)
 
   // Returning bidder fields
   const [verifyEmail, setVerifyEmail] = useState('')
@@ -104,15 +106,19 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       setPriceChangedWarning(false)
       setAnimatePrice(false)
       prevPriceRef.current = null
+      setPostalCodeValid(null)
     }
   }, [isOpen, auction])
 
-  // Load allowed postal codes once when product changes
+  // Check if product has postal restrictions
   useEffect(() => {
     if (auction && productId && productType) {
       auctionsAPI.getPostalCodes(auction.id, productId, productType)
-        .then((data) => setAllowedPostalCodes(data.postalCodes || []))
-        .catch(() => setAllowedPostalCodes([]))
+        .then((data) => {
+          const refs = data.postalCodes || []
+          setHasPostalRestrictions(refs.length > 0)
+        })
+        .catch(() => setHasPostalRestrictions(false))
     }
   }, [auction?.id, productId, productType])
 
@@ -229,13 +235,36 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     }
   }
 
-  // Postal code validation
-  const isPostalCodeValid = useCallback((code) => {
-    if (allowedPostalCodes.length === 0) return true // no restrictions
-    return allowedPostalCodes.some((pc) =>
-      typeof pc === 'string' ? pc === code : pc.postal_code === code,
-    )
-  }, [allowedPostalCodes])
+  // Async postal code validation — triggers when delivery postal code changes
+  useEffect(() => {
+    if (!hasPostalRestrictions) {
+      setPostalCodeValid(true)
+      return
+    }
+
+    const code = deliveryAddress.postal_code?.trim()
+    if (!code || code.length < 4 || !auction || !productId || !productType) {
+      setPostalCodeValid(null)
+      return
+    }
+
+    // Debounce validation
+    if (postalValidationRef.current) clearTimeout(postalValidationRef.current)
+    postalValidationRef.current = setTimeout(async () => {
+      try {
+        const result = await auctionsAPI.validatePostalCode(auction.id, productId, productType, code)
+        setPostalCodeValid(result.valid)
+      } catch {
+        setPostalCodeValid(null)
+      }
+    }, 400)
+
+    return () => {
+      if (postalValidationRef.current) clearTimeout(postalValidationRef.current)
+    }
+  }, [deliveryAddress.postal_code, hasPostalRestrictions, auction?.id, productId, productType])
+
+  const isPostalCodeValid = postalCodeValid !== false
 
   // ---- Step validation helpers ----
   const canProceedPersonal =
@@ -246,7 +275,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     deliveryAddress.postal_code.trim() &&
     deliveryAddress.city.trim() &&
     deliveryAddress.province.trim() &&
-    isPostalCodeValid(deliveryAddress.postal_code)
+    isPostalCodeValid
 
   const canProceedInvoicing =
     copyDelivery ||
@@ -418,7 +447,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
   )
 
   const renderAddressFields = (address, setAddress, showBack, backPhase, isDeliveryAddress = false) => {
-    const showPostalCodeError = isDeliveryAddress && address.postal_code && !isPostalCodeValid(address.postal_code)
+    const showPostalCodeError = isDeliveryAddress && address.postal_code && postalCodeValid === false
 
     return (
       <div className="space-y-4">

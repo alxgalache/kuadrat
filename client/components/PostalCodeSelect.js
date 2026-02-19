@@ -1,18 +1,38 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Select from 'react-select'
+import Select, { components } from 'react-select'
 import { adminAPI } from '@/lib/api'
 
 /**
- * Async multi-select component for postal codes.
- * - Searches by postal_code or city (min 3 chars)
- * - Displays format: "28001 - Madrid"
+ * Generate a unique key for a postal ref (used as react-select option value).
+ */
+function refKey(ref) {
+  if (ref.ref_type === 'country') return `country:${ref.ref_value}`
+  if (ref.ref_type === 'province') return `province:${ref.ref_value}`
+  return `postal_code:${ref.id}`
+}
+
+/**
+ * Generate a display label for a postal ref.
+ */
+function refLabel(ref) {
+  if (ref.ref_type === 'country') return `País · ${ref.ref_value}`
+  if (ref.ref_type === 'province') return `Provincia · ${ref.ref_value}`
+  return `${ref.postal_code} - ${ref.city || 'Sin ciudad'}`
+}
+
+/**
+ * Async multi-select component for postal codes, provinces, and countries.
+ * - Searches by postal_code, city, province, or country (min 3 chars)
+ * - Returns country/province group results first, then individual postal codes
  * - 300ms debounce
- * - Max 50 results from API
  * - Dropdown stays open and populated when selecting options
  *
- * @param {Array} value - Array of selected postal code objects { id, postal_code, city, ... }
+ * @param {Array} value - Array of selected postal ref objects
+ *   { ref_type: 'postal_code', id, postal_code, city, ... }
+ *   { ref_type: 'province', ref_value: 'Sevilla' }
+ *   { ref_type: 'country', ref_value: 'ES' }
  * @param {Function} onChange - Callback with updated selection array
  * @param {string} placeholder - Placeholder text
  * @param {boolean} isDisabled - Disable the select
@@ -28,14 +48,14 @@ export default function PostalCodeSelect({
   const [isLoading, setIsLoading] = useState(false)
   const debounceTimerRef = useRef(null)
 
-  // Convert postal code object to react-select option format
-  const toOption = (pc) => ({
-    value: pc.id,
-    label: `${pc.postal_code} - ${pc.city || 'Sin ciudad'}`,
-    data: pc,
+  // Convert postal ref to react-select option format
+  const toOption = (ref) => ({
+    value: refKey(ref),
+    label: refLabel(ref),
+    data: ref,
   })
 
-  // Convert react-select option back to postal code object
+  // Convert react-select option back to postal ref object
   const fromOption = (opt) => opt.data
 
   // Fetch options when inputValue changes (with debounce)
@@ -77,8 +97,8 @@ export default function PostalCodeSelect({
 
   // Handle selection change
   const handleChange = (selectedOptions) => {
-    const postalCodes = selectedOptions ? selectedOptions.map(fromOption) : []
-    onChange(postalCodes)
+    const refs = selectedOptions ? selectedOptions.map(fromOption) : []
+    onChange(refs)
   }
 
   // Only update input on actual typing — ignore clear actions from selection
@@ -86,6 +106,60 @@ export default function PostalCodeSelect({
     if (actionMeta.action === 'input-change') {
       setInputValue(newValue)
     }
+  }
+
+  // Custom Option component to style country/province differently
+  const CustomOption = (props) => {
+    const ref = props.data.data
+    if (ref?.ref_type === 'country' || ref?.ref_type === 'province') {
+      return (
+        <components.Option {...props}>
+          <span className="inline-flex items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${
+                ref.ref_type === 'country'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {ref.ref_type === 'country' ? 'País' : 'Provincia'}
+            </span>
+            <span>{ref.ref_value}</span>
+          </span>
+        </components.Option>
+      )
+    }
+    return <components.Option {...props} />
+  }
+
+  // Custom MultiValueLabel to show badges for country/province chips
+  const CustomMultiValueLabel = (props) => {
+    const ref = props.data.data
+    if (ref?.ref_type === 'country') {
+      return (
+        <components.MultiValueLabel {...props}>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center rounded px-1 py-0 text-[10px] font-semibold bg-blue-100 text-blue-800">
+              País
+            </span>
+            {ref.ref_value}
+          </span>
+        </components.MultiValueLabel>
+      )
+    }
+    if (ref?.ref_type === 'province') {
+      return (
+        <components.MultiValueLabel {...props}>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center rounded px-1 py-0 text-[10px] font-semibold bg-amber-100 text-amber-800">
+              Prov
+            </span>
+            {ref.ref_value}
+          </span>
+        </components.MultiValueLabel>
+      )
+    }
+    return <components.MultiValueLabel {...props} />
   }
 
   // Custom styles to match Tailwind design
@@ -100,11 +174,17 @@ export default function PostalCodeSelect({
       minHeight: '38px',
       fontSize: '0.875rem',
     }),
-    multiValue: (provided) => ({
-      ...provided,
-      backgroundColor: '#f3f4f6',
-      borderRadius: '4px',
-    }),
+    multiValue: (provided, state) => {
+      const ref = state.data?.data
+      let bg = '#f3f4f6'
+      if (ref?.ref_type === 'country') bg = '#dbeafe'
+      else if (ref?.ref_type === 'province') bg = '#fef3c7'
+      return {
+        ...provided,
+        backgroundColor: bg,
+        borderRadius: '4px',
+      }
+    },
     multiValueLabel: (provided) => ({
       ...provided,
       color: '#111827',
@@ -178,6 +258,7 @@ export default function PostalCodeSelect({
       placeholder={placeholder}
       isDisabled={isDisabled}
       styles={customStyles}
+      components={{ Option: CustomOption, MultiValueLabel: CustomMultiValueLabel }}
       noOptionsMessage={noOptionsMessage}
       loadingMessage={loadingMessage}
       classNamePrefix="postal-select"
