@@ -353,40 +353,6 @@ export const authorsAPI = {
 
 // Orders API
 export const ordersAPI = {
-  create: async (items, email = null, phone = null, deliveryAddress = null, invoicingAddress = null, customer = null) => {
-    // items should be array of { type: 'art' | 'other', id, variantId?, shipping }
-    // email/phone come from the buyer's data entered in the checkout flow
-    // deliveryAddress is optional { line1, line2, postalCode, city, province, country, lat, lng }
-    // invoicingAddress is optional { line1, line2, postalCode, city, province, country }
-    const requestBody = { items };
-
-    if (email) {
-      requestBody.email = email;
-    }
-
-    if (phone) {
-      requestBody.phone = phone;
-    }
-
-    if (deliveryAddress) {
-      requestBody.delivery_address = deliveryAddress;
-    }
-
-    if (invoicingAddress) {
-      requestBody.invoicing_address = invoicingAddress;
-    }
-
-    if (customer) {
-      requestBody.customer = customer;
-    }
-
-    return apiRequest('/orders', {
-      method: 'POST',
-      body: JSON.stringify(requestBody),
-    });
-  },
-
-  // New flow: place order for an existing Revolut order (Card Field checkout)
   placeOrder: async (payload) => {
     return apiRequest('/orders/placeOrder', {
       method: 'POST',

@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const {
-  createOrder,
   placeOrder,
   confirmOrderPayment,
   getUserOrders,
@@ -15,10 +14,7 @@ const {
 } = require('../controllers/ordersController');
 const { authenticate, optionalAuthenticate, requireAuth } = require('../middleware/authorization');
 
-// Legacy popup flow (still used by some paths) - optional authentication
-router.post('/', optionalAuthenticate, createOrder);
-
-// New Card Field flow - order is placed for an existing Revolut order id
+// Place order for an existing Revolut/Stripe payment (Card Field checkout)
 router.post('/placeOrder', optionalAuthenticate, placeOrder);
 
 // Confirm order payment (attach Revolut info and mark as paid)
