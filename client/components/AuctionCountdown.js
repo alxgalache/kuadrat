@@ -47,15 +47,20 @@ export default function AuctionCountdown({ endDatetime, isEnded }) {
   }
 
   const totalSeconds = Math.floor(remaining / 1000)
-  const hours = Math.floor(totalSeconds / 3600)
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
 
   const isUrgent = remaining < 5 * 60 * 1000 // less than 5 minutes
 
+  const timeStr = days > 0
+    ? `${days}d ${hours}h ${minutes}m ${seconds}s`
+    : `${hours}h ${minutes}m ${seconds}s`
+
   return (
     <span className={`text-sm font-semibold ${isUrgent ? 'text-red-600' : 'text-gray-900'}`}>
-      Termina en: {hours}h {minutes}m {seconds}s
+      Termina en: {timeStr}
     </span>
   )
 }

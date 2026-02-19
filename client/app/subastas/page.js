@@ -173,6 +173,13 @@ export default function SubastasPage() {
                   {a.name}
                 </h3>
 
+                {/* Description excerpt */}
+                {a.description && (
+                  <p className="mt-1 text-sm text-gray-600 line-clamp-2">
+                    {a.description}
+                  </p>
+                )}
+
                 {/* Meta row */}
                 <div className="mt-3 flex items-center justify-between sm:justify-start sm:gap-x-4 text-sm text-gray-500">
                   <span className="hidden sm:inline">{formatDateTimeRange(a.start_datetime, a.end_datetime)}</span>
