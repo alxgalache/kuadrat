@@ -64,6 +64,18 @@ Please follow these steps in order. Think step-by-step before writing code for e
     * Write unit/integration tests for all API endpoints, especially focusing on the authentication and authorization logic.
     * Write placeholder test files for the future auction WebSocket logic, outlining the tests that will be needed (e.g., "should allow a user to place a bid," "should broadcast new highest bid to all clients").
 
+## Database Schema Management
+
+The database schema is defined in `api/config/database.js`. This file is the **single source of truth** for the database structure.
+
+**Key rules:**
+* `initializeDatabase()` runs on every API startup. All statements use `IF NOT EXISTS`, making it idempotent and safe.
+* When adding or modifying a table column, **update `database.js` directly** in the corresponding `CREATE TABLE` statement. Do NOT add separate `ALTER TABLE` migration blocks.
+* The file should only contain `CREATE TABLE IF NOT EXISTS` statements, `CREATE INDEX IF NOT EXISTS` statements, and the postal codes import. No data migrations, no schema detection logic, no `ALTER TABLE` statements.
+* Postal codes data is imported from `api/migrations/ES.csv` (only when the `postal_codes` table is empty).
+* For a fresh deployment, `initializeDatabase()` creates the complete schema from scratch. For an existing database, all statements are no-ops.
+* If a schema change requires modifying an existing column (rename, change type, add constraint), that must be handled manually via Turso CLI or a one-off script — SQLite does not support `ALTER TABLE` for column modifications.
+
 ## Final Instructions
 
 * Generate all file contents based on the provided specifications.
