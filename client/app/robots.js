@@ -1,8 +1,6 @@
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://140d.art'
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
 
-// Dynamic robots.txt configuration. When WEB_APP_HIDDEN is enabled, we
-// instruct crawlers not to index or follow any paths. Otherwise, we fall
-// back to a permissive configuration.
 export default function robots() {
   if (WEB_APP_HIDDEN) {
     return {
@@ -14,9 +12,27 @@ export default function robots() {
   }
 
   return {
-    rules: {
-      userAgent: '*',
-      allow: '/',
-    },
+    rules: [
+      {
+        userAgent: '*',
+        allow: '/',
+        disallow: [
+          '/admin/',
+          '/admin',
+          '/seller/',
+          '/seller',
+          '/orders/',
+          '/orders',
+          '/autores',
+          '/user-activation/',
+          '/pago-cancelado',
+          '/pago-fallido',
+          '/pedido/',
+          '/pedido-completado',
+          '/order-confirmation',
+        ],
+      },
+    ],
+    sitemap: `${SITE_URL}/sitemap.xml`,
   }
 }

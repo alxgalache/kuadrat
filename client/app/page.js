@@ -14,9 +14,9 @@ export default function Home() {
             src="/brand/140d.svg"
             className="h-10 w-auto mb-8"
           />
-          <h2 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance text-gray-900 sm:text-5xl">
+          <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance text-gray-900 sm:text-5xl">
             Próximamente...
-          </h2>
+          </h1>
           <div className="mt-10 flex items-center gap-x-6">
             <a href="mailto:info@140d.art" className="text-sm/6 font-semibold text-gray-900">
               Más información <span aria-hidden="true">→</span>
@@ -31,9 +31,9 @@ export default function Home() {
   return (
     <div className="bg-white relative">
       <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
-        <h2 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance text-gray-900 sm:text-5xl">
+        <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance text-gray-900 sm:text-5xl">
           Descubre obras únicas. Apoya a artistas reales.
-        </h2>
+        </h1>
         <div className="mt-10 flex items-center gap-x-6">
           <Link
             href="/galeria"

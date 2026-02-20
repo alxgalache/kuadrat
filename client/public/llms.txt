@@ -1,0 +1,33 @@
+# 140d - Galería de Arte Online
+
+> 140d es una galería de arte online que democratiza el acceso al arte. Conecta artistas emergentes y consagrados con entusiastas del arte, priorizando el gusto individual sobre la influencia de una industria al alcance de unos pocos.
+
+## Secciones principales
+
+- [Galería de Arte](/galeria): Colección de obras de arte originales — pinturas, ilustraciones, arte digital y más.
+- [Más Productos](/galeria/mas): Productos exclusivos creados por artistas — complementos, merchandising y piezas únicas.
+- [Subastas](/subastas): Subastas de arte online en tiempo real con pujas en directo.
+- [Espacios](/espacios): Eventos culturales en directo — masterclasses, charlas, entrevistas y sesiones AMA con artistas.
+- [Contacto](/contacto): Solicita tu registro como artista para publicar y vender tus obras.
+
+## Sobre 140d
+
+- **Nombre**: 140d
+- **URL**: https://140d.art
+- **Idioma**: Español (es-ES)
+- **Sede**: España
+- **Contacto**: info@140d.art
+- **Redes sociales**: [Facebook](https://www.facebook.com/140dart), [Instagram](https://www.instagram.com/140dart), [X](https://x.com/140dart)
+
+## Misión
+
+140d nace con la voluntad de democratizar el arte, haciéndolo accesible a todos. Creemos que el arte no debe estar reservado a una élite ni condicionado por tendencias del mercado. Cada persona tiene derecho a descubrir, disfrutar y adquirir obras que conecten con su gusto personal. Por eso, ofrecemos una plataforma donde artistas de todos los niveles pueden mostrar su trabajo y conectar directamente con quienes aprecian su arte.
+
+## Funcionalidades
+
+- **Compra directa**: Añade obras a tu cesta y completa tu compra de forma segura.
+- **Subastas en vivo**: Puja por obras únicas en subastas con cuenta atrás en tiempo real.
+- **Eventos en directo**: Asiste a masterclasses, charlas y entrevistas con artistas vía streaming.
+- **Perfiles de artistas**: Conoce la biografía y obra de cada artista.
+- **Pagos seguros**: Procesados a través de Stripe.
+- **Envíos**: Múltiples opciones de envío configuradas por cada artista.

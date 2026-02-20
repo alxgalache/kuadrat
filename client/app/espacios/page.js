@@ -216,6 +216,7 @@ export default function EspaciosPage() {
   // Item 5: min-h to fill screen without scrollbar on short content
   return (
     <div className="bg-white min-h-[calc(100dvh-5rem-6rem)]">
+      <h1 className="sr-only">Eventos y Espacios de Arte</h1>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Mobile calendar (always visible) */}
         <div className="lg:hidden mb-6">

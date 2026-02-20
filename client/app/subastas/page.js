@@ -196,6 +196,7 @@ export default function SubastasPage() {
 
   return (
     <div className="bg-white min-h-[calc(100dvh-5rem-6rem)]">
+      <h1 className="sr-only">Subastas de Arte</h1>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Mobile calendar (always visible) */}
         <div className="lg:hidden mb-6">

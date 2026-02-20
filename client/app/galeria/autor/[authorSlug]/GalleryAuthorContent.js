@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { othersAPI, getOthersImageUrl } from '@/lib/api'
+import { use, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { artAPI, getArtImageUrl } from '@/lib/api'
 import AuthorModal from '@/components/AuthorModal'
 import AuthorSidebar from '@/components/AuthorSidebar'
 import AuthorMobileFilter from '@/components/AuthorMobileFilter'
@@ -10,32 +10,32 @@ import ProductGrid from '@/components/ProductGrid'
 import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
 
-export default function GalleryMasPage() {
+export default function GalleryAuthorContent({ params }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const selectedAuthorSlug = searchParams.get('author')
+  const resolvedParams = use(params)
+  const authorSlug = resolvedParams.authorSlug
   const [selectedAuthorForBio, setSelectedAuthorForBio] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const productListRef = useRef(null)
 
-  const { authors } = useGalleryAuthors('other', selectedAuthorSlug)
-  const { products, loading, error, page, isFading } = useGalleryProducts(othersAPI, selectedAuthorSlug)
+  const { authors } = useGalleryAuthors('art', authorSlug)
+  const { products, loading, error, page, isFading } = useGalleryProducts(artAPI, authorSlug)
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)
     setModalOpen(true)
   }
 
-  const handleFilterByAuthor = (authorSlug) => {
-    if (selectedAuthorSlug === authorSlug) {
-      router.push('/galeria/mas')
+  const handleFilterByAuthor = (authorSlugParam) => {
+    if (authorSlug === authorSlugParam) {
+      router.push('/galeria')
     } else {
-      router.push(`/galeria/mas/autor/${authorSlug}`)
+      router.push(`/galeria/autor/${authorSlugParam}`)
     }
   }
 
   const handleClearFilter = () => {
-    router.push('/galeria/mas')
+    router.push('/galeria')
   }
 
   if (loading && page === 1) {
@@ -63,7 +63,7 @@ export default function GalleryMasPage() {
               No hay productos disponibles
             </h2>
             <p className="mt-4 text-base text-gray-600 max-w-md mx-auto">
-              No hay obras publicadas y activas en este momento. Vuelve pronto para descubrir nuevas creaciones.
+              No hay obras publicadas y activas de este autor en este momento. Vuelve pronto para descubrir nuevas creaciones.
             </p>
           </div>
         </div>
@@ -78,10 +78,9 @@ export default function GalleryMasPage() {
 
   return (
     <div className="bg-white">
-      <h1 className="sr-only">Más Productos</h1>
       <AuthorMobileFilter
         authors={authors}
-        selectedAuthorSlug={selectedAuthorSlug}
+        selectedAuthorSlug={authorSlug}
         onViewAuthorBio={handleViewAuthorBio}
         onFilterByAuthor={handleFilterByAuthor}
         onClearFilter={handleClearFilter}
@@ -91,7 +90,7 @@ export default function GalleryMasPage() {
         <div className="flex">
           <AuthorSidebar
             authors={authors}
-            selectedAuthorSlug={selectedAuthorSlug}
+            selectedAuthorSlug={authorSlug}
             onViewAuthorBio={handleViewAuthorBio}
             onFilterByAuthor={handleFilterByAuthor}
             onClearFilter={handleClearFilter}
@@ -102,8 +101,8 @@ export default function GalleryMasPage() {
               <ProductGrid
                 products={products}
                 isFading={isFading}
-                getImageUrl={getOthersImageUrl}
-                baseRoute="/galeria/mas"
+                getImageUrl={getArtImageUrl}
+                baseRoute="/galeria"
               />
             </div>
           </main>

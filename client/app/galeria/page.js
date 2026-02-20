@@ -78,6 +78,7 @@ export default function GalleryPage() {
 
   return (
     <div className="bg-white">
+      <h1 className="sr-only">Galería de Arte</h1>
       <AuthorMobileFilter
         authors={authors}
         selectedAuthorSlug={selectedAuthorSlug}

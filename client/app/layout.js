@@ -1,5 +1,6 @@
 import './globals.css'
 // import ShippingBanner from '@/components/ShippingBanner'
+import JsonLd from '@/components/JsonLd'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { CartProvider } from '@/contexts/CartContext'
 import { NotificationProvider } from '@/contexts/NotificationContext'
@@ -16,16 +17,24 @@ const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUB
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://140d.art'
 
 export const metadata = {
-  title: '140d - Galería de Arte',
-  description: 'Una galería de arte en línea seleccionada que presenta obras de arte únicas de artistas talentosos',
+  metadataBase: new URL(SITE_URL),
 
-  // Keywords for search engines
-  keywords: ['galería de arte', 'arte online', 'comprar arte', 'artistas', 'obras de arte', '140d'],
+  title: {
+    default: '140d - Galería de Arte Online | Compra Arte Original',
+    template: '%s | 140d',
+  },
+  description: 'Descubre y compra obras de arte originales directamente de artistas emergentes y consagrados. Galería de arte online con obras únicas, subastas en vivo y eventos culturales. Democratizamos el arte.',
 
-  // Authors
+  keywords: [
+    'galería de arte online', 'comprar arte original', 'artistas emergentes',
+    'arte contemporáneo', 'subastas de arte', 'eventos de arte', 'comprar cuadros online',
+    'arte digital', 'ilustraciones originales', 'galería de arte España', '140d',
+  ],
+
   authors: [{ name: '140d' }],
+  creator: '140d',
+  publisher: '140d Galería de Arte',
 
-  // Icons - Favicon and Apple Touch Icon
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
@@ -37,42 +46,41 @@ export const metadata = {
     ],
   },
 
-  // Open Graph - Used by Facebook, WhatsApp, LinkedIn, Telegram, etc.
+  alternates: {
+    canonical: '/',
+  },
+
   openGraph: {
     type: 'website',
     locale: 'es_ES',
     url: SITE_URL,
     siteName: '140d',
-    title: '140d - Galería de Arte',
-    description: 'Una galería de arte en línea seleccionada que presenta obras de arte únicas de artistas talentosos',
+    title: '140d - Galería de Arte Online',
+    description: 'Descubre y compra obras de arte originales directamente de artistas. Galería online, subastas en vivo y eventos culturales.',
     images: [
       {
-        url: `${SITE_URL}/og-image.jpg`,
+        url: '/brand/og-image.jpg',
         width: 1200,
         height: 630,
-        alt: '140d - Galería de Arte',
+        alt: '140d - Galería de Arte Online',
       },
     ],
   },
 
-  // Twitter Card - Used by Twitter/X
   twitter: {
     card: 'summary_large_image',
-    title: '140d - Galería de Arte',
-    description: 'Una galería de arte en línea seleccionada que presenta obras de arte únicas de artistas talentosos',
-    images: [`${SITE_URL}/og-image.jpg`],
+    title: '140d - Galería de Arte Online',
+    description: 'Descubre y compra obras de arte originales directamente de artistas. Galería online, subastas en vivo y eventos culturales.',
+    images: ['/brand/og-image.jpg'],
   },
 
-  // Apple Web App
   appleWebApp: {
     title: '140d',
     statusBarStyle: 'default',
   },
 
-  // Manifest
   manifest: '/manifest.json',
 
-  // Robots (conditional based on WEB_APP_HIDDEN)
   ...(WEB_APP_HIDDEN
     ? {
         robots: {
@@ -83,10 +91,42 @@ export const metadata = {
     : {}),
 }
 
+const organizationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: '140d',
+  alternateName: '140d Galería de Arte',
+  url: SITE_URL,
+  logo: `${SITE_URL}/brand/140d.png`,
+  sameAs: [
+    'https://www.facebook.com/140dart',
+    'https://www.instagram.com/140dart',
+    'https://x.com/140dart',
+  ],
+  description: 'Galería de arte online que democratiza el acceso al arte. Obras originales de artistas emergentes y consagrados.',
+  contactPoint: {
+    '@type': 'ContactPoint',
+    email: 'info@140d.art',
+    contactType: 'customer service',
+    availableLanguage: 'Spanish',
+  },
+}
+
+const websiteSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: '140d',
+  url: SITE_URL,
+  inLanguage: 'es',
+  description: 'Galería de arte online con obras originales, subastas en vivo y eventos culturales.',
+}
+
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="es" className="h-full">
       <body className="h-full flex flex-col">
+        <JsonLd data={organizationSchema} />
+        <JsonLd data={websiteSchema} />
         <NotificationProvider>
           <BannerNotificationProvider>
             <RateLimitHandler />

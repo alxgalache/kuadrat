@@ -73,6 +73,8 @@ export default function Footer() {
           <a href="/legal/terminos-y-condiciones" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Términos y condiciones</a>
           {' · '}
           <a href="/legal/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Política de privacidad</a>
+          {' · '}
+          <a href="/preguntas-frecuentes" className="hover:text-gray-800">FAQ</a>
         </span>
       </div>
     </footer>
