@@ -350,7 +350,7 @@ const promoteParticipant = async (req, res, next) => {
       canSubscribe: true,
       canPublishData: true,
       canUpdateMetadata: true,
-    });
+    }, { handRaised: '' });
 
     res.status(200).json({ success: true });
   } catch (error) {

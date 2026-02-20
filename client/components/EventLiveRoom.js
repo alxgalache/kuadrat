@@ -237,7 +237,7 @@ function RoomContent({ isHost, eventId, onKicked }) {
 
   const toggleHandRaise = useCallback(async () => {
     if (!localParticipant) return
-    if (localParticipant.permissions?.canUpdateOwnMetadata === false) return
+    if (localParticipant.permissions?.canUpdateMetadata === false) return
     const newValue = !handRaised
     setHandRaised(newValue)
     try {
@@ -249,6 +249,8 @@ function RoomContent({ isHost, eventId, onKicked }) {
   }, [localParticipant, handRaised])
 
   // Auto-enable mic and lower hand when promoted (viewer gets canPublish)
+  // The server clears the handRaised attribute during promotion, so we only
+  // need to update React state here.
   const prevCanPublish = useRef(localParticipant?.permissions?.canPublish)
   useEffect(() => {
     if (!localParticipant || isHost) return
@@ -257,12 +259,8 @@ function RoomContent({ isHost, eventId, onKicked }) {
       localParticipant.setMicrophoneEnabled(true).catch(err => {
         console.warn('Could not enable mic after promotion:', err)
       })
-      // Auto-lower hand when promoted (guard with permission check)
-      if (handRaised && localParticipant.permissions?.canUpdateOwnMetadata !== false) {
+      if (handRaised) {
         setHandRaised(false)
-        localParticipant.setAttributes({ handRaised: '' }).catch(err => {
-          console.warn('Could not lower hand after promotion:', err)
-        })
       }
     }
     prevCanPublish.current = canPublish
@@ -746,8 +744,8 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
       >
         {initial}
 
-        {/* Hand raised icon — top left (hidden when promoted or was previously promoted) */}
-        {handRaised && !isLocal && !isHostParticipant && !canPublish && !wasPromoted.current && (
+        {/* Hand raised icon — top left (hidden when actively speaking) */}
+        {handRaised && !isLocal && !isHostParticipant && (!canPublish || !isMicActive) && (
           <span className="absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400">
             <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l-.075 5.925m3.075-5.925v3m0-3a1.575 1.575 0 013.15 0v3m-3.15 0l-.075 3.925M14.1 7.575v3m0-3a1.575 1.575 0 013.15 0v4.725M6.9 7.575a1.575 1.575 0 00-3.15 0v6.525c0 3.06 1.827 5.625 4.725 6.825a10.49 10.49 0 006.15 0c2.898-1.2 4.725-3.765 4.725-6.825V7.575" />

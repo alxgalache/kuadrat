@@ -90,10 +90,18 @@ async function listParticipants(roomName) {
 
 /**
  * Update a participant's permissions (e.g. promote viewer to speaker).
+ * @param {string} roomName
+ * @param {string} identity
+ * @param {object} permissions - ParticipantPermission fields
+ * @param {object} [attributes] - optional attributes to set on the participant
  */
-async function updateParticipantPermissions(roomName, identity, permissions) {
+async function updateParticipantPermissions(roomName, identity, permissions, attributes) {
   const svc = getRoomServiceClient();
-  await svc.updateParticipant(roomName, identity, undefined, permissions);
+  if (attributes) {
+    await svc.updateParticipant(roomName, identity, { permission: permissions, attributes });
+  } else {
+    await svc.updateParticipant(roomName, identity, { permission: permissions });
+  }
 }
 
 /**
