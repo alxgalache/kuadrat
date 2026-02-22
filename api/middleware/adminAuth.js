@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken')
+const logger = require('../config/logger')
 
 /**
  * Middleware to verify that the authenticated user has admin role
@@ -25,7 +26,7 @@ const adminAuth = (req, res, next) => {
     // User is admin, proceed
     next()
   } catch (error) {
-    console.error('Admin auth error:', error)
+    logger.error({ err: error }, 'Admin auth error')
     res.status(500).json({
       title: 'Error del servidor',
       message: 'Error al verificar permisos de administrador'

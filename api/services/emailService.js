@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config();
+const logger = require('../config/logger');
 
 // Import HTML escaping utilities to prevent XSS in email templates
 const { escapeHtml, escapeForEmail, stripHtml } = require('../utils/htmlEscape');
@@ -22,10 +23,9 @@ const transporter = nodemailer.createTransport({
 const verifyTransporter = async () => {
   try {
     await transporter.verify();
-    console.log('✓ El servicio de correo está listo para enviar mensajes');
+    logger.info('Email service is ready to send messages');
   } catch (error) {
-    console.warn('⚠ Servicio de correo no configurado - no se enviarán correos');
-    console.warn('  Configure los ajustes SMTP en .env para habilitar notificaciones por correo');
+    logger.warn('Email service not configured - no emails will be sent. Configure SMTP settings in .env to enable email notifications');
   }
 };
 
@@ -71,7 +71,7 @@ const parseDataUrlToAttachment = (dataUrl) => {
       contentDisposition: 'inline',
     };
   } catch (error) {
-    console.error('Failed to parse logo data URL for email attachment:', error);
+    logger.error({ err: error }, 'Failed to parse logo data URL for email attachment');
     return null;
   }
 };
@@ -605,10 +605,10 @@ const sendPurchaseConfirmation = async (orderDetails) => {
 
     try {
       const info = await transporter.sendMail(buyerMailOptions);
-      console.log(`✓ Email de confirmación enviado al comprador (${buyerEmail}):`, info.messageId);
+      logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Confirmation email sent to buyer');
       results.push({ recipient: 'buyer', success: true, messageId: info.messageId });
     } catch (error) {
-      console.error(`✗ Error enviando email al comprador (${buyerEmail}):`, error);
+      logger.error({ err: error, recipient: buyerEmail }, 'Error sending email to buyer');
       results.push({ recipient: 'buyer', success: false, error: error.message });
     }
   }
@@ -629,10 +629,10 @@ const sendPurchaseConfirmation = async (orderDetails) => {
 
     try {
       const info = await transporter.sendMail(sellerMailOptions);
-      console.log(`✓ Email enviado al vendedor (${seller.email}):`, info.messageId);
+      logger.info({ recipient: seller.email, messageId: info.messageId }, 'Email sent to seller');
       results.push({ recipient: `seller:${seller.email}`, success: true, messageId: info.messageId });
     } catch (error) {
-      console.error(`✗ Error enviando email al vendedor (${seller.email}):`, error);
+      logger.error({ err: error, recipient: seller.email }, 'Error sending email to seller');
       results.push({ recipient: `seller:${seller.email}`, success: false, error: error.message });
     }
   }
@@ -651,10 +651,10 @@ const sendPurchaseConfirmation = async (orderDetails) => {
 
     try {
       const info = await transporter.sendMail(adminMailOptions);
-      console.log(`✓ Email enviado al administrador (${adminEmail}):`, info.messageId);
+      logger.info({ recipient: adminEmail, messageId: info.messageId }, 'Email sent to admin');
       results.push({ recipient: 'admin', success: true, messageId: info.messageId });
     } catch (error) {
-      console.error(`✗ Error enviando email al administrador (${adminEmail}):`, error);
+      logger.error({ err: error, recipient: adminEmail }, 'Error sending email to admin');
       results.push({ recipient: 'admin', success: false, error: error.message });
     }
   }
@@ -737,10 +737,10 @@ Saludos,
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log('Correo de solicitud de registro enviado:', info.messageId);
+    logger.info({ messageId: info.messageId }, 'Registration request email sent');
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('Error al enviar el correo de solicitud de registro:', error);
+    logger.error({ err: error }, 'Error sending registration request email');
     return { success: false, error: error.message };
   }
 };
@@ -773,10 +773,10 @@ const sendPaymentConfirmation = async ({ orderId, buyerEmail, totalPrice }) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Email de pago recibido enviado al comprador (${buyerEmail}):`, info.messageId);
+    logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Payment received email sent to buyer');
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('✗ Error enviando email de pago recibido:', error);
+    logger.error({ err: error }, 'Error sending payment received email');
     return { success: false, error: error.message };
   }
 };
@@ -854,10 +854,10 @@ const sendBuyerToSellerContactEmail = async ({
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Mensaje del comprador enviado al vendedor (${sellerEmail}):`, info.messageId);
+    logger.info({ recipient: sellerEmail, messageId: info.messageId }, 'Buyer message sent to seller');
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('✗ Error enviando mensaje del comprador al vendedor:', error);
+    logger.error({ err: error }, 'Error sending buyer message to seller');
     return { success: false, error: error.message };
   }
 };
@@ -870,7 +870,7 @@ const sendTrackingUpdateEmail = async (order, products) => {
   const orderUrl = `${CLIENT_URL}/pedido/${order.token}`;
 
   if (!buyerEmail) {
-    console.error('No buyer email found for order:', order.id);
+    logger.error({ orderId: order.id }, 'No buyer email found for order');
     return { success: false, error: 'No buyer email' };
   }
 
@@ -987,10 +987,10 @@ const sendTrackingUpdateEmail = async (order, products) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Email de seguimiento enviado al comprador (${buyerEmail}):`, info.messageId);
+    logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Tracking email sent to buyer');
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(`✗ Error enviando email de seguimiento al comprador (${buyerEmail}):`, error);
+    logger.error({ err: error, recipient: buyerEmail }, 'Error sending tracking email to buyer');
     return { success: false, error: error.message };
   }
 };
@@ -1003,7 +1003,7 @@ const sendItemsSentEmail = async (order, products) => {
   const orderUrl = `${CLIENT_URL}/pedido/${order.token}`;
 
   if (!buyerEmail) {
-    console.error('No buyer email found for order:', order.id);
+    logger.error({ orderId: order.id }, 'No buyer email found for order');
     return { success: false, error: 'No buyer email' };
   }
 
@@ -1124,10 +1124,10 @@ const sendItemsSentEmail = async (order, products) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Email de productos enviados al comprador (${buyerEmail}):`, info.messageId);
+    logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Items sent email sent to buyer');
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(`✗ Error enviando email de productos enviados al comprador (${buyerEmail}):`, error);
+    logger.error({ err: error, recipient: buyerEmail }, 'Error sending items sent email to buyer');
     return { success: false, error: error.message };
   }
 };
@@ -1241,7 +1241,7 @@ Si no has solicitado esta cuenta, puedes ignorar este correo.
 
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending password setup email:', error);
+    logger.error({ err: error }, 'Error sending password setup email');
     return { success: false };
   }
 };
@@ -1325,7 +1325,7 @@ Una vez dentro, podrás empezar a subir tus artículos y gestionar tu catálogo 
 
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending account activated email:', error);
+    logger.error({ err: error }, 'Error sending account activated email');
     return { success: false };
   }
 };
@@ -1420,7 +1420,7 @@ const sendBidConfirmationEmail = async ({ email, firstName, bidPassword, auction
     });
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending bid confirmation email:', error);
+    logger.error({ err: error }, 'Error sending bid confirmation email');
     return { success: false };
   }
 };
@@ -1458,7 +1458,7 @@ const sendOutbidNotificationEmail = async ({ email, firstName, auctionName, prod
     });
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending outbid notification email:', error);
+    logger.error({ err: error }, 'Error sending outbid notification email');
     return { success: false };
   }
 };
@@ -1490,7 +1490,7 @@ const sendAuctionWonEmail = async ({ email, firstName, auctionName, productName,
     });
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending auction won email:', error);
+    logger.error({ err: error }, 'Error sending auction won email');
     return { success: false };
   }
 };
@@ -1522,7 +1522,7 @@ const sendAuctionEndedNoBidsEmail = async ({ sellerEmail, sellerName, auctionNam
     });
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending auction ended no bids email:', error);
+    logger.error({ err: error }, 'Error sending auction ended no bids email');
     return { success: false };
   }
 };
@@ -1555,7 +1555,7 @@ const sendSCARequiredEmail = async ({ email, firstName, auctionName, productName
     });
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending SCA required email:', error);
+    logger.error({ err: error }, 'Error sending SCA required email');
     return { success: false };
   }
 };

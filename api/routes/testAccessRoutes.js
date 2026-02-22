@@ -1,9 +1,10 @@
 const express = require('express');
+const config = require('../config/env');
 
 const router = express.Router();
 
 const isGateEnabled = () => {
-  const flag = process.env.WEB_APP_HIDDEN;
+  const flag = config.webAppHidden;
   return flag === 'true' || flag === '1';
 };
 
@@ -15,7 +16,7 @@ router.post('/verify', (req, res) => {
     return res.status(404).json({ success: false, message: 'Not found' });
   }
 
-  const expectedPassword = process.env.TEST_ACCESS_PASSWORD;
+  const expectedPassword = config.testAccessPassword;
   if (!expectedPassword) {
     return res.status(500).json({ success: false, message: 'Test access password not configured' });
   }

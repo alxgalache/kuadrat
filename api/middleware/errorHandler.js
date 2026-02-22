@@ -1,3 +1,5 @@
+const logger = require('../config/logger');
+
 // Custom error class
 class ApiError extends Error {
   constructor(statusCode, message, title = null, errors = null) {
@@ -47,7 +49,7 @@ const errorHandler = (err, req, res, next) => {
   }
 
   // Handle programming or unknown errors
-  console.error('ERROR:', err);
+  logger.error({ err }, 'Unhandled error');
 
   // Default to 500 Internal Server Error
   statusCode = statusCode || 500;

@@ -2,94 +2,193 @@
 
 ## Project Overview
 
-You are an expert full-stack developer tasked with building a complete web application from scratch. The application, "Kuadrat," is a minimalist online marketplace for art, functioning as a virtual art gallery. It will allow artists (Sellers) to list their work and art enthusiasts (Buyers) to purchase it. I will act as the dealer, taking a commission on each sale. The project includes a RESTful API backend and NextJS frontend, all managed within a dockerized monorepo.
+Kuadrat is a minimalist online marketplace for art, functioning as a virtual art gallery. Artists (Sellers) list their work and art enthusiasts (Buyers) purchase it. The dealer takes a commission on each sale. The project includes a RESTful API backend, NextJS frontend, real-time auctions, and live events/streaming, all managed within a dockerized monorepo.
 
-A critical future feature is real-time auctions. While the full real-time logic isn't required in this initial build, the database and API structure must be designed to fully support it later.
+## Technology Stack
 
-## Core Principles & Constraints
+* **Backend:** Express.js on Node.js 20
+* **Database:** Turso (libsql/client, SQLite-compatible)
+* **Frontend:** Next.js 16, React 19, JavaScript (no TypeScript), TailwindCSS, App Router
+* **Auth:** Passport.js (passport-local + passport-jwt), JWT tokens
+* **Payments:** Stripe (primary), Revolut (legacy support)
+* **Real-time:** Socket.IO for auctions and event notifications
+* **Streaming:** LiveKit for live events with guest access
+* **Email:** Nodemailer with SMTP
+* **Logging:** Pino (structured JSON in production, pretty in development)
+* **Validation:** Zod schemas for API request validation
+* **Containerization:** Docker and Docker Compose
+* **Monitoring:** Sentry (client + server)
 
-1.  **Technology Stack:**
-    * **Backend:** Express.js running on Node.js.
-    * **Database:** Turso
-    * **Frontend:** NextJS project using Javascript (no Typescript), TailwindCSS and App Router.
-    * **Styling:** Tailwind CSS. TailwindCSS will be installed and configured in the NextJS frontend project. It must be installed in the project using "npm install tailwindcss@latest", and Inter font family must be installed (following the official documentation of tailwindcss). You must also install headlessui and heoricons via "npm install @headlessui/react @heroicons/react". The project will include pre-written HTML snippets with Tailwind classes. You must use these.
-    * **Containerization:** Docker and Docker Compose. Docker version 28.5.0 and docker compose version 2.39.4
-    * **Real-time (for future auctions):** The API must include Socket.IO, configured and ready for the auction implementation.
+## Design Philosophy
 
-2.  **Design Philosophy:**
-    * **Extreme Minimalism:** The design is based on TailwindCSS components and UI Blocks. Please use these designs, without modifications
-    * **Focus on Art:** The only images on the site are the artworks themselves.
-    * **Layout:** A single-column, clean layout. On a product page, the single product image will occupy 50% of the viewport width on horizontal screens.
-    * **Light Theme Only:** No dark mode.
+* **Extreme Minimalism:** TailwindCSS components and UI Blocks, no modifications
+* **Focus on Art:** Only images are the artworks themselves
+* **Light Theme Only:** No dark mode
+* **All Spanish UI text** (es-ES locale)
 
-3.  **User Roles:**
-    * **Buyer:** Can browse and buy art, view their order history.
-    * **Seller:** Can publish and manage their own art listings. They can also be buyers.
+## Architecture
 
-## Development Plan (Step-by-Step)
+### Backend (`api/`)
 
-Please follow these steps in order. Think step-by-step before writing code for each part.
+```
+api/
+├── config/
+│   ├── database.js      — DB schema (single source of truth, idempotent)
+│   ├── env.js           — Centralized env config with validation
+│   ├── logger.js        — Pino logger (JSON prod, pretty dev)
+│   ├── passport.js      — JWT + Local auth strategies
+│   └── shutdown.js      — Graceful shutdown handler
+├── controllers/
+│   ├── ordersController.js    — Order CRUD (largest controller)
+│   ├── orders/index.js        — Re-export for future splitting
+│   ├── paymentsController.js  — Revolut payment flow
+│   ├── stripePaymentsController.js — Stripe payment flow
+│   ├── artController.js       — Art product CRUD
+│   ├── othersController.js    — Other products CRUD
+│   ├── auctionController.js   — Public auction endpoints
+│   ├── auctionAdminController.js — Admin auction management
+│   ├── eventController.js     — Public event endpoints
+│   ├── eventAdminController.js — Admin event management
+│   ├── authController.js      — Login, register, password reset
+│   ├── usersController.js     — User/author profiles
+│   └── shippingController.js  — Shipping methods and zones
+├── middleware/
+│   ├── errorHandler.js    — ApiError class + global handler
+│   ├── authorization.js   — JWT auth + role checks
+│   ├── adminAuth.js       — Admin-only middleware
+│   ├── rateLimiter.js     — 4-tier rate limiting (uses config/env.js)
+│   ├── securityMiddleware.js — Prototype pollution, command injection, UA filter
+│   ├── validate.js        — Zod schema validation middleware
+│   ├── cache.js           — ETag + Cache-Control header middleware
+│   └── timeout.js         — Request timeout middleware
+├── routes/
+│   ├── admin/             — Split admin routes (authenticate + adminAuth applied at index)
+│   │   ├── index.js       — Main router, mounts sub-routes
+│   │   ├── authorRoutes.js
+│   │   ├── productRoutes.js
+│   │   ├── orderRoutes.js
+│   │   ├── shippingRoutes.js
+│   │   ├── auctionRoutes.js
+│   │   ├── eventRoutes.js
+│   │   └── othersRoutes.js
+│   ├── authRoutes.js, artRoutes.js, othersRoutes.js, ...
+│   └── sellerRoutes.js, shippingRoutes.js, ...
+├── services/
+│   ├── emailService.js    — All email templates and sending
+│   ├── email/index.js     — Re-export for future splitting
+│   ├── stripeService.js   — Stripe API wrapper
+│   ├── auctionService.js  — Auction business logic
+│   ├── eventService.js    — Event CRUD + LiveKit
+│   ├── livekitService.js  — LiveKit token generation
+│   └── revolutService.js  — Revolut payment integration (legacy)
+├── validators/            — Zod request validation schemas
+│   ├── authSchemas.js
+│   ├── orderSchemas.js
+│   ├── productSchemas.js
+│   ├── shippingSchemas.js
+│   ├── auctionSchemas.js
+│   └── eventSchemas.js
+├── utils/
+│   ├── transaction.js     — Turso batch/transaction wrapper
+│   ├── response.js        — Standardized API response helpers
+│   ├── htmlEscape.js      — HTML sanitization
+│   └── paymentHelpers.js  — Currency conversion, VAT
+├── socket/
+│   ├── auctionSocket.js   — Real-time auction events
+│   └── eventSocket.js     — Real-time event notifications
+├── scheduler/
+│   └── auctionScheduler.js — Cron job (every 30s) for auction lifecycle
+└── server.js              — Express + Socket.IO + middleware stack
+```
 
-1.  **Project Scaffolding:** Create the complete monorepo directory structure in the way you see fit.
-2.  **Docker Setup:** Create the `docker-compose.yml` file and the individual `Dockerfile` for both the `api` and `client` services as specified.
-3.  **API Development (Express.js):**
-    * Initialize the Node.js project in the `/api` directory.
-    * Set up the Express server. Implement middleware for CORS, body-parsing, and logging.
-    * **Database Integration:** Integrate Turso using the library you consider best for this use case. Create a database initialization script that sets up the tables as defined in `DATABASE_SCHEMA.md`.
-    * **Authentication:** Implement a robust authentication system using **Passport.js**.
-        * Use the `passport-local` strategy for email/password login (`/api/auth/register`, `/api/auth/login`).
-        * Use the `passport-jwt` strategy to protect authenticated routes. The login route should return a JWT.
-        * Other login options like SSO or sign in with Google or Apple will not be implemented. Please do not use any 3rd-party authentication libraries.
-    * **Authorization:** Implement role-based authorization.
-        * Sellers can create, read, update, and delete their own products.
-        * Buyers can read all products.
-        * Buyers can place bids on products.
-        * Buyers can view their order history.
-        * Sellers can view their order history.
-    * **API Endpoints:** Implement all the API endpoints defined in `API_ENDPOINTS.md`. Ensure role-based authorization is correctly applied (e.g., only sellers can post products).
-    * **Email Service:** Integrate **Nodemailer**. Create a generic email service that can be configured with SMTP credentials (from environment variables). Create a function to send a "Purchase Confirmation" email.
-    * **WebSocket Setup:** Integrate **Socket.IO** into the Express server. For now, just set it up. No auction logic is needed yet.
-4.  **Frontend Development (Vanilla JS):**
-    * Create the HTML files for each page in the `/client` directory.
-    * The `navbar` and `footer` will be consistent. You will use the HTML snippets from the `/client/components/` directory.
-    * Write modular, clean Vanilla JavaScript in the `/client/js/` directory.
-        * `auth.js`: Handles login, registration, storing JWT in localStorage, and logout.
-        * `api.js`: A module to handle all fetch requests to the backend API. It should automatically attach the JWT from localStorage to the `Authorization` header.
-        * `ui.js`: Functions to manipulate the DOM, render product lists, show/hide elements based on login status and user role.
-        * Create separate JS files for each page's specific logic (e.g., `productList.js`, `productDetail.js`).
-    * Use Tailwind CSS for all styling. A build step will be configured in the client Dockerfile to process the CSS.
+### Frontend (`client/`)
 
-5.  **Testing:**
-    * For the API, set up a testing environment with **Jest** and **Supertest**.
-    * Write unit/integration tests for all API endpoints, especially focusing on the authentication and authorization logic.
-    * Write placeholder test files for the future auction WebSocket logic, outlining the tests that will be needed (e.g., "should allow a user to place a bid," "should broadcast new highest bid to all clients").
+```
+client/
+├── app/                   — Next.js App Router pages
+│   ├── admin/             — Admin dashboard (AuthGuard wrapper)
+│   ├── galeria/           — Art gallery + product detail
+│   ├── subastas/          — Auction pages
+│   ├── espacios/          — Events/streaming pages
+│   ├── orders/            — Customer order history
+│   ├── seller/            — Seller dashboard
+│   └── layout.js          — Root layout with providers
+├── components/
+│   ├── ErrorBoundary.js   — React error boundary with retry
+│   ├── ShoppingCartDrawer.js — Cart checkout flow (3 steps)
+│   ├── BidModal.js        — Auction bidding interface (9 phases)
+│   ├── EventLiveRoom.js   — LiveKit video integration
+│   ├── Navbar.js, AuthGuard.js, Notification.js, ...
+│   └── cart/, auction/, events/ — Future sub-component directories
+├── contexts/
+│   ├── CartContext.js      — Cart state (useMemo/useCallback optimized)
+│   ├── AuthContext.js      — User auth state
+│   ├── NotificationContext.js
+│   └── BannerNotificationContext.js
+├── hooks/
+│   ├── useDebounce.js     — Generic debounce hook
+│   ├── usePostalCodeValidation.js — Shared postal validation
+│   ├── useAuctionSocket.js — Socket.IO for auctions
+│   ├── useEventSocket.js  — Socket.IO for events
+│   └── useGalleryAuthors.js, useGalleryProducts.js
+├── lib/
+│   ├── api.js             — Centralized API client (1064 lines)
+│   ├── api/index.js       — Re-export for future splitting
+│   ├── constants.js       — App-wide constants (debounce, animation, cart)
+│   ├── serverApi.js       — Server-side API calls
+│   └── stripe.js          — Stripe.js promise loader
+└── next.config.js         — Sentry, CSP headers, standalone output
+```
+
+## Key Patterns
+
+### Backend Patterns
+
+* **Structured Logging:** All files use `const logger = require('../config/logger')` (Pino). No `console.log` in production code.
+* **Centralized Config:** All env vars accessed via `const config = require('../config/env')`. Validates required vars at startup.
+* **Request Validation:** Zod schemas in `api/validators/`, applied via `validate()` middleware in routes.
+* **Response Helpers:** `sendSuccess()`, `sendPaginated()`, `sendCreated()` from `api/utils/response.js`.
+* **Error Handling:** `ApiError` class thrown in controllers, caught by global `errorHandler` middleware.
+* **Transactions:** `createBatch()` from `api/utils/transaction.js` for atomic multi-table operations.
+* **Caching:** `cacheControl()` middleware on public GET endpoints (art, others, authors).
+* **Rate Limiting:** 4-tier via `config.rateLimit.*` (general, auth, sensitive, paymentVerification).
+* **Graceful Shutdown:** SIGTERM/SIGINT handlers close HTTP, Socket.IO, log sequence.
+* **Response Compression:** gzip via `compression` middleware (early in stack).
+
+### Frontend Patterns
+
+* **Performance:** CartContext uses `useMemo`/`useCallback` on all exposed functions.
+* **Error Boundaries:** `<ErrorBoundary>` component for graceful failure handling.
+* **Shared Hooks:** `useDebounce`, `usePostalCodeValidation` avoid duplicate logic.
+* **Constants:** Magic numbers extracted to `lib/constants.js`.
+* **API Client:** Centralized `lib/api.js` with request deduplication and global 401/429 handling.
 
 ## Database Schema Management
 
-The database schema is defined in `api/config/database.js`. This file is the **single source of truth** for the database structure.
+The database schema is defined in `api/config/database.js`. This file is the **single source of truth**.
 
 **Key rules:**
-* `initializeDatabase()` runs on every API startup. All statements use `IF NOT EXISTS`, making it idempotent and safe.
-* When adding or modifying a table column, **update `database.js` directly** in the corresponding `CREATE TABLE` statement. Do NOT add separate `ALTER TABLE` migration blocks.
-* The file should only contain `CREATE TABLE IF NOT EXISTS` statements, `CREATE INDEX IF NOT EXISTS` statements, and the postal codes import. No data migrations, no schema detection logic, no `ALTER TABLE` statements.
-* Postal codes data is imported from `api/migrations/ES.csv` (only when the `postal_codes` table is empty).
-* For a fresh deployment, `initializeDatabase()` creates the complete schema from scratch. For an existing database, all statements are no-ops.
-* If a schema change requires modifying an existing column (rename, change type, add constraint), that must be handled manually via Turso CLI or a one-off script — SQLite does not support `ALTER TABLE` for column modifications.
+* `initializeDatabase()` runs on every startup (idempotent via `IF NOT EXISTS`).
+* Schema changes: update the `CREATE TABLE` statement directly, never add `ALTER TABLE` blocks.
+* 25 tables, 30+ indexes (including performance indexes on orders, products, auctions, events).
+* Orders auto-increment starts at 1000 (for fresh DBs).
+* Postal codes imported from `api/migrations/ES.csv` (only when empty).
 
 ## Postal Code References (Polymorphic Pivot Tables)
 
-The three pivot tables `shipping_zones_postal_codes`, `auction_arts_postal_codes`, and `auction_others_postal_codes` use a **polymorphic reference pattern** to support individual postal codes, entire provinces, or entire countries:
-
+Three pivot tables use a **polymorphic reference pattern**:
 * `ref_type` — `'postal_code'` | `'province'` | `'country'`
-* `postal_code_id` — set only when `ref_type = 'postal_code'` (FK to `postal_codes.id`)
-* `ref_value` — province name or country code when `ref_type` is `'province'` or `'country'`
+* `postal_code_id` — set only when `ref_type = 'postal_code'`
+* `ref_value` — province name or country code otherwise
 
-This avoids storing thousands of individual postal code rows when an entire province or country is selected. Validation always resolves through the `postal_codes` table using the buyer's postal code input.
+## Environment Variables
 
-One-off migration script: `api/migrations/migrate_postal_refs.js` (drops and recreates the pivot tables).
-
-## Final Instructions
-
-* Generate all file contents based on the provided specifications.
-* Ensure all code is clean, well-commented, and follows best practices.
-* Use environment variables for all sensitive information (database URLs, JWT secret, email credentials). Create a `.env.example` file in the `/api` directory.
+All environment variables are validated at startup via `api/config/env.js`. See `api/.env.example` for full documentation. Key groups:
+* **Application:** PORT, NODE_ENV, LOG_LEVEL, CLIENT_URL
+* **Database:** TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
+* **Auth:** JWT_SECRET, JWT_EXPIRES_IN
+* **Email:** SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM
+* **Payments:** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, PAYMENT_PROVIDER
+* **LiveKit:** LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+* **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, etc.
+* **Business:** TAX_VAT_ES, DEALER_COMMISSION

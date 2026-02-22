@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requireSeller } = require('../middleware/authorization');
 const { db } = require('../config/database');
+const logger = require('../config/logger');
 
 // Apply authentication and seller authorization to all routes
 router.use(authenticate, requireSeller);
@@ -86,7 +87,7 @@ router.get('/products', async (req, res) => {
 
     res.json({ products: allProducts });
   } catch (error) {
-    console.error('Error fetching seller products:', error);
+    logger.error({ err: error }, 'Error fetching seller products');
     res.status(500).json({
       title: 'Error del servidor',
       message: 'No se pudieron cargar los productos'
@@ -158,7 +159,7 @@ router.put('/others/:id/variations', async (req, res) => {
       message: 'Variaciones actualizadas correctamente'
     });
   } catch (error) {
-    console.error('Error updating variations:', error);
+    logger.error({ err: error }, 'Error updating variations');
     res.status(500).json({
       title: 'Error del servidor',
       message: 'No se pudieron actualizar las variaciones'
@@ -211,7 +212,7 @@ router.put('/products/:id/visibility', async (req, res) => {
         : 'El producto está oculto de la galería'
     });
   } catch (error) {
-    console.error('Error toggling product visibility:', error);
+    logger.error({ err: error }, 'Error toggling product visibility');
     res.status(500).json({
       title: 'Error del servidor',
       message: 'No se pudo cambiar la visibilidad del producto'
@@ -262,7 +263,7 @@ router.delete('/products/:id', async (req, res) => {
       message: 'El producto ha sido eliminado y ya no es visible'
     });
   } catch (error) {
-    console.error('Error deleting product:', error);
+    logger.error({ err: error }, 'Error deleting product');
     res.status(500).json({
       title: 'Error del servidor',
       message: 'No se pudo eliminar el producto'

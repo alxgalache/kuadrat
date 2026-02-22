@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const auctionController = require('../controllers/auctionController');
+const { cacheControl } = require('../middleware/cache');
 
 // All routes are public (no authentication required)
 
@@ -8,13 +9,13 @@ const auctionController = require('../controllers/auctionController');
  * GET /api/auctions
  * Get auctions by date range (for calendar view)
  */
-router.get('/', auctionController.getAuctions);
+router.get('/', cacheControl({ maxAge: 30 }), auctionController.getAuctions);
 
 /**
  * GET /api/auctions/:id
  * Get auction details with products
  */
-router.get('/:id', auctionController.getAuctionDetail);
+router.get('/:id', cacheControl({ maxAge: 10 }), auctionController.getAuctionDetail);
 
 /**
  * GET /api/auctions/:id/products/:productId/:productType/bids

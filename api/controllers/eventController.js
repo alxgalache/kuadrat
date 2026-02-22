@@ -3,6 +3,7 @@ const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { ApiError } = require('../middleware/errorHandler');
+const logger = require('../config/logger');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const stripeService = require('../services/stripeService');
@@ -592,7 +593,7 @@ const banFromChat = async (req, res, next) => {
         canUpdateMetadata: true,
       });
     } catch (err) {
-      console.warn('Error updating participant permissions in LiveKit:', err.message);
+      logger.warn({ err }, 'Error updating participant permissions in LiveKit');
     }
 
     // Persist in DB
@@ -672,7 +673,7 @@ const reportSpam = async (req, res, next) => {
         canUpdateMetadata: true,
       });
     } catch (err) {
-      console.warn('Error updating participant permissions in LiveKit:', err.message);
+      logger.warn({ err }, 'Error updating participant permissions in LiveKit');
     }
 
     // Persist chat ban in DB (survives reconnection)

@@ -1,3 +1,5 @@
+const logger = require('../config/logger');
+
 /**
  * Security Middleware
  * Protects against prototype pollution, injection attacks, and suspicious requests
@@ -99,7 +101,7 @@ function containsPrototypePollution(obj, path = '') {
         for (const key of Object.keys(obj)) {
             // Check if the key itself is a pollution attempt
             if (PROTOTYPE_POLLUTION_PATTERNS.includes(key)) {
-                console.warn(`[SECURITY] Prototype pollution attempt detected in key: ${path}.${key}`);
+                logger.warn({ path: `${path}.${key}` }, 'Prototype pollution attempt detected in key');
                 return true;
             }
             // Recursively check values
@@ -150,7 +152,7 @@ const prototypePollutionGuard = (req, res, next) => {
     // Check URL path for suspicious patterns
     const urlPath = req.path.toLowerCase();
     if (SUSPICIOUS_PATHS.some(pattern => urlPath.includes(pattern.toLowerCase()))) {
-        console.warn(`[SECURITY] Suspicious path access blocked: ${urlPath} from ${clientIP}`);
+        logger.warn({ urlPath, clientIP }, 'Suspicious path access blocked');
         return res.status(404).json({
             success: false,
             message: 'Not found'
@@ -160,9 +162,7 @@ const prototypePollutionGuard = (req, res, next) => {
     // Check request body for prototype pollution
     if (req.body && typeof req.body === 'object') {
         if (containsPrototypePollution(req.body, 'body')) {
-            console.error(`[SECURITY] Prototype pollution attack blocked from ${clientIP}`);
-            console.error(`[SECURITY] Request path: ${req.path}`);
-            console.error(`[SECURITY] User-Agent: ${req.get('User-Agent')}`);
+            logger.error({ clientIP, path: req.path, userAgent: req.get('User-Agent') }, 'Prototype pollution attack blocked');
             return res.status(400).json({
                 success: false,
                 message: 'Invalid request data'
@@ -171,9 +171,7 @@ const prototypePollutionGuard = (req, res, next) => {
 
         // Check for command injection in body
         if (containsCommandInjection(req.body)) {
-            console.error(`[SECURITY] Command injection attempt blocked from ${clientIP}`);
-            console.error(`[SECURITY] Request path: ${req.path}`);
-            console.error(`[SECURITY] User-Agent: ${req.get('User-Agent')}`);
+            logger.error({ clientIP, path: req.path, userAgent: req.get('User-Agent') }, 'Command injection attempt blocked');
             return res.status(400).json({
                 success: false,
                 message: 'Invalid request data'
@@ -184,7 +182,7 @@ const prototypePollutionGuard = (req, res, next) => {
     // Check query parameters
     if (req.query && typeof req.query === 'object') {
         if (containsPrototypePollution(req.query, 'query')) {
-            console.error(`[SECURITY] Prototype pollution in query params from ${clientIP}`);
+            logger.error({ clientIP }, 'Prototype pollution in query params');
             return res.status(400).json({
                 success: false,
                 message: 'Invalid request parameters'
@@ -192,7 +190,7 @@ const prototypePollutionGuard = (req, res, next) => {
         }
 
         if (containsCommandInjection(req.query)) {
-            console.error(`[SECURITY] Command injection in query params from ${clientIP}`);
+            logger.error({ clientIP }, 'Command injection in query params');
             return res.status(400).json({
                 success: false,
                 message: 'Invalid request parameters'
@@ -203,7 +201,7 @@ const prototypePollutionGuard = (req, res, next) => {
     // Check URL-encoded body (for form submissions)
     if (req.params && typeof req.params === 'object') {
         if (containsPrototypePollution(req.params, 'params')) {
-            console.error(`[SECURITY] Prototype pollution in URL params from ${clientIP}`);
+            logger.error({ clientIP }, 'Prototype pollution in URL params');
             return res.status(400).json({
                 success: false,
                 message: 'Invalid request'
@@ -245,7 +243,7 @@ const userAgentFilter = (req, res, next) => {
     // Block known malicious user agents
     if (maliciousAgents.some(agent => userAgent.includes(agent))) {
         const clientIP = req.ip || req.connection.remoteAddress;
-        console.warn(`[SECURITY] Blocked malicious user agent: ${userAgent} from ${clientIP}`);
+        logger.warn({ userAgent, clientIP }, 'Blocked malicious user agent');
         return res.status(403).json({
             success: false,
             message: 'Access denied'
@@ -264,7 +262,7 @@ const requestSizeLimiter = (maxSizeBytes = 10 * 1024 * 1024) => {
 
         if (contentLength > maxSizeBytes) {
             const clientIP = req.ip || req.connection.remoteAddress;
-            console.warn(`[SECURITY] Oversized request blocked: ${contentLength} bytes from ${clientIP}`);
+            logger.warn({ contentLength, clientIP }, 'Oversized request blocked');
             return res.status(413).json({
                 success: false,
                 message: 'Request too large'
@@ -288,7 +286,7 @@ const suspiciousActivityLogger = (req, res, next) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
         // Check for unusual characters in path
         if (/[<>'";&|`$]/.test(path)) {
-            console.warn(`[SECURITY] Suspicious characters in path: ${path} from ${clientIP}`);
+            logger.warn({ path, clientIP }, 'Suspicious characters in path');
         }
     }
 
@@ -297,7 +295,7 @@ const suspiciousActivityLogger = (req, res, next) => {
     res.send = function(body) {
         // Log 4xx and 5xx responses
         if (res.statusCode >= 400) {
-            console.log(`[AUDIT] ${method} ${path} -> ${res.statusCode} from ${clientIP} (${userAgent})`);
+            logger.info({ method, path, statusCode: res.statusCode, clientIP, userAgent }, 'Audit log');
         }
         return originalSend.call(this, body);
     };

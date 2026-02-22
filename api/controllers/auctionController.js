@@ -1,4 +1,5 @@
 const { ApiError } = require('../middleware/errorHandler');
+const logger = require('../config/logger');
 const auctionService = require('../services/auctionService');
 const stripeService = require('../services/stripeService');
 const { sendBidConfirmationEmail } = require('../services/emailService');
@@ -322,7 +323,7 @@ const placeBid = async (req, res, next) => {
       productType,
       productBasename: auctionProduct?.basename || null,
       sellerName: auctionProduct?.seller_name || null,
-    }).catch((err) => console.error('Error sending bid confirmation email:', err));
+    }).catch((err) => logger.error({ err }, 'Error sending bid confirmation email'));
 
     res.status(200).json({
       success: true,

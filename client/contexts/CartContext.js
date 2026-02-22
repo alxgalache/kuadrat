@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 
 const CartContext = createContext()
 
@@ -54,26 +54,26 @@ export function CartProvider({ children }) {
   }, [cart, isInitialized])
 
   // Generate unique cart item ID
-  const generateCartItemId = (productId, productType, variantId) => {
+  const generateCartItemId = useCallback((productId, productType, variantId) => {
     return variantId
       ? `${productType}_${productId}_variant_${variantId}`
       : `${productType}_${productId}`
-  }
+  }, [])
 
   // Check if item is in cart
-  const isInCart = (productId, productType, variantId = null) => {
+  const isInCart = useCallback((productId, productType, variantId = null) => {
     const itemId = generateCartItemId(productId, productType, variantId)
     return cart.some(item => item.id === itemId)
-  }
+  }, [cart, generateCartItemId])
 
   // Get cart item
-  const getCartItem = (productId, productType, variantId = null) => {
+  const getCartItem = useCallback((productId, productType, variantId = null) => {
     const itemId = generateCartItemId(productId, productType, variantId)
     return cart.find(item => item.id === itemId)
-  }
+  }, [cart, generateCartItemId])
 
   // Add item to cart
-  const addToCart = (item) => {
+  const addToCart = useCallback((item) => {
     const {
       productId,
       productType,
@@ -126,19 +126,19 @@ export function CartProvider({ children }) {
 
     // Trigger animation
     setAnimationTrigger(prev => prev + 1)
-  }
+  }, [generateCartItemId])
 
   // Remove item from cart
-  const removeFromCart = (productId, productType, variantId = null) => {
+  const removeFromCart = useCallback((productId, productType, variantId = null) => {
     const itemId = generateCartItemId(productId, productType, variantId)
     setCart(prevCart => prevCart.filter(item => item.id !== itemId))
 
     // Trigger animation
     setAnimationTrigger(prev => prev + 1)
-  }
+  }, [generateCartItemId])
 
   // Update item quantity
-  const updateQuantity = (productId, productType, quantity, variantId = null) => {
+  const updateQuantity = useCallback((productId, productType, quantity, variantId = null) => {
     if (quantity <= 0) {
       removeFromCart(productId, productType, variantId)
       return
@@ -152,21 +152,21 @@ export function CartProvider({ children }) {
           : item
       )
     )
-  }
+  }, [removeFromCart, generateCartItemId])
 
   // Clear cart
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCart([])
-  }
+  }, [])
 
   // Get total items count
-  const getTotalItems = () => {
+  const getTotalItems = useCallback(() => {
     return cart.reduce((total, item) => total + item.quantity, 0)
-  }
+  }, [cart])
 
   // Internal helper: build shipping aggregation per (seller, productType, method)
   // respecting maxArticles per shipment and counting total units.
-  const getShippingBreakdown = () => {
+  const getShippingBreakdown = useCallback(() => {
     const groupsMap = new Map()
 
     cart.forEach((item) => {
@@ -207,27 +207,27 @@ export function CartProvider({ children }) {
     })
 
     return groups
-  }
+  }, [cart])
 
   // Get total price (including shipping, aggregated per shipment)
-  const getTotalPrice = () => {
+  const getTotalPrice = useCallback(() => {
     const productsTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
     const shippingTotal = getShippingBreakdown().reduce((sum, group) => sum + group.totalShipping, 0)
     return productsTotal + shippingTotal
-  }
+  }, [cart, getShippingBreakdown])
 
   // Get subtotal (products only, no shipping)
-  const getSubtotal = () => {
+  const getSubtotal = useCallback(() => {
     return cart.reduce((total, item) => total + (item.price * item.quantity), 0)
-  }
+  }, [cart])
 
   // Get total shipping cost (aggregated per shipment)
-  const getTotalShipping = () => {
+  const getTotalShipping = useCallback(() => {
     return getShippingBreakdown().reduce((sum, group) => sum + group.totalShipping, 0)
-  }
+  }, [getShippingBreakdown])
 
   // Update shipping for a specific cart item
-  const updateShipping = (productId, productType, shipping, variantId = null) => {
+  const updateShipping = useCallback((productId, productType, shipping, variantId = null) => {
     const itemId = generateCartItemId(productId, productType, variantId)
     setCart(prevCart =>
       prevCart.map(item =>
@@ -236,15 +236,15 @@ export function CartProvider({ children }) {
           : item
       )
     )
-  }
+  }, [generateCartItemId])
 
   // Get all items from a specific seller
-  const getItemsBySeller = (sellerId) => {
+  const getItemsBySeller = useCallback((sellerId) => {
     return cart.filter(item => item.sellerId === sellerId)
-  }
+  }, [cart])
 
   // Update shipping for all items from a specific seller
-  const updateSellerShipping = (sellerId, shipping) => {
+  const updateSellerShipping = useCallback((sellerId, shipping) => {
     setCart(prevCart =>
       prevCart.map(item =>
         item.sellerId === sellerId
@@ -252,38 +252,38 @@ export function CartProvider({ children }) {
           : item
       )
     )
-  }
+  }, [])
 
   // Check if seller is already in cart
-  const isSellerInCart = (sellerId) => {
+  const isSellerInCart = useCallback((sellerId) => {
     return cart.some(item => item.sellerId === sellerId)
-  }
+  }, [cart])
 
   // Get existing shipping method for a seller (if any)
-  const getSellerShipping = (sellerId) => {
+  const getSellerShipping = useCallback((sellerId) => {
     const sellerItem = cart.find(item => item.sellerId === sellerId)
     return sellerItem?.shipping || null
-  }
+  }, [cart])
 
   // Get existing shipping method for 'others' products from a seller
   // This is used to auto-apply shipping only for 'others' products from the same seller
-  const getSellerOthersShipping = (sellerId) => {
+  const getSellerOthersShipping = useCallback((sellerId) => {
     const sellerOthersItem = cart.find(
       item => item.sellerId === sellerId && item.productType === 'other'
     )
     return sellerOthersItem?.shipping || null
-  }
+  }, [cart])
 
   // Get existing shipping method for 'art' products from a seller
   // This is used to auto-apply shipping only for 'art' products from the same seller
-  const getSellerArtShipping = (sellerId) => {
+  const getSellerArtShipping = useCallback((sellerId) => {
     const sellerArtItem = cart.find(
       item => item.sellerId === sellerId && item.productType === 'art'
     )
     return sellerArtItem?.shipping || null
-  }
+  }, [cart])
 
-  const value = {
+  const value = useMemo(() => ({
     cart,
     isInCart,
     getCartItem,
@@ -304,7 +304,14 @@ export function CartProvider({ children }) {
     getSellerOthersShipping,
     getSellerArtShipping,
     animationTrigger,
-  }
+  }), [
+    cart, isInCart, getCartItem, addToCart, removeFromCart,
+    updateQuantity, clearCart, getTotalItems, getTotalPrice,
+    getSubtotal, getTotalShipping, getShippingBreakdown,
+    updateShipping, getItemsBySeller, updateSellerShipping,
+    isSellerInCart, getSellerShipping, getSellerOthersShipping,
+    getSellerArtShipping, animationTrigger,
+  ])
 
   return (
     <CartContext.Provider value={value}>

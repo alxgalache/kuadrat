@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const bcrypt = require('bcrypt');
+const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
 const validator = require('validator');
 const { db } = require('../config/database');
@@ -67,7 +68,7 @@ const registrationRequest = async (req, res, next) => {
     try {
       await sendRegistrationRequest(email);
     } catch (emailError) {
-      console.error('Failed to send registration request email:', emailError);
+      logger.error({ err: emailError }, 'Failed to send registration request email');
       throw new ApiError(500, 'Error al enviar la solicitud. Por favor, inténtalo de nuevo.', 'Error del servidor');
     }
 
@@ -226,7 +227,7 @@ const setPassword = async (req, res, next) => {
     // Send account activated email (non-blocking)
     const { sendAccountActivatedEmail } = require('../services/emailService');
     sendAccountActivatedEmail({ email: user.email, fullName: user.full_name })
-      .catch((err) => console.warn('Failed to send account activated email:', err));
+      .catch((err) => logger.warn({ err }, 'Failed to send account activated email'));
 
     // Generate JWT token so user can login immediately
     const jwtToken = jwt.sign(

@@ -1,4 +1,5 @@
 const { db } = require('../config/database');
+const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
 const {
   createPaymentIntent,
@@ -91,11 +92,11 @@ const stripeWebhookEndpoint = async (req, res, next) => {
     try {
       event = constructWebhookEvent(rawBody, sig);
     } catch (err) {
-      console.error('Stripe webhook signature verification failed:', err.message);
+      logger.error({ err }, 'Stripe webhook signature verification failed');
       return res.status(400).json({ error: 'Invalid signature' });
     }
 
-    console.log('Stripe webhook received:', event.type);
+    logger.info({ eventType: event.type }, 'Stripe webhook received');
 
     if (event.type === 'payment_intent.succeeded') {
       const paymentIntent = event.data.object;
@@ -108,23 +109,23 @@ const stripeWebhookEndpoint = async (req, res, next) => {
       });
 
       if (orderRes.rows.length === 0) {
-        console.log(`Order not found for stripe_payment_intent_id: ${stripePaymentIntentId}`);
+        logger.info({ stripePaymentIntentId }, 'Order not found for stripe_payment_intent_id');
         return res.status(200).json({ received: true, processed: false, reason: 'order not found' });
       }
 
       const order = orderRes.rows[0];
 
       if (order.status === 'paid') {
-        console.log(`Order ${order.id} already paid, webhook acknowledged`);
+        logger.info({ orderId: order.id }, 'Order already paid, webhook acknowledged');
         return res.status(200).json({ received: true, processed: false, reason: 'already paid' });
       }
 
       try {
         const result = await processOrderConfirmation(order.id, stripePaymentIntentId);
-        console.log(`Order ${order.id} confirmed via Stripe webhook:`, result);
+        logger.info({ orderId: order.id, result }, 'Order confirmed via Stripe webhook');
         return res.status(200).json({ received: true, processed: true, orderId: order.id });
       } catch (confirmErr) {
-        console.error(`Failed to confirm order ${order.id}:`, confirmErr);
+        logger.error({ err: confirmErr, orderId: order.id }, 'Failed to confirm order');
         return res.status(200).json({ received: true, processed: false, reason: confirmErr.message });
       }
     }
@@ -132,7 +133,7 @@ const stripeWebhookEndpoint = async (req, res, next) => {
     // For other event types, acknowledge receipt
     return res.status(200).json({ received: true, processed: false, reason: 'unhandled event type' });
   } catch (err) {
-    console.error('Stripe webhook processing error:', err);
+    logger.error({ err }, 'Stripe webhook processing error');
     return res.status(200).json({ received: true, processed: false, error: err.message });
   }
 };

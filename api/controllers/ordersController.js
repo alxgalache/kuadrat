@@ -1,4 +1,5 @@
 const { db } = require('../config/database');
+const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
 const { sendPurchaseConfirmation, sendPaymentConfirmation, sendTrackingUpdateEmail, sendItemsSentEmail } = require('../services/emailService');
 const { sendBuyerToSellerContactEmail } = require('../services/emailService');
@@ -466,7 +467,7 @@ const placeOrder = async (req, res, next) => {
           args: [stripeCustomerId, orderId],
         });
       } catch (custErr) {
-        console.warn('Failed to find/create Stripe customer:', custErr.message);
+        logger.warn({ err: custErr }, 'Failed to find/create Stripe customer');
       }
 
       // Build Stripe shipping object from delivery or invoicing address
@@ -511,7 +512,7 @@ const placeOrder = async (req, res, next) => {
         });
       } catch (stripeUpdateErr) {
         // Log but don't fail the order - the payment can still proceed
-        console.warn('Failed to update Stripe PaymentIntent with customer data:', stripeUpdateErr.message);
+        logger.warn({ err: stripeUpdateErr }, 'Failed to update Stripe PaymentIntent with customer data');
       }
     }
 
@@ -1321,10 +1322,10 @@ const checkAndUpdateOrderStatus = async (orderId) => {
         sql: 'UPDATE orders SET status = ? WHERE id = ?',
         args: ['sent', orderId],
       });
-      console.log(`Order #${orderId} status updated to 'sent' - all items have been sent`);
+      logger.info({ orderId }, 'Order status updated to sent - all items have been sent');
     }
   } catch (error) {
-    console.error('Error checking and updating order status:', error);
+    logger.error({ err: error }, 'Error checking and updating order status');
     // Don't throw - this is a background operation
   }
 };
@@ -1432,7 +1433,7 @@ const updateItemTracking = async (req, res, next) => {
         try {
           await sendTrackingUpdateEmail(order, [updatedItem]);
         } catch (emailError) {
-          console.error('Error sending tracking update email:', emailError);
+          logger.error({ err: emailError }, 'Error sending tracking update email');
           // Don't fail the request if email fails
         }
       }
@@ -1567,7 +1568,7 @@ const updateItemStatus = async (req, res, next) => {
         try {
           await sendItemsSentEmail(order, [updatedItem]);
         } catch (emailError) {
-          console.error('Error sending items sent email:', emailError);
+          logger.error({ err: emailError }, 'Error sending items sent email');
           // Don't fail the request if email fails
         }
       }
@@ -1792,7 +1793,7 @@ const updateOrderStatus = async (req, res, next) => {
       try {
         await sendItemsSentEmail(order, sellerItems);
       } catch (emailError) {
-        console.error('Error sending items sent email:', emailError);
+        logger.error({ err: emailError }, 'Error sending items sent email');
         // Don't fail the request if email fails
       }
     }
@@ -1965,16 +1966,16 @@ async function confirmOrderPayment(req, res, next) {
       });
       const items = [...artOrderItemsResult.rows, ...othersOrderItemsResult.rows];
 
-      // Unique sellers
-      const sellersInfo = [];
-      for (const item of items) {
-        if (item.seller_id && !sellersInfo.find(s => s.id === item.seller_id)) {
-          const sellerResult = await db.execute({ sql: 'SELECT email, full_name FROM users WHERE id = ?', args: [item.seller_id] });
-          if (sellerResult.rows.length > 0) {
-            const seller = sellerResult.rows[0];
-            sellersInfo.push({ email: seller.email, name: seller.full_name, id: item.seller_id });
-          }
-        }
+      // Batch-load all seller info in a single query (avoids N+1)
+      const uniqueSellerIds = [...new Set(items.map(i => i.seller_id).filter(Boolean))];
+      let sellersInfo = [];
+      if (uniqueSellerIds.length > 0) {
+        const placeholders = uniqueSellerIds.map(() => '?').join(',');
+        const sellersResult = await db.execute({
+          sql: `SELECT id, email, full_name FROM users WHERE id IN (${placeholders})`,
+          args: uniqueSellerIds,
+        });
+        sellersInfo = sellersResult.rows.map(s => ({ email: s.email, name: s.full_name, id: s.id }));
       }
 
       const buyerEmail = orderRow.email || orderRow.guest_email || null;
@@ -1992,7 +1993,7 @@ async function confirmOrderPayment(req, res, next) {
         });
       }
     } catch (emailErr) {
-      console.error('Failed to send order confirmation email after payment:', emailErr);
+      logger.error({ err: emailErr }, 'Failed to send order confirmation email after payment');
       // Do not fail the request
     }
 

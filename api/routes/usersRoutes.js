@@ -5,10 +5,11 @@ const {
   getAuthorBySlug,
   getAuthorImage,
 } = require('../controllers/usersController');
+const { cacheControl } = require('../middleware/cache');
 
-// Public routes
-router.get('/authors', getVisibleAuthors);
-router.get('/authors/images/:filename', getAuthorImage);
-router.get('/authors/:slug', getAuthorBySlug);
+// Public routes with caching
+router.get('/authors', cacheControl({ maxAge: 300 }), getVisibleAuthors);
+router.get('/authors/images/:filename', cacheControl({ maxAge: 86400 }), getAuthorImage);
+router.get('/authors/:slug', cacheControl({ maxAge: 300 }), getAuthorBySlug);
 
 module.exports = router;

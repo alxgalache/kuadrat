@@ -11,6 +11,7 @@ const {
   getOthersProductsByAuthorSlug,
 } = require('../controllers/othersController');
 const { authenticate, requireSeller } = require('../middleware/authorization');
+const { cacheControl } = require('../middleware/cache');
 
 // Multer configuration for image uploads (PNG, JPG, WEBP) up to 10MB (memory storage)
 const upload = multer({
@@ -23,10 +24,10 @@ const upload = multer({
   },
 });
 
-// Public routes
-router.get('/', getAllOthersProducts);
-router.get('/images/:basename', getOthersProductImage);
-router.get('/author/:slug', getOthersProductsByAuthorSlug);
+// Public routes with caching
+router.get('/', cacheControl({ maxAge: 60 }), getAllOthersProducts);
+router.get('/images/:basename', cacheControl({ maxAge: 86400 }), getOthersProductImage);
+router.get('/author/:slug', cacheControl({ maxAge: 120 }), getOthersProductsByAuthorSlug);
 
 // Protected routes - Seller only
 router.get('/seller/me', authenticate, requireSeller, getSellerOthersProducts);

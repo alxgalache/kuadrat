@@ -2,6 +2,7 @@ const { createClient } = require('@libsql/client');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
+const logger = require('./logger');
 
 // Create Turso database client
 const db = createClient({
@@ -15,7 +16,7 @@ const db = createClient({
 // When deploying to a new environment, this creates the full schema from scratch.
 async function initializeDatabase() {
   try {
-    console.log('Initializing database schema...');
+    logger.info('Initializing database schema...');
 
     // ── Users ────────────────────────────────────────────────
     await db.execute(`
@@ -478,13 +479,43 @@ async function initializeDatabase() {
     `);
 
     // ── Indexes ──────────────────────────────────────────────
+    // Shipping
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_method ON shipping_zones(shipping_method_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_seller ON shipping_zones(seller_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_country ON shipping_zones(country)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_postal ON shipping_zones(postal_code)`);
-    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_token ON orders(token)`);
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_users_password_setup_token ON users(password_setup_token)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_szpc_zone_ref ON shipping_zones_postal_codes(shipping_zone_id, ref_type)`);
+
+    // Orders
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_token ON orders(token)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_stripe_pi ON orders(stripe_payment_intent_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_art_order_items_order ON art_order_items(order_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_other_order_items_order ON other_order_items(order_id)`);
+
+    // Products
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_art_seller ON art(seller_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_art_status ON art(status, visible, removed)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_others_seller ON others(seller_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_others_status ON others(status, visible, removed)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_other_vars_other ON other_vars(other_id)`);
+
+    // Users
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_users_password_setup_token ON users(password_setup_token)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
+
+    // Auctions
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_auction_bids_auction ON auction_bids(auction_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_auction_bids_buyer ON auction_bids(auction_buyer_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_auction_buyers_auction ON auction_buyers(auction_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_auctions_status ON auctions(status)`);
+
+    // Events
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendees_event ON event_attendees(event_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)`);
+
+    // Postal codes
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_code_country ON postal_codes(postal_code, country)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_province_country ON postal_codes(province, country)`);
 
@@ -494,7 +525,7 @@ async function initializeDatabase() {
       if (result.rows[0].count === 0) {
         await db.execute(`INSERT INTO orders (id, total_price, token, status) VALUES (999, 0, '__init__', 'completed')`);
         await db.execute(`DELETE FROM orders WHERE id = 999`);
-        console.log('Set orders auto-increment to start from 1000');
+        logger.info('Set orders auto-increment to start from 1000');
       }
     } catch (err) {
       // Table may already have data, skip silently
@@ -503,9 +534,9 @@ async function initializeDatabase() {
     // ── Import postal codes from ES.csv if table is empty ────
     await importPostalCodes();
 
-    console.log('Database schema initialized successfully!');
+    logger.info('Database schema initialized successfully!');
   } catch (error) {
-    console.error('Error initializing database:', error);
+    logger.error({ err: error }, 'Error initializing database');
     throw error;
   }
 }
@@ -521,11 +552,11 @@ async function importPostalCodes() {
 
     const csvPath = path.join(__dirname, '..', 'migrations', 'ES.csv');
     if (!fs.existsSync(csvPath)) {
-      console.log('ES.csv not found, skipping postal codes import');
+      logger.info('ES.csv not found, skipping postal codes import');
       return;
     }
 
-    console.log('Importing postal codes from ES.csv...');
+    logger.info('Importing postal codes from ES.csv...');
     const content = fs.readFileSync(csvPath, 'utf-8');
     const lines = content.split('\n').filter(line => line.trim());
 
@@ -549,9 +580,9 @@ async function importPostalCodes() {
       imported += batch.length;
     }
 
-    console.log(`Imported ${imported} postal codes from ES.csv`);
+    logger.info({ count: imported }, 'Imported postal codes from ES.csv');
   } catch (err) {
-    console.error('Error importing postal codes:', err.message);
+    logger.error({ err }, 'Error importing postal codes');
   }
 }
 

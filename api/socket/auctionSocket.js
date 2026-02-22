@@ -1,27 +1,29 @@
+const logger = require('../config/logger');
+
 /**
  * Auction Socket.IO module
  * Handles real-time auction events: bids, price updates, extensions, endings
  */
 module.exports = function setupAuctionSocket(io) {
   io.on("connection", (socket) => {
-    console.log("Auction socket connected:", socket.id);
+    logger.debug({ socketId: socket.id }, 'Auction socket connected');
 
     socket.on("disconnect", () => {
-      console.log("Auction socket disconnected:", socket.id);
+      logger.debug({ socketId: socket.id }, 'Auction socket disconnected');
     });
 
     // Join an auction room to receive real-time updates
     socket.on("join-auction", (auctionId) => {
       if (!auctionId) return;
       socket.join(`auction-${auctionId}`);
-      console.log(`Socket ${socket.id} joined auction ${auctionId}`);
+      logger.debug({ socketId: socket.id, auctionId }, 'Socket joined auction');
     });
 
     // Leave an auction room
     socket.on("leave-auction", (auctionId) => {
       if (!auctionId) return;
       socket.leave(`auction-${auctionId}`);
-      console.log(`Socket ${socket.id} left auction ${auctionId}`);
+      logger.debug({ socketId: socket.id, auctionId }, 'Socket left auction');
     });
   });
 

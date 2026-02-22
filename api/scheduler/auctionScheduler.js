@@ -1,6 +1,8 @@
 const cron = require('node-cron');
 const { db } = require('../config/database');
 const auctionService = require('../services/auctionService');
+const config = require('../config/env');
+const logger = require('../config/logger');
 
 /**
  * Auction lifecycle scheduler
@@ -24,13 +26,13 @@ module.exports = function startAuctionScheduler(app) {
 
       for (const auction of scheduledAuctions.rows) {
         try {
-          console.log(`[Scheduler] Starting auction ${auction.id}`);
+          logger.info({ auctionId: auction.id }, 'Scheduler: Starting auction');
           await auctionService.startAuction(auction.id);
           if (auctionSocket) {
             auctionSocket.broadcastAuctionStarted(auction.id);
           }
         } catch (err) {
-          console.error(`[Scheduler] Error starting auction ${auction.id}:`, err.message);
+          logger.error({ auctionId: auction.id, err }, 'Scheduler: Error starting auction');
         }
       }
 
@@ -42,18 +44,18 @@ module.exports = function startAuctionScheduler(app) {
 
       for (const auction of endedAuctions.rows) {
         try {
-          console.log(`[Scheduler] Ending auction ${auction.id}`);
+          logger.info({ auctionId: auction.id }, 'Scheduler: Ending auction');
           await processAuctionEnd(auction.id, app);
         } catch (err) {
-          console.error(`[Scheduler] Error ending auction ${auction.id}:`, err.message);
+          logger.error({ auctionId: auction.id, err }, 'Scheduler: Error ending auction');
         }
       }
     } catch (err) {
-      console.error('[Scheduler] Error in auction scheduler tick:', err.message);
+      logger.error({ err }, 'Scheduler: Error in auction scheduler tick');
     }
   });
 
-  console.log('[Scheduler] Auction scheduler started (runs every 30 seconds)');
+  logger.info('Auction scheduler started (runs every 30 seconds)');
 };
 
 /**
@@ -82,7 +84,7 @@ async function processAuctionEnd(auctionId, app) {
       const paymentData = await auctionService.getBuyerPaymentData(winner.buyerId);
 
       if (!paymentData || !paymentData.stripe_customer_id || !paymentData.stripe_payment_method_id) {
-        console.error(`[Scheduler] No payment data for buyer ${winner.buyerId} in auction ${auctionId}`);
+        logger.error({ buyerId: winner.buyerId, auctionId }, 'Scheduler: No payment data for buyer');
         continue;
       }
 
@@ -117,27 +119,26 @@ async function processAuctionEnd(auctionId, app) {
             auctionName: auction.name,
             productName: winner.productName || 'Producto',
             winningAmount: winner.amount,
-          }).catch(err => console.error('[Scheduler] Error sending winner email:', err.message));
+          }).catch(err => logger.error({ err }, 'Scheduler: Error sending winner email'));
         }
 
-        console.log(`[Scheduler] Successfully charged winner ${winner.buyerEmail} for ${winner.amount} EUR`);
+        logger.info({ email: winner.buyerEmail, amount: winner.amount }, 'Scheduler: Successfully charged winner');
       } else if (chargeResult.requiresAction) {
         // SCA required - send email with payment link
-        console.log(`[Scheduler] SCA required for winner ${winner.buyerEmail}`);
+        logger.info({ email: winner.buyerEmail }, 'Scheduler: SCA required for winner');
         if (emailService.sendSCARequiredEmail) {
-          const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
           await emailService.sendSCARequiredEmail({
             email: winner.buyerEmail,
             firstName: winner.buyerFirstName,
-            paymentUrl: `${clientUrl}/subastas/pago?pi=${chargeResult.paymentIntentId}`,
+            paymentUrl: `${config.clientUrl}/subastas/pago?pi=${chargeResult.paymentIntentId}`,
             auctionName: auction.name,
             productName: winner.productName || 'Producto',
             amount: winner.amount,
-          }).catch(err => console.error('[Scheduler] Error sending SCA email:', err.message));
+          }).catch(err => logger.error({ err }, 'Scheduler: Error sending SCA email'));
         }
       }
     } catch (err) {
-      console.error(`[Scheduler] Error processing winner for product ${winner.productId}:`, err.message);
+      logger.error({ productId: winner.productId, err }, 'Scheduler: Error processing winner');
     }
   }
 
@@ -156,7 +157,7 @@ async function processAuctionEnd(auctionId, app) {
   for (const buyer of allBuyers.rows) {
     if (!winnerBuyerIds.has(buyer.id)) {
       // This buyer didn't win - could send a notification email here
-      console.log(`[Scheduler] Buyer ${buyer.email} did not win in auction ${auctionId}`);
+      logger.info({ email: buyer.email, auctionId }, 'Scheduler: Buyer did not win');
     }
   }
 
@@ -165,5 +166,5 @@ async function processAuctionEnd(auctionId, app) {
     auctionSocket.broadcastAuctionEnded(auctionId);
   }
 
-  console.log(`[Scheduler] Auction ${auctionId} processing complete`);
+  logger.info({ auctionId }, 'Scheduler: Auction processing complete');
 }

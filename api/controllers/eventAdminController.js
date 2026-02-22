@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
+const logger = require('../config/logger');
 
 // ---------------------------------------------------------------------------
 // POST /api/admin/events
@@ -190,7 +191,7 @@ const startEvent = async (req, res, next) => {
           maxParticipants: current.max_attendees || 0,
         });
       } catch (lkError) {
-        console.error('Error creating LiveKit room:', lkError);
+        logger.error({ err: lkError }, 'Error creating LiveKit room');
         return res.status(500).json({
           success: false,
           title: 'Error de sala',
@@ -245,7 +246,7 @@ const endEvent = async (req, res, next) => {
       try {
         await livekitService.deleteRoom(current.livekit_room_name);
       } catch (lkError) {
-        console.error('Error deleting LiveKit room:', lkError);
+        logger.error({ err: lkError }, 'Error deleting LiveKit room');
         // Don't fail, continue ending the event
       }
     }

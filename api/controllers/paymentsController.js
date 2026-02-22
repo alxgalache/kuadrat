@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { db } = require('../config/database');
+const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
 const {
   createRevolutOrder,
@@ -237,15 +238,15 @@ const initRevolutOrderEndpoint = async (req, res, next) => {
 // Signature header format: "v1={hex_signature}" (may contain multiple comma-separated)
 function verifyRevolutWebhookSignature(rawPayload, signatureHeader, timestampHeader, secret) {
   if (!secret) {
-    console.warn('REVOLUT_WEBHOOK_SECRET not configured, skipping signature verification');
+    logger.warn('REVOLUT_WEBHOOK_SECRET not configured, skipping signature verification');
     return true;
   }
   if (!signatureHeader) {
-    console.warn('Missing Revolut-Signature header');
+    logger.warn('Missing Revolut-Signature header');
     return false;
   }
   if (!timestampHeader) {
-    console.warn('Missing Revolut-Request-Timestamp header');
+    logger.warn('Missing Revolut-Request-Timestamp header');
     return false;
   }
 
@@ -254,7 +255,7 @@ function verifyRevolutWebhookSignature(rawPayload, signatureHeader, timestampHea
   const now = Date.now();
   const fiveMinutesMs = 5 * 60 * 1000;
   if (Math.abs(now - timestamp) > fiveMinutesMs) {
-    console.warn('Webhook timestamp outside 5-minute tolerance:', { timestamp, now });
+    logger.warn({ timestamp, now }, 'Webhook timestamp outside 5-minute tolerance');
     return false;
   }
 
@@ -284,7 +285,7 @@ function verifyRevolutWebhookSignature(rawPayload, signatureHeader, timestampHea
     }
   }
 
-  console.warn('No matching signature found');
+  logger.warn('No matching signature found');
   return false;
 }
 
@@ -335,7 +336,10 @@ async function processOrderConfirmation(orderId, paymentId) {
     });
   }
 
-  // Inventory updates
+  // Inventory updates (batched for atomicity)
+  const { createBatch } = require('../utils/transaction');
+  const inventoryBatch = createBatch();
+
   // 1) Mark art items as sold
   const artItemsRes = await db.execute({
     sql: 'SELECT aoi.art_id FROM art_order_items aoi WHERE aoi.order_id = ?',
@@ -343,10 +347,10 @@ async function processOrderConfirmation(orderId, paymentId) {
   });
   const uniqueArtIds = [...new Set(artItemsRes.rows.map(r => r.art_id))];
   for (const artId of uniqueArtIds) {
-    await db.execute({ sql: 'UPDATE art SET is_sold = 1 WHERE id = ?', args: [artId] });
+    inventoryBatch.add('UPDATE art SET is_sold = 1 WHERE id = ?', [artId]);
   }
 
-  // 2) Decrement others variants stock and mark product as sold if out of stock
+  // 2) Decrement others variants stock — read current stock first, then batch all updates
   const otherItemsRes = await db.execute({
     sql: 'SELECT other_var_id FROM other_order_items WHERE order_id = ?',
     args: [orderId],
@@ -355,17 +359,43 @@ async function processOrderConfirmation(orderId, paymentId) {
   for (const row of otherItemsRes.rows) {
     counts.set(row.other_var_id, (counts.get(row.other_var_id) || 0) + 1);
   }
-  for (const [variantId, qty] of counts.entries()) {
-    const varRes = await db.execute({ sql: 'SELECT id, stock, other_id FROM other_vars WHERE id = ?', args: [variantId] });
-    if (varRes.rows.length) {
-      const v = varRes.rows[0];
+
+  // Pre-load all variant data in a single query
+  const variantIds = [...counts.keys()];
+  if (variantIds.length > 0) {
+    const varPlaceholders = variantIds.map(() => '?').join(',');
+    const allVarsRes = await db.execute({
+      sql: `SELECT id, stock, other_id FROM other_vars WHERE id IN (${varPlaceholders})`,
+      args: variantIds,
+    });
+
+    // Track which parent products need stock check
+    const parentProductIds = new Set();
+    for (const v of allVarsRes.rows) {
+      const qty = counts.get(v.id) || 0;
       const newStock = Math.max(0, (v.stock || 0) - qty);
-      await db.execute({ sql: 'UPDATE other_vars SET stock = ? WHERE id = ?', args: [newStock, variantId] });
-      const totalRes = await db.execute({ sql: 'SELECT SUM(stock) as total_stock FROM other_vars WHERE other_id = ?', args: [v.other_id] });
+      inventoryBatch.add('UPDATE other_vars SET stock = ? WHERE id = ?', [newStock, v.id]);
+      parentProductIds.add(v.other_id);
+    }
+
+    // Execute all inventory updates atomically
+    if (inventoryBatch.size() > 0) {
+      await inventoryBatch.execute();
+    }
+
+    // Check if parent products are now out of stock (separate reads after batch)
+    for (const otherId of parentProductIds) {
+      const totalRes = await db.execute({
+        sql: 'SELECT SUM(stock) as total_stock FROM other_vars WHERE other_id = ?',
+        args: [otherId],
+      });
       if ((totalRes.rows[0]?.total_stock || 0) <= 0) {
-        await db.execute({ sql: 'UPDATE others SET is_sold = 1 WHERE id = ?', args: [v.other_id] });
+        await db.execute({ sql: 'UPDATE others SET is_sold = 1 WHERE id = ?', args: [otherId] });
       }
     }
+  } else if (inventoryBatch.size() > 0) {
+    // Only art items, no variants — still execute the batch
+    await inventoryBatch.execute();
   }
 
   // Send order confirmation email
@@ -397,15 +427,16 @@ async function processOrderConfirmation(orderId, paymentId) {
     });
     const items = [...artOrderItemsResult.rows, ...othersOrderItemsResult.rows];
 
-    const sellersInfo = [];
-    for (const item of items) {
-      if (item.seller_id && !sellersInfo.find(s => s.id === item.seller_id)) {
-        const sellerResult = await db.execute({ sql: 'SELECT email, full_name FROM users WHERE id = ?', args: [item.seller_id] });
-        if (sellerResult.rows.length > 0) {
-          const seller = sellerResult.rows[0];
-          sellersInfo.push({ email: seller.email, name: seller.full_name, id: item.seller_id });
-        }
-      }
+    // Batch-load all seller info in a single query (avoids N+1)
+    const uniqueSellerIds = [...new Set(items.map(i => i.seller_id).filter(Boolean))];
+    let sellersInfo = [];
+    if (uniqueSellerIds.length > 0) {
+      const placeholders = uniqueSellerIds.map(() => '?').join(',');
+      const sellersResult = await db.execute({
+        sql: `SELECT id, email, full_name FROM users WHERE id IN (${placeholders})`,
+        args: uniqueSellerIds,
+      });
+      sellersInfo = sellersResult.rows.map(s => ({ email: s.email, name: s.full_name, id: s.id }));
     }
 
     const buyerEmail = orderRow.email || orderRow.guest_email || null;
@@ -423,7 +454,7 @@ async function processOrderConfirmation(orderId, paymentId) {
       });
     }
   } catch (emailErr) {
-    console.error('Failed to send order confirmation email:', emailErr);
+    logger.error({ err: emailErr }, 'Failed to send order confirmation email');
   }
 
   return { success: true, order: { id: orderId, status: 'paid' }, alreadyPaid: false };
@@ -440,20 +471,16 @@ const revolutWebhookEndpoint = async (req, res, next) => {
     const timestampHeader = req.headers['revolut-request-timestamp'] || '';
     const event = req.body;
 
-    console.log('Revolut webhook received:', rawBody);
-    console.log('Event type:', event.event);
-    console.log('Timestamp:', timestampHeader);
+    logger.info({ rawBody, eventType: event.event, timestamp: timestampHeader }, 'Revolut webhook received');
 
     // Verify signature if secret is configured
     if (REVOLUT_WEBHOOK_SECRET) {
       const isValid = verifyRevolutWebhookSignature(rawBody, signatureHeader, timestampHeader, REVOLUT_WEBHOOK_SECRET);
       if (!isValid) {
-        console.error('Invalid webhook signature');
-        console.error('Raw body length:', rawBody.length);
-        console.error('Signature header:', signatureHeader);
+        logger.error({ rawBodyLength: rawBody.length, signatureHeader }, 'Invalid webhook signature');
         return res.status(401).json({ error: 'Invalid signature' });
       }
-      console.log('Webhook signature verified successfully');
+      logger.info('Webhook signature verified successfully');
     }
 
     // Handle different event types
@@ -464,7 +491,7 @@ const revolutWebhookEndpoint = async (req, res, next) => {
       const revolutOrderId = event.order_id;
 
       if (!revolutOrderId) {
-        console.error('Webhook event missing order_id:', event);
+        logger.error({ event }, 'Webhook event missing order_id');
         return res.status(200).json({ received: true, processed: false, reason: 'missing order_id' });
       }
 
@@ -475,7 +502,7 @@ const revolutWebhookEndpoint = async (req, res, next) => {
       });
 
       if (orderRes.rows.length === 0) {
-        console.log(`Order not found for revolut_order_id: ${revolutOrderId}`);
+        logger.info({ revolutOrderId }, 'Order not found for revolut_order_id');
         // This might happen if the order hasn't been created yet (race condition)
         // Return 200 to acknowledge receipt, but note it wasn't processed
         return res.status(200).json({ received: true, processed: false, reason: 'order not found' });
@@ -485,7 +512,7 @@ const revolutWebhookEndpoint = async (req, res, next) => {
 
       // If already paid, nothing to do
       if (order.status === 'paid') {
-        console.log(`Order ${order.id} already paid, webhook acknowledged`);
+        logger.info({ orderId: order.id }, 'Order already paid, webhook acknowledged');
         return res.status(200).json({ received: true, processed: false, reason: 'already paid' });
       }
 
@@ -498,7 +525,7 @@ const revolutWebhookEndpoint = async (req, res, next) => {
             paymentId = payments[0].id || payments[0].payment_id || payments[0].token;
           }
         } catch (e) {
-          console.error('Failed to fetch payment ID:', e);
+          logger.error({ err: e }, 'Failed to fetch payment ID');
         }
       }
 
@@ -510,23 +537,23 @@ const revolutWebhookEndpoint = async (req, res, next) => {
             paymentId = revOrder.payments[0].id || revOrder.payments[0].payment_id;
           }
         } catch (e) {
-          console.error('Failed to fetch order for payment ID:', e);
+          logger.error({ err: e }, 'Failed to fetch order for payment ID');
         }
       }
 
       // Generate a payment ID if we still don't have one
       if (!paymentId) {
         paymentId = `webhook-${revolutOrderId}-${Date.now()}`;
-        console.warn(`Could not get payment ID, using generated: ${paymentId}`);
+        logger.warn({ paymentId }, 'Could not get payment ID, using generated');
       }
 
       // Process the order confirmation
       try {
         const result = await processOrderConfirmation(order.id, paymentId);
-        console.log(`Order ${order.id} confirmed via webhook:`, result);
+        logger.info({ orderId: order.id, result }, 'Order confirmed via webhook');
         return res.status(200).json({ received: true, processed: true, orderId: order.id });
       } catch (confirmErr) {
-        console.error(`Failed to confirm order ${order.id}:`, confirmErr);
+        logger.error({ err: confirmErr, orderId: order.id }, 'Failed to confirm order');
         // Still return 200 to acknowledge the webhook
         return res.status(200).json({ received: true, processed: false, reason: confirmErr.message });
       }
@@ -535,7 +562,7 @@ const revolutWebhookEndpoint = async (req, res, next) => {
     // For other events, just acknowledge receipt
     return res.status(200).json({ received: true, processed: false, reason: 'unhandled event type' });
   } catch (err) {
-    console.error('Webhook processing error:', err);
+    logger.error({ err }, 'Webhook processing error');
     // Always return 200 to prevent Revolut from retrying
     return res.status(200).json({ received: true, processed: false, error: err.message });
   }

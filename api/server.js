@@ -8,8 +8,13 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
-require('dotenv').config();
+const compression = require('compression');
+const pinoHttp = require('pino-http');
+
+// Centralized config and logger
+const config = require('./config/env');
+const logger = require('./config/logger');
+const { setupGracefulShutdown } = require('./config/shutdown');
 
 // Import configurations and middleware
 const { initializeDatabase } = require('./config/database');
@@ -50,17 +55,20 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: config.clientUrl,
     methods: ['GET', 'POST'],
   },
 });
+
+// Response compression (before other middleware for maximum effect)
+app.use(compression());
 
 // Middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: config.clientUrl,
   credentials: true,
 }));
 
@@ -86,12 +94,30 @@ app.use((req, res, next) => {
 // Apply general rate limiter to all requests
 app.use(generalLimiter);
 
-app.use(morgan('dev'));
+// Structured request logging (replaces morgan)
+app.use(pinoHttp({
+  logger,
+  autoLogging: {
+    ignore: (req) => req.url === '/health',
+  },
+  serializers: {
+    req(req) {
+      return {
+        method: req.method,
+        url: req.url,
+        ...(req.headers['user-agent'] && { userAgent: req.headers['user-agent'] }),
+      };
+    },
+    res(res) {
+      return { statusCode: res.statusCode };
+    },
+  },
+}));
 
 // Capture raw body for webhook signature verification
 // The verify callback stores the raw buffer before JSON parsing
 app.use(express.json({
-  limit: '15mb', // Increase limit for larger payloads
+  limit: '15mb',
   verify: (req, res, buf, encoding) => {
     // Store raw body for routes that need it (e.g., webhook signature verification)
     req.rawBody = buf.toString(encoding || 'utf8');
@@ -131,12 +157,12 @@ app.get('/debug-sentry', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/products', productsRoutes); // Keep old routes for backward compatibility temporarily
+app.use('/api/products', productsRoutes);
 app.use('/api/art', artRoutes);
 app.use('/api/others', othersRoutes);
 app.use('/api/orders', sensitiveLimiter, ordersRoutes);
-app.use('/api/payments', paymentsRoutes); // Rate limiters applied per-endpoint in paymentsRoutes
-app.use('/api/payments/stripe', stripePaymentsRoutes); // Stripe payment routes
+app.use('/api/payments', paymentsRoutes);
+app.use('/api/payments/stripe', stripePaymentsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/seller', sellerRoutes);
@@ -155,8 +181,6 @@ Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
 // Initialize database and start server
-const PORT = process.env.PORT || 3001;
-
 async function startServer() {
   try {
     // Initialize database schema
@@ -166,16 +190,18 @@ async function startServer() {
     await verifyTransporter();
 
     // Start server
-    server.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV}`);
-      console.log(`Socket.IO is ready for real-time communication`);
+    server.listen(config.port, () => {
+      logger.info({ port: config.port, env: config.nodeEnv }, 'Server started');
+      logger.info('Socket.IO ready for real-time communication');
 
       // Start auction lifecycle scheduler
       startAuctionScheduler(app);
     });
+
+    // Register graceful shutdown
+    setupGracefulShutdown(server, io);
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logger.fatal({ err: error }, 'Failed to start server');
     process.exit(1);
   }
 }
