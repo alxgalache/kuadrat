@@ -28,14 +28,14 @@ export default function GalleryMasPage() {
 
   const handleFilterByAuthor = (authorSlug) => {
     if (selectedAuthorSlug === authorSlug) {
-      router.push('/galeria/mas')
+      router.push('/tienda')
     } else {
-      router.push(`/galeria/mas/autor/${authorSlug}`)
+      router.push(`/tienda/autor/${authorSlug}`)
     }
   }
 
   const handleClearFilter = () => {
-    router.push('/galeria/mas')
+    router.push('/tienda')
   }
 
   if (loading && page === 1) {
@@ -103,7 +103,7 @@ export default function GalleryMasPage() {
                 products={products}
                 isFading={isFading}
                 getImageUrl={getOthersImageUrl}
-                baseRoute="/galeria/mas"
+                baseRoute="/tienda"
               />
             </div>
           </main>

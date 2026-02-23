@@ -2,7 +2,7 @@ export const metadata = {
   title: 'Subastas de Arte',
   description: 'Participa en subastas de arte en vivo. Puja por obras únicas de artistas emergentes y consagrados en 140d. Subastas online de arte original.',
   alternates: {
-    canonical: '/subastas',
+    canonical: '/eventos',
   },
   openGraph: {
     title: 'Subastas de Arte | 140d',

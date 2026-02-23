@@ -47,3 +47,6 @@ api/uploads/**/*
 # Docker volumes
 docker-volumes/
 data/
+
+# Claude
+.claude/

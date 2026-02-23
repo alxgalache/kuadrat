@@ -350,7 +350,7 @@ export default function EventDetail({ params }) {
   return (
     <div className="bg-white">
       <Breadcrumbs items={[
-        { name: 'Espacios', href: '/espacios' },
+        { name: 'Live', href: '/live' },
         { name: event.title },
       ]} />
 

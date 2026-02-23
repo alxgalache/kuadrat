@@ -152,7 +152,7 @@ export default function SubastasPage() {
           return (
             <Link
               key={a.id}
-              href={`/subastas/${a.id}`}
+              href={`/eventos/${a.id}`}
               className="block group"
             >
               <div className="rounded-lg border border-gray-200 overflow-hidden p-5">

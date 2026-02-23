@@ -135,7 +135,7 @@ export default function EspaciosPage() {
         {eventsForDate.map((event) => (
           <Link
             key={event.id}
-            href={`/espacios/${event.slug}`}
+            href={`/live/${event.slug}`}
             className="block group"
           >
             {/* Item 2: horizontal card with image on right + gradient — Item 3: no hover shadow */}

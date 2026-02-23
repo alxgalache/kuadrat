@@ -1,0 +1,89 @@
+schema: spec-driven
+
+context: |
+  ## Project: Kuadrat — Minimalist Online Art Gallery (Marketplace)
+  Artists (Sellers) list artwork, Buyers purchase it, the dealer takes a commission.
+
+  ## Tech Stack
+  - Backend: Express.js (Node.js 20), Turso DB (libsql/client, SQLite-compatible)
+  - Frontend: Next.js 16, React 19, JavaScript (NO TypeScript), TailwindCSS, App Router
+  - Auth: Passport.js (passport-local + passport-jwt), JWT tokens
+  - Payments: Stripe (primary), Revolut (legacy)
+  - Real-time: Socket.IO (auctions + event notifications)
+  - Streaming: LiveKit (live events, guest access)
+  - Email: Nodemailer with SMTP
+  - Logging: Pino (JSON in prod, pretty in dev)
+  - Validation: Zod schemas
+  - Monitoring: Sentry (client + server)
+
+  ## Design Constraints
+  - Extreme minimalism: use TailwindCSS UI Blocks as-is, no custom modifications
+  - Light theme only — no dark mode
+  - All UI text in Spanish (es-ES locale)
+  - No TypeScript — plain JavaScript only
+
+  ## Architecture
+  Monorepo with two roots: `api/` (backend) and `client/` (frontend).
+
+  ### Backend Key Structure
+  - `api/config/database.js` — DB schema, single source of truth (idempotent, IF NOT EXISTS)
+  - `api/config/env.js` — centralized env config with validation (use via `config.*`)
+  - `api/config/logger.js` — Pino logger (use via `logger.*`, never console.log)
+  - `api/controllers/` — request handlers (throw ApiError, use response helpers)
+  - `api/routes/` — Express routers (apply validate() + auth middleware here)
+  - `api/routes/admin/` — split admin routes; auth applied once in `routes/admin/index.js`
+  - `api/services/` — business logic and external integrations
+  - `api/validators/` — Zod schemas for request validation
+  - `api/middleware/` — errorHandler, authorization, adminAuth, validate, cache, timeout
+  - `api/utils/response.js` — sendSuccess(), sendPaginated(), sendCreated()
+  - `api/utils/transaction.js` — createBatch() for atomic multi-table operations
+  - `api/socket/` — Socket.IO handlers (auctions, events)
+  - `api/scheduler/auctionScheduler.js` — cron (every 30s) for auction lifecycle
+
+  ### Frontend Key Structure
+  - `client/app/` — Next.js App Router pages (admin/, galeria/, subastas/, espacios/, orders/, seller/)
+  - `client/components/` — shared UI components
+  - `client/contexts/` — CartContext, AuthContext, NotificationContext, BannerNotificationContext
+  - `client/hooks/` — useDebounce, usePostalCodeValidation, useAuctionSocket, useEventSocket
+  - `client/lib/api.js` — centralized API client (request deduplication, global 401/429 handling)
+  - `client/lib/constants.js` — app-wide magic number constants
+
+  ## Backend Patterns (MUST follow)
+  - Logging: `const logger = require('../config/logger')` — no console.log in production code
+  - Config: `const config = require('../config/env')` — no direct process.env reads
+  - Validation: Zod schemas in `api/validators/`, applied via `validate()` in routes
+  - Responses: use sendSuccess(), sendPaginated(), sendCreated() — never raw res.json()
+  - Errors: throw new ApiError(...) in controllers, caught by global errorHandler middleware
+  - Transactions: createBatch() from `api/utils/transaction.js` for multi-table atomic ops
+  - Caching: cacheControl() middleware on public GET endpoints
+
+  ## Frontend Patterns (MUST follow)
+  - CartContext: all exposed functions wrapped in useCallback, value in useMemo
+  - Error handling: wrap page-level components in <ErrorBoundary>
+  - Shared logic: extract into hooks (hooks/) to avoid duplication
+  - Constants: extract magic numbers/strings to client/lib/constants.js
+
+  ## Database Rules
+  - Schema changes: update CREATE TABLE in `api/config/database.js` directly
+  - Never add ALTER TABLE blocks — the file must stay idempotent
+  - Polymorphic postal refs: `ref_type` ('postal_code' | 'province' | 'country'),
+    `postal_code_id` (set only for postal_code), `ref_value` (province name or country code)
+
+rules:
+  proposal:
+    - State which layer(s) are affected: backend, frontend, or both
+    - Identify if DB schema changes are required
+    - Note any new external dependencies or integrations
+    - Include a "Non-goals" section to keep scope clear
+
+  spec:
+    - Reference specific files and directories from the architecture (e.g. api/controllers/, client/hooks/)
+    - For backend changes: specify which validators, middleware, and response helpers apply
+    - For frontend changes: specify which context, hooks, or constants are involved
+    - Flag any DB schema changes with a reminder to update api/config/database.js only
+
+  tasks:
+    - Each task must be atomic and independently verifiable
+    - Order tasks so backend (schema → validators → controller → route) precedes frontend
+    - Reference the exact file path for each task
+    - Flag tasks that touch shared infrastructure (auth middleware, CartContext, DB schema) as high-risk

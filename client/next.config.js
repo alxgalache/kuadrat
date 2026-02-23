@@ -10,6 +10,16 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      { source: '/galeria/mas', destination: '/tienda', permanent: true },
+      { source: '/galeria/mas/:path*', destination: '/tienda/:path*', permanent: true },
+      { source: '/subastas', destination: '/eventos', permanent: true },
+      { source: '/subastas/:path*', destination: '/eventos/:path*', permanent: true },
+      { source: '/espacios', destination: '/live', permanent: true },
+      { source: '/espacios/:path*', destination: '/live/:path*', permanent: true },
+    ];
+  },
   async headers() {
     // Build CSP connect-src based on environment
     // In development, allow localhost API; in production/staging, use the configured API URL

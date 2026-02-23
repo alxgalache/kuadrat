@@ -60,9 +60,9 @@ export default async function sitemap() {
   const staticPages = [
     { url: `${SITE_URL}`, lastModified: new Date(), changeFrequency: 'daily', priority: 1.0 },
     { url: `${SITE_URL}/galeria`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.9 },
-    { url: `${SITE_URL}/galeria/mas`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
-    { url: `${SITE_URL}/subastas`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
-    { url: `${SITE_URL}/espacios`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
+    { url: `${SITE_URL}/tienda`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
+    { url: `${SITE_URL}/eventos`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
+    { url: `${SITE_URL}/live`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
     { url: `${SITE_URL}/contacto`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE_URL}/preguntas-frecuentes`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE_URL}/legal/terminos-y-condiciones`, changeFrequency: 'yearly', priority: 0.2 },
@@ -82,7 +82,7 @@ export default async function sitemap() {
   // Others products
   const othersProducts = await fetchAllPaginated('/others', 'products')
   const othersPages = othersProducts.map((p) => ({
-    url: `${SITE_URL}/galeria/mas/p/${p.slug || p.id}`,
+    url: `${SITE_URL}/tienda/p/${p.slug || p.id}`,
     lastModified: p.created_at ? new Date(p.created_at) : new Date(),
     changeFrequency: 'weekly',
     priority: 0.7,
@@ -99,7 +99,7 @@ export default async function sitemap() {
   // Authors (others)
   const otherAuthors = await fetchJson('/users/authors?category=other', 'authors')
   const otherAuthorPages = otherAuthors.map((a) => ({
-    url: `${SITE_URL}/galeria/mas/autor/${a.slug}`,
+    url: `${SITE_URL}/tienda/autor/${a.slug}`,
     changeFrequency: 'weekly',
     priority: 0.6,
   }))
@@ -107,7 +107,7 @@ export default async function sitemap() {
   // Events
   const events = await fetchDateRange('/events', 'events')
   const eventPages = events.map((e) => ({
-    url: `${SITE_URL}/espacios/${e.slug}`,
+    url: `${SITE_URL}/live/${e.slug}`,
     lastModified: e.event_datetime ? new Date(e.event_datetime) : new Date(),
     changeFrequency: 'weekly',
     priority: 0.7,
@@ -116,7 +116,7 @@ export default async function sitemap() {
   // Auctions
   const auctions = await fetchDateRange('/auctions', 'auctions')
   const auctionPages = auctions.map((a) => ({
-    url: `${SITE_URL}/subastas/${a.id}`,
+    url: `${SITE_URL}/eventos/${a.id}`,
     lastModified: a.start_datetime ? new Date(a.start_datetime) : new Date(),
     changeFrequency: 'weekly',
     priority: 0.7,

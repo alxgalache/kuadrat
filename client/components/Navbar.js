@@ -19,8 +19,6 @@ export default function Navbar() {
   const pathname = usePathname()
 
   const isNavActive = (href) => {
-    if (href === '/galeria/mas') return pathname.startsWith('/galeria/mas')
-    if (href === '/galeria') return pathname.startsWith('/galeria') && !pathname.startsWith('/galeria/mas')
     return pathname.startsWith(href)
   }
 
@@ -31,7 +29,7 @@ export default function Navbar() {
 
   const navigation = [
       { name: 'Galería', href: '/galeria' },
-      { name: 'Más', href: '/galeria/mas' }
+      { name: 'Tienda', href: '/tienda' }
   ]
 
   const handleLogout = () => {
@@ -73,11 +71,11 @@ export default function Navbar() {
                 {item.name}
               </Link>
             ))}
-            <Link href="/subastas" className={`text-sm/6 font-semibold text-gray-900 hover:text-gray-600 ${isNavActive('/subastas') ? 'underline underline-offset-4 decoration-2' : ''}`}>
-              Subastas
+            <Link href="/eventos" className={`text-sm/6 font-semibold text-gray-900 hover:text-gray-600 ${isNavActive('/eventos') ? 'underline underline-offset-4 decoration-2' : ''}`}>
+              Eventos
             </Link>
-            <Link href="/espacios" className={`text-sm/6 font-semibold text-gray-900 hover:text-gray-600 ${isNavActive('/espacios') ? 'underline underline-offset-4 decoration-2' : ''}`}>
-              Espacios
+            <Link href="/live" className={`text-sm/6 font-semibold text-gray-900 hover:text-gray-600 ${isNavActive('/live') ? 'underline underline-offset-4 decoration-2' : ''}`}>
+              Live
             </Link>
           </div>
           <div className="flex lg:hidden">
@@ -104,7 +102,7 @@ export default function Navbar() {
         <div className="flex flex-1 justify-end items-center gap-x-2">
           {/* Admin profile menu */}
           {isAuthenticated && isAdmin && (
-            <Popover className="relative hidden lg:block transition-all duration-[600ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]">
+            <Popover className="relative hidden lg:flex lg:items-center -my-2.5 transition-all duration-[600ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]">
               {({ open, close }) => (
                 <>
                   <PopoverButton className="inline-flex items-center justify-center rounded-xl p-2.5 text-gray-900 hover:text-gray-600 bg-white transition-all duration-200 focus-visible:outline-none">
@@ -182,7 +180,7 @@ export default function Navbar() {
           )}
           {/* Seller profile menu */}
           {isAuthenticated && isSeller && (
-            <Popover className="relative hidden lg:block transition-all duration-[600ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]">
+            <Popover className="relative hidden lg:flex lg:items-center -my-2.5 transition-all duration-[600ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]">
               {({ open, close }) => (
                 <>
                   <PopoverButton className="inline-flex items-center justify-center rounded-xl p-2.5 text-gray-900 hover:text-gray-600 bg-white transition-all duration-200 focus-visible:outline-none">
@@ -351,18 +349,18 @@ export default function Navbar() {
               </Link>
             ))}
             <Link
-              href="/subastas"
+              href="/eventos"
               onClick={() => setMobileMenuOpen(false)}
-              className={`-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50 ${isNavActive('/subastas') ? 'underline underline-offset-4 decoration-2' : ''}`}
+              className={`-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50 ${isNavActive('/eventos') ? 'underline underline-offset-4 decoration-2' : ''}`}
             >
-              Subastas
+              Eventos
             </Link>
             <Link
-              href="/espacios"
+              href="/live"
               onClick={() => setMobileMenuOpen(false)}
-              className={`-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50 ${isNavActive('/espacios') ? 'underline underline-offset-4 decoration-2' : ''}`}
+              className={`-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50 ${isNavActive('/live') ? 'underline underline-offset-4 decoration-2' : ''}`}
             >
-              Espacios
+              Live
             </Link>
             {isAuthenticated && (
               <>

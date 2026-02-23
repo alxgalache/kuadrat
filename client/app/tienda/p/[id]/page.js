@@ -16,7 +16,7 @@ export async function generateMetadata({ params }) {
     160,
   )
   const imageUrl = getOthersImageUrl(product.basename)
-  const canonical = `/galeria/mas/p/${product.slug || product.id}`
+  const canonical = `/tienda/p/${product.slug || product.id}`
 
   return {
     title: product.name,
@@ -61,7 +61,7 @@ export default async function OthersProductDetailPage({ params }) {
       availability: product.is_sold
         ? 'https://schema.org/SoldOut'
         : 'https://schema.org/InStock',
-      url: `${SITE_URL}/galeria/mas/p/${product.slug || product.id}`,
+      url: `${SITE_URL}/tienda/p/${product.slug || product.id}`,
       seller: {
         '@type': 'Organization',
         name: '140d',
@@ -75,7 +75,7 @@ export default async function OthersProductDetailPage({ params }) {
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Inicio', item: SITE_URL },
       { '@type': 'ListItem', position: 2, name: 'Galería', item: `${SITE_URL}/galeria` },
-      { '@type': 'ListItem', position: 3, name: 'Más', item: `${SITE_URL}/galeria/mas` },
+      { '@type': 'ListItem', position: 3, name: 'Tienda', item: `${SITE_URL}/tienda` },
       { '@type': 'ListItem', position: 4, name: product.name },
     ],
   } : null

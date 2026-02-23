@@ -18,7 +18,7 @@ export async function generateMetadata({ params }) {
       || `Subasta de arte online: ${auction.name}. ${dateRange}. Participa y puja por obras únicas en 140d.`,
     160,
   )
-  const canonical = `/subastas/${auction.id}`
+  const canonical = `/eventos/${auction.id}`
 
   return {
     title: auction.name,
@@ -43,7 +43,7 @@ export default async function SubastaDetailPage({ params }) {
     '@type': 'BreadcrumbList',
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Inicio', item: SITE_URL },
-      { '@type': 'ListItem', position: 2, name: 'Subastas', item: `${SITE_URL}/subastas` },
+      { '@type': 'ListItem', position: 2, name: 'Eventos', item: `${SITE_URL}/eventos` },
       { '@type': 'ListItem', position: 3, name: auction.name },
     ],
   } : null

@@ -18,12 +18,12 @@ export async function generateMetadata({ params }) {
     title: `Productos de ${author.full_name}`,
     description: metaDescription,
     alternates: {
-      canonical: `/galeria/mas/autor/${author.slug}`,
+      canonical: `/tienda/autor/${author.slug}`,
     },
     openGraph: {
       title: `Productos de ${author.full_name} | 140d`,
       description: metaDescription,
-      url: `${SITE_URL}/galeria/mas/autor/${author.slug}`,
+      url: `${SITE_URL}/tienda/autor/${author.slug}`,
     },
   }
 }

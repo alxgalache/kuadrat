@@ -185,7 +185,7 @@ export default function AuctionDetail({ params }) {
   return (
     <div className="bg-white">
       <Breadcrumbs items={[
-        { name: 'Subastas', href: '/subastas' },
+        { name: 'Eventos', href: '/eventos' },
         { name: auction.name },
       ]} />
 

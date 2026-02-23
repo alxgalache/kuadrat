@@ -193,7 +193,7 @@ export default function OthersProductDetail({ params }) {
     <div className="bg-white">
       <Breadcrumbs items={[
         { name: 'Galería', href: '/galeria' },
-        { name: 'Más', href: '/galeria/mas' },
+        { name: 'Tienda', href: '/tienda' },
         { name: product.name },
       ]} />
 

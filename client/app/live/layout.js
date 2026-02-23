@@ -2,7 +2,7 @@ export const metadata = {
   title: 'Espacios - Eventos de Arte en Directo',
   description: 'Asiste a eventos de arte en directo: masterclasses, charlas, entrevistas y más. Conecta con artistas desde cualquier lugar. Eventos culturales online en 140d.',
   alternates: {
-    canonical: '/espacios',
+    canonical: '/live',
   },
   openGraph: {
     title: 'Espacios - Eventos de Arte | 140d',

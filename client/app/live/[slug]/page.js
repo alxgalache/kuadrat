@@ -29,7 +29,7 @@ export async function generateMetadata({ params }) {
       || `${categoryLabel} de arte${event.host_name ? ` con ${event.host_name}` : ''}. ${dateStr}.`,
     160,
   )
-  const canonical = `/espacios/${event.slug}`
+  const canonical = `/live/${event.slug}`
 
   return {
     title: event.title,
@@ -38,7 +38,7 @@ export async function generateMetadata({ params }) {
       canonical,
     },
     openGraph: {
-      title: `${event.title} | 140d Espacios`,
+      title: `${event.title} | 140d Live`,
       description: metaDescription,
       type: 'website',
       ...(event.cover_image_url ? {
@@ -48,7 +48,7 @@ export async function generateMetadata({ params }) {
     },
     twitter: {
       card: event.cover_image_url ? 'summary_large_image' : 'summary',
-      title: `${event.title} | 140d Espacios`,
+      title: `${event.title} | 140d Live`,
       description: metaDescription,
       ...(event.cover_image_url ? { images: [event.cover_image_url] } : {}),
     },
@@ -74,7 +74,7 @@ export default async function EventDetailPage({ params }) {
     eventAttendanceMode: 'https://schema.org/OnlineEventAttendanceMode',
     location: {
       '@type': 'VirtualLocation',
-      url: `${SITE_URL}/espacios/${event.slug}`,
+      url: `${SITE_URL}/live/${event.slug}`,
     },
     organizer: {
       '@type': 'Organization',
@@ -93,13 +93,13 @@ export default async function EventDetailPage({ params }) {
       price: event.price,
       priceCurrency: event.currency || 'EUR',
       availability: 'https://schema.org/InStock',
-      url: `${SITE_URL}/espacios/${event.slug}`,
+      url: `${SITE_URL}/live/${event.slug}`,
     } : {
       '@type': 'Offer',
       price: 0,
       priceCurrency: 'EUR',
       availability: 'https://schema.org/InStock',
-      url: `${SITE_URL}/espacios/${event.slug}`,
+      url: `${SITE_URL}/live/${event.slug}`,
     },
     inLanguage: 'es',
   } : null
@@ -109,7 +109,7 @@ export default async function EventDetailPage({ params }) {
     '@type': 'BreadcrumbList',
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Inicio', item: SITE_URL },
-      { '@type': 'ListItem', position: 2, name: 'Espacios', item: `${SITE_URL}/espacios` },
+      { '@type': 'ListItem', position: 2, name: 'Live', item: `${SITE_URL}/live` },
       { '@type': 'ListItem', position: 3, name: event.title },
     ],
   } : null

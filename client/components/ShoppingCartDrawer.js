@@ -157,7 +157,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const getProductUrl = (item) => {
         return item.productType === 'art'
             ? `/galeria/p/${item.slug}`
-            : `/galeria/mas/p/${item.slug}`
+            : `/tienda/p/${item.slug}`
     }
 
     // Build the compact representation of cart items used to initialise a Revolut order.
