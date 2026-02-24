@@ -132,7 +132,7 @@ export default function SubastasPage() {
     if (auctionsForMonth.length === 0) {
       return (
         <div className="flex items-center justify-center py-24">
-          <p className="text-sm text-gray-500">No hay subastas programadas en el día seleccionado</p>
+          <p className="text-sm text-gray-500">No hay eventos programadas en el día seleccionado</p>
         </div>
       )
     }
@@ -140,7 +140,7 @@ export default function SubastasPage() {
     if (auctionsForDate.length === 0) {
       return (
         <div className="flex items-center justify-center py-24">
-          <p className="text-sm text-gray-500">No hay subastas para este dia</p>
+          <p className="text-sm text-gray-500">No hay eventos para este dia</p>
         </div>
       )
     }
