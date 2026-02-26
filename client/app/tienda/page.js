@@ -57,7 +57,7 @@ export default function GalleryMasPage() {
   if (products.length === 0) {
     return (
       <div className="bg-white">
-        <div className="flex items-center justify-center px-6 py-16">
+        <div className="flex items-center justify-center px-6 py-12">
           <div className="text-center">
             <h2 className="text-2xl font-semibold text-gray-900 sm:text-3xl">
               No hay productos disponibles
@@ -98,7 +98,7 @@ export default function GalleryMasPage() {
           />
 
           <main className="flex-1" ref={productListRef}>
-            <div className="py-16">
+            <div className="py-12">
               <ProductGrid
                 products={products}
                 isFading={isFading}

@@ -243,6 +243,51 @@ async function getAuctionsByDateRange(from, to) {
     for (const auction of auctions) {
       auction.sellers_summary = sellersByAuction[auction.id] || [];
     }
+
+    // Fetch first 4 product previews per auction (for grid display)
+    const previewsResult = await db.execute({
+      sql: `SELECT * FROM (
+              SELECT combined.*, ROW_NUMBER() OVER (PARTITION BY combined.auction_id ORDER BY combined.position ASC) AS rn
+              FROM (
+                SELECT aa.auction_id, a.basename, a.name, 'art' AS product_type,
+                       u.full_name AS seller_name, aa.start_price, aa.current_price, aa.position
+                FROM auction_arts aa
+                JOIN art a ON aa.art_id = a.id
+                LEFT JOIN users u ON a.seller_id = u.id
+                WHERE aa.auction_id IN (${placeholders})
+                UNION ALL
+                SELECT ao.auction_id, o.basename, o.name, 'other' AS product_type,
+                       u.full_name AS seller_name, ao.start_price, ao.current_price, ao.position
+                FROM auction_others ao
+                JOIN others o ON ao.other_id = o.id
+                LEFT JOIN users u ON o.seller_id = u.id
+                WHERE ao.auction_id IN (${placeholders})
+              ) combined
+            )
+            WHERE rn <= 4
+            ORDER BY auction_id, position ASC`,
+      args: [...auctionIds, ...auctionIds],
+    });
+
+    // Group previews by auction
+    const previewsByAuction = {};
+    for (const row of previewsResult.rows) {
+      if (!previewsByAuction[row.auction_id]) {
+        previewsByAuction[row.auction_id] = [];
+      }
+      previewsByAuction[row.auction_id].push({
+        basename: row.basename,
+        name: row.name,
+        product_type: row.product_type,
+        seller_name: row.seller_name,
+        start_price: row.start_price,
+        current_price: row.current_price,
+      });
+    }
+
+    for (const auction of auctions) {
+      auction.product_previews = previewsByAuction[auction.id] || [];
+    }
   }
 
   return auctions;

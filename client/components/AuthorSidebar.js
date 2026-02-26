@@ -13,7 +13,7 @@ export default function AuthorSidebar({
 }) {
   return (
     <aside className="hidden lg:block w-64 pr-10 flex-shrink-0">
-      <div className="sticky top-0 py-16 will-change-scroll">
+      <div className="sticky top-0 py-12 will-change-scroll">
         <nav aria-label="Sidebar" className="flex flex-1 flex-col">
           <ul role="list" className="flex flex-1 flex-col gap-y-7">
             <li>

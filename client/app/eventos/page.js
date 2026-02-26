@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import Link from 'next/link'
 import { auctionsAPI } from '@/lib/api'
 import AuctionCalendar from '@/components/AuctionCalendar'
+import AuctionGridItem from '@/components/AuctionGridItem'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -20,60 +20,6 @@ function getMonthRange(year, month) {
   return { from, to }
 }
 
-function formatDateTimeRange(startStr, endStr) {
-  if (!startStr || !endStr) return ''
-  const start = new Date(startStr)
-  const end = new Date(endStr)
-
-  const formatDate = (d) => d.toLocaleDateString('es-ES', {
-    day: '2-digit',
-    month: 'short',
-  })
-  const formatTimeOnly = (d) => d.toLocaleTimeString('es-ES', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-
-  return `${formatDate(start)} ${formatTimeOnly(start)} - ${formatDate(end)} ${formatTimeOnly(end)}`
-}
-
-function formatDateShort(datetimeStr) {
-  if (!datetimeStr) return ''
-  const d = new Date(datetimeStr)
-  const day = d.getDate()
-  const month = d.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')
-  return `${day} ${month}`
-}
-
-function formatTime(datetimeStr) {
-  if (!datetimeStr) return ''
-  return new Date(datetimeStr).toLocaleTimeString('es-ES', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatProductSellers(productCount, sellersSummary) {
-  if (!sellersSummary || sellersSummary.length === 0) {
-    return `${productCount} pieza${productCount !== 1 ? 's' : ''}`
-  }
-
-  const mainSeller = sellersSummary[0]
-  const mainName = mainSeller.sellerName || 'Autor desconocido'
-  const otherSellersCount = sellersSummary.length - 1
-
-  if (otherSellersCount === 0) {
-    return `${productCount} pieza${productCount !== 1 ? 's' : ''} de ${mainName}`
-  }
-
-  return `${productCount} piezas de ${mainName} y ${otherSellersCount} más`
-}
-
-const statusLabels = {
-  active: { label: 'En curso', bg: 'bg-green-50', text: 'text-green-700' },
-  scheduled: { label: 'Programada', bg: 'bg-blue-50', text: 'text-blue-700' },
-  finished: { label: 'Finalizada', bg: 'bg-gray-100', text: 'text-gray-600' },
-}
 
 // ---------------------------------------------------------------------------
 // Main page
@@ -127,7 +73,7 @@ export default function SubastasPage() {
     </div>
   )
 
-  // Main content — auction cards
+  // Main content — auction grid
   const renderMainContent = () => {
     if (auctionsForMonth.length === 0) {
       return (
@@ -146,58 +92,21 @@ export default function SubastasPage() {
     }
 
     return (
-      <div className="space-y-6">
-        {auctionsForDate.map((a) => {
-          const status = statusLabels[a.status] || statusLabels.scheduled
-          return (
-            <Link
-              key={a.id}
-              href={`/eventos/${a.id}`}
-              className="block group"
-            >
-              <div className="rounded-lg border border-gray-200 overflow-hidden p-5">
-                {/* Badges row */}
-                <div className="flex items-center gap-x-2 mb-2">
-                  <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${status.bg} ${status.text}`}>
-                    {status.label}
-                  </span>
-                  {a.product_count > 0 && (
-                    <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                      {formatProductSellers(a.product_count, a.sellers_summary)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Title */}
-                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-gray-600">
-                  {a.name}
-                </h3>
-
-                {/* Description excerpt */}
-                {a.description && (
-                  <p className="mt-1 text-sm text-gray-600 line-clamp-2">
-                    {a.description}
-                  </p>
-                )}
-
-                {/* Meta row */}
-                <div className="mt-3 flex items-center justify-between sm:justify-start sm:gap-x-4 text-sm text-gray-500">
-                  <span className="hidden sm:inline">{formatDateTimeRange(a.start_datetime, a.end_datetime)}</span>
-                  <span className="sm:hidden">{formatDateShort(a.start_datetime)}</span>
-                  <span className="sm:hidden">{formatTime(a.start_datetime)}</span>
-                </div>
-              </div>
-            </Link>
-          )
-        })}
-      </div>
+      <ul
+        role="list"
+        className="grid grid-cols-2 gap-4 sm:gap-8 lg:grid-cols-4"
+      >
+        {auctionsForDate.map((a) => (
+          <AuctionGridItem key={a.id} auction={a} />
+        ))}
+      </ul>
     )
   }
 
   return (
     <div className="bg-white min-h-[calc(100dvh-5rem-6rem)]">
       <h1 className="sr-only">Subastas de Arte</h1>
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         {/* Mobile calendar (always visible) */}
         <div className="lg:hidden mb-6">
           {renderSidebarContent()}

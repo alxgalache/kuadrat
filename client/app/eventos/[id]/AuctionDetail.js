@@ -278,9 +278,15 @@ export default function AuctionDetail({ params }) {
             )}
 
             {/* Price */}
-            <div className="mt-6">
-              <p className="text-xs font-medium uppercase text-gray-500">Precio actual</p>
-              <p className="mt-1 text-3xl font-bold text-gray-900">{formatCurrency(displayPrice)}</p>
+            <div className="mt-6 flex gap-6">
+              <div className="flex flex-col">
+                <p className="text-xs font-medium uppercase text-gray-400">Precio de salida</p>
+                <p className="mt-auto text-lg text-gray-400">{formatCurrency(currentProduct?.start_price ?? 0)}</p>
+              </div>
+              <div className="flex flex-col">
+                <p className="text-xs font-medium uppercase text-gray-500">Precio actual</p>
+                <p className="mt-auto text-3xl font-bold text-gray-900">{formatCurrency(displayPrice)}</p>
+              </div>
             </div>
 
             {/* Countdown */}
