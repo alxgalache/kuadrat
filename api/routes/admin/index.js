@@ -13,6 +13,7 @@ router.use('/others', require('./othersRoutes'));
 router.use('/orders', require('./orderRoutes'));
 router.use('/shipping', require('./shippingRoutes'));
 router.use('/auctions', require('./auctionRoutes'));
+router.use('/postal-codes', require('./postalCodeRoutes'));
 router.use('/events', require('./eventRoutes'));
 
 module.exports = router;
