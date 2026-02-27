@@ -491,7 +491,8 @@ async function initializeDatabase() {
         first_name TEXT NOT NULL,
         last_name TEXT NOT NULL,
         email TEXT NOT NULL,
-        bid_password TEXT NOT NULL,
+        dni TEXT NOT NULL,
+        ip_address TEXT,
         delivery_address_1 TEXT,
         delivery_address_2 TEXT,
         delivery_postal_code TEXT,
@@ -533,10 +534,34 @@ async function initializeDatabase() {
         stripe_setup_intent_id TEXT,
         stripe_payment_method_id TEXT,
         stripe_customer_id TEXT,
+        stripe_fingerprint TEXT,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (draw_buyer_id) REFERENCES draw_buyers(id)
       )
     `);
+
+    // ── Draw email verifications ─────────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS draw_email_verifications (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        draw_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at DATETIME NOT NULL,
+        verified INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (draw_id) REFERENCES draws(id) ON DELETE CASCADE
+      )
+    `);
+
+    // ── Draw tables migrations (safe column additions for existing DBs) ──
+    const safeAlter = async (sql) => {
+      try { await db.execute(sql); } catch { /* column already exists */ }
+    };
+    await safeAlter('ALTER TABLE draw_buyers ADD COLUMN dni TEXT NOT NULL DEFAULT \'\'');
+    await safeAlter('ALTER TABLE draw_buyers ADD COLUMN ip_address TEXT');
+    await safeAlter('ALTER TABLE draw_authorised_payment_data ADD COLUMN stripe_fingerprint TEXT');
 
     // ── Shipping zones postal codes (polymorphic refs) ───────
     await db.execute(`
@@ -592,7 +617,9 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_participations_draw ON draw_participations(draw_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_participations_buyer ON draw_participations(draw_buyer_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_buyers_draw ON draw_buyers(draw_id)`);
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_draw_buyers_dni_draw ON draw_buyers(dni, draw_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draws_status ON draws(status)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_email_verifications_email_draw ON draw_email_verifications(email, draw_id)`);
 
     // Postal codes
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_code_country ON postal_codes(postal_code, country)`);

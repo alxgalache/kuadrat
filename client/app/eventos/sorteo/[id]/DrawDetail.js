@@ -206,7 +206,7 @@ export default function DrawDetail({ params }) {
                     </span>
                   </p>
                 </div>
-                <p className="w-full text-neutral-400">999 unidades. Mínimo 30 participantes.</p>
+                <p className="w-full text-neutral-400">Edición de 999 unidades. Mínimo 30 participantes.</p>
                 {/*<p className="w-full text-neutral-400">Mínimo 30 participantes por sorteo</p>*/}
                 {/*<p className="w-full text-neutral-400">13 / 200 participantes inscritos</p>*/}
               </div>

@@ -2,7 +2,7 @@ const { ApiError } = require('../middleware/errorHandler');
 const logger = require('../config/logger');
 const drawService = require('../services/drawService');
 const stripeService = require('../services/stripeService');
-const { sendDrawEntryConfirmationEmail } = require('../services/emailService');
+const { sendDrawEntryConfirmationEmail, sendDrawVerificationEmail } = require('../services/emailService');
 
 // ---------------------------------------------------------------------------
 // GET /api/draws?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -43,15 +43,15 @@ const registerBuyer = async (req, res, next) => {
   try {
     const { id } = req.params;
     const {
-      firstName, lastName, email,
+      firstName, lastName, email, dni,
       deliveryAddress1, deliveryAddress2, deliveryPostalCode,
       deliveryCity, deliveryProvince, deliveryCountry,
       invoicingAddress1, invoicingAddress2, invoicingPostalCode,
       invoicingCity, invoicingProvince, invoicingCountry,
     } = req.body;
 
-    if (!firstName || !lastName || !email) {
-      throw new ApiError(400, 'Nombre, apellido y email son obligatorios', 'Datos incompletos');
+    if (!firstName || !lastName || !email || !dni) {
+      throw new ApiError(400, 'Nombre, apellido, email y DNI son obligatorios', 'Datos incompletos');
     }
 
     const draw = await drawService.getDrawById(id);
@@ -62,8 +62,10 @@ const registerBuyer = async (req, res, next) => {
       throw new ApiError(400, 'Este sorteo no está activo', 'Sorteo no activo');
     }
 
+    const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+
     const buyer = await drawService.createOrGetDrawBuyer(id, {
-      firstName, lastName, email,
+      firstName, lastName, email, dni, ipAddress,
       deliveryAddress1, deliveryAddress2, deliveryPostalCode,
       deliveryCity, deliveryProvince, deliveryCountry,
       invoicingAddress1, invoicingAddress2, invoicingPostalCode,
@@ -77,45 +79,7 @@ const registerBuyer = async (req, res, next) => {
         first_name: buyer.first_name,
         last_name: buyer.last_name,
         email: buyer.email,
-        bid_password: buyer.bid_password,
       },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ---------------------------------------------------------------------------
-// POST /api/draws/:id/verify-buyer
-// ---------------------------------------------------------------------------
-const verifyBuyer = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { email, bidPassword } = req.body;
-
-    if (!email || !bidPassword) {
-      throw new ApiError(400, 'Email y contraseña de acceso son obligatorios', 'Datos incompletos');
-    }
-
-    const buyer = await drawService.verifyDrawBuyerPassword(email, id, bidPassword);
-    if (!buyer) {
-      throw new ApiError(401, 'Email o contraseña de acceso incorrectos', 'Verificación fallida');
-    }
-
-    const paymentData = await drawService.getBuyerPaymentData(buyer.id);
-    const hasParticipation = await drawService.hasParticipation(id, buyer.id);
-
-    res.status(200).json({
-      success: true,
-      buyer: {
-        id: buyer.id,
-        first_name: buyer.first_name,
-        last_name: buyer.last_name,
-        email: buyer.email,
-        bid_password: buyer.bid_password,
-      },
-      hasPaymentMethod: !!paymentData,
-      hasParticipation,
     });
   } catch (error) {
     next(error);
@@ -161,10 +125,67 @@ const setupPayment = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
+// POST /api/draws/:id/send-verification
+// ---------------------------------------------------------------------------
+const sendVerification = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { email, dni } = req.body;
+
+    if (!email || !dni) {
+      throw new ApiError(400, 'Email y DNI son obligatorios', 'Datos incompletos');
+    }
+
+    // Validate DNI format
+    if (!drawService.validateDNI(dni)) {
+      throw new ApiError(400, 'El DNI/NIE introducido no es válido', 'DNI inválido');
+    }
+
+    // Check DNI uniqueness for this draw
+    const isUnique = await drawService.checkDniUniqueness(id, dni);
+    if (!isUnique) {
+      throw new ApiError(409, 'Este DNI ya está registrado en este sorteo', 'DNI duplicado');
+    }
+
+    // Generate and send OTP
+    const code = await drawService.createEmailVerification(email, id);
+    await sendDrawVerificationEmail({ email, code });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/draws/:id/verify-email
+// ---------------------------------------------------------------------------
+const verifyEmail = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      throw new ApiError(400, 'Email y código son obligatorios', 'Datos incompletos');
+    }
+
+    const result = await drawService.verifyEmailCode(email, id, code);
+    if (!result.valid) {
+      throw new ApiError(400, result.error, 'Verificación fallida');
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /api/draws/:id/confirm-payment
 // ---------------------------------------------------------------------------
 const confirmPayment = async (req, res, next) => {
   try {
+    const { id } = req.params;
     const { drawBuyerId, setupIntentId, customerId } = req.body;
 
     if (!drawBuyerId || !setupIntentId) {
@@ -181,14 +202,26 @@ const confirmPayment = async (req, res, next) => {
 
     let pmName = null;
     let pmLastFour = null;
+    let fingerprint = null;
     if (paymentMethodId) {
       try {
         const pm = await stripeService.retrievePaymentMethod(paymentMethodId);
         pmName = pm.billing_details?.name || null;
         pmLastFour = pm.card?.last4 || null;
+        fingerprint = pm.card?.fingerprint || null;
       } catch {
         // Non-critical
       }
+    }
+
+    // Check card fingerprint uniqueness for this draw
+    if (fingerprint) {
+      const isUnique = await drawService.checkFingerprintUniqueness(id, fingerprint, drawBuyerId);
+      if (!isUnique) {
+        throw new ApiError(409, 'Este método de pago ya está asociado a otra inscripción en este sorteo', 'Método de pago duplicado');
+      }
+    } else {
+      logger.warn({ drawId: id, drawBuyerId }, 'No card fingerprint available for deduplication');
     }
 
     await drawService.savePaymentData(drawBuyerId, {
@@ -197,6 +230,7 @@ const confirmPayment = async (req, res, next) => {
       stripeSetupIntentId: setupIntentId,
       stripePaymentMethodId: paymentMethodId || null,
       stripeCustomerId: customerId || null,
+      stripeFingerprint: fingerprint,
     });
 
     res.status(200).json({ success: true });
@@ -226,7 +260,6 @@ const enterDraw = async (req, res, next) => {
       sendDrawEntryConfirmationEmail({
         email: buyer.email,
         firstName: buyer.first_name,
-        bidPassword: buyer.bid_password,
         drawName: draw.name,
         productName: draw.product_name || 'Producto',
         productType: draw.product_type,
@@ -254,8 +287,9 @@ module.exports = {
   getDraws,
   getDrawDetail,
   registerBuyer,
-  verifyBuyer,
   setupPayment,
   confirmPayment,
   enterDraw,
+  sendVerification,
+  verifyEmail,
 };

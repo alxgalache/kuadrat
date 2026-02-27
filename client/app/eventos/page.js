@@ -104,11 +104,11 @@ export default function SubastasPage() {
         role="list"
         className="grid grid-cols-2 gap-4 sm:gap-8 lg:grid-cols-4"
       >
-        {eventsForDate.map((item) =>
+        {eventsForDate.map((item, index) =>
           item._type === 'draw' ? (
-            <DrawGridItem key={`draw-${item.id}`} draw={item} />
+            <DrawGridItem key={`draw-${item.id}`} draw={item} priority={index === 0} />
           ) : (
-            <AuctionGridItem key={`auction-${item.id}`} auction={item} />
+            <AuctionGridItem key={`auction-${item.id}`} auction={item} priority={index === 0} />
           )
         )}
       </ul>

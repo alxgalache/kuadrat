@@ -3,7 +3,7 @@ import Link from 'next/link'
 import EventBadge from '@/components/EventBadge'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 
-export default function DrawGridItem({ draw }) {
+export default function DrawGridItem({ draw, priority = false }) {
   const preview = draw.product_preview || {}
   const imageUrl = preview.basename
     ? (preview.product_type === 'art'
@@ -25,6 +25,7 @@ export default function DrawGridItem({ draw }) {
                 fill
                 className="object-cover object-center"
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                priority={priority}
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center">

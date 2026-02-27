@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { XMarkIcon, CheckIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { loadStripe } from '@stripe/stripe-js'
@@ -11,11 +11,9 @@ import { drawsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
 
 // ---------------------------------------------------------------------------
-// Flow phases
+// Flow phases (CHOOSE and VERIFY removed)
 // ---------------------------------------------------------------------------
 const PHASE = {
-  CHOOSE: 'choose',
-  VERIFY: 'verify',
   TERMS: 'terms',
   PERSONAL: 'personal',
   DELIVERY: 'delivery',
@@ -25,20 +23,33 @@ const PHASE = {
   SUCCESS: 'success',
 }
 
-const NEW_PARTICIPANT_STEPS = [PHASE.TERMS, PHASE.PERSONAL, PHASE.DELIVERY, PHASE.INVOICING, PHASE.PAYMENT]
+const STEPS = [PHASE.TERMS, PHASE.PERSONAL, PHASE.DELIVERY, PHASE.INVOICING, PHASE.PAYMENT]
 
-// localStorage helpers
-function getStoredSession(drawId) {
-  try {
-    const raw = localStorage.getItem(`draw_session_${drawId}`)
-    return raw ? JSON.parse(raw) : null
-  } catch { return null }
-}
+// ---------------------------------------------------------------------------
+// DNI/NIE validation (Spanish NIF algorithm)
+// ---------------------------------------------------------------------------
+const DNI_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE'
 
-function storeSession(drawId, session) {
-  try {
-    localStorage.setItem(`draw_session_${drawId}`, JSON.stringify(session))
-  } catch { /* ignore */ }
+function validateDNI(dni) {
+  if (!dni || typeof dni !== 'string') return false
+  const normalized = dni.toUpperCase().trim()
+
+  // NIE format: X/Y/Z + 7 digits + letter
+  const nieMatch = normalized.match(/^([XYZ])(\d{7})([A-Z])$/)
+  if (nieMatch) {
+    const niePrefix = { X: '0', Y: '1', Z: '2' }
+    const num = parseInt(niePrefix[nieMatch[1]] + nieMatch[2], 10)
+    return nieMatch[3] === DNI_LETTERS[num % 23]
+  }
+
+  // DNI format: 8 digits + letter
+  const dniMatch = normalized.match(/^(\d{8})([A-Z])$/)
+  if (dniMatch) {
+    const num = parseInt(dniMatch[1], 10)
+    return dniMatch[2] === DNI_LETTERS[num % 23]
+  }
+
+  return false
 }
 
 // ---------------------------------------------------------------------------
@@ -90,14 +101,14 @@ function PaymentForm({ onSuccess, onError, loading, setLoading }) {
 // Main DrawParticipationModal
 // ---------------------------------------------------------------------------
 export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryComplete }) {
-  const [phase, setPhase] = useState(PHASE.CHOOSE)
+  const [phase, setPhase] = useState(PHASE.TERMS)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   // Buyer data
   const [buyerSession, setBuyerSession] = useState(null)
   const [termsAccepted, setTermsAccepted] = useState([false, false])
-  const [personalInfo, setPersonalInfo] = useState({ firstName: '', lastName: '', email: '' })
+  const [personalInfo, setPersonalInfo] = useState({ firstName: '', lastName: '', email: '', dni: '' })
   const [deliveryAddress, setDeliveryAddress] = useState({
     address_1: '', address_2: '', postal_code: '', city: '', province: '', country: 'ES',
   })
@@ -106,42 +117,51 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
   })
   const [copyDelivery, setCopyDelivery] = useState(false)
 
-  // Returning participant
-  const [verifyEmail, setVerifyEmail] = useState('')
-  const [verifyPassword, setVerifyPassword] = useState('')
+  // Email verification OTP
+  const [otpSent, setOtpSent] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
+  const [otpVerified, setOtpVerified] = useState(false)
+  const [showResend, setShowResend] = useState(false)
+  const resendTimerRef = useRef(null)
+
+  // DNI validation state
+  const [dniError, setDniError] = useState('')
 
   // Stripe
   const [clientSecret, setClientSecret] = useState(null)
   const [stripeCustomerId, setStripeCustomerId] = useState(null)
 
-  // Success data
-  const [savedPassword, setSavedPassword] = useState('')
+  // Track completed entry to prevent reset on draw prop changes
+  const entryCompleteRef = useRef(false)
 
   // ------ Reset when modal opens ------
   useEffect(() => {
-    if (isOpen) {
-      const stored = draw ? getStoredSession(draw.id) : null
-      if (stored) {
-        setBuyerSession(stored)
-        setPhase(PHASE.CONFIRM)
-      } else {
-        setPhase(PHASE.CHOOSE)
-      }
+    if (isOpen && !entryCompleteRef.current) {
+      setPhase(PHASE.TERMS)
       setError('')
       setLoading(false)
+      setBuyerSession(null)
       setTermsAccepted([false, false])
-      setPersonalInfo({ firstName: '', lastName: '', email: '' })
+      setPersonalInfo({ firstName: '', lastName: '', email: '', dni: '' })
       setDeliveryAddress({ address_1: '', address_2: '', postal_code: '', city: '', province: '', country: 'ES' })
       setInvoicingAddress({ address_1: '', address_2: '', postal_code: '', city: '', province: '', country: 'ES' })
       setCopyDelivery(false)
-      setVerifyEmail('')
-      setVerifyPassword('')
+      setOtpSent(false)
+      setOtpCode('')
+      setOtpVerified(false)
+      setShowResend(false)
       setClientSecret(null)
-      setSavedPassword('')
+      setDniError('')
+    }
+    if (!isOpen) {
+      entryCompleteRef.current = false
+    }
+    return () => {
+      if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
     }
   }, [isOpen, draw])
 
-  // Copy delivery → invoicing
+  // Copy delivery -> invoicing
   useEffect(() => {
     if (copyDelivery) {
       setInvoicingAddress({ ...deliveryAddress })
@@ -152,36 +172,57 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
     ? (draw.product_type === 'art' ? getArtImageUrl(draw.basename) : getOthersImageUrl(draw.basename))
     : null
 
-  // ------ Phase handlers ------
+  // ------ DNI inline validation ------
+  const handleDniChange = (value) => {
+    setPersonalInfo({ ...personalInfo, dni: value })
+    if (value.length >= 9) {
+      setDniError(validateDNI(value) ? '' : 'El DNI/NIE introducido no es válido')
+    } else {
+      setDniError('')
+    }
+  }
 
-  const handleVerify = async () => {
+  // ------ Send verification (DNI check + OTP) ------
+  const handleSendVerification = async () => {
     setError('')
     setLoading(true)
     try {
-      const data = await drawsAPI.verifyBuyer(draw.id, verifyEmail, verifyPassword)
-      const session = { drawBuyerId: data.buyer.id, bidPassword: data.buyer.bid_password }
-      setBuyerSession(session)
-      storeSession(draw.id, session)
-
-      if (data.hasParticipation) {
-        setError('Ya estás inscrito en este sorteo')
-        setLoading(false)
-        return
-      }
-
-      if (data.hasPaymentMethod) {
-        setPhase(PHASE.CONFIRM)
-      } else {
-        await setupStripePayment(data.buyer.id)
-        setPhase(PHASE.PAYMENT)
-      }
+      await drawsAPI.sendVerification(draw.id, personalInfo.email, personalInfo.dni.toUpperCase().trim())
+      setOtpSent(true)
+      setShowResend(false)
+      // Show resend button after 30 seconds
+      resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
     } catch (err) {
-      setError(err.message || 'Email o contraseña incorrectos')
+      setError(err.message || 'Error al enviar verificación')
     } finally {
       setLoading(false)
     }
   }
 
+  // ------ Verify OTP code ------
+  const handleVerifyOtp = async () => {
+    setError('')
+    setLoading(true)
+    try {
+      await drawsAPI.verifyEmail(draw.id, personalInfo.email, otpCode)
+      setOtpVerified(true)
+      setPhase(PHASE.DELIVERY)
+    } catch (err) {
+      setError(err.message || 'Error al verificar código')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ------ Resend OTP ------
+  const handleResendOtp = async () => {
+    setError('')
+    setShowResend(false)
+    setOtpCode('')
+    await handleSendVerification()
+  }
+
+  // ------ Register buyer + setup payment ------
   const handleRegister = async () => {
     setError('')
     setLoading(true)
@@ -190,6 +231,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
         firstName: personalInfo.firstName,
         lastName: personalInfo.lastName,
         email: personalInfo.email,
+        dni: personalInfo.dni.toUpperCase().trim(),
         deliveryAddress1: deliveryAddress.address_1,
         deliveryAddress2: deliveryAddress.address_2,
         deliveryPostalCode: deliveryAddress.postal_code,
@@ -204,10 +246,8 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
         invoicingCountry: invoicingAddress.country,
       })
 
-      const session = { drawBuyerId: data.buyer.id, bidPassword: data.buyer.bid_password }
+      const session = { drawBuyerId: data.buyer.id }
       setBuyerSession(session)
-      storeSession(draw.id, session)
-      setSavedPassword(data.buyer.bid_password)
 
       await setupStripePayment(data.buyer.id)
       setPhase(PHASE.PAYMENT)
@@ -242,6 +282,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
     setLoading(true)
     try {
       await drawsAPI.enterDraw(draw.id, buyerSession.drawBuyerId)
+      entryCompleteRef.current = true
       setPhase(PHASE.SUCCESS)
       if (onEntryComplete) onEntryComplete()
     } catch (err) {
@@ -255,60 +296,6 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
 
   const renderPhase = () => {
     switch (phase) {
-      case PHASE.CHOOSE:
-        return (
-          <div className="space-y-6">
-            <p className="text-sm text-gray-600">Selecciona una opción para continuar:</p>
-            <button
-              type="button"
-              onClick={() => setPhase(PHASE.VERIFY)}
-              className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
-            >
-              Ya me registré antes
-            </button>
-            <button
-              type="button"
-              onClick={() => setPhase(PHASE.TERMS)}
-              className="w-full rounded-md bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-            >
-              Nuevo participante
-            </button>
-          </div>
-        )
-
-      case PHASE.VERIFY:
-        return (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-900">Email</label>
-              <input
-                type="email"
-                value={verifyEmail}
-                onChange={(e) => setVerifyEmail(e.target.value)}
-                className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-                placeholder="tu@email.com"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-900">Contraseña de acceso</label>
-              <input
-                type="text"
-                value={verifyPassword}
-                onChange={(e) => setVerifyPassword(e.target.value)}
-                className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm tracking-widest"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleVerify}
-              disabled={loading || !verifyEmail || !verifyPassword}
-              className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
-            >
-              {loading ? 'Verificando...' : 'Verificar'}
-            </button>
-          </div>
-        )
-
       case PHASE.TERMS:
         return (
           <div className="space-y-4">
@@ -357,44 +344,98 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
       case PHASE.PERSONAL:
         return (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-900">Nombre</label>
-                <input
-                  type="text"
-                  value={personalInfo.firstName}
-                  onChange={(e) => setPersonalInfo({ ...personalInfo, firstName: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-900">Apellidos</label>
-                <input
-                  type="text"
-                  value={personalInfo.lastName}
-                  onChange={(e) => setPersonalInfo({ ...personalInfo, lastName: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-900">Email</label>
-              <input
-                type="email"
-                value={personalInfo.email}
-                onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
-                className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-                placeholder="tu@email.com"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => { setError(''); setPhase(PHASE.DELIVERY) }}
-              disabled={!personalInfo.firstName || !personalInfo.lastName || !personalInfo.email}
-              className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
-            >
-              Continuar
-            </button>
+            {!otpSent ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Nombre</label>
+                    <input
+                      type="text"
+                      value={personalInfo.firstName}
+                      onChange={(e) => setPersonalInfo({ ...personalInfo, firstName: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Apellidos</label>
+                    <input
+                      type="text"
+                      value={personalInfo.lastName}
+                      onChange={(e) => setPersonalInfo({ ...personalInfo, lastName: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Email</label>
+                  <input
+                    type="email"
+                    value={personalInfo.email}
+                    onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
+                    placeholder="tu@email.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">DNI/NIE</label>
+                  <input
+                    type="text"
+                    value={personalInfo.dni}
+                    onChange={(e) => handleDniChange(e.target.value)}
+                    className={`mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ${dniError ? 'ring-red-300' : 'ring-gray-300'} placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm uppercase`}
+                    placeholder="12345678Z"
+                    maxLength={9}
+                  />
+                  {dniError && <p className="mt-1 text-xs text-red-600">{dniError}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSendVerification}
+                  disabled={loading || !personalInfo.firstName || !personalInfo.lastName || !personalInfo.email || !personalInfo.dni || !!dniError || !validateDNI(personalInfo.dni)}
+                  className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
+                >
+                  {loading ? 'Enviando código...' : 'Continuar'}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="rounded-md bg-gray-50 p-3">
+                  <p className="text-sm text-gray-700">
+                    Hemos enviado un código de verificación a <strong>{personalInfo.email}</strong>. Introdúcelo a continuación.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Código de verificación</label>
+                  <input
+                    type="text"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm tracking-widest text-center text-lg"
+                    placeholder="000000"
+                    maxLength={6}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleVerifyOtp}
+                  disabled={loading || otpCode.length !== 6}
+                  className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
+                >
+                  {loading ? 'Verificando...' : 'Verificar código'}
+                </button>
+                {showResend && (
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    className="w-full text-sm text-gray-600 hover:text-gray-900 underline"
+                  >
+                    Reenviar código
+                  </button>
+                )}
+              </>
+            )}
           </div>
         )
 
@@ -593,7 +634,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
                 )}
                 <div>
                   <p className="text-base font-semibold text-gray-900">{draw.product_name || draw.name}</p>
-                  <p className="mt-3 text-2xl font-bold text-gray-900">€{Number(draw.price).toFixed(2)}</p>
+                  <p className="mt-3 text-2xl font-bold text-gray-900">{Number(draw.price).toFixed(2)}&nbsp;&euro;</p>
                 </div>
               </div>
             </div>
@@ -626,22 +667,6 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
               <p className="text-base font-semibold text-gray-900">¡Inscripción confirmada!</p>
               <p className="mt-1 text-sm text-gray-600">Te has inscrito correctamente en el sorteo. Te notificaremos por email con el resultado.</p>
             </div>
-            {(savedPassword || buyerSession?.bidPassword) && (
-              <div className="rounded-lg border-2 border-gray-900 bg-gray-50 p-4">
-                <p className="text-sm font-semibold text-gray-900">Guarda esta contraseña</p>
-                <p className="mt-1 text-xs text-gray-600">La necesitarás para acceder a tu inscripción en este sorteo.</p>
-                <p className="mt-3 select-all text-center text-lg font-mono font-bold tracking-widest text-gray-900">
-                  {savedPassword || buyerSession.bidPassword}
-                </p>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
-            >
-              Cerrar
-            </button>
           </div>
         )
 
@@ -651,8 +676,6 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
   }
 
   const phaseTitle = {
-    [PHASE.CHOOSE]: 'Inscribirse en el sorteo',
-    [PHASE.VERIFY]: 'Verificar identidad',
     [PHASE.TERMS]: 'Paso 1 de 5 - Términos',
     [PHASE.PERSONAL]: 'Paso 2 de 5 - Datos personales',
     [PHASE.DELIVERY]: 'Paso 3 de 5 - Dirección de envío',
@@ -662,14 +685,17 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
     [PHASE.SUCCESS]: 'Inscripción completada',
   }
 
-  const canGoBack = [PHASE.VERIFY, PHASE.TERMS, PHASE.PERSONAL, PHASE.DELIVERY, PHASE.INVOICING].includes(phase)
+  const canGoBack = [PHASE.TERMS, PHASE.PERSONAL, PHASE.DELIVERY, PHASE.INVOICING].includes(phase)
 
   const goBack = () => {
     setError('')
     switch (phase) {
-      case PHASE.VERIFY: setPhase(PHASE.CHOOSE); break
-      case PHASE.TERMS: setPhase(PHASE.CHOOSE); break
-      case PHASE.PERSONAL: setPhase(PHASE.TERMS); break
+      case PHASE.PERSONAL:
+        setOtpSent(false)
+        setOtpCode('')
+        setOtpVerified(false)
+        setPhase(PHASE.TERMS)
+        break
       case PHASE.DELIVERY: setPhase(PHASE.PERSONAL); break
       case PHASE.INVOICING: setPhase(PHASE.DELIVERY); break
     }
@@ -715,15 +741,15 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
               </DialogTitle>
             </div>
 
-            {/* Step progress indicator for new participant flow */}
-            {NEW_PARTICIPANT_STEPS.includes(phase) && (
+            {/* Step progress indicator */}
+            {STEPS.includes(phase) && (
               <div className="mb-6">
                 <div className="flex gap-1">
-                  {NEW_PARTICIPANT_STEPS.map((step, i) => (
+                  {STEPS.map((step, i) => (
                     <div
                       key={step}
                       className={`h-1 flex-1 rounded-full ${
-                        NEW_PARTICIPANT_STEPS.indexOf(phase) >= i ? 'bg-gray-900' : 'bg-gray-200'
+                        STEPS.indexOf(phase) >= i ? 'bg-gray-900' : 'bg-gray-200'
                       }`}
                     />
                   ))}

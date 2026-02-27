@@ -1008,10 +1008,17 @@ export const drawsAPI = {
     });
   },
 
-  verifyBuyer: async (drawId, email, bidPassword) => {
-    return apiRequest(`/draws/${drawId}/verify-buyer`, {
+  sendVerification: async (drawId, email, dni) => {
+    return apiRequest(`/draws/${drawId}/send-verification`, {
       method: 'POST',
-      body: JSON.stringify({ email, bidPassword }),
+      body: JSON.stringify({ email, dni }),
+    });
+  },
+
+  verifyEmail: async (drawId, email, code) => {
+    return apiRequest(`/draws/${drawId}/verify-email`, {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
     });
   },
 

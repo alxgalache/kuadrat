@@ -10,15 +10,6 @@ function generateUUID() {
   return randomUUID();
 }
 
-function generateBidPassword() {
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  let password = '';
-  for (let i = 0; i < 6; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
-
 // ---------------------------------------------------------------------------
 // Draw CRUD
 // ---------------------------------------------------------------------------
@@ -202,7 +193,7 @@ async function getDrawsByDateRange(from, to) {
 // ---------------------------------------------------------------------------
 
 async function createOrGetDrawBuyer(drawId, {
-  firstName, lastName, email,
+  firstName, lastName, email, dni, ipAddress,
   deliveryAddress1, deliveryAddress2, deliveryPostalCode,
   deliveryCity, deliveryProvince, deliveryCountry,
   invoicingAddress1, invoicingAddress2, invoicingPostalCode,
@@ -218,18 +209,17 @@ async function createOrGetDrawBuyer(drawId, {
   }
 
   const id = generateUUID();
-  const bidPassword = generateBidPassword();
 
   await db.execute({
     sql: `INSERT INTO draw_buyers (
-            id, draw_id, first_name, last_name, email, bid_password,
+            id, draw_id, first_name, last_name, email, bid_password, dni, ip_address,
             delivery_address_1, delivery_address_2, delivery_postal_code,
             delivery_city, delivery_province, delivery_country,
             invoicing_address_1, invoicing_address_2, invoicing_postal_code,
             invoicing_city, invoicing_province, invoicing_country
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
-      id, drawId, firstName, lastName, email, bidPassword,
+      id, drawId, firstName, lastName, email, '', dni, ipAddress || null,
       deliveryAddress1 || null, deliveryAddress2 || null, deliveryPostalCode || null,
       deliveryCity || null, deliveryProvince || null, deliveryCountry || null,
       invoicingAddress1 || null, invoicingAddress2 || null, invoicingPostalCode || null,
@@ -239,14 +229,6 @@ async function createOrGetDrawBuyer(drawId, {
 
   const result = await db.execute({ sql: 'SELECT * FROM draw_buyers WHERE id = ?', args: [id] });
   return result.rows[0];
-}
-
-async function verifyDrawBuyerPassword(email, drawId, password) {
-  const result = await db.execute({
-    sql: 'SELECT * FROM draw_buyers WHERE email = ? AND draw_id = ? AND bid_password = ?',
-    args: [email, drawId, password],
-  });
-  return result.rows.length > 0 ? result.rows[0] : null;
 }
 
 async function getDrawBuyer(buyerId) {
@@ -386,18 +368,19 @@ async function getBuyerPaymentData(drawBuyerId) {
 }
 
 async function savePaymentData(drawBuyerId, {
-  name, lastFour, stripeSetupIntentId, stripePaymentMethodId, stripeCustomerId,
+  name, lastFour, stripeSetupIntentId, stripePaymentMethodId, stripeCustomerId, stripeFingerprint,
 }) {
   const id = generateUUID();
 
   await db.execute({
     sql: `INSERT INTO draw_authorised_payment_data (
             id, draw_buyer_id, name, last_four,
-            stripe_setup_intent_id, stripe_payment_method_id, stripe_customer_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            stripe_setup_intent_id, stripe_payment_method_id, stripe_customer_id, stripe_fingerprint
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id, drawBuyerId, name || null, lastFour || null,
       stripeSetupIntentId || null, stripePaymentMethodId || null, stripeCustomerId || null,
+      stripeFingerprint || null,
     ],
   });
 
@@ -409,12 +392,130 @@ async function savePaymentData(drawBuyerId, {
 }
 
 // ---------------------------------------------------------------------------
+// DNI Validation
+// ---------------------------------------------------------------------------
+
+const DNI_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE';
+
+function validateDNI(dni) {
+  if (!dni || typeof dni !== 'string') return false;
+  const normalized = dni.toUpperCase().trim();
+
+  // NIE format: X/Y/Z + 7 digits + letter
+  const nieMatch = normalized.match(/^([XYZ])(\d{7})([A-Z])$/);
+  if (nieMatch) {
+    const niePrefix = { X: '0', Y: '1', Z: '2' };
+    const num = parseInt(niePrefix[nieMatch[1]] + nieMatch[2], 10);
+    return nieMatch[3] === DNI_LETTERS[num % 23];
+  }
+
+  // DNI format: 8 digits + letter
+  const dniMatch = normalized.match(/^(\d{8})([A-Z])$/);
+  if (dniMatch) {
+    const num = parseInt(dniMatch[1], 10);
+    return dniMatch[2] === DNI_LETTERS[num % 23];
+  }
+
+  return false;
+}
+
+async function checkDniUniqueness(drawId, dni) {
+  const result = await db.execute({
+    sql: 'SELECT 1 FROM draw_buyers WHERE dni = ? AND draw_id = ? LIMIT 1',
+    args: [dni.toUpperCase().trim(), drawId],
+  });
+  return result.rows.length === 0;
+}
+
+// ---------------------------------------------------------------------------
+// Email OTP Verification
+// ---------------------------------------------------------------------------
+
+function generateOTPCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function createEmailVerification(email, drawId) {
+  // Invalidate previous codes for same email + draw
+  await db.execute({
+    sql: 'DELETE FROM draw_email_verifications WHERE email = ? AND draw_id = ?',
+    args: [email, drawId],
+  });
+
+  const id = generateUUID();
+  const code = generateOTPCode();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  await db.execute({
+    sql: `INSERT INTO draw_email_verifications (id, email, draw_id, code, expires_at)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [id, email, drawId, code, expiresAt],
+  });
+
+  return code;
+}
+
+async function verifyEmailCode(email, drawId, code) {
+  const result = await db.execute({
+    sql: `SELECT * FROM draw_email_verifications
+          WHERE email = ? AND draw_id = ? AND verified = 0
+          ORDER BY created_at DESC LIMIT 1`,
+    args: [email, drawId],
+  });
+
+  if (result.rows.length === 0) {
+    return { valid: false, error: 'No se encontró una verificación pendiente' };
+  }
+
+  const verification = result.rows[0];
+
+  if (new Date(verification.expires_at) < new Date()) {
+    return { valid: false, error: 'El código ha expirado. Solicita uno nuevo' };
+  }
+
+  if (verification.attempts >= 3) {
+    return { valid: false, error: 'Demasiados intentos. Solicita un nuevo código' };
+  }
+
+  if (verification.code !== code) {
+    await db.execute({
+      sql: 'UPDATE draw_email_verifications SET attempts = attempts + 1 WHERE id = ?',
+      args: [verification.id],
+    });
+    return { valid: false, error: 'Código incorrecto' };
+  }
+
+  await db.execute({
+    sql: 'UPDATE draw_email_verifications SET verified = 1 WHERE id = ?',
+    args: [verification.id],
+  });
+
+  return { valid: true };
+}
+
+// ---------------------------------------------------------------------------
+// Stripe Fingerprint Deduplication
+// ---------------------------------------------------------------------------
+
+async function checkFingerprintUniqueness(drawId, fingerprint, excludeBuyerId) {
+  if (!fingerprint) return true;
+
+  const result = await db.execute({
+    sql: `SELECT 1 FROM draw_authorised_payment_data dapd
+          JOIN draw_buyers db ON dapd.draw_buyer_id = db.id
+          WHERE dapd.stripe_fingerprint = ? AND db.draw_id = ? AND db.id != ?
+          LIMIT 1`,
+    args: [fingerprint, drawId, excludeBuyerId],
+  });
+  return result.rows.length === 0;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
 module.exports = {
   generateUUID,
-  generateBidPassword,
   createDraw,
   updateDraw,
   deleteDraw,
@@ -422,7 +523,6 @@ module.exports = {
   listDraws,
   getDrawsByDateRange,
   createOrGetDrawBuyer,
-  verifyDrawBuyerPassword,
   getDrawBuyer,
   getParticipationCount,
   hasParticipation,
@@ -432,4 +532,9 @@ module.exports = {
   cancelDraw,
   getBuyerPaymentData,
   savePaymentData,
+  validateDNI,
+  checkDniUniqueness,
+  createEmailVerification,
+  verifyEmailCode,
+  checkFingerprintUniqueness,
 };

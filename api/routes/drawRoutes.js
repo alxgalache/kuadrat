@@ -5,7 +5,8 @@ const { cacheControl } = require('../middleware/cache');
 const { validate } = require('../middleware/validate');
 const {
   registerBuyerSchema,
-  verifyBuyerSchema,
+  sendVerificationSchema,
+  verifyEmailSchema,
   setupPaymentSchema,
   confirmPaymentSchema,
   enterDrawSchema,
@@ -32,10 +33,16 @@ router.get('/:id', cacheControl({ maxAge: 10 }), drawController.getDrawDetail);
 router.post('/:id/register-buyer', validate(registerBuyerSchema), drawController.registerBuyer);
 
 /**
- * POST /api/draws/:id/verify-buyer
- * Verify returning participant with email + password
+ * POST /api/draws/:id/send-verification
+ * Validate DNI, check uniqueness, send email OTP
  */
-router.post('/:id/verify-buyer', validate(verifyBuyerSchema), drawController.verifyBuyer);
+router.post('/:id/send-verification', validate(sendVerificationSchema), drawController.sendVerification);
+
+/**
+ * POST /api/draws/:id/verify-email
+ * Verify email OTP code
+ */
+router.post('/:id/verify-email', validate(verifyEmailSchema), drawController.verifyEmail);
 
 /**
  * POST /api/draws/:id/setup-payment

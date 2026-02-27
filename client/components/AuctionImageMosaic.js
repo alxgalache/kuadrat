@@ -7,7 +7,7 @@ function getImageUrl(product) {
     : getOthersImageUrl(product.basename)
 }
 
-export default function AuctionImageMosaic({ products, productCount }) {
+export default function AuctionImageMosaic({ products, productCount, priority = false }) {
   if (!products || products.length === 0) {
     return <div className="aspect-square w-full rounded-md bg-gray-200" />
   }
@@ -21,6 +21,7 @@ export default function AuctionImageMosaic({ products, productCount }) {
           fill
           className="object-cover"
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          priority={priority}
         />
       </div>
     )
@@ -36,6 +37,7 @@ export default function AuctionImageMosaic({ products, productCount }) {
             fill
             className="object-cover rounded-md shadow-sm bg-gray-200"
             sizes="(max-width: 640px) 37vw, 18vw"
+            priority={priority}
           />
         </div>
         <div className="absolute bottom-0 right-0 w-[75%] h-[75%] relative">
@@ -66,6 +68,7 @@ export default function AuctionImageMosaic({ products, productCount }) {
                 fill
                 className="object-cover bg-gray-200"
                 sizes="(max-width: 640px) 25vw, (max-width: 1024px) 16vw, 12vw"
+                priority={priority && i === 0}
               />
             </div>
           )

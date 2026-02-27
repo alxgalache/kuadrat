@@ -19,7 +19,7 @@ function getAuthorText(productPreviews, sellersSummary) {
   return `${mainName} y ${uniqueSellers.size - 1} más`
 }
 
-export default function AuctionGridItem({ auction }) {
+export default function AuctionGridItem({ auction, priority = false }) {
   const { product_previews = [], product_count = 0, sellers_summary = [] } = auction
   const isSingle = product_count === 1
   const product = isSingle ? product_previews[0] : null
@@ -30,7 +30,7 @@ export default function AuctionGridItem({ auction }) {
         {/* Image area with badge overlay */}
         <div className="relative">
           <AuctionBadge />
-          <AuctionImageMosaic products={product_previews} productCount={product_count} />
+          <AuctionImageMosaic products={product_previews} productCount={product_count} priority={priority} />
         </div>
 
         {/* Text area */}

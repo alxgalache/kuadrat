@@ -8,6 +8,7 @@ const registerBuyerSchema = z.object({
     firstName: z.string().min(1, 'Nombre es obligatorio'),
     lastName: z.string().min(1, 'Apellido es obligatorio'),
     email: z.string().min(1, 'Email es obligatorio'),
+    dni: z.string().min(1, 'DNI es obligatorio'),
     deliveryAddress1: z.string().optional(),
     deliveryAddress2: z.string().optional(),
     deliveryPostalCode: z.string().optional(),
@@ -24,12 +25,22 @@ const registerBuyerSchema = z.object({
 });
 
 /**
- * POST /api/draws/:id/verify-buyer
+ * POST /api/draws/:id/send-verification
  */
-const verifyBuyerSchema = z.object({
+const sendVerificationSchema = z.object({
   body: z.object({
     email: z.string().min(1, 'Email es obligatorio'),
-    bidPassword: z.string().min(1, 'Contraseña de acceso es obligatoria'),
+    dni: z.string().min(1, 'DNI es obligatorio'),
+  }),
+});
+
+/**
+ * POST /api/draws/:id/verify-email
+ */
+const verifyEmailSchema = z.object({
+  body: z.object({
+    email: z.string().min(1, 'Email es obligatorio'),
+    code: z.string().length(6, 'El código debe tener 6 dígitos'),
   }),
 });
 
@@ -100,7 +111,8 @@ const updateDrawSchema = z.object({
 
 module.exports = {
   registerBuyerSchema,
-  verifyBuyerSchema,
+  sendVerificationSchema,
+  verifyEmailSchema,
   setupPaymentSchema,
   confirmPaymentSchema,
   enterDrawSchema,
