@@ -40,7 +40,7 @@ export default function AuctionGridItem({ auction }) {
           </p>
 
           <h3 className="mt-1 font-semibold text-gray-900">
-            <Link href={`/eventos/${auction.id}`}>
+            <Link href={`/eventos/subasta/${auction.id}`}>
               <span className="absolute inset-0" />
               {isSingle && product ? product.name : auction.name}
             </Link>

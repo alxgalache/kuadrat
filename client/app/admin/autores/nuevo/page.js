@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { adminAPI, getAuthorImageUrl } from '@/lib/api'
 import { PhotoIcon } from '@heroicons/react/24/solid'
@@ -443,10 +444,14 @@ function NewAuthorPageContent() {
                     <div>
                       <label className="block text-sm/6 font-medium text-gray-900">Vista previa</label>
                       <div className="mt-2">
-                        <img
+                        <Image
                           src={previewUrl}
                           alt="Preview"
-                          className="w-full rounded-full"
+                          width={0}
+                          height={0}
+                          unoptimized
+                          style={{ width: '100%', height: 'auto' }}
+                          className="rounded-full"
                         />
                       </div>
                     </div>

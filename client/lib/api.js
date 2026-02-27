@@ -769,6 +769,50 @@ export const adminAPI = {
     },
   },
 
+  // Draw management
+  draws: {
+    getAll: async (status) => {
+      const params = status ? `?status=${status}` : '';
+      return apiRequest(`/admin/draws${params}`);
+    },
+
+    getById: async (id) => {
+      return apiRequest(`/admin/draws/${id}`);
+    },
+
+    create: async (drawData) => {
+      return apiRequest('/admin/draws', {
+        method: 'POST',
+        body: JSON.stringify(drawData),
+      });
+    },
+
+    update: async (id, drawData) => {
+      return apiRequest(`/admin/draws/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(drawData),
+      });
+    },
+
+    delete: async (id) => {
+      return apiRequest(`/admin/draws/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    start: async (id) => {
+      return apiRequest(`/admin/draws/${id}/start`, {
+        method: 'POST',
+      });
+    },
+
+    cancel: async (id) => {
+      return apiRequest(`/admin/draws/${id}/cancel`, {
+        method: 'POST',
+      });
+    },
+  },
+
   // Postal codes management
   postalCodes: {
     getAll: async (country) => {
@@ -944,6 +988,52 @@ export const auctionsAPI = {
 
   validatePostalCode: async (auctionId, productId, productType, postalCode) => {
     return apiRequest(`/auctions/${auctionId}/validate-postal-code/${productId}/${productType}?postalCode=${encodeURIComponent(postalCode)}`);
+  },
+};
+
+// Public Draws API (no auth required)
+export const drawsAPI = {
+  getByDateRange: async (from, to) => {
+    return apiRequest(`/draws?from=${from}&to=${to}`);
+  },
+
+  getById: async (id) => {
+    return apiRequest(`/draws/${id}`);
+  },
+
+  registerBuyer: async (drawId, buyerData) => {
+    return apiRequest(`/draws/${drawId}/register-buyer`, {
+      method: 'POST',
+      body: JSON.stringify(buyerData),
+    });
+  },
+
+  verifyBuyer: async (drawId, email, bidPassword) => {
+    return apiRequest(`/draws/${drawId}/verify-buyer`, {
+      method: 'POST',
+      body: JSON.stringify({ email, bidPassword }),
+    });
+  },
+
+  setupPayment: async (drawId, drawBuyerId) => {
+    return apiRequest(`/draws/${drawId}/setup-payment`, {
+      method: 'POST',
+      body: JSON.stringify({ drawBuyerId }),
+    });
+  },
+
+  confirmPayment: async (drawId, drawBuyerId, setupIntentId) => {
+    return apiRequest(`/draws/${drawId}/confirm-payment`, {
+      method: 'POST',
+      body: JSON.stringify({ drawBuyerId, setupIntentId }),
+    });
+  },
+
+  enterDraw: async (drawId, drawBuyerId) => {
+    return apiRequest(`/draws/${drawId}/enter`, {
+      method: 'POST',
+      body: JSON.stringify({ drawBuyerId }),
+    });
   },
 };
 

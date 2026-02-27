@@ -465,6 +465,79 @@ async function initializeDatabase() {
       )
     `);
 
+    // ── Draws ────────────────────────────────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS draws (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        product_id INTEGER NOT NULL,
+        product_type TEXT NOT NULL CHECK(product_type IN ('art','other')),
+        price REAL NOT NULL,
+        units INTEGER NOT NULL DEFAULT 1,
+        max_participations INTEGER NOT NULL,
+        start_datetime DATETIME NOT NULL,
+        end_datetime DATETIME NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','active','finished','cancelled')),
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // ── Draw buyers ────────────────────────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS draw_buyers (
+        id TEXT PRIMARY KEY,
+        draw_id TEXT NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        bid_password TEXT NOT NULL,
+        delivery_address_1 TEXT,
+        delivery_address_2 TEXT,
+        delivery_postal_code TEXT,
+        delivery_city TEXT,
+        delivery_province TEXT,
+        delivery_country TEXT,
+        delivery_lat REAL,
+        delivery_long REAL,
+        invoicing_address_1 TEXT,
+        invoicing_address_2 TEXT,
+        invoicing_postal_code TEXT,
+        invoicing_city TEXT,
+        invoicing_province TEXT,
+        invoicing_country TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (draw_id) REFERENCES draws(id) ON DELETE CASCADE
+      )
+    `);
+
+    // ── Draw participations ────────────────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS draw_participations (
+        id TEXT PRIMARY KEY,
+        draw_id TEXT NOT NULL,
+        draw_buyer_id TEXT NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (draw_id) REFERENCES draws(id) ON DELETE CASCADE,
+        FOREIGN KEY (draw_buyer_id) REFERENCES draw_buyers(id)
+      )
+    `);
+
+    // ── Draw authorised payment data ───────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS draw_authorised_payment_data (
+        id TEXT PRIMARY KEY,
+        draw_buyer_id TEXT NOT NULL,
+        name TEXT,
+        last_four TEXT,
+        stripe_setup_intent_id TEXT,
+        stripe_payment_method_id TEXT,
+        stripe_customer_id TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (draw_buyer_id) REFERENCES draw_buyers(id)
+      )
+    `);
+
     // ── Shipping zones postal codes (polymorphic refs) ───────
     await db.execute(`
       CREATE TABLE IF NOT EXISTS shipping_zones_postal_codes (
@@ -514,6 +587,12 @@ async function initializeDatabase() {
     // Events
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendees_event ON event_attendees(event_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)`);
+
+    // Draws
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_participations_draw ON draw_participations(draw_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_participations_buyer ON draw_participations(draw_buyer_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_buyers_draw ON draw_buyers(draw_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_draws_status ON draws(status)`);
 
     // Postal codes
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_code_country ON postal_codes(postal_code, country)`);

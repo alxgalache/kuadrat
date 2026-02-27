@@ -1,6 +1,7 @@
 'use client'
 
 import { use, useState, useEffect, useMemo } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { adminAPI, getProductImageUrl } from '@/lib/api'
 import { PhotoIcon } from '@heroicons/react/24/solid'
@@ -399,10 +400,14 @@ function ProductEditPageContent({ params }) {
                     <div>
                       <label className="block text-sm/6 font-medium text-gray-900">Vista previa</label>
                       <div className="mt-2">
-                        <img
+                        <Image
                           src={previewUrl}
                           alt="Preview"
-                          className="w-full rounded-md"
+                          width={0}
+                          height={0}
+                          unoptimized
+                          style={{ width: '100%', height: 'auto' }}
+                          className="rounded-md"
                         />
                       </div>
                     </div>

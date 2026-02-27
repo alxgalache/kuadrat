@@ -15,5 +15,6 @@ router.use('/shipping', require('./shippingRoutes'));
 router.use('/auctions', require('./auctionRoutes'));
 router.use('/postal-codes', require('./postalCodeRoutes'));
 router.use('/events', require('./eventRoutes'));
+router.use('/draws', require('./drawRoutes'));
 
 module.exports = router;

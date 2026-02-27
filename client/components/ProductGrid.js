@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 
 export default function ProductGrid({ products, isFading, getImageUrl, baseRoute }) {
@@ -14,11 +15,15 @@ export default function ProductGrid({ products, isFading, getImageUrl, baseRoute
           {products.map((product) => (
             <li key={product.id} className="inline-flex w-full flex-col text-center">
               <div className="group relative">
-                <img
-                  alt={product.name}
-                  src={getImageUrl(product.basename)}
-                  className="aspect-square w-full rounded-md bg-gray-200 object-cover group-hover:opacity-75"
-                />
+                <div className="aspect-square w-full rounded-md bg-gray-200 relative overflow-hidden">
+                  <Image
+                    alt={product.name}
+                    src={getImageUrl(product.basename)}
+                    fill
+                    className="object-cover group-hover:opacity-75"
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                  />
+                </div>
                 <div className="mt-6">
                   <p className="text-sm text-gray-500">{product.seller_full_name}</p>
                   <h3 className="mt-1 font-semibold text-gray-900">

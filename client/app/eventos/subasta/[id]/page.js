@@ -18,7 +18,7 @@ export async function generateMetadata({ params }) {
       || `Subasta de arte online: ${auction.name}. ${dateRange}. Participa y puja por obras únicas en 140d.`,
     160,
   )
-  const canonical = `/eventos/${auction.id}`
+  const canonical = `/eventos/subasta/${auction.id}`
 
   return {
     title: auction.name,

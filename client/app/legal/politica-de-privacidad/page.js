@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 
 export const metadata = {
@@ -9,9 +10,11 @@ export default function PrivacyPolicyPage() {
     <div className="bg-white min-h-screen">
       <div className="mx-auto max-w-3xl px-6 py-16 sm:px-8 lg:px-10">
         <Link href="/" className="inline-block mb-10">
-          <img
+          <Image
             alt="140d Galería de Arte logo"
             src="/brand/140d.svg"
+            width={120}
+            height={24}
             className="h-6 w-auto"
           />
         </Link>

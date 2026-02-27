@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { othersAPI, ordersAPI, authAPI, authorsAPI, getOthersImageUrl } from '@/lib/api'
 import { useCart } from '@/contexts/CartContext'
@@ -201,10 +202,15 @@ export default function OthersProductDetail({ params }) {
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
           {/* Image */}
           <div className="w-full rounded-lg bg-gray-200">
-            <img
+            <Image
               alt={product.name}
               src={getOthersImageUrl(product.basename)}
-              className="w-full h-auto object-contain rounded-lg"
+              width={0}
+              height={0}
+              sizes="(max-width: 1024px) 100vw, 50vw"
+              style={{ width: '100%', height: 'auto' }}
+              className="object-contain rounded-lg"
+              priority
             />
           </div>
 
@@ -227,13 +233,14 @@ export default function OthersProductDetail({ params }) {
 
             <div className="mt-6">
               {product.seller_full_name && (
-                <p className="text-lg text-gray-400">
+                <p className="text-lg text-gray-700 mt-1">
                   <span className="font-medium">Autor:</span>{' '}
+                  {product.seller_full_name}
                   <button
                     onClick={handleViewAuthorBio}
-                    className="text-gray-400 hover:text-gray-500 hover:underline"
+                    className="text-sm ml-2 text-gray-700 hover:text-gray-500 hover:underline"
                   >
-                    {product.seller_full_name}
+                    (más información)
                   </button>
                 </p>
               )}

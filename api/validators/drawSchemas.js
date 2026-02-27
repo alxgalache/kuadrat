@@ -1,0 +1,109 @@
+const { z } = require('zod');
+
+/**
+ * POST /api/draws/:id/register-buyer
+ */
+const registerBuyerSchema = z.object({
+  body: z.object({
+    firstName: z.string().min(1, 'Nombre es obligatorio'),
+    lastName: z.string().min(1, 'Apellido es obligatorio'),
+    email: z.string().min(1, 'Email es obligatorio'),
+    deliveryAddress1: z.string().optional(),
+    deliveryAddress2: z.string().optional(),
+    deliveryPostalCode: z.string().optional(),
+    deliveryCity: z.string().optional(),
+    deliveryProvince: z.string().optional(),
+    deliveryCountry: z.string().optional(),
+    invoicingAddress1: z.string().optional(),
+    invoicingAddress2: z.string().optional(),
+    invoicingPostalCode: z.string().optional(),
+    invoicingCity: z.string().optional(),
+    invoicingProvince: z.string().optional(),
+    invoicingCountry: z.string().optional(),
+  }),
+});
+
+/**
+ * POST /api/draws/:id/verify-buyer
+ */
+const verifyBuyerSchema = z.object({
+  body: z.object({
+    email: z.string().min(1, 'Email es obligatorio'),
+    bidPassword: z.string().min(1, 'Contraseña de acceso es obligatoria'),
+  }),
+});
+
+/**
+ * POST /api/draws/:id/setup-payment
+ */
+const setupPaymentSchema = z.object({
+  body: z.object({
+    drawBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del participante es obligatorio'),
+  }),
+});
+
+/**
+ * POST /api/draws/:id/confirm-payment
+ */
+const confirmPaymentSchema = z.object({
+  body: z.object({
+    drawBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del participante es obligatorio'),
+    setupIntentId: z.string().min(1, 'setupIntentId es obligatorio'),
+    customerId: z.string().optional(),
+  }),
+});
+
+/**
+ * POST /api/draws/:id/enter
+ */
+const enterDrawSchema = z.object({
+  body: z.object({
+    drawBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del participante es obligatorio'),
+  }),
+});
+
+/**
+ * POST /api/admin/draws
+ */
+const createDrawSchema = z.object({
+  body: z.object({
+    name: z.string().min(1, 'Nombre es obligatorio'),
+    description: z.string().optional(),
+    product_id: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del producto es obligatorio'),
+    product_type: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
+    price: z.union([z.number(), z.string()]).refine(v => !!v, 'El precio es obligatorio'),
+    units: z.union([z.number(), z.string()]).optional(),
+    max_participations: z.union([z.number(), z.string()]).refine(v => !!v, 'El máximo de participaciones es obligatorio'),
+    start_datetime: z.string().min(1, 'Fecha de inicio es obligatoria'),
+    end_datetime: z.string().min(1, 'Fecha de fin es obligatoria'),
+    status: z.string().optional(),
+  }),
+});
+
+/**
+ * PUT /api/admin/draws/:id
+ */
+const updateDrawSchema = z.object({
+  body: z.object({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    product_id: z.union([z.number(), z.string()]).optional(),
+    product_type: z.enum(['art', 'other']).optional(),
+    price: z.union([z.number(), z.string()]).optional(),
+    units: z.union([z.number(), z.string()]).optional(),
+    max_participations: z.union([z.number(), z.string()]).optional(),
+    start_datetime: z.string().optional(),
+    end_datetime: z.string().optional(),
+    status: z.string().optional(),
+  }),
+});
+
+module.exports = {
+  registerBuyerSchema,
+  verifyBuyerSchema,
+  setupPaymentSchema,
+  confirmPaymentSchema,
+  enterDrawSchema,
+  createDrawSchema,
+  updateDrawSchema,
+};

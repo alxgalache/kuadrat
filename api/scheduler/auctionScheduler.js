@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { db } = require('../config/database');
 const auctionService = require('../services/auctionService');
+const drawService = require('../services/drawService');
 const config = require('../config/env');
 const logger = require('../config/logger');
 
@@ -50,12 +51,43 @@ module.exports = function startAuctionScheduler(app) {
           logger.error({ auctionId: auction.id, err }, 'Scheduler: Error ending auction');
         }
       }
+      // ── Draw lifecycle ──────────────────────────────────────
+
+      // 3. Start scheduled draws
+      const scheduledDraws = await db.execute({
+        sql: "SELECT id FROM draws WHERE status = 'scheduled' AND start_datetime <= ?",
+        args: [now],
+      });
+
+      for (const draw of scheduledDraws.rows) {
+        try {
+          logger.info({ drawId: draw.id }, 'Scheduler: Starting draw');
+          await drawService.startDraw(draw.id);
+        } catch (err) {
+          logger.error({ drawId: draw.id, err }, 'Scheduler: Error starting draw');
+        }
+      }
+
+      // 4. End active draws whose end_datetime has passed
+      const endedDraws = await db.execute({
+        sql: "SELECT id FROM draws WHERE status = 'active' AND end_datetime <= ?",
+        args: [now],
+      });
+
+      for (const draw of endedDraws.rows) {
+        try {
+          logger.info({ drawId: draw.id }, 'Scheduler: Ending draw');
+          await drawService.endDraw(draw.id);
+        } catch (err) {
+          logger.error({ drawId: draw.id, err }, 'Scheduler: Error ending draw');
+        }
+      }
     } catch (err) {
       logger.error({ err }, 'Scheduler: Error in auction scheduler tick');
     }
   });
 
-  logger.info('Auction scheduler started (runs every 30 seconds)');
+  logger.info('Auction & draw scheduler started (runs every 30 seconds)');
 };
 
 /**

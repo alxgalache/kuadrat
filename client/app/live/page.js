@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { eventsAPI } from '@/lib/api'
 import EventCalendar from '@/components/EventCalendar'
@@ -198,10 +199,12 @@ export default function EspaciosPage() {
               {/* Image right (50%) — stretches to match text content height */}
               {event.cover_image_url && (
                 <div className="relative w-[50%] hidden sm:block self-stretch">
-                  <img
+                  <Image
                     src={event.cover_image_url}
                     alt={event.title}
-                    className="absolute inset-0 w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="50vw"
                   />
                   <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent" />
                 </div>

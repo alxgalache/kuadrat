@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
@@ -141,11 +142,13 @@ function OrderDetailContent() {
                 <ul role="list" className="divide-y divide-gray-200">
                   {order.items.map((item, index) => (
                     <li key={index} className="py-6 flex">
-                      <div className="h-24 w-24 shrink-0 overflow-hidden rounded-md border border-gray-200">
-                        <img
+                      <div className="h-24 w-24 shrink-0 overflow-hidden rounded-md border border-gray-200 relative">
+                        <Image
                           src={getImageUrl(item)}
                           alt={item.name}
-                          className="h-full w-full object-cover"
+                          fill
+                          className="object-cover"
+                          sizes="96px"
                         />
                       </div>
 

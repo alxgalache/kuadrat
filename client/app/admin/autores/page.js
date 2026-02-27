@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { adminAPI, getAuthorImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
@@ -99,9 +100,11 @@ function AdminPageContent() {
                     </span>
                   </div>
                 )}
-                <img
+                <Image
                   alt={author.full_name || author.email}
                   src={author.profile_img ? getAuthorImageUrl(author.profile_img) : `https://ui-avatars.com/api/?name=${encodeURIComponent(author.full_name || author.email)}&background=random&size=128`}
+                  width={128}
+                  height={128}
                   className={`mx-auto size-32 shrink-0 rounded-full ${!author.is_activated ? 'opacity-60' : ''}`}
                 />
                 <h3 className="mt-6 text-sm font-medium text-gray-900">{author.full_name || author.email}</h3>

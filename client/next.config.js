@@ -3,6 +3,9 @@ const nextConfig = {
   // Enable standalone output for production Docker builds
   output: 'standalone',
   images: {
+    // In development, bypass the optimizer entirely so local http:// API images load without
+    // remotePatterns restrictions. In production, only https:// URLs are served anyway.
+    unoptimized: process.env.NODE_ENV === 'development',
     remotePatterns: [
       {
         protocol: 'https',

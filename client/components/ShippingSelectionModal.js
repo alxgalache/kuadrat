@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { XMarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 import { shippingAPI } from '@/lib/api'
 import { postcodeValidator } from 'postcode-validator'
@@ -213,14 +213,20 @@ export default function ShippingSelectionModal({
 
   return (
     <Dialog open={open} onClose={handleClose} className="relative z-50">
-      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+      <DialogBackdrop
+        transition
+        className="fixed inset-0 bg-gray-500/75 transition-opacity data-[closed]:opacity-0 data-[enter]:duration-300 data-[leave]:duration-200 data-[enter]:ease-out data-[leave]:ease-in"
+      />
 
       {/* Scrollable container so the whole modal (including header and footer
           actions) remains accessible on small screens when the content is
           taller than the viewport. */}
       <div className="fixed inset-0 z-50 overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
-          <DialogPanel className="mx-auto max-w-2xl w-full rounded-lg bg-white p-6 shadow-xl">
+          <DialogPanel
+            transition
+            className="mx-auto max-w-2xl w-full rounded-lg bg-white p-6 shadow-xl transition-all data-[closed]:translate-y-4 data-[closed]:opacity-0 data-[enter]:duration-300 data-[leave]:duration-200 data-[enter]:ease-out data-[leave]:ease-in data-[closed]:sm:translate-y-0 data-[closed]:sm:scale-95"
+          >
           <div className="flex items-center justify-between mb-4">
             <DialogTitle className="text-lg font-semibold text-gray-900">
               Seleccionar método de envío

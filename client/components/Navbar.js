@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Dialog, DialogPanel, Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
@@ -92,9 +93,11 @@ export default function Navbar() {
 
         <Link href="/" className="-m-1.5 p-1.5">
           <span className="sr-only">140d</span>
-          <img
+          <Image
             alt="140d Galería de Arte logo"
             src="/brand/140d.svg"
+            width={120}
+            height={24}
             className="h-6 w-auto"
           />
         </Link>
@@ -155,6 +158,13 @@ export default function Navbar() {
                         className="block p-2 hover:text-gray-600"
                       >
                         Subastas
+                      </Link>
+                      <Link
+                        href="/admin/sorteos"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        Sorteos
                       </Link>
                       <Link
                         href="/admin/espacios"
@@ -329,9 +339,11 @@ export default function Navbar() {
             </div>
             <Link href="/" className="-m-1.5 p-1.5">
               <span className="sr-only">140d</span>
-              <img
+              <Image
                 alt="140d Galería de Arte logo"
                 src="/brand/140d.svg"
+                width={120}
+                height={32}
                 className="h-8 w-auto"
               />
             </Link>
@@ -393,6 +405,13 @@ export default function Navbar() {
                       className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                     >
                       Subastas
+                    </Link>
+                    <Link
+                      href="/admin/sorteos"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Sorteos
                     </Link>
                     <Link
                       href="/admin/espacios"

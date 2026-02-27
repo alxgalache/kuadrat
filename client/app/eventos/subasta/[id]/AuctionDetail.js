@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, use } from 'react'
+import Image from 'next/image'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/20/solid'
 import { auctionsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import useAuctionSocket from '@/hooks/useAuctionSocket'
@@ -232,12 +233,15 @@ export default function AuctionDetail({ params }) {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Column 1: Product image */}
           <div className="lg:col-span-3">
-            <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-100">
+            <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-100 relative">
               {currentProduct?.basename ? (
-                <img
+                <Image
                   src={getImageUrl(currentProduct)}
                   alt={currentProduct.name}
-                  className="h-full w-full object-contain"
+                  fill
+                  priority
+                  className="object-contain"
+                  sizes="(max-width: 1024px) 100vw, 25vw"
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-gray-400 text-sm">

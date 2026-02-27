@@ -116,7 +116,7 @@ export default async function sitemap() {
   // Auctions
   const auctions = await fetchDateRange('/auctions', 'auctions')
   const auctionPages = auctions.map((a) => ({
-    url: `${SITE_URL}/eventos/${a.id}`,
+    url: `${SITE_URL}/eventos/subasta/${a.id}`,
     lastModified: a.start_datetime ? new Date(a.start_datetime) : new Date(),
     changeFrequency: 'weekly',
     priority: 0.7,

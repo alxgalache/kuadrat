@@ -1,6 +1,7 @@
 'use client'
 
 import { use, useState, useEffect } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { adminAPI, getAuthorImageUrl, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
@@ -162,9 +163,11 @@ function AuthorProfilePageContent({ params }) {
           <div className="flex items-start space-x-5">
             <div className="shrink-0">
               <div className="relative">
-                <img
+                <Image
                   alt={author.full_name || author.email}
                   src={author.profile_img ? getAuthorImageUrl(author.profile_img) : `https://ui-avatars.com/api/?name=${encodeURIComponent(author.full_name || author.email)}&background=random&size=128`}
+                  width={64}
+                  height={64}
                   className="size-16 rounded-full"
                 />
                 <span aria-hidden="true" className="absolute inset-0 rounded-full shadow-inner" />
@@ -274,11 +277,13 @@ function AuthorProfilePageContent({ params }) {
                         <tr key={`${product.product_type}-${product.id}`}>
                           <td className="py-4 pl-4 pr-3 sm:pl-0">
                             <div className="flex items-center">
-                              <div className="size-16 shrink-0">
-                                <img
+                              <div className="size-16 shrink-0 relative">
+                                <Image
                                   alt={product.name}
                                   src={getImageUrl(product)}
-                                  className="size-16 rounded-md object-cover"
+                                  fill
+                                  className="rounded-md object-cover"
+                                  sizes="64px"
                                 />
                               </div>
                               <div className="ml-4">

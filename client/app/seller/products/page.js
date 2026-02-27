@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { sellerAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
@@ -210,11 +211,13 @@ function SellerProductsPageContent() {
                       <tr key={`${product.product_type}-${product.id}`}>
                         <td className="py-4 pl-4 pr-3 sm:pl-0">
                           <div className="flex items-center">
-                            <div className="size-16 shrink-0">
-                              <img
+                            <div className="size-16 shrink-0 relative">
+                              <Image
                                 alt={product.name}
                                 src={getImageUrl(product)}
-                                className="size-16 rounded-md object-cover"
+                                fill
+                                className="rounded-md object-cover"
+                                sizes="64px"
                               />
                             </div>
                             <div className="ml-4">
@@ -298,11 +301,13 @@ function SellerProductsPageContent() {
 
                       {/* Content row: image + main fields */}
                       <div className="mt-4 flex items-center gap-4">
-                        <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-md bg-gray-100">
-                          <img
+                        <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-md bg-gray-100 relative">
+                          <Image
                             alt={product.name}
                             src={getImageUrl(product)}
-                            className="h-full w-full object-cover"
+                            fill
+                            className="object-cover"
+                            sizes="64px"
                           />
                         </div>
 

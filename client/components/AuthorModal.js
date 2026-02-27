@@ -2,6 +2,7 @@
 
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react'
 import { Fragment } from 'react'
+import Image from 'next/image'
 import { getAuthorImageUrl } from '@/lib/api'
 import { SafeAuthorBio } from '@/components/SafeHTML'
 
@@ -36,11 +37,12 @@ export default function AuthorModal({ author, open, onClose }) {
             {author && (
               <div>
                 {author.profile_img && (
-                  <div className="mx-auto flex size-24 items-center justify-center rounded-full overflow-hidden bg-gray-100 mb-4">
-                    <img
+                  <div className="mx-auto flex size-24 items-center justify-center rounded-full overflow-hidden bg-gray-100 mb-4 relative">
+                    <Image
                       src={getAuthorImageUrl(author.profile_img)}
                       alt={author.full_name}
-                      className="w-full h-full object-cover"
+                      fill
+                      className="object-cover"
                     />
                   </div>
                 )}

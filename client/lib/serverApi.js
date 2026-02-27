@@ -58,6 +58,19 @@ export async function fetchAuction(id) {
   }
 }
 
+export async function fetchDraw(id) {
+  try {
+    const res = await fetch(`${API_URL}/draws/${encodeURIComponent(id)}`, {
+      next: { revalidate: 60 },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.draw || null
+  } catch {
+    return null
+  }
+}
+
 export async function fetchAuthor(slug) {
   try {
     const res = await fetch(`${API_URL}/users/authors/${encodeURIComponent(slug)}`, {

@@ -1560,6 +1560,186 @@ const sendSCARequiredEmail = async ({ email, firstName, auctionName, productName
   }
 };
 
+// ---------------------------------------------------------------------------
+// Draw emails
+// ---------------------------------------------------------------------------
+
+const sendDrawEntryConfirmationEmail = async ({ email, firstName, bidPassword, drawName, productName, productType, productBasename, drawPrice }) => {
+  const logoAttachment = getLogoAttachment();
+  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
+
+  const imageUrl = productBasename
+    ? (productType === 'art'
+        ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(productBasename)}`
+        : `${SITE_API_URL}/api/others/images/${encodeURIComponent(productBasename)}`)
+    : null;
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Inscripción en sorteo confirmada</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 20px 40px 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">¡Inscripción confirmada!</h1>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Hola <strong>${firstName}</strong>,</p>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Tu inscripción ha sido registrada correctamente en el sorteo <strong>${drawName}</strong>.</p>
+
+              <!-- Product card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 24px;">
+                <tr>
+                  ${imageUrl ? `<td width="120" style="vertical-align: top;">
+                    <img src="${imageUrl}" alt="${productName}" style="width: 120px; height: 120px; object-fit: cover; display: block;">
+                  </td>` : ''}
+                  <td style="vertical-align: top; padding: 16px;">
+                    <div style="font-weight: 600; color: #111827; font-size: 16px; margin-bottom: 4px;">${productName}</div>
+                    <div style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">Sorteo: ${drawName}</div>
+                    <div style="font-size: 18px; font-weight: 700; color: #111827; margin-top: 8px;">${drawPrice}\u00a0€</div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Password box -->
+              <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 0 0 24px;">
+                <p style="color: #92400e; margin: 0 0 8px 0; font-weight: bold;">Tu contraseña de acceso:</p>
+                <p style="color: #92400e; margin: 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center;">${bidPassword}</p>
+                <p style="color: #92400e; margin: 8px 0 0 0; font-size: 12px;">Guarda esta contraseña. La necesitarás para acceder a tu inscripción.</p>
+              </div>
+
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Te notificaremos por email con el resultado del sorteo. ¡Buena suerte!</p>
+              <p style="color: #6b7280; font-size: 12px; margin-top: 32px; text-align: center;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: `Inscripción confirmada - Sorteo ${drawName}`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending draw entry confirmation email');
+    return { success: false };
+  }
+};
+
+const sendDrawWinnerEmail = async ({ email, firstName, drawName, productName, productType, productBasename, winningPrice }) => {
+  const logoAttachment = getLogoAttachment();
+  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
+
+  const imageUrl = productBasename
+    ? (productType === 'art'
+        ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(productBasename)}`
+        : `${SITE_API_URL}/api/others/images/${encodeURIComponent(productBasename)}`)
+    : null;
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>¡Has ganado el sorteo!</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 20px 40px 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">🎉 ¡Enhorabuena, has ganado!</h1>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Hola <strong>${firstName}</strong>,</p>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Has sido seleccionado como ganador del sorteo <strong>${drawName}</strong>.</p>
+
+              <!-- Product card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 24px;">
+                <tr>
+                  ${imageUrl ? `<td width="120" style="vertical-align: top;">
+                    <img src="${imageUrl}" alt="${productName}" style="width: 120px; height: 120px; object-fit: cover; display: block;">
+                  </td>` : ''}
+                  <td style="vertical-align: top; padding: 16px;">
+                    <div style="font-weight: 600; color: #111827; font-size: 16px; margin-bottom: 4px;">${productName}</div>
+                    <div style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">Sorteo: ${drawName}</div>
+                    <div style="font-size: 18px; font-weight: 700; color: #111827; margin-top: 8px;">${winningPrice}\u00a0€</div>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">El importe de <strong>${winningPrice}\u00a0€</strong> será cargado en el método de pago que proporcionaste durante la inscripción.</p>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Nos pondremos en contacto contigo para coordinar el envío.</p>
+              <p style="color: #6b7280; font-size: 12px; margin-top: 32px; text-align: center;">© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: `¡Has ganado el sorteo ${drawName}!`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending draw winner email');
+    return { success: false };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -1575,4 +1755,6 @@ module.exports = {
   sendAuctionWonEmail,
   sendAuctionEndedNoBidsEmail,
   sendSCARequiredEmail,
+  sendDrawEntryConfirmationEmail,
+  sendDrawWinnerEmail,
 };

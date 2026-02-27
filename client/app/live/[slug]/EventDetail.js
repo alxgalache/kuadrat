@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo, useCallback, use } from 'react'
+import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { eventsAPI, authorsAPI, getProtectedEventVideoUrl } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
@@ -357,12 +358,15 @@ export default function EventDetail({ params }) {
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:max-w-7xl lg:px-8">
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
           {/* Left column: Cover image */}
-          <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200">
+          <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
             {event.cover_image_url ? (
-              <img
+              <Image
                 src={event.cover_image_url}
                 alt={event.title}
-                className="h-full w-full object-cover"
+                fill
+                priority
+                className="object-cover"
+                sizes="(max-width: 1024px) 100vw, 50vw"
               />
             ) : (
               <div className="flex w-full items-center justify-center">

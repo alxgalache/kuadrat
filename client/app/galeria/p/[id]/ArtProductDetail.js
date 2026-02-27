@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { artAPI, ordersAPI, authAPI, authorsAPI, getArtImageUrl } from '@/lib/api'
 import { useCart } from '@/contexts/CartContext'
@@ -177,10 +178,15 @@ export default function ArtProductDetail({ params }) {
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
           {/* Image */}
           <div className="w-full rounded-lg bg-gray-200">
-            <img
+            <Image
               alt={product.name}
               src={getArtImageUrl(product.basename)}
-              className="w-full h-auto object-contain rounded-lg"
+              width={0}
+              height={0}
+              sizes="(max-width: 1024px) 100vw, 50vw"
+              style={{ width: '100%', height: 'auto' }}
+              className="object-contain rounded-lg"
+              priority
             />
           </div>
 

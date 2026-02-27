@@ -1185,11 +1185,13 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 <ul role="list" className="-my-6 divide-y divide-gray-200">
                     {cart.map((item) => (
                         <li key={item.id} className="flex py-6">
-                            <div className="size-32 shrink-0 overflow-hidden rounded-md border border-gray-200">
-                                <img
+                            <div className="size-32 shrink-0 overflow-hidden rounded-md border border-gray-200 relative">
+                                <Image
                                     alt={item.name}
                                     src={getImageUrl(item)}
-                                    className="size-full object-cover"
+                                    fill
+                                    className="object-cover"
+                                    sizes="128px"
                                 />
                             </div>
 
