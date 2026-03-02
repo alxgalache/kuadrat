@@ -3,6 +3,7 @@ const router = express.Router();
 const drawController = require('../controllers/drawController');
 const { cacheControl } = require('../middleware/cache');
 const { validate } = require('../middleware/validate');
+const { sensitiveLimiter } = require('../middleware/rateLimiter');
 const {
   registerBuyerSchema,
   sendVerificationSchema,
@@ -37,13 +38,13 @@ router.post('/:id/register-buyer', validate(registerBuyerSchema), drawController
  * POST /api/draws/:id/send-verification
  * Validate DNI, check uniqueness, send email OTP
  */
-router.post('/:id/send-verification', validate(sendVerificationSchema), drawController.sendVerification);
+router.post('/:id/send-verification', sensitiveLimiter, validate(sendVerificationSchema), drawController.sendVerification);
 
 /**
  * POST /api/draws/:id/verify-email
  * Verify email OTP code
  */
-router.post('/:id/verify-email', validate(verifyEmailSchema), drawController.verifyEmail);
+router.post('/:id/verify-email', sensitiveLimiter, validate(verifyEmailSchema), drawController.verifyEmail);
 
 /**
  * POST /api/draws/:id/setup-payment

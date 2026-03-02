@@ -259,6 +259,17 @@ async function hasParticipation(drawId, drawBuyerId) {
   return result.rows.length > 0;
 }
 
+async function hasBuyerCompletedParticipation(drawId, email, dni) {
+  const result = await db.execute({
+    sql: `SELECT 1 FROM draw_buyers db
+          INNER JOIN draw_participations dp ON dp.draw_buyer_id = db.id AND dp.draw_id = db.draw_id
+          WHERE db.draw_id = ? AND (db.email = ? OR db.dni = ?)
+          LIMIT 1`,
+    args: [drawId, email.toLowerCase().trim(), dni.toUpperCase().trim()],
+  });
+  return result.rows.length > 0;
+}
+
 async function enterDraw(drawId, drawBuyerId) {
   // Check draw is active
   const drawResult = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [drawId] });
@@ -529,6 +540,7 @@ async function validatePostalCodeForDraw(drawId, postalCode, country) {
 
   const draw = drawResult.rows[0];
   const productTable = draw.product_type === 'art' ? 'art' : 'others';
+  const articleType = draw.product_type === 'art' ? 'art' : 'others';
 
   const productResult = await db.execute({
     sql: `SELECT seller_id FROM ${productTable} WHERE id = ?`,
@@ -538,17 +550,18 @@ async function validatePostalCodeForDraw(drawId, postalCode, country) {
 
   const sellerId = productResult.rows[0].seller_id;
 
-  // Check if seller has any shipping zones for this country
+  // Check if seller has any delivery zones for this country matching the product type
   const zonesResult = await db.execute({
     sql: `SELECT sz.id FROM shipping_zones sz
           INNER JOIN shipping_methods sm ON sz.shipping_method_id = sm.id
           WHERE sm.type = 'delivery' AND sm.is_active = 1
+            AND (sm.article_type = 'all' OR sm.article_type = ?)
             AND sz.seller_id = ? AND sz.country = ?`,
-    args: [sellerId, country],
+    args: [articleType, sellerId, country],
   });
 
   if (zonesResult.rows.length === 0) {
-    return { valid: true }; // No zones configured — no restrictions
+    return { valid: true }; // No zones configured for this product type — no restrictions
   }
 
   // Check if postal code matches any zone (zone with no postal refs = country-wide)
@@ -556,6 +569,7 @@ async function validatePostalCodeForDraw(drawId, postalCode, country) {
     sql: `SELECT 1 FROM shipping_zones sz
           INNER JOIN shipping_methods sm ON sz.shipping_method_id = sm.id
           WHERE sm.type = 'delivery' AND sm.is_active = 1
+            AND (sm.article_type = 'all' OR sm.article_type = ?)
             AND sz.seller_id = ? AND sz.country = ?
             AND (
               NOT EXISTS (
@@ -585,7 +599,7 @@ async function validatePostalCodeForDraw(drawId, postalCode, country) {
               )
             )
           LIMIT 1`,
-    args: [sellerId, country, postalCode, country, postalCode, country, postalCode],
+    args: [articleType, sellerId, country, postalCode, country, postalCode, country, postalCode],
   });
 
   return { valid: matchResult.rows.length > 0 };
@@ -607,6 +621,7 @@ module.exports = {
   getDrawBuyer,
   getParticipationCount,
   hasParticipation,
+  hasBuyerCompletedParticipation,
   enterDraw,
   startDraw,
   endDraw,

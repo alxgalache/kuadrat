@@ -141,16 +141,22 @@ const sendVerification = async (req, res, next) => {
       throw new ApiError(400, 'El DNI/NIE introducido no es válido', 'DNI inválido');
     }
 
-    // Check email uniqueness for this draw
+    // Check email uniqueness for this draw (allow re-entry if participation is not completed)
     const isEmailUnique = await drawService.checkEmailUniqueness(id, email);
     if (!isEmailUnique) {
-      throw new ApiError(409, 'Este email ya está registrado en este sorteo', 'Email duplicado');
+      const hasCompleted = await drawService.hasBuyerCompletedParticipation(id, email, dni);
+      if (hasCompleted) {
+        throw new ApiError(409, 'Este email ya está registrado en este sorteo', 'Email duplicado');
+      }
     }
 
-    // Check DNI uniqueness for this draw
+    // Check DNI uniqueness for this draw (allow re-entry if participation is not completed)
     const isDniUnique = await drawService.checkDniUniqueness(id, dni);
     if (!isDniUnique) {
-      throw new ApiError(409, 'Este DNI ya está registrado en este sorteo', 'DNI duplicado');
+      const hasCompleted = await drawService.hasBuyerCompletedParticipation(id, email, dni);
+      if (hasCompleted) {
+        throw new ApiError(409, 'Este DNI ya está registrado en este sorteo', 'DNI duplicado');
+      }
     }
 
     // Capture IP address
