@@ -1,0 +1,9 @@
+I want to implement some adjustments and fixes to the draws functionality.
+
+- I want to have a new colum in draws table for storing the minimum number of participants and the number of units of the edition (default 1). Then you must change the text in the draw details screen about minimum participants and edition units to the values in that table. THese values are currently hardcoded. If the product is unique, "Edición única" must be displayed.
+- I want you to modify the FAQs text in order to indicate the distinction between auctions and draws. There will be different sections for that two events. We currently have one FAQ entry for auctions. You must add another about draws.
+- Postal code check validation fucntionality must be added when the user types in his postal code in the draw participation model window. This has to be done in the same way it is being done in auctions modal window. As draw only contains one prduct, it will have to validate the postal code entered by the user against the suitable shipping zones postal codes for the author (similarly to what is being done when a user adds an art product to the shopping cart in @client/components/ShippingSelectionModal.js )
+- I have reviewed the dni validation functionality when a user opt-in in a draw. I have noticed that a user could opt-in a second time in the draw, entering a new (invented) dni number and the same email address he entered the first time for the first registration. That must be prevented. User must not be able to opt-in a second time in a draw by changing the dni and using the same email address.
+- I want to know when the ip validation is being taken place. I would like to know if it would make sense to add it in the very first step (when the user types in his name, email address and dni).
+
+I would like to implement all that points.

@@ -10,6 +10,7 @@ const {
   setupPaymentSchema,
   confirmPaymentSchema,
   enterDrawSchema,
+  validatePostalCodeSchema,
 } = require('../validators/drawSchemas');
 
 // All routes are public (no authentication required)
@@ -61,5 +62,11 @@ router.post('/:id/confirm-payment', validate(confirmPaymentSchema), drawControll
  * Enter the draw (create participation)
  */
 router.post('/:id/enter', validate(enterDrawSchema), drawController.enterDraw);
+
+/**
+ * POST /api/draws/:id/validate-postal-code
+ * Validate postal code against seller's shipping zones
+ */
+router.post('/:id/validate-postal-code', validate(validatePostalCodeSchema), drawController.validatePostalCode);
 
 module.exports = router;

@@ -74,6 +74,16 @@ const enterDrawSchema = z.object({
 });
 
 /**
+ * POST /api/draws/:id/validate-postal-code
+ */
+const validatePostalCodeSchema = z.object({
+  body: z.object({
+    postalCode: z.string().min(1, 'Código postal es obligatorio'),
+    country: z.string().length(2, 'Código de país debe tener 2 caracteres').default('ES'),
+  }),
+});
+
+/**
  * POST /api/admin/draws
  */
 const createDrawSchema = z.object({
@@ -84,6 +94,7 @@ const createDrawSchema = z.object({
     product_type: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
     price: z.union([z.number(), z.string()]).refine(v => !!v, 'El precio es obligatorio'),
     units: z.union([z.number(), z.string()]).optional(),
+    min_participants: z.union([z.number(), z.string()]).optional(),
     max_participations: z.union([z.number(), z.string()]).refine(v => !!v, 'El máximo de participaciones es obligatorio'),
     start_datetime: z.string().min(1, 'Fecha de inicio es obligatoria'),
     end_datetime: z.string().min(1, 'Fecha de fin es obligatoria'),
@@ -102,6 +113,7 @@ const updateDrawSchema = z.object({
     product_type: z.enum(['art', 'other']).optional(),
     price: z.union([z.number(), z.string()]).optional(),
     units: z.union([z.number(), z.string()]).optional(),
+    min_participants: z.union([z.number(), z.string()]).optional(),
     max_participations: z.union([z.number(), z.string()]).optional(),
     start_datetime: z.string().optional(),
     end_datetime: z.string().optional(),
@@ -116,6 +128,7 @@ module.exports = {
   setupPaymentSchema,
   confirmPaymentSchema,
   enterDrawSchema,
+  validatePostalCodeSchema,
   createDrawSchema,
   updateDrawSchema,
 };

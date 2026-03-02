@@ -141,14 +141,23 @@ const sendVerification = async (req, res, next) => {
       throw new ApiError(400, 'El DNI/NIE introducido no es válido', 'DNI inválido');
     }
 
+    // Check email uniqueness for this draw
+    const isEmailUnique = await drawService.checkEmailUniqueness(id, email);
+    if (!isEmailUnique) {
+      throw new ApiError(409, 'Este email ya está registrado en este sorteo', 'Email duplicado');
+    }
+
     // Check DNI uniqueness for this draw
-    const isUnique = await drawService.checkDniUniqueness(id, dni);
-    if (!isUnique) {
+    const isDniUnique = await drawService.checkDniUniqueness(id, dni);
+    if (!isDniUnique) {
       throw new ApiError(409, 'Este DNI ya está registrado en este sorteo', 'DNI duplicado');
     }
 
+    // Capture IP address
+    const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+
     // Generate and send OTP
-    const code = await drawService.createEmailVerification(email, id);
+    const code = await drawService.createEmailVerification(email, id, ipAddress);
     await sendDrawVerificationEmail({ email, code });
 
     res.status(200).json({ success: true });
@@ -283,6 +292,25 @@ const enterDraw = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/draws/:id/validate-postal-code
+// ---------------------------------------------------------------------------
+const validatePostalCode = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { postalCode, country } = req.body;
+
+    const result = await drawService.validatePostalCodeForDraw(id, postalCode, country || 'ES');
+    if (result === null) {
+      throw new ApiError(404, 'Sorteo no encontrado', 'Sorteo no encontrado');
+    }
+
+    res.status(200).json({ success: true, valid: result.valid });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getDraws,
   getDrawDetail,
@@ -292,4 +320,5 @@ module.exports = {
   enterDraw,
   sendVerification,
   verifyEmail,
+  validatePostalCode,
 };

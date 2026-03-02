@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { XMarkIcon, CheckIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import Image from 'next/image'
 import { drawsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
+import usePostalCodeValidation from '@/hooks/usePostalCodeValidation'
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
 
@@ -133,6 +134,17 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
 
   // Track completed entry to prevent reset on draw prop changes
   const entryCompleteRef = useRef(false)
+
+  // Postal code validation
+  const postalCodeValidateFn = useCallback(
+    async (code) => drawsAPI.validatePostalCode(draw?.id, code, 'ES'),
+    [draw?.id]
+  )
+  const { isValid: postalCodeValid, isChecking: postalCodeChecking } = usePostalCodeValidation({
+    postalCode: deliveryAddress.postal_code,
+    hasRestrictions: true,
+    validateFn: postalCodeValidateFn,
+  })
 
   // ------ Reset when modal opens ------
   useEffect(() => {
@@ -464,12 +476,27 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-900">Código postal</label>
-                <input
-                  type="text"
-                  value={deliveryAddress.postal_code}
-                  onChange={(e) => setDeliveryAddress({ ...deliveryAddress, postal_code: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={deliveryAddress.postal_code}
+                    onChange={(e) => setDeliveryAddress({ ...deliveryAddress, postal_code: e.target.value })}
+                    className={`mt-1 block w-full rounded-md border-0 px-3 py-2 pr-8 text-gray-900 shadow-sm ring-1 ring-inset ${postalCodeValid === false ? 'ring-red-300' : postalCodeValid === true ? 'ring-green-300' : 'ring-gray-300'} placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm`}
+                  />
+                  {postalCodeChecking && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 mt-0.5">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+                    </div>
+                  )}
+                  {!postalCodeChecking && postalCodeValid === true && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 mt-0.5">
+                      <CheckIcon className="h-4 w-4 text-green-600" />
+                    </div>
+                  )}
+                </div>
+                {postalCodeValid === false && (
+                  <p className="mt-1 text-xs text-red-600">No realizamos envíos a este código postal</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-900">Ciudad</label>
@@ -504,7 +531,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
             <button
               type="button"
               onClick={() => { setError(''); setPhase(PHASE.INVOICING) }}
-              disabled={!deliveryAddress.address_1 || !deliveryAddress.postal_code || !deliveryAddress.city}
+              disabled={!deliveryAddress.address_1 || !deliveryAddress.postal_code || !deliveryAddress.city || postalCodeValid === false || postalCodeChecking}
               className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
             >
               Continuar

@@ -5,7 +5,7 @@ const drawService = require('../services/drawService');
  */
 const createDraw = async (req, res, next) => {
   try {
-    const { name, description, product_id, product_type, price, units, max_participations, start_datetime, end_datetime, status } = req.body;
+    const { name, description, product_id, product_type, price, units, min_participants, max_participations, start_datetime, end_datetime, status } = req.body;
 
     if (!name || !product_id || !product_type || !price || !max_participations || !start_datetime || !end_datetime) {
       return res.status(400).json({
@@ -30,6 +30,7 @@ const createDraw = async (req, res, next) => {
       product_type,
       price: parseFloat(price),
       units: units ? parseInt(units, 10) : 1,
+      min_participants: min_participants ? parseInt(min_participants, 10) : 30,
       max_participations: parseInt(max_participations, 10),
       start_datetime,
       end_datetime,
@@ -99,7 +100,7 @@ const getDraw = async (req, res, next) => {
 const updateDraw = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, description, product_id, product_type, price, units, max_participations, start_datetime, end_datetime, status } = req.body;
+    const { name, description, product_id, product_type, price, units, min_participants, max_participations, start_datetime, end_datetime, status } = req.body;
 
     const fields = {};
     if (name !== undefined) fields.name = name;
@@ -108,6 +109,7 @@ const updateDraw = async (req, res, next) => {
     if (product_type !== undefined) fields.product_type = product_type;
     if (price !== undefined) fields.price = parseFloat(price);
     if (units !== undefined) fields.units = parseInt(units, 10);
+    if (min_participants !== undefined) fields.min_participants = parseInt(min_participants, 10);
     if (max_participations !== undefined) fields.max_participations = parseInt(max_participations, 10);
     if (start_datetime !== undefined) fields.start_datetime = start_datetime;
     if (end_datetime !== undefined) fields.end_datetime = end_datetime;

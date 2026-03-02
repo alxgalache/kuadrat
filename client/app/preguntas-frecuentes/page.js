@@ -30,6 +30,10 @@ const faqData = [
     answer: 'Son subastas de arte online en tiempo real donde puedes pujar por obras únicas. Las subastas tienen una fecha y hora de inicio y fin, y puedes seguir las pujas en directo. Al finalizar, la puja más alta se lleva la obra.',
   },
   {
+    question: '¿Qué son los sorteos de 140d?',
+    answer: 'Los sorteos son una forma de adquirir arte a un precio fijo mediante selección aleatoria. Para participar, debes registrarte con tu email, verificar tu identidad y autorizar un método de pago. Al finalizar el período de inscripción, se seleccionan los ganadores de forma aleatoria. Solo se cobra a los participantes seleccionados como ganadores. Cada persona puede participar una sola vez por sorteo.',
+  },
+  {
     question: '¿Qué son los Espacios de 140d?',
     answer: 'Los Espacios son eventos culturales en directo: masterclasses, charlas, entrevistas y sesiones AMA con artistas. Algunos son gratuitos y otros de pago. Puedes asistir desde cualquier lugar a través de nuestra plataforma de streaming.',
   },

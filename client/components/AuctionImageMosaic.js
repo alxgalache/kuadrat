@@ -30,24 +30,28 @@ export default function AuctionImageMosaic({ products, productCount, priority = 
   if (products.length === 2) {
     return (
       <div className="aspect-square w-full rounded-md overflow-hidden relative bg-gray-200">
-        <div className="absolute top-0 left-0 w-[75%] h-[75%] relative">
-          <Image
-            alt={products[0].name}
-            src={getImageUrl(products[0])}
-            fill
-            className="object-cover rounded-md shadow-sm bg-gray-200"
-            sizes="(max-width: 640px) 37vw, 18vw"
-            priority={priority}
-          />
+        <div className="absolute top-0 left-0 w-[75%] h-[75%]">
+          <div className="relative w-full h-full">
+            <Image
+              alt={products[0].name}
+              src={getImageUrl(products[0])}
+              fill
+              className="object-cover rounded-md shadow-sm bg-gray-200"
+              sizes="(max-width: 640px) 37vw, 18vw"
+              priority={priority}
+            />
+          </div>
         </div>
-        <div className="absolute bottom-0 right-0 w-[75%] h-[75%] relative">
-          <Image
-            alt={products[1].name}
-            src={getImageUrl(products[1])}
-            fill
-            className="object-cover rounded-md shadow-sm ring-2 ring-white bg-gray-200"
-            sizes="(max-width: 640px) 37vw, 18vw"
-          />
+        <div className="absolute bottom-0 right-0 w-[75%] h-[75%]">
+          <div className="relative w-full h-full">
+            <Image
+              alt={products[1].name}
+              src={getImageUrl(products[1])}
+              fill
+              className="object-cover rounded-md shadow-sm ring-2 ring-white bg-gray-200"
+              sizes="(max-width: 640px) 37vw, 18vw"
+            />
+          </div>
         </div>
       </div>
     )

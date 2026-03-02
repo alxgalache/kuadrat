@@ -1042,6 +1042,13 @@ export const drawsAPI = {
       body: JSON.stringify({ drawBuyerId }),
     });
   },
+
+  validatePostalCode: async (drawId, postalCode, country = 'ES') => {
+    return apiRequest(`/draws/${drawId}/validate-postal-code`, {
+      method: 'POST',
+      body: JSON.stringify({ postalCode, country }),
+    });
+  },
 };
 
 // Public Events API (no auth required)

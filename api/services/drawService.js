@@ -14,12 +14,12 @@ function generateUUID() {
 // Draw CRUD
 // ---------------------------------------------------------------------------
 
-async function createDraw({ name, description, product_id, product_type, price, units = 1, max_participations, start_datetime, end_datetime, status = 'draft' }) {
+async function createDraw({ name, description, product_id, product_type, price, units = 1, min_participants = 30, max_participations, start_datetime, end_datetime, status = 'draft' }) {
   const id = generateUUID();
   await db.execute({
-    sql: `INSERT INTO draws (id, name, description, product_id, product_type, price, units, max_participations, start_datetime, end_datetime, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [id, name, description || null, product_id, product_type, price, units, max_participations, start_datetime, end_datetime, status],
+    sql: `INSERT INTO draws (id, name, description, product_id, product_type, price, units, min_participants, max_participations, start_datetime, end_datetime, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, name, description || null, product_id, product_type, price, units, min_participants, max_participations, start_datetime, end_datetime, status],
   });
 
   const result = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
@@ -33,7 +33,7 @@ async function updateDraw(id, fields) {
   const draw = current.rows[0];
   if (!['draft', 'scheduled'].includes(draw.status)) return null;
 
-  const allowedFields = ['name', 'description', 'product_id', 'product_type', 'price', 'units', 'max_participations', 'start_datetime', 'end_datetime', 'status'];
+  const allowedFields = ['name', 'description', 'product_id', 'product_type', 'price', 'units', 'min_participants', 'max_participations', 'start_datetime', 'end_datetime', 'status'];
   const setClauses = [];
   const args = [];
 
@@ -427,6 +427,14 @@ async function checkDniUniqueness(drawId, dni) {
   return result.rows.length === 0;
 }
 
+async function checkEmailUniqueness(drawId, email) {
+  const result = await db.execute({
+    sql: 'SELECT 1 FROM draw_buyers WHERE email = ? AND draw_id = ? LIMIT 1',
+    args: [email.toLowerCase().trim(), drawId],
+  });
+  return result.rows.length === 0;
+}
+
 // ---------------------------------------------------------------------------
 // Email OTP Verification
 // ---------------------------------------------------------------------------
@@ -435,7 +443,7 @@ function generateOTPCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-async function createEmailVerification(email, drawId) {
+async function createEmailVerification(email, drawId, ipAddress = null) {
   // Invalidate previous codes for same email + draw
   await db.execute({
     sql: 'DELETE FROM draw_email_verifications WHERE email = ? AND draw_id = ?',
@@ -447,9 +455,9 @@ async function createEmailVerification(email, drawId) {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
   await db.execute({
-    sql: `INSERT INTO draw_email_verifications (id, email, draw_id, code, expires_at)
-          VALUES (?, ?, ?, ?, ?)`,
-    args: [id, email, drawId, code, expiresAt],
+    sql: `INSERT INTO draw_email_verifications (id, email, draw_id, code, expires_at, ip_address)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [id, email, drawId, code, expiresAt, ipAddress || null],
   });
 
   return code;
@@ -511,6 +519,79 @@ async function checkFingerprintUniqueness(drawId, fingerprint, excludeBuyerId) {
 }
 
 // ---------------------------------------------------------------------------
+// Postal Code Validation
+// ---------------------------------------------------------------------------
+
+async function validatePostalCodeForDraw(drawId, postalCode, country) {
+  // Resolve draw → product → seller
+  const drawResult = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [drawId] });
+  if (drawResult.rows.length === 0) return null;
+
+  const draw = drawResult.rows[0];
+  const productTable = draw.product_type === 'art' ? 'art' : 'others';
+
+  const productResult = await db.execute({
+    sql: `SELECT seller_id FROM ${productTable} WHERE id = ?`,
+    args: [draw.product_id],
+  });
+  if (productResult.rows.length === 0) return { valid: true };
+
+  const sellerId = productResult.rows[0].seller_id;
+
+  // Check if seller has any shipping zones for this country
+  const zonesResult = await db.execute({
+    sql: `SELECT sz.id FROM shipping_zones sz
+          INNER JOIN shipping_methods sm ON sz.shipping_method_id = sm.id
+          WHERE sm.type = 'delivery' AND sm.is_active = 1
+            AND sz.seller_id = ? AND sz.country = ?`,
+    args: [sellerId, country],
+  });
+
+  if (zonesResult.rows.length === 0) {
+    return { valid: true }; // No zones configured — no restrictions
+  }
+
+  // Check if postal code matches any zone (zone with no postal refs = country-wide)
+  const matchResult = await db.execute({
+    sql: `SELECT 1 FROM shipping_zones sz
+          INNER JOIN shipping_methods sm ON sz.shipping_method_id = sm.id
+          WHERE sm.type = 'delivery' AND sm.is_active = 1
+            AND sz.seller_id = ? AND sz.country = ?
+            AND (
+              NOT EXISTS (
+                SELECT 1 FROM shipping_zones_postal_codes szpc WHERE szpc.shipping_zone_id = sz.id
+              )
+              OR EXISTS (
+                SELECT 1 FROM shipping_zones_postal_codes szpc
+                JOIN postal_codes pc ON szpc.postal_code_id = pc.id
+                WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'postal_code'
+                  AND pc.postal_code = ? AND pc.country = ?
+              )
+              OR EXISTS (
+                SELECT 1 FROM shipping_zones_postal_codes szpc
+                WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'province'
+                  AND EXISTS (
+                    SELECT 1 FROM postal_codes pc
+                    WHERE pc.postal_code = ? AND pc.country = ? AND pc.province = szpc.ref_value
+                  )
+              )
+              OR EXISTS (
+                SELECT 1 FROM shipping_zones_postal_codes szpc
+                WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'country'
+                  AND EXISTS (
+                    SELECT 1 FROM postal_codes pc
+                    WHERE pc.postal_code = ? AND pc.country = szpc.ref_value
+                  )
+              )
+            )
+          LIMIT 1`,
+    args: [sellerId, country, postalCode, country, postalCode, country, postalCode],
+  });
+
+  return { valid: matchResult.rows.length > 0 };
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -534,7 +615,9 @@ module.exports = {
   savePaymentData,
   validateDNI,
   checkDniUniqueness,
+  checkEmailUniqueness,
   createEmailVerification,
   verifyEmailCode,
   checkFingerprintUniqueness,
+  validatePostalCodeForDraw,
 };

@@ -475,6 +475,7 @@ async function initializeDatabase() {
         product_type TEXT NOT NULL CHECK(product_type IN ('art','other')),
         price REAL NOT NULL,
         units INTEGER NOT NULL DEFAULT 1,
+        min_participants INTEGER NOT NULL DEFAULT 30,
         max_participations INTEGER NOT NULL,
         start_datetime DATETIME NOT NULL,
         end_datetime DATETIME NOT NULL,
@@ -550,6 +551,7 @@ async function initializeDatabase() {
         attempts INTEGER NOT NULL DEFAULT 0,
         expires_at DATETIME NOT NULL,
         verified INTEGER NOT NULL DEFAULT 0,
+        ip_address TEXT,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (draw_id) REFERENCES draws(id) ON DELETE CASCADE
       )
@@ -562,6 +564,8 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE draw_buyers ADD COLUMN dni TEXT NOT NULL DEFAULT \'\'');
     await safeAlter('ALTER TABLE draw_buyers ADD COLUMN ip_address TEXT');
     await safeAlter('ALTER TABLE draw_authorised_payment_data ADD COLUMN stripe_fingerprint TEXT');
+    await safeAlter('ALTER TABLE draws ADD COLUMN min_participants INTEGER NOT NULL DEFAULT 30');
+    await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN ip_address TEXT');
 
     // ── Shipping zones postal codes (polymorphic refs) ───────
     await db.execute(`
@@ -618,6 +622,7 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_participations_buyer ON draw_participations(draw_buyer_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_buyers_draw ON draw_buyers(draw_id)`);
     await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_draw_buyers_dni_draw ON draw_buyers(dni, draw_id)`);
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_draw_buyers_email_draw ON draw_buyers(email, draw_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draws_status ON draws(status)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_email_verifications_email_draw ON draw_email_verifications(email, draw_id)`);
 
