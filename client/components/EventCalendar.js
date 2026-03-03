@@ -10,7 +10,7 @@ const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
  *
  * @param {{ selectedDate: string, onSelectDate: (dateStr: string) => void, eventDates: Array<{event_datetime: string, duration_minutes: number}> }} props
  */
-export default function EventCalendar({ selectedDate, onSelectDate, eventDates = [] }) {
+export default function EventCalendar({ selectedDate, onSelectDate, onMonthChange, eventDates = [] }) {
   const today = new Date()
   const todayStr = formatDateStr(today)
 
@@ -53,21 +53,19 @@ export default function EventCalendar({ selectedDate, onSelectDate, eventDates =
   }, [viewYear, viewMonth])
 
   const handlePrevMonth = () => {
-    if (viewMonth === 0) {
-      setViewMonth(11)
-      setViewYear((y) => y - 1)
-    } else {
-      setViewMonth((m) => m - 1)
-    }
+    const newMonth = viewMonth === 0 ? 11 : viewMonth - 1
+    const newYear = viewMonth === 0 ? viewYear - 1 : viewYear
+    setViewMonth(newMonth)
+    setViewYear(newYear)
+    onMonthChange?.(newYear, newMonth)
   }
 
   const handleNextMonth = () => {
-    if (viewMonth === 11) {
-      setViewMonth(0)
-      setViewYear((y) => y + 1)
-    } else {
-      setViewMonth((m) => m + 1)
-    }
+    const newMonth = viewMonth === 11 ? 0 : viewMonth + 1
+    const newYear = viewMonth === 11 ? viewYear + 1 : viewYear
+    setViewMonth(newMonth)
+    setViewYear(newYear)
+    onMonthChange?.(newYear, newMonth)
   }
 
   const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('es-ES', {

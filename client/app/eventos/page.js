@@ -76,6 +76,7 @@ export default function SubastasPage() {
       <AuctionCalendar
         selectedDate={selectedDate}
         onSelectDate={(d) => setSelectedDate(d)}
+        onMonthChange={(year, month) => { setCalendarYear(year); setCalendarMonth(month) }}
         auctionDates={eventsForMonth}
       />
     </div>

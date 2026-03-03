@@ -465,7 +465,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
         {showPostalCodeError && (
           <div className="rounded-md bg-amber-50 p-4 border border-amber-200">
             <p className="text-sm font-medium text-amber-800">
-              El código postal introducido no está disponible para este artículo.
+              El código postal introducido no está disponible para este artículo. Contacta con info@140d.art para obtener ayuda.
             </p>
             {product?.shipping_observations && (
               <p className="mt-2 text-sm text-amber-700">

@@ -108,6 +108,7 @@ export default function EspaciosPage() {
       <EventCalendar
         selectedDate={selectedDate}
         onSelectDate={(d) => setSelectedDate(d)}
+        onMonthChange={(year, month) => { setCalendarYear(year); setCalendarMonth(month) }}
         eventDates={eventsForMonth}
       />
     </div>

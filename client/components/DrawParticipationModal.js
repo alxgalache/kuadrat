@@ -455,6 +455,21 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
         return (
           <div className="space-y-4">
             <p className="text-sm font-medium text-gray-900">Dirección de envío</p>
+
+            {/* Postal code error alert with shipping observations */}
+            {deliveryAddress.postal_code && postalCodeValid === false && (
+              <div className="rounded-md bg-amber-50 p-4 border border-amber-200">
+                <p className="text-sm font-medium text-amber-800">
+                  El código postal introducido no está disponible para este artículo. Contacta con info@140d.art para obtener ayuda.
+                </p>
+                {draw?.shipping_observations && (
+                  <p className="mt-2 text-sm text-amber-700">
+                    {draw.shipping_observations}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-900">Dirección (línea 1)</label>
               <input
@@ -494,9 +509,6 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
                     </div>
                   )}
                 </div>
-                {postalCodeValid === false && (
-                  <p className="mt-1 text-xs text-red-600">No realizamos envíos a este código postal</p>
-                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-900">Ciudad</label>

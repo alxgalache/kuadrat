@@ -10,7 +10,7 @@ const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
  *
  * @param {{ selectedDate: string, onSelectDate: (dateStr: string) => void, auctionDates: Array<{start_datetime: string, end_datetime: string, id: number|string}> }} props
  */
-export default function AuctionCalendar({ selectedDate, onSelectDate, auctionDates = [] }) {
+export default function AuctionCalendar({ selectedDate, onSelectDate, onMonthChange, auctionDates = [] }) {
   // Parse selected date or default to today
   const today = new Date()
   const todayStr = formatDateStr(today)
@@ -64,21 +64,19 @@ export default function AuctionCalendar({ selectedDate, onSelectDate, auctionDat
   }, [viewYear, viewMonth])
 
   const handlePrevMonth = () => {
-    if (viewMonth === 0) {
-      setViewMonth(11)
-      setViewYear((y) => y - 1)
-    } else {
-      setViewMonth((m) => m - 1)
-    }
+    const newMonth = viewMonth === 0 ? 11 : viewMonth - 1
+    const newYear = viewMonth === 0 ? viewYear - 1 : viewYear
+    setViewMonth(newMonth)
+    setViewYear(newYear)
+    onMonthChange?.(newYear, newMonth)
   }
 
   const handleNextMonth = () => {
-    if (viewMonth === 11) {
-      setViewMonth(0)
-      setViewYear((y) => y + 1)
-    } else {
-      setViewMonth((m) => m + 1)
-    }
+    const newMonth = viewMonth === 11 ? 0 : viewMonth + 1
+    const newYear = viewMonth === 11 ? viewYear + 1 : viewYear
+    setViewMonth(newMonth)
+    setViewYear(newYear)
+    onMonthChange?.(newYear, newMonth)
   }
 
   const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('es-ES', {
