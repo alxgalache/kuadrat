@@ -2,7 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requireSeller } = require('../middleware/authorization');
 const { db } = require('../config/database');
+const { createBatch } = require('../utils/transaction');
 const logger = require('../config/logger');
+const config = require('../config/env');
+const { ApiError } = require('../middleware/errorHandler');
+const { sendSuccess, sendCreated } = require('../utils/response');
+const { sendWithdrawalNotificationEmail } = require('../services/emailService');
+const { validate } = require('../middleware/validate');
+const { createWithdrawalSchema } = require('../validators/withdrawalSchemas');
 
 // Apply authentication and seller authorization to all routes
 router.use(authenticate, requireSeller);
@@ -268,6 +275,104 @@ router.delete('/products/:id', async (req, res) => {
       title: 'Error del servidor',
       message: 'No se pudo eliminar el producto'
     });
+  }
+});
+
+/**
+ * GET /api/seller/wallet
+ * Get seller's available withdrawal balance and commission rate
+ */
+router.get('/wallet', async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await db.execute({
+      sql: 'SELECT available_withdrawal FROM users WHERE id = ?',
+      args: [userId],
+    });
+
+    if (result.rows.length === 0) {
+      throw new ApiError(404, 'Usuario no encontrado', 'Usuario no encontrado');
+    }
+
+    sendSuccess(res, {
+      balance: Number(result.rows[0].available_withdrawal) || 0,
+      commissionRate: config.payment.dealerCommission,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/seller/withdrawals
+ * Create a withdrawal request (full balance)
+ */
+router.post('/withdrawals', validate(createWithdrawalSchema), async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { iban } = req.body;
+
+    // Read current balance
+    const userResult = await db.execute({
+      sql: 'SELECT available_withdrawal, full_name, email FROM users WHERE id = ?',
+      args: [userId],
+    });
+
+    if (userResult.rows.length === 0) {
+      throw new ApiError(404, 'Usuario no encontrado', 'Usuario no encontrado');
+    }
+
+    const user = userResult.rows[0];
+    const balance = Number(user.available_withdrawal) || 0;
+
+    if (balance <= 0) {
+      throw new ApiError(400, 'No tienes saldo disponible para retirar', 'Saldo insuficiente');
+    }
+
+    // Atomically create withdrawal record and set balance to 0
+    const batch = createBatch();
+    batch.add(
+      'INSERT INTO withdrawals (user_id, amount, iban, status) VALUES (?, ?, ?, ?)',
+      [userId, balance, iban.trim(), 'pending']
+    );
+    batch.add(
+      'UPDATE users SET available_withdrawal = 0 WHERE id = ? AND available_withdrawal = ?',
+      [userId, balance]
+    );
+    const results = await batch.execute();
+
+    // Verify the balance update affected a row (concurrent withdrawal protection)
+    if (results[1].rowsAffected === 0) {
+      throw new ApiError(409, 'El saldo ha cambiado. Por favor, inténtalo de nuevo.', 'Conflicto de saldo');
+    }
+
+    const withdrawalId = Number(results[0].lastInsertRowid);
+
+    // Send admin notification email (non-blocking)
+    try {
+      await sendWithdrawalNotificationEmail({
+        sellerName: user.full_name || user.email,
+        sellerEmail: user.email,
+        amount: balance,
+        iban: iban.trim(),
+      });
+    } catch (emailError) {
+      logger.error({ err: emailError }, 'Error sending withdrawal notification email');
+    }
+
+    logger.info({ userId, withdrawalId, amount: balance }, 'Withdrawal request created');
+
+    sendCreated(res, {
+      withdrawal: {
+        id: withdrawalId,
+        amount: balance,
+        iban: iban.trim(),
+        status: 'pending',
+      },
+    }, 'Solicitud de retirada creada correctamente');
+  } catch (error) {
+    next(error);
   }
 });
 

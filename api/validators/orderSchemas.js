@@ -119,10 +119,33 @@ const updateOrderStatusSchema = z.object({
   }),
 });
 
+/**
+ * PATCH /api/orders/public/token/:token/items/:itemId/status
+ * Buyer-initiated item status update (arrived or confirmed only)
+ */
+const publicUpdateItemStatusSchema = z.object({
+  body: z.object({
+    status: z.enum(['arrived', 'confirmed'], { message: 'Estado inválido. Solo se permite "arrived" o "confirmed"' }),
+    product_type: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
+  }),
+});
+
+/**
+ * PATCH /api/orders/public/token/:token/status
+ * Buyer-initiated order-level status update (arrived or confirmed only)
+ */
+const publicUpdateOrderStatusSchema = z.object({
+  body: z.object({
+    status: z.enum(['arrived', 'confirmed'], { message: 'Estado inválido. Solo se permite "arrived" o "confirmed"' }),
+  }),
+});
+
 module.exports = {
   placeOrderSchema,
   confirmOrderPaymentSchema,
   updateItemStatusSchema,
   updateItemTrackingSchema,
   updateOrderStatusSchema,
+  publicUpdateItemStatusSchema,
+  publicUpdateOrderStatusSchema,
 };

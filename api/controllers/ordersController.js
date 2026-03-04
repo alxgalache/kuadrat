@@ -1,5 +1,7 @@
 const { db } = require('../config/database');
+const { createBatch } = require('../utils/transaction');
 const logger = require('../config/logger');
+const config = require('../config/env');
 const { ApiError } = require('../middleware/errorHandler');
 const { sendPurchaseConfirmation, sendPaymentConfirmation, sendTrackingUpdateEmail, sendItemsSentEmail } = require('../services/emailService');
 const { sendBuyerToSellerContactEmail } = require('../services/emailService');
@@ -370,7 +372,7 @@ const placeOrder = async (req, res, next) => {
     const orderId = Number(orderResult.lastInsertRowid);
 
     // 2) Create order item rows (art and others) without altering inventory yet
-    const dealerCommissionRate = parseFloat(process.env.DEALER_COMMISSION || 0) / 100;
+    const dealerCommissionRate = config.payment.dealerCommission / 100;
     
     for (const item of artItems) {
       const product = artProducts.find((p) => p.id === item.id);
@@ -720,7 +722,8 @@ const getSellerStats = async (req, res, next) => {
       // Get all order items for this seller within the date range (art items)
       const artItemsResult = await db.execute({
         sql: `
-          SELECT 
+          SELECT
+            aoi.order_id,
             aoi.price_at_purchase,
             aoi.commission_amount,
             o.status
@@ -735,7 +738,8 @@ const getSellerStats = async (req, res, next) => {
       // Get all order items for this seller within the date range (other items)
       const otherItemsResult = await db.execute({
         sql: `
-          SELECT 
+          SELECT
+            ooi.order_id,
             ooi.price_at_purchase,
             ooi.commission_amount,
             o.status
@@ -751,21 +755,22 @@ const getSellerStats = async (req, res, next) => {
 
       // Calculate totals (excluding shipping costs as per requirement, and deducting commission)
       const totals = {
-        available: 0,      // Saldo disponible (confirmed orders)
         sales: 0,          // Total de ventas (all orders)
         withdrawn: 0,      // Total retirado (placeholder - no withdrawal system yet)
         pendingIncome: 0,  // Pendiente de ingreso (paid/sent/arrived but not confirmed)
+        orderCount: 0,     // Number of distinct orders
       };
 
+      // Count distinct orders
+      const orderIds = new Set();
       allItems.forEach((item) => {
         const price = Number(item.price_at_purchase) || 0;
         const commission = Number(item.commission_amount) || 0;
         const sellerEarning = price - commission;
         totals.sales += sellerEarning;
 
-        // Saldo disponible: confirmed orders
-        if (item.status === 'confirmed') {
-          totals.available += sellerEarning;
+        if (item.order_id) {
+          orderIds.add(item.order_id);
         }
 
         // Pendiente de ingreso: paid/sent/arrived but not confirmed
@@ -773,6 +778,8 @@ const getSellerStats = async (req, res, next) => {
           totals.pendingIncome += sellerEarning;
         }
       });
+
+      totals.orderCount = orderIds.size;
 
       return totals;
     };
@@ -827,7 +834,7 @@ const getSellerStats = async (req, res, next) => {
       current: currentStats,
       previous: previousStats,
       changes: previousStats ? {
-        available: calculateChange(currentStats.available, previousStats.available),
+        orderCount: calculateChange(currentStats.orderCount, previousStats.orderCount),
         sales: calculateChange(currentStats.sales, previousStats.sales),
         withdrawn: calculateChange(currentStats.withdrawn, previousStats.withdrawn),
         pendingIncome: calculateChange(currentStats.pendingIncome, previousStats.pendingIncome),
@@ -1330,6 +1337,34 @@ const checkAndUpdateOrderStatus = async (orderId) => {
   }
 };
 
+// Helper function to check if all items in an order are confirmed and update order status
+const checkAndUpdateOrderStatusConfirmed = async (orderId) => {
+  try {
+    const allArtItemsResult = await db.execute({
+      sql: 'SELECT status FROM art_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+
+    const allOtherItemsResult = await db.execute({
+      sql: 'SELECT status FROM other_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+
+    const allItems = [...allArtItemsResult.rows, ...allOtherItemsResult.rows];
+    const allConfirmed = allItems.length > 0 && allItems.every(item => item.status === 'confirmed');
+
+    if (allConfirmed) {
+      await db.execute({
+        sql: 'UPDATE orders SET status = ? WHERE id = ?',
+        args: ['confirmed', orderId],
+      });
+      logger.info({ orderId }, 'Order status updated to confirmed - all items have been confirmed');
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Error checking and updating order status to confirmed');
+  }
+};
+
 // Update tracking number for an order item
 const updateItemTracking = async (req, res, next) => {
   try {
@@ -1504,17 +1539,62 @@ const updateItemStatus = async (req, res, next) => {
       throw new ApiError(404, 'Item no encontrado', 'Item no encontrado');
     }
 
-    // Update item status and tracking (if provided)
-    if (tracking && tracking.trim().length > 0) {
-      await db.execute({
-        sql: `UPDATE ${table} SET status = ?, tracking = ? WHERE id = ?`,
-        args: [status, tracking.trim(), itemId],
+    // When confirming, guard against double-crediting: check current item status
+    if (status === 'confirmed') {
+      const currentItemResult = await db.execute({
+        sql: `SELECT status, price_at_purchase, commission_amount FROM ${table} WHERE id = ?`,
+        args: [itemId],
       });
+      if (currentItemResult.rows.length > 0 && currentItemResult.rows[0].status === 'confirmed') {
+        throw new ApiError(400, 'Este artículo ya está confirmado', 'Estado no válido');
+      }
+
+      // Determine seller and calculate earning
+      const item = currentItemResult.rows[0];
+      const sellerEarning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
+
+      // Determine seller_id by joining with product table
+      const sellerResult = await db.execute({
+        sql: `SELECT p.seller_id FROM ${table} i LEFT JOIN ${productTable} p ON i.${idColumn} = p.id WHERE i.id = ?`,
+        args: [itemId],
+      });
+      const sellerId = sellerResult.rows[0]?.seller_id;
+
+      // Atomically update item status and increment seller balance
+      const batch = createBatch();
+      if (tracking && tracking.trim().length > 0) {
+        batch.add(`UPDATE ${table} SET status = ?, tracking = ? WHERE id = ?`, [status, tracking.trim(), itemId]);
+      } else {
+        batch.add(`UPDATE ${table} SET status = ? WHERE id = ?`, [status, itemId]);
+      }
+      if (sellerId && sellerEarning > 0) {
+        batch.add(
+          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          [sellerEarning, sellerId]
+        );
+      }
+      await batch.execute();
+
+      logger.info({
+        sellerId,
+        orderId: Number(orderId),
+        itemId: Number(itemId),
+        itemType: product_type,
+        amountCredited: sellerEarning,
+      }, 'Seller balance updated on item confirmation');
     } else {
-      await db.execute({
-        sql: `UPDATE ${table} SET status = ? WHERE id = ?`,
-        args: [status, itemId],
-      });
+      // Non-confirmed status updates (existing logic)
+      if (tracking && tracking.trim().length > 0) {
+        await db.execute({
+          sql: `UPDATE ${table} SET status = ?, tracking = ? WHERE id = ?`,
+          args: [status, tracking.trim(), itemId],
+        });
+      } else {
+        await db.execute({
+          sql: `UPDATE ${table} SET status = ? WHERE id = ?`,
+          args: [status, itemId],
+        });
+      }
     }
 
     // Get art order items (only seller's items)
@@ -1577,6 +1657,11 @@ const updateItemStatus = async (req, res, next) => {
     // Check if all items in the order are now 'sent' and update order status if needed
     if (status === 'sent') {
       await checkAndUpdateOrderStatus(orderId);
+    }
+
+    // Check if all items in the order are now 'confirmed' and update order status if needed
+    if (status === 'confirmed') {
+      await checkAndUpdateOrderStatusConfirmed(orderId);
     }
 
     res.status(200).json({
@@ -1815,6 +1900,354 @@ const updateOrderStatus = async (req, res, next) => {
   }
 };
 
+// Helper function to check if all items in an order are arrived and update order status
+const checkAndUpdateOrderStatusArrived = async (orderId) => {
+  try {
+    const allArtItemsResult = await db.execute({
+      sql: 'SELECT status FROM art_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+
+    const allOtherItemsResult = await db.execute({
+      sql: 'SELECT status FROM other_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+
+    const allItems = [...allArtItemsResult.rows, ...allOtherItemsResult.rows];
+    const allArrived = allItems.length > 0 && allItems.every(item => item.status === 'arrived');
+
+    if (allArrived) {
+      await db.execute({
+        sql: 'UPDATE orders SET status = ? WHERE id = ?',
+        args: ['arrived', orderId],
+      });
+      logger.info({ orderId }, 'Order status updated to arrived - all items have been received');
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Error checking and updating order status to arrived');
+  }
+};
+
+// Helper: fetch full order with all items for public token-based responses
+const getOrderWithAllItems = async (orderId) => {
+  const orderResult = await db.execute({
+    sql: 'SELECT * FROM orders WHERE id = ?',
+    args: [orderId],
+  });
+
+  if (orderResult.rows.length === 0) return null;
+  const order = orderResult.rows[0];
+
+  const artItemsResult = await db.execute({
+    sql: `
+      SELECT
+        aoi.*,
+        a.name, a.description, a.type, a.basename, a.seller_id,
+        u.full_name as seller_name, u.email as seller_email,
+        u.email_contact as seller_email_contact,
+        u.pickup_address as seller_pickup_address,
+        u.pickup_city as seller_pickup_city,
+        u.pickup_postal_code as seller_pickup_postal_code,
+        u.pickup_country as seller_pickup_country,
+        u.pickup_instructions as seller_pickup_instructions,
+        'art' as product_type
+      FROM art_order_items aoi
+      LEFT JOIN art a ON aoi.art_id = a.id
+      LEFT JOIN users u ON a.seller_id = u.id
+      WHERE aoi.order_id = ?
+    `,
+    args: [orderId],
+  });
+
+  const othersItemsResult = await db.execute({
+    sql: `
+      SELECT
+        ooi.*,
+        o.name, o.description, o.basename, o.seller_id,
+        ov.key as variant_key,
+        u.full_name as seller_name, u.email as seller_email,
+        u.email_contact as seller_email_contact,
+        u.pickup_address as seller_pickup_address,
+        u.pickup_city as seller_pickup_city,
+        u.pickup_postal_code as seller_pickup_postal_code,
+        u.pickup_country as seller_pickup_country,
+        u.pickup_instructions as seller_pickup_instructions,
+        'other' as product_type
+      FROM other_order_items ooi
+      LEFT JOIN others o ON ooi.other_id = o.id
+      LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id
+      LEFT JOIN users u ON o.seller_id = u.id
+      WHERE ooi.order_id = ?
+    `,
+    args: [orderId],
+  });
+
+  order.items = [...artItemsResult.rows, ...othersItemsResult.rows];
+  return order;
+};
+
+// Public: update item status by buyer (token-based, no auth)
+// PATCH /api/orders/public/token/:token/items/:itemId/status
+const updateItemStatusPublic = async (req, res, next) => {
+  try {
+    const { token, itemId } = req.params;
+    const { status, product_type } = req.body;
+
+    if (!token || typeof token !== 'string' || token.length < 16) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    // Find order by token
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE token = ?',
+      args: [token],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const order = orderResult.rows[0];
+    const orderId = order.id;
+
+    // Determine table and columns based on product type
+    const table = product_type === 'art' ? 'art_order_items' : 'other_order_items';
+    const idColumn = product_type === 'art' ? 'art_id' : 'other_id';
+    const productTable = product_type === 'art' ? 'art' : 'others';
+
+    // Verify item belongs to this order and get its current status + seller info
+    const itemResult = await db.execute({
+      sql: `
+        SELECT i.id, i.status, i.price_at_purchase, i.commission_amount, p.seller_id
+        FROM ${table} i
+        LEFT JOIN ${productTable} p ON i.${idColumn} = p.id
+        WHERE i.id = ? AND i.order_id = ?
+      `,
+      args: [itemId, orderId],
+    });
+
+    if (itemResult.rows.length === 0) {
+      throw new ApiError(404, 'Producto no encontrado en este pedido', 'Producto no encontrado');
+    }
+
+    const item = itemResult.rows[0];
+
+    // Enforce status transitions
+    if (status === 'arrived' && item.status !== 'sent') {
+      throw new ApiError(400, 'Solo se pueden marcar como recibidos los productos que estén en estado "enviado"', 'Estado no válido');
+    }
+    if (status === 'confirmed' && item.status !== 'arrived') {
+      throw new ApiError(400, 'Solo se pueden confirmar los productos que estén en estado "recibido"', 'Estado no válido');
+    }
+
+    if (status === 'confirmed') {
+      // Double-credit guard
+      if (item.status === 'confirmed') {
+        throw new ApiError(400, 'Este producto ya está confirmado', 'Estado no válido');
+      }
+
+      const sellerEarning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
+      const sellerId = item.seller_id;
+
+      // Atomically update item status and increment seller balance
+      const batch = createBatch();
+      batch.add(`UPDATE ${table} SET status = ? WHERE id = ?`, [status, itemId]);
+      if (sellerId && sellerEarning > 0) {
+        batch.add(
+          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          [sellerEarning, sellerId]
+        );
+      }
+      await batch.execute();
+
+      logger.info({
+        sellerId,
+        orderId: Number(orderId),
+        itemId: Number(itemId),
+        itemType: product_type,
+        amountCredited: sellerEarning,
+      }, 'Seller balance updated on buyer item confirmation (public)');
+
+      await checkAndUpdateOrderStatusConfirmed(orderId);
+    } else {
+      // Status is 'arrived'
+      await db.execute({
+        sql: `UPDATE ${table} SET status = ? WHERE id = ?`,
+        args: [status, itemId],
+      });
+
+      await checkAndUpdateOrderStatusArrived(orderId);
+    }
+
+    // Send email notifications
+    try {
+      const { sendItemReceivedEmail, sendItemConfirmedEmail } = require('../services/emailService');
+      const updatedOrder = await getOrderWithAllItems(orderId);
+      const updatedItem = updatedOrder.items.find(i => i.id === parseInt(itemId));
+
+      if (status === 'arrived' && updatedItem) {
+        await sendItemReceivedEmail(updatedOrder, [updatedItem]);
+      } else if (status === 'confirmed' && updatedItem) {
+        await sendItemConfirmedEmail(updatedOrder, [updatedItem]);
+      }
+    } catch (emailError) {
+      logger.error({ err: emailError }, 'Error sending buyer status change email');
+    }
+
+    // Return updated order
+    const updatedOrder = await getOrderWithAllItems(orderId);
+
+    res.status(200).json({
+      success: true,
+      message: status === 'arrived' ? 'Producto marcado como recibido' : 'Recepción confirmada correctamente',
+      order: updatedOrder,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Public: update order status by buyer (token-based, no auth) — all items at once
+// PATCH /api/orders/public/token/:token/status
+const updateOrderStatusPublic = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { status } = req.body;
+
+    if (!token || typeof token !== 'string' || token.length < 16) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE token = ?',
+      args: [token],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const order = orderResult.rows[0];
+    const orderId = order.id;
+
+    // Get all items from the order
+    const artItemsResult = await db.execute({
+      sql: `
+        SELECT aoi.id, aoi.status, aoi.price_at_purchase, aoi.commission_amount, a.seller_id
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ?
+      `,
+      args: [orderId],
+    });
+
+    const otherItemsResult = await db.execute({
+      sql: `
+        SELECT ooi.id, ooi.status, ooi.price_at_purchase, ooi.commission_amount, o.seller_id
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        WHERE ooi.order_id = ?
+      `,
+      args: [orderId],
+    });
+
+    const allArtItems = artItemsResult.rows;
+    const allOtherItems = otherItemsResult.rows;
+    const allItems = [...allArtItems, ...allOtherItems];
+
+    if (allItems.length === 0) {
+      throw new ApiError(400, 'No se encontraron productos en este pedido', 'Pedido vacío');
+    }
+
+    // Validate prerequisite statuses
+    const requiredStatus = status === 'arrived' ? 'sent' : 'arrived';
+    const requiredLabel = status === 'arrived' ? 'enviado' : 'recibido';
+    const allInRequiredStatus = allItems.every(item => item.status === requiredStatus);
+
+    if (!allInRequiredStatus) {
+      throw new ApiError(
+        400,
+        `No se puede actualizar el pedido. Todos los productos deben estar en estado "${requiredLabel}"`,
+        'Estado no válido'
+      );
+    }
+
+    if (status === 'confirmed') {
+      // Group items by seller for per-seller balance crediting
+      const sellerEarnings = {};
+      for (const item of allItems) {
+        const sellerId = item.seller_id;
+        if (!sellerId) continue;
+        const earning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
+        if (earning > 0) {
+          sellerEarnings[sellerId] = (sellerEarnings[sellerId] || 0) + earning;
+        }
+      }
+
+      // Atomic batch: update all items + credit each seller
+      const batch = createBatch();
+      if (allArtItems.length > 0) {
+        batch.add('UPDATE art_order_items SET status = ? WHERE order_id = ?', ['confirmed', orderId]);
+      }
+      if (allOtherItems.length > 0) {
+        batch.add('UPDATE other_order_items SET status = ? WHERE order_id = ?', ['confirmed', orderId]);
+      }
+      batch.add('UPDATE orders SET status = ? WHERE id = ?', ['confirmed', orderId]);
+
+      for (const [sellerId, earning] of Object.entries(sellerEarnings)) {
+        batch.add(
+          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          [earning, sellerId]
+        );
+      }
+      await batch.execute();
+
+      logger.info({
+        orderId: Number(orderId),
+        sellerEarnings,
+      }, 'Order confirmed by buyer - seller balances updated (public)');
+    } else {
+      // Status is 'arrived' — update all items and order status
+      const batch = createBatch();
+      if (allArtItems.length > 0) {
+        batch.add('UPDATE art_order_items SET status = ? WHERE order_id = ?', ['arrived', orderId]);
+      }
+      if (allOtherItems.length > 0) {
+        batch.add('UPDATE other_order_items SET status = ? WHERE order_id = ?', ['arrived', orderId]);
+      }
+      batch.add('UPDATE orders SET status = ? WHERE id = ?', ['arrived', orderId]);
+      await batch.execute();
+
+      logger.info({ orderId: Number(orderId) }, 'Order marked as arrived by buyer (public)');
+    }
+
+    // Send email notifications
+    try {
+      const { sendItemReceivedEmail, sendItemConfirmedEmail } = require('../services/emailService');
+      const updatedOrder = await getOrderWithAllItems(orderId);
+      const items = updatedOrder.items || [];
+
+      if (status === 'arrived' && items.length > 0) {
+        await sendItemReceivedEmail(updatedOrder, items);
+      } else if (status === 'confirmed' && items.length > 0) {
+        await sendItemConfirmedEmail(updatedOrder, items);
+      }
+    } catch (emailError) {
+      logger.error({ err: emailError }, 'Error sending buyer order status change email');
+    }
+
+    const updatedOrder = await getOrderWithAllItems(orderId);
+
+    res.status(200).json({
+      success: true,
+      message: status === 'arrived' ? 'Pedido marcado como recibido' : 'Recepción del pedido confirmada correctamente',
+      order: updatedOrder,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   placeOrder,
   confirmOrderPayment,
@@ -1828,6 +2261,8 @@ module.exports = {
   getOrderByIdAdmin,
   getOrderByToken,
   contactSellerForOrder,
+  updateItemStatusPublic,
+  updateOrderStatusPublic,
 };
 
 // Confirm order payment (PUT /api/orders)

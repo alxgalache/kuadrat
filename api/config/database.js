@@ -39,7 +39,8 @@ async function initializeDatabase() {
         pickup_country TEXT,
         pickup_instructions TEXT,
         password_setup_token TEXT DEFAULT NULL,
-        password_setup_token_expires DATETIME DEFAULT NULL
+        password_setup_token_expires DATETIME DEFAULT NULL,
+        available_withdrawal REAL NOT NULL DEFAULT 0
       )
     `);
 
@@ -566,6 +567,22 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE draw_authorised_payment_data ADD COLUMN stripe_fingerprint TEXT');
     await safeAlter('ALTER TABLE draws ADD COLUMN min_participants INTEGER NOT NULL DEFAULT 30');
     await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN ip_address TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN available_withdrawal REAL NOT NULL DEFAULT 0');
+
+    // ── Withdrawals ──────────────────────────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS withdrawals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        iban TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed')),
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME DEFAULT NULL,
+        admin_notes TEXT DEFAULT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
 
     // ── Shipping zones postal codes (polymorphic refs) ───────
     await db.execute(`
@@ -625,6 +642,9 @@ async function initializeDatabase() {
     await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_draw_buyers_email_draw ON draw_buyers(email, draw_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draws_status ON draws(status)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_email_verifications_email_draw ON draw_email_verifications(email, draw_id)`);
+
+    // Withdrawals
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawals(user_id)`);
 
     // Postal codes
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_code_country ON postal_codes(postal_code, country)`);

@@ -462,6 +462,24 @@ export const ordersAPI = {
       body: JSON.stringify(body),
     });
   },
+
+  // Public: buyer updates item status (token-based, no auth)
+  updateItemStatusPublic: async (token, itemId, status, productType) => {
+    return apiRequest(`/orders/public/token/${encodeURIComponent(token)}/items/${itemId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, product_type: productType }),
+      skipAuthHandling: true,
+    });
+  },
+
+  // Public: buyer updates order status (token-based, no auth)
+  updateOrderStatusPublic: async (token, status) => {
+    return apiRequest(`/orders/public/token/${encodeURIComponent(token)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+      skipAuthHandling: true,
+    });
+  },
 };
 
 // Payments API
@@ -1163,6 +1181,19 @@ export const sellerAPI = {
     return apiRequest(`/seller/products/${productId}`, {
       method: 'DELETE',
       body: JSON.stringify({ product_type: productType }),
+    });
+  },
+
+  // Wallet
+  getWallet: async () => {
+    return apiRequest('/seller/wallet');
+  },
+
+  // Withdrawals
+  createWithdrawal: async (iban) => {
+    return apiRequest('/seller/withdrawals', {
+      method: 'POST',
+      body: JSON.stringify({ iban }),
     });
   },
 };

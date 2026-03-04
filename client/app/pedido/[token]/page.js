@@ -5,8 +5,8 @@ import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ordersAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
-import { ArrowLeftIcon, InformationCircleIcon, MapPinIcon, DocumentTextIcon } from '@heroicons/react/20/solid'
-import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
+import { ArrowLeftIcon, InformationCircleIcon, MapPinIcon, DocumentTextIcon, EllipsisVerticalIcon, ExclamationTriangleIcon } from '@heroicons/react/20/solid'
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle, Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
 import { SafeProductDescription } from '@/components/SafeHTML'
 
@@ -91,6 +91,124 @@ function ContactModal({ open, onClose, onSend, sellerName, itemName, sending, me
   )
 }
 
+function ReceivedConfirmationDialog({ open, onClose, onConfirm, title, message, confirming }) {
+  return (
+    <Dialog open={open} onClose={onClose} className="relative z-10">
+      <DialogBackdrop
+        transition
+        className="fixed inset-0 bg-gray-500/75 transition-opacity data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in"
+      />
+      <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <DialogPanel
+            transition
+            className="relative transform overflow-hidden rounded-xl bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-xl sm:p-6 data-closed:sm:translate-y-0 data-closed:sm:scale-95"
+          >
+            <div className="sm:flex sm:items-start">
+              <div className="mx-auto flex size-12 shrink-0 items-center justify-center rounded-full bg-gray-100 sm:mx-0 sm:size-10">
+                <ExclamationTriangleIcon aria-hidden="true" className="size-6 text-gray-600" />
+              </div>
+              <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left flex-1">
+                <DialogTitle as="h3" className="text-base font-semibold text-gray-900">
+                  {title}
+                </DialogTitle>
+                <div className="mt-2">
+                  <p className="text-sm text-gray-500">{message}</p>
+                  <p className="mt-3 text-sm text-gray-500 italic">Se enviará una notificación por correo electrónico al vendedor</p>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={confirming}
+                className="inline-flex w-full justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 disabled:opacity-60 sm:ml-3 sm:w-auto"
+              >
+                {confirming ? 'Procesando...' : 'Confirmar'}
+              </button>
+              <button
+                type="button"
+                data-autofocus
+                onClick={onClose}
+                disabled={confirming}
+                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring-1 inset-ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+              >
+                Cancelar
+              </button>
+            </div>
+          </DialogPanel>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function ConfirmReceptionDialog({ open, onClose, onConfirm, title, message, confirming }) {
+  return (
+    <Dialog open={open} onClose={onClose} className="relative z-10">
+      <DialogBackdrop
+        transition
+        className="fixed inset-0 bg-gray-500/75 transition-opacity data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in"
+      />
+      <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <DialogPanel
+            transition
+            className="relative transform overflow-hidden rounded-xl bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-xl sm:p-6 data-closed:sm:translate-y-0 data-closed:sm:scale-95"
+          >
+            <div className="sm:flex sm:items-start">
+              <div className="mx-auto flex size-12 shrink-0 items-center justify-center rounded-full bg-gray-100 sm:mx-0 sm:size-10">
+                <ExclamationTriangleIcon aria-hidden="true" className="size-6 text-gray-600" />
+              </div>
+              <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left flex-1">
+                <DialogTitle as="h3" className="text-base font-semibold text-gray-900">
+                  {title}
+                </DialogTitle>
+                <div className="mt-2">
+                  <p className="text-sm text-gray-500">{message}</p>
+
+                  <div className="mt-4 space-y-3">
+                    <div className="bg-amber-50 border-l-4 border-amber-400 rounded-r-md p-3">
+                      <p className="text-sm text-amber-800">
+                        <strong>Importante:</strong> Al confirmar la recepción, declaras que el producto ha llegado en buen estado. No podrás reclamar por daños o defectos después de esta confirmación.
+                      </p>
+                    </div>
+                    <div className="bg-blue-50 border-l-4 border-blue-400 rounded-r-md p-3">
+                      <p className="text-sm text-blue-800">
+                        Si no confirmas ni reportas incidencias, el producto se marcará automáticamente como confirmado transcurridos 10 días desde su recepción.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={confirming}
+                className="inline-flex w-full justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 disabled:opacity-60 sm:ml-3 sm:w-auto"
+              >
+                {confirming ? 'Procesando...' : 'Confirmar recepción'}
+              </button>
+              <button
+                type="button"
+                data-autofocus
+                onClick={onClose}
+                disabled={confirming}
+                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring-1 inset-ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+              >
+                Cancelar
+              </button>
+            </div>
+          </DialogPanel>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 function PublicOrderContent() {
   const params = useParams()
   const router = useRouter()
@@ -103,6 +221,12 @@ function PublicOrderContent() {
   const [contactModal, setContactModal] = useState({ open: false, sellerId: null, sellerName: '', itemName: '' })
   const [contactMessage, setContactMessage] = useState('')
   const [contactSending, setContactSending] = useState(false)
+
+  // Buyer status update state
+  const [receivedDialog, setReceivedDialog] = useState({ open: false, item: null, isOrderLevel: false })
+  const [markingReceived, setMarkingReceived] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, item: null, isOrderLevel: false })
+  const [markingConfirmed, setMarkingConfirmed] = useState(false)
 
   useEffect(() => {
     if (params.token) {
@@ -193,6 +317,16 @@ function PublicOrderContent() {
   const getTotalShipping = () => order.items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0)
   const getGrandTotal = () => getSubtotal() + getTotalShipping()
 
+  const areAllItemsSent = () => {
+    if (!order || !order.items || order.items.length === 0) return false
+    return order.items.every(item => item.status === 'sent')
+  }
+
+  const areAllItemsArrived = () => {
+    if (!order || !order.items || order.items.length === 0) return false
+    return order.items.every(item => item.status === 'arrived')
+  }
+
   const hasAnyDeliveryAddress = () => {
     const fields = ['address_line_1', 'address_line_2', 'postal_code', 'city', 'province', 'country']
     return fields.some((f) => !!order[`delivery_${f}`])
@@ -264,6 +398,58 @@ function PublicOrderContent() {
     }
   }
 
+  // Handle marking item or order as received
+  const handleMarkReceived = async () => {
+    setMarkingReceived(true)
+    try {
+      let data
+      if (receivedDialog.isOrderLevel) {
+        data = await ordersAPI.updateOrderStatusPublic(params.token, 'arrived')
+      } else {
+        data = await ordersAPI.updateItemStatusPublic(
+          params.token,
+          receivedDialog.item.id,
+          'arrived',
+          receivedDialog.item.product_type
+        )
+      }
+      setOrder(data.order)
+      showBanner(receivedDialog.isOrderLevel ? 'Pedido marcado como recibido' : 'Producto marcado como recibido')
+      setReceivedDialog({ open: false, item: null, isOrderLevel: false })
+    } catch (err) {
+      showBanner(err.message || 'No se pudo marcar como recibido')
+      console.error('Error marking as received:', err)
+    } finally {
+      setMarkingReceived(false)
+    }
+  }
+
+  // Handle confirming item or order reception
+  const handleConfirmReception = async () => {
+    setMarkingConfirmed(true)
+    try {
+      let data
+      if (confirmDialog.isOrderLevel) {
+        data = await ordersAPI.updateOrderStatusPublic(params.token, 'confirmed')
+      } else {
+        data = await ordersAPI.updateItemStatusPublic(
+          params.token,
+          confirmDialog.item.id,
+          'confirmed',
+          confirmDialog.item.product_type
+        )
+      }
+      setOrder(data.order)
+      showBanner(confirmDialog.isOrderLevel ? 'Recepción del pedido confirmada' : 'Recepción del producto confirmada')
+      setConfirmDialog({ open: false, item: null, isOrderLevel: false })
+    } catch (err) {
+      showBanner(err.message || 'No se pudo confirmar la recepción')
+      console.error('Error confirming reception:', err)
+    } finally {
+      setMarkingConfirmed(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
@@ -303,8 +489,36 @@ function PublicOrderContent() {
               <h1 className="text-3xl font-bold tracking-tight text-gray-900">Pedido #{order.id}</h1>
               <p className="mt-2 text-sm text-gray-500">Realizado el {formatDate(order.created_at)}</p>
             </div>
-            <div className="flex flex-col items-start gap-3 sm:items-end">
+            <div className="flex items-center gap-3">
               {getStatusBadge(order.status)}
+              {(areAllItemsSent() || areAllItemsArrived()) && (
+                <Popover className="relative">
+                  <PopoverButton className="inline-flex items-center gap-x-1 rounded-md p-1 hover:bg-gray-100">
+                    <EllipsisVerticalIcon className="h-5 w-5 text-gray-600" aria-hidden="true" />
+                  </PopoverButton>
+                  <PopoverPanel
+                    transition
+                    className="absolute right-0 z-10 mt-2 w-80 origin-top-right rounded-xl bg-white p-2 shadow-lg ring-1 ring-gray-900/5 transition data-closed:scale-95 data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
+                  >
+                    {areAllItemsSent() && (
+                      <button
+                        onClick={() => setReceivedDialog({ open: true, item: null, isOrderLevel: true })}
+                        className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+                      >
+                        Marcar pedido como recibido
+                      </button>
+                    )}
+                    {areAllItemsArrived() && (
+                      <button
+                        onClick={() => setConfirmDialog({ open: true, item: null, isOrderLevel: true })}
+                        className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+                      >
+                        Confirmar recepción del pedido
+                      </button>
+                    )}
+                  </PopoverPanel>
+                </Popover>
+              )}
             </div>
           </div>
         </div>
@@ -373,7 +587,7 @@ function PublicOrderContent() {
                       </div>
 
                       <div className="ml-4 flex flex-1 flex-col">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-start">
                           <div>
                             <div className="flex items-center gap-2 text-base font-medium text-gray-900">
                               <h3>{item.name}</h3>
@@ -387,7 +601,37 @@ function PublicOrderContent() {
                               <p className="mt-1 text-sm text-gray-500">Vendedor: {item.seller_name}</p>
                             )}
                           </div>
-                          <p className="ml-4 text-base font-medium text-gray-900">€{item.price_at_purchase.toFixed(2)}</p>
+                          <div className="ml-4 flex items-center gap-2">
+                            <p className="text-base font-medium text-gray-900">€{item.price_at_purchase.toFixed(2)}</p>
+                            {(item.status === 'sent' || item.status === 'arrived') && (
+                              <Popover className="relative">
+                                <PopoverButton className="inline-flex items-center gap-x-1 rounded-md p-1 hover:bg-gray-100">
+                                  <EllipsisVerticalIcon className="h-5 w-5 text-gray-600" aria-hidden="true" />
+                                </PopoverButton>
+                                <PopoverPanel
+                                  transition
+                                  className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-xl bg-white p-2 shadow-lg ring-1 ring-gray-900/5 transition data-closed:scale-95 data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
+                                >
+                                  {item.status === 'sent' && (
+                                    <button
+                                      onClick={() => setReceivedDialog({ open: true, item, isOrderLevel: false })}
+                                      className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+                                    >
+                                      Marcar como recibido
+                                    </button>
+                                  )}
+                                  {item.status === 'arrived' && (
+                                    <button
+                                      onClick={() => setConfirmDialog({ open: true, item, isOrderLevel: false })}
+                                      className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+                                    >
+                                      Confirmar recepción
+                                    </button>
+                                  )}
+                                </PopoverPanel>
+                              </Popover>
+                            )}
+                          </div>
                         </div>
 
                         {item.shipping_method_name && (
@@ -398,6 +642,12 @@ function PublicOrderContent() {
                               {item.shipping_method_type === 'pickup' && ' (Recogida)'}{' '}
                               · €{(item.shipping_cost || 0).toFixed(2)}
                             </p>
+                            {item.tracking && (
+                              <p className="mt-1 text-sm text-gray-700">
+                                Seguimiento: <a href={item.tracking} target="_blank" rel="noopener noreferrer"
+                                                className="font-medium text-blue-600 hover:text-blue-800 underline">{item.tracking}</a>
+                              </p>
+                            )}
                           </div>
                         )}
 
@@ -489,6 +739,30 @@ function PublicOrderContent() {
         sending={contactSending}
         message={contactMessage}
         setMessage={setContactMessage}
+      />
+
+      <ReceivedConfirmationDialog
+        open={receivedDialog.open}
+        onClose={() => setReceivedDialog({ open: false, item: null, isOrderLevel: false })}
+        onConfirm={handleMarkReceived}
+        title={receivedDialog.isOrderLevel ? 'Marcar pedido como recibido' : 'Marcar producto como recibido'}
+        message={receivedDialog.isOrderLevel
+          ? '¿Confirmas que has recibido todos los productos de este pedido?'
+          : `¿Confirmas que has recibido "${receivedDialog.item?.name || 'este producto'}"?`
+        }
+        confirming={markingReceived}
+      />
+
+      <ConfirmReceptionDialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false, item: null, isOrderLevel: false })}
+        onConfirm={handleConfirmReception}
+        title={confirmDialog.isOrderLevel ? 'Confirmar recepción del pedido' : 'Confirmar recepción del producto'}
+        message={confirmDialog.isOrderLevel
+          ? '¿Confirmas que todos los productos del pedido han llegado en buen estado?'
+          : `¿Confirmas que "${confirmDialog.item?.name || 'este producto'}" ha llegado en buen estado?`
+        }
+        confirming={markingConfirmed}
       />
     </div>
   )

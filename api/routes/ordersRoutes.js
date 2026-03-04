@@ -11,8 +11,12 @@ const {
   updateItemTracking,
   updateItemStatus,
   updateOrderStatus,
+  updateItemStatusPublic,
+  updateOrderStatusPublic,
 } = require('../controllers/ordersController');
 const { authenticate, optionalAuthenticate, requireAuth } = require('../middleware/authorization');
+const { validate } = require('../middleware/validate');
+const { publicUpdateItemStatusSchema, publicUpdateOrderStatusSchema } = require('../validators/orderSchemas');
 
 // Place order for an existing Revolut/Stripe payment (Card Field checkout)
 router.post('/placeOrder', optionalAuthenticate, placeOrder);
@@ -28,6 +32,12 @@ router.get('/public/token/:token', getOrderByToken);
 
 // Public contact seller for an order (token-based)
 router.post('/public/token/:token/contact', contactSellerForOrder);
+
+// Public: buyer updates item status (token-based, no auth)
+router.patch('/public/token/:token/items/:itemId/status', validate(publicUpdateItemStatusSchema), updateItemStatusPublic);
+
+// Public: buyer updates order status (token-based, no auth)
+router.patch('/public/token/:token/status', validate(publicUpdateOrderStatusSchema), updateOrderStatusPublic);
 
 // Get orders - requires authentication
 router.get('/', authenticate, requireAuth, getUserOrders);

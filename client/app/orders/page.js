@@ -2,9 +2,17 @@
 
 import {useState, useEffect, useRef, useCallback} from 'react'
 import Link from 'next/link'
-import {ordersAPI, getArtImageUrl, getOthersImageUrl} from '@/lib/api'
+import {ordersAPI, sellerAPI, getArtImageUrl, getOthersImageUrl} from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import {ArrowDownIcon, ArrowUpIcon, EyeIcon, InformationCircleIcon, EllipsisVerticalIcon, ExclamationTriangleIcon} from '@heroicons/react/20/solid'
+import {
+    ArrowDownIcon,
+    ArrowUpIcon,
+    EyeIcon,
+    InformationCircleIcon,
+    EllipsisVerticalIcon,
+    ExclamationTriangleIcon,
+    XMarkIcon
+} from '@heroicons/react/20/solid'
 import {ChevronDownIcon} from '@heroicons/react/16/solid'
 import {Popover, PopoverButton, PopoverPanel, Dialog, DialogBackdrop, DialogPanel, DialogTitle} from '@headlessui/react'
 import {useBannerNotification} from '@/contexts/BannerNotificationContext'
@@ -77,7 +85,7 @@ function formatFilterDateLabel(date) {
 }
 
 // Confirmation Dialog Component with optional tracking
-function ConfirmationDialog({ open, onClose, onConfirm, title, message, confirming, withTracking = false }) {
+function ConfirmationDialog({open, onClose, onConfirm, title, message, confirming, withTracking = false}) {
     const [addTracking, setAddTracking] = useState(false)
     const [trackingUrl, setTrackingUrl] = useState('')
     const [trackingError, setTrackingError] = useState('')
@@ -123,8 +131,9 @@ function ConfirmationDialog({ open, onClose, onConfirm, title, message, confirmi
                         className="relative transform overflow-hidden rounded-xl bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-xl sm:p-6 data-closed:sm:translate-y-0 data-closed:sm:scale-95"
                     >
                         <div className="sm:flex sm:items-start">
-                            <div className="mx-auto flex size-12 shrink-0 items-center justify-center rounded-full bg-gray-100 sm:mx-0 sm:size-10">
-                                <ExclamationTriangleIcon aria-hidden="true" className="size-6 text-gray-600" />
+                            <div
+                                className="mx-auto flex size-12 shrink-0 items-center justify-center rounded-full bg-gray-100 sm:mx-0 sm:size-10">
+                                <ExclamationTriangleIcon aria-hidden="true" className="size-6 text-gray-600"/>
                             </div>
                             <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left flex-1">
                                 <DialogTitle as="h3" className="text-base font-semibold text-gray-900">
@@ -132,7 +141,8 @@ function ConfirmationDialog({ open, onClose, onConfirm, title, message, confirmi
                                 </DialogTitle>
                                 <div className="mt-2">
                                     <p className="text-sm text-gray-500">{message}</p>
-                                    <p className="mt-3 text-sm text-gray-500 italic">Se enviará una notificación por correo electrónico al comprador</p>
+                                    <p className="mt-3 text-sm text-gray-500 italic">Se enviará una notificación por
+                                        correo electrónico al comprador</p>
                                     {/*<p className="text-sm bg-amber-100 p-4 mt-3 text-gray-500">Dependiendo del método de envío seleccionado por el usuario, se le informará de que</p>*/}
                                 </div>
 
@@ -215,22 +225,34 @@ function OrdersPageContent() {
     const [hasMore, setHasMore] = useState(true)
     const [dateFilter, setDateFilter] = useState('week') // all | week | month | year
     const [sellerStats, setSellerStats] = useState({
-        current: {available: 0, sales: 0, withdrawn: 0, pendingIncome: 0},
+        current: {orderCount: 0, sales: 0, withdrawn: 0, pendingIncome: 0},
         changes: null,
     })
     const [loadingStats, setLoadingStats] = useState(false)
+
+    // Wallet state
+    const [walletBalance, setWalletBalance] = useState(0)
+    const [loadingWallet, setLoadingWallet] = useState(false)
+
+    // Withdrawal modal state
+    const [withdrawalModal, setWithdrawalModal] = useState({open: false, step: 1, iban: '', loading: false, error: '', success: false})
     const observerRef = useRef(null)
     const loadMoreRef = useRef(null)
     // Guard to avoid double fetch in React 18 StrictMode on first mount
     const didInitRef = useRef(false)
-    const { showBanner } = useBannerNotification()
+    const {showBanner} = useBannerNotification()
 
     // Mark order as sent confirmation dialog state
-    const [orderSentDialog, setOrderSentDialog] = useState({ open: false, orderId: null })
+    const [orderSentDialog, setOrderSentDialog] = useState({open: false, orderId: null})
     const [markingOrderSent, setMarkingOrderSent] = useState(false)
 
     // Get current date ranges based on filter
     const dateRanges = getDateRanges(dateFilter)
+
+    // Load wallet balance on mount
+    useEffect(() => {
+        loadWallet()
+    }, [])
 
     // Load orders/stats when filter changes (guard first mount for StrictMode)
     useEffect(() => {
@@ -245,6 +267,18 @@ function OrdersPageContent() {
         loadOrders(1)
         loadStats()
     }, [dateFilter])
+
+    const loadWallet = async () => {
+        try {
+            setLoadingWallet(true)
+            const data = await sellerAPI.getWallet()
+            setWalletBalance(data.balance || 0)
+        } catch (err) {
+            console.error('Error loading wallet:', err)
+        } finally {
+            setLoadingWallet(false)
+        }
+    }
 
     const loadOrders = async (pageNum) => {
         try {
@@ -309,7 +343,7 @@ function OrdersPageContent() {
 
     // Handle opening order sent dialog
     const openOrderSentDialog = (orderId) => {
-        setOrderSentDialog({ open: true, orderId })
+        setOrderSentDialog({open: true, orderId})
     }
 
     // Handle confirming order as sent
@@ -319,7 +353,7 @@ function OrdersPageContent() {
         try {
             await ordersAPI.updateOrderStatus(orderSentDialog.orderId, 'sent', tracking)
             showBanner(tracking ? 'Pedido marcado como enviado con seguimiento' : 'Pedido marcado como enviado')
-            setOrderSentDialog({ open: false, orderId: null })
+            setOrderSentDialog({open: false, orderId: null})
             // Reload orders to reflect the change
             loadOrders(1)
         } catch (err) {
@@ -327,6 +361,26 @@ function OrdersPageContent() {
             console.error('Error marking order as sent:', err)
         } finally {
             setMarkingOrderSent(false)
+        }
+    }
+
+    // Withdrawal modal handlers
+    const openWithdrawalModal = () => {
+        setWithdrawalModal({open: true, step: 1, iban: '', loading: false, error: '', success: false})
+    }
+
+    const handleWithdrawalSubmit = async () => {
+        setWithdrawalModal(prev => ({...prev, loading: true, error: ''}))
+        try {
+            await sellerAPI.createWithdrawal(withdrawalModal.iban)
+            setWithdrawalModal(prev => ({...prev, loading: false, success: true}))
+            setWalletBalance(0)
+        } catch (err) {
+            setWithdrawalModal(prev => ({
+                ...prev,
+                loading: false,
+                error: err.message || 'No se pudo procesar la solicitud de retirada'
+            }))
         }
     }
 
@@ -443,8 +497,176 @@ function OrdersPageContent() {
         // Usamos un fondo gris muy claro para que la tarjeta blanca de stats
         // (bg-white + shadow + bordes redondeados) resalte visualmente, igual que
         // en el ejemplo de Tailwind.
-        <div className="bg-gray-50">
-            <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="bg-white">
+            <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+
+                {/* Título y subtítulo siempre visibles */}
+                <div className="mb-8 mt-8">
+                    <h1 className="text-3xl font-bold tracking-tight text-gray-900">Monedero</h1>
+                    <p className="mt-2 text-sm text-gray-700">
+                        Aquí puedes consultar de forma global los fondos que tienes disponibles para su retirada a tu
+                        cuenta.
+                    </p>
+                    <p className="text-sm text-gray-700">
+                        Se aplica una comisión del {process.env.NEXT_PUBLIC_DEALER_COMMISSION || '15'}% sobre el total de las transacciones realizadas. Para más información, escribe a <a className="text-black font-bold" href="mailto:info@140d.com">info@140d.com</a>.
+                    </p>
+                </div>
+
+                <div className="bg-gray-200 shadow-sm sm:rounded-lg">
+                    <div className="px-4 py-5 sm:p-6">
+                        <h3 className="text-base font-semibold text-gray-900">
+                            {loadingWallet ? '...' : walletBalance.toFixed(2)} &euro; disponible para retirada a tu cuenta
+                        </h3>
+                        <div className="mt-2 max-w-xl text-sm text-gray-500">
+                            <p>
+                                Introduce tu número de cuenta bancaria para realizar la transferencia.
+                            </p>
+                        </div>
+                        <div className="mt-5">
+                            <button
+                                type="button"
+                                onClick={openWithdrawalModal}
+                                disabled={walletBalance <= 0}
+                                className={classNames(
+                                    'inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900',
+                                    walletBalance > 0
+                                        ? 'bg-black text-white hover:bg-gray-900'
+                                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                )}
+                            >
+                                Realizar transferencia
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Withdrawal Modal */}
+                <Dialog open={withdrawalModal.open} onClose={() => !withdrawalModal.loading && setWithdrawalModal(prev => ({...prev, open: false}))} className="relative z-50">
+                    <DialogBackdrop className="fixed inset-0 bg-gray-500/75 transition-opacity" />
+                    <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+                        <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                            <DialogPanel className="relative transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+                                <div className="absolute top-0 right-0 pt-4 pr-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => !withdrawalModal.loading && setWithdrawalModal(prev => ({...prev, open: false}))}
+                                        className="rounded-md bg-white text-gray-400 hover:text-gray-500"
+                                    >
+                                        <XMarkIcon className="size-6" />
+                                    </button>
+                                </div>
+
+                                {withdrawalModal.success ? (
+                                    <div className="text-center py-4">
+                                        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-green-100 mb-4">
+                                            <svg className="size-6 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                            </svg>
+                                        </div>
+                                        <DialogTitle className="text-lg font-semibold text-gray-900">Solicitud enviada</DialogTitle>
+                                        <p className="mt-2 text-sm text-gray-500">
+                                            Tu solicitud de retirada ha sido registrada. Recibirás la transferencia en los próximos días laborables.
+                                        </p>
+                                        <div className="mt-6">
+                                            <button
+                                                type="button"
+                                                onClick={() => setWithdrawalModal(prev => ({...prev, open: false}))}
+                                                className="inline-flex w-full justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900"
+                                            >
+                                                Cerrar
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : withdrawalModal.step === 1 ? (
+                                    <div>
+                                        <DialogTitle className="text-lg font-semibold text-gray-900">Solicitar retirada de fondos</DialogTitle>
+                                        <p className="mt-2 text-sm text-gray-500">
+                                            Introduce tu número de cuenta bancaria (IBAN) para recibir la transferencia por importe de {walletBalance.toFixed(2)} €.
+                                        </p>
+                                        <div className="mt-4">
+                                            <label htmlFor="iban" className="block text-sm font-medium text-gray-700">IBAN</label>
+                                            <input
+                                                type="text"
+                                                id="iban"
+                                                value={withdrawalModal.iban}
+                                                onChange={(e) => setWithdrawalModal(prev => ({...prev, iban: e.target.value}))}
+                                                placeholder="ES00 0000 0000 0000 0000 0000"
+                                                className="mt-1 block w-full rounded-md bg-white px-3 py-2 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-black sm:text-sm"
+                                            />
+                                        </div>
+                                        {withdrawalModal.error && (
+                                            <p className="mt-2 text-sm text-red-600">{withdrawalModal.error}</p>
+                                        )}
+                                        <div className="mt-6 flex justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (!withdrawalModal.iban.trim()) {
+                                                        setWithdrawalModal(prev => ({...prev, error: 'Introduce tu IBAN'}))
+                                                        return
+                                                    }
+                                                    setWithdrawalModal(prev => ({...prev, step: 2, error: ''}))
+                                                }}
+                                                className="inline-flex justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900"
+                                            >
+                                                Siguiente
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <DialogTitle className="text-lg font-semibold text-gray-900">Confirmar retirada</DialogTitle>
+                                        <p className="mt-2 text-sm text-gray-500">
+                                            Revisa los datos antes de confirmar la solicitud de transferencia.
+                                        </p>
+                                        <div className="mt-4 rounded-md bg-gray-50 p-4">
+                                            <dl className="space-y-3 text-sm">
+                                                <div className="flex justify-between">
+                                                    <dt className="text-gray-500">IBAN</dt>
+                                                    <dd className="font-medium text-gray-900 font-mono">{withdrawalModal.iban}</dd>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <dt className="text-gray-500">Importe</dt>
+                                                    <dd className="font-semibold text-gray-900">{walletBalance.toFixed(2)} €</dd>
+                                                </div>
+                                            </dl>
+                                        </div>
+                                        {withdrawalModal.error && (
+                                            <p className="mt-2 text-sm text-red-600">{withdrawalModal.error}</p>
+                                        )}
+                                        <div className="mt-6 flex justify-between">
+                                            <button
+                                                type="button"
+                                                onClick={() => setWithdrawalModal(prev => ({...prev, step: 1, error: ''}))}
+                                                disabled={withdrawalModal.loading}
+                                                className="inline-flex justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                            >
+                                                Volver
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleWithdrawalSubmit}
+                                                disabled={withdrawalModal.loading}
+                                                className="inline-flex justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 disabled:opacity-50"
+                                            >
+                                                {withdrawalModal.loading ? 'Procesando...' : 'Confirmar'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </DialogPanel>
+                        </div>
+                    </div>
+                </Dialog>
+
+                {/* Título y subtítulo siempre visibles */}
+                <div className="mb-12 mt-12">
+                    <h1 className="text-3xl font-bold tracking-tight text-gray-900">Gestión de pedidos</h1>
+                    <p className="mt-2 text-sm text-gray-700">
+                        Consulta los pedidos que contienen tus productos
+                    </p>
+                </div>
+
                 {/* Filtros de fecha */}
                 <div className="mt-8">
                     <div className="grid grid-cols-1 sm:hidden">
@@ -508,11 +730,13 @@ function OrdersPageContent() {
                     <dl className="mt-5 grid grid-cols-1 divide-gray-200 overflow-hidden rounded-lg bg-white shadow-sm border border-gray-200 md:grid-cols-4 md:divide-x md:divide-y-0">
                         {[
                             {
-                                name: 'Disponible para retirar',
-                                stat: formatMoney(sellerStats.current.available),
-                                change: sellerStats.changes?.available?.change || '0%',
-                                changeType: sellerStats.changes?.available?.changeType || 'increase',
-                                key: 'available',
+                                name: 'Número de pedidos',
+                                stat: sellerStats.current.orderCount,
+                                change: sellerStats.changes?.orderCount?.change || '0%',
+                                changeType: sellerStats.changes?.orderCount?.changeType || 'increase',
+                                key: 'orderCount',
+                                isMoney: false,
+                                tooltip: 'Número de pedidos que contienen tus productos en el período seleccionado.',
                             },
                             {
                                 name: 'Total de ventas',
@@ -520,6 +744,8 @@ function OrdersPageContent() {
                                 change: sellerStats.changes?.sales?.change || '0%',
                                 changeType: sellerStats.changes?.sales?.changeType || 'increase',
                                 key: 'sales',
+                                isMoney: true,
+                                tooltip: 'Importe total de tus ventas tras aplicar la comisión, en el período seleccionado.',
                             },
                             {
                                 name: 'Total retirado',
@@ -527,6 +753,8 @@ function OrdersPageContent() {
                                 change: sellerStats.changes?.withdrawn?.change || '0%',
                                 changeType: sellerStats.changes?.withdrawn?.changeType || 'increase',
                                 key: 'withdrawn',
+                                isMoney: true,
+                                tooltip: 'Importe total que has retirado a tu cuenta bancaria en el período seleccionado.',
                             },
                             {
                                 name: 'Pendiente de confirmación',
@@ -534,10 +762,25 @@ function OrdersPageContent() {
                                 change: sellerStats.changes?.pendingIncome?.change || '0%',
                                 changeType: sellerStats.changes?.pendingIncome?.changeType || 'increase',
                                 key: 'pendingIncome',
+                                isMoney: true,
+                                tooltip: 'Importe de pedidos pagados, enviados o recibidos que aún no han sido confirmados por el comprador.',
                             },
                         ].map((item) => (
                             <div key={item.key} className="px-4 py-5 sm:p-6">
-                                <dt className="text-base font-normal text-gray-900">{item.name}</dt>
+                                <dt className="text-base font-normal text-gray-900 flex items-center gap-1.5">
+                                    {item.name}
+                                    <Popover className="relative">
+                                        <PopoverButton className="focus:outline-none">
+                                            <InformationCircleIcon className="size-4 text-gray-400 hover:text-gray-600" />
+                                        </PopoverButton>
+                                        <PopoverPanel
+                                            anchor="bottom"
+                                            className="z-50 w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg"
+                                        >
+                                            {item.tooltip}
+                                        </PopoverPanel>
+                                    </Popover>
+                                </dt>
                                 <dd className="mt-1 flex items-baseline justify-between md:block lg:flex">
                                     <div className="flex items-baseline text-2xl font-semibold text-black">
                                         {item.stat}
@@ -557,7 +800,6 @@ function OrdersPageContent() {
                                         return (
                                             <div className={classNames(badgeClass, baseBadge)}>
                                                 {isZeroChange ? (
-                                                    // Equals icon (custom SVG) for no change
                                                     <svg
                                                         aria-hidden="true"
                                                         viewBox="0 0 20 20"
@@ -595,14 +837,6 @@ function OrdersPageContent() {
                             </div>
                         ))}
                     </dl>
-                </div>
-
-                {/* Título y subtítulo siempre visibles */}
-                <div className="mb-8 mt-8">
-                    <h1 className="text-3xl font-bold tracking-tight text-gray-900">Mis Pedidos</h1>
-                    <p className="mt-2 text-sm text-gray-700">
-                        Consulta los pedidos que contienen tus productos
-                    </p>
                 </div>
 
                 {/* Tabla o estado vacío */}
@@ -705,8 +939,11 @@ function OrdersPageContent() {
                                                         </Link>
                                                         {order.status === 'paid' && !order.items.every(item => item.status === 'sent') && (
                                                             <Popover className="relative">
-                                                                <PopoverButton className="inline-flex items-center gap-x-1 rounded-md p-1 hover:bg-gray-100">
-                                                                    <EllipsisVerticalIcon className="h-5 w-5 text-gray-600" aria-hidden="true" />
+                                                                <PopoverButton
+                                                                    className="inline-flex items-center gap-x-1 rounded-md p-1 hover:bg-gray-100">
+                                                                    <EllipsisVerticalIcon
+                                                                        className="h-5 w-5 text-gray-600"
+                                                                        aria-hidden="true"/>
                                                                 </PopoverButton>
                                                                 <PopoverPanel
                                                                     transition
@@ -820,7 +1057,7 @@ function OrdersPageContent() {
             {/* Confirmation Dialog */}
             <ConfirmationDialog
                 open={orderSentDialog.open}
-                onClose={() => setOrderSentDialog({ open: false, orderId: null })}
+                onClose={() => setOrderSentDialog({open: false, orderId: null})}
                 onConfirm={handleMarkOrderSent}
                 title="Marcar pedido como enviado o disponible para su recogida"
                 message="¿Estás seguro de que quieres marcar este pedido como enviado o disponible para su recogida en tienda?"

@@ -1794,6 +1794,277 @@ const sendDrawWinnerEmail = async ({ email, firstName, drawName, productName, pr
   }
 };
 
+/**
+ * Send withdrawal notification email to admin
+ * @param {{ sellerName: string, sellerEmail: string, amount: number, iban: string }} details
+ */
+const sendWithdrawalNotificationEmail = async ({ sellerName, sellerEmail, amount, iban }) => {
+  const adminEmail = process.env.REGISTRATION_EMAIL;
+  if (!adminEmail) {
+    logger.warn('No REGISTRATION_EMAIL configured, skipping withdrawal notification');
+    return { success: false, error: 'No admin email configured' };
+  }
+
+  const logoAttachment = getLogoAttachment();
+  const date = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f9fafb;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+        </div>
+        <div style="background: #ffffff; border-radius: 8px; padding: 32px; border: 1px solid #e5e7eb;">
+          <h2 style="margin: 0 0 16px; font-size: 20px; color: #111827;">Nueva solicitud de retirada</h2>
+          <p style="color: #6b7280; font-size: 14px; margin: 0 0 24px;">
+            Un vendedor ha solicitado una transferencia de fondos. Por favor, procesa la transferencia manualmente.
+          </p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Vendedor</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${sellerName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Email</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${sellerEmail}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Importe</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 600; font-size: 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">${amount.toFixed(2)} &euro;</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">IBAN</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; font-family: monospace; border-bottom: 1px solid #f3f4f6; text-align: right;">${iban}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280;">Fecha</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; text-align: right;">${date}</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: adminEmail,
+    subject: `[ADMIN] Solicitud de retirada - ${sellerName} - ${amount.toFixed(2)}€`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    logger.info({ recipient: adminEmail, messageId: result.messageId }, 'Withdrawal notification email sent to admin');
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending withdrawal notification email');
+    return { success: false, error: error.message };
+  }
+};
+
+// Notify seller that buyer marked item(s) as received
+const sendItemReceivedEmail = async (order, products) => {
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+
+  // Group items by seller to send one email per seller
+  const sellerGroups = {};
+  for (const item of products) {
+    const sellerEmail = item.seller_email_contact || item.seller_email;
+    if (!sellerEmail) continue;
+    if (!sellerGroups[sellerEmail]) {
+      sellerGroups[sellerEmail] = { sellerName: item.seller_name || 'Vendedor', items: [] };
+    }
+    sellerGroups[sellerEmail].items.push(item);
+  }
+
+  const results = [];
+  for (const [sellerEmail, group] of Object.entries(sellerGroups)) {
+    const itemsList = group.items.map(item => `<li style="margin-bottom: 8px; color: #374151;">${item.name}${item.variant_key ? ` (${item.variant_key})` : ''}</li>`).join('');
+
+    const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Producto(s) recibido(s)</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Producto(s) recibido(s)</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Hola ${group.sellerName}, el comprador del pedido <strong>#${order.id}</strong> ha marcado los siguientes productos como recibidos:
+              </p>
+              <ul style="padding-left: 20px; margin: 0 0 20px;">
+                ${itemsList}
+              </ul>
+              <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.5; color: #6b7280;">
+                El comprador aún debe confirmar la recepción para que el importe se añada a tu balance disponible.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">Este es un correo automático. Por favor no responder.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+
+    const logoAttachment = getLogoAttachment();
+    const mailOptions = {
+      from: getFormattedSender(),
+      to: sellerEmail,
+      subject: `Producto(s) recibido(s) del pedido #${order.id}`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    };
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      logger.info({ recipient: sellerEmail, messageId: info.messageId }, 'Item received email sent to seller');
+      results.push({ success: true, messageId: info.messageId });
+    } catch (error) {
+      logger.error({ err: error }, 'Error sending item received email to seller');
+      results.push({ success: false, error: error.message });
+    }
+  }
+
+  return results;
+};
+
+// Notify seller that buyer confirmed item(s) and payment credited to balance
+const sendItemConfirmedEmail = async (order, products) => {
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+
+  // Group items by seller
+  const sellerGroups = {};
+  for (const item of products) {
+    const sellerEmail = item.seller_email_contact || item.seller_email;
+    if (!sellerEmail) continue;
+    if (!sellerGroups[sellerEmail]) {
+      sellerGroups[sellerEmail] = { sellerName: item.seller_name || 'Vendedor', items: [] };
+    }
+    sellerGroups[sellerEmail].items.push(item);
+  }
+
+  const results = [];
+  for (const [sellerEmail, group] of Object.entries(sellerGroups)) {
+    const totalCredited = group.items.reduce((sum, item) => {
+      return sum + ((Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0));
+    }, 0);
+
+    const itemsList = group.items.map(item => {
+      const earning = ((Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0)).toFixed(2);
+      return `<li style="margin-bottom: 8px; color: #374151;">${item.name}${item.variant_key ? ` (${item.variant_key})` : ''} — ${earning}€</li>`;
+    }).join('');
+
+    const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Recepción confirmada</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Recepción confirmada</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Hola ${group.sellerName}, el comprador del pedido <strong>#${order.id}</strong> ha confirmado la recepción de los siguientes productos:
+              </p>
+              <ul style="padding-left: 20px; margin: 0 0 20px;">
+                ${itemsList}
+              </ul>
+              <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; border-radius: 4px; padding: 16px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #065f46;">
+                  <strong>Se han añadido ${totalCredited.toFixed(2)}€ a tu balance disponible.</strong> Puedes solicitar la retirada desde tu panel de vendedor.
+                </p>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">Este es un correo automático. Por favor no responder.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+
+    const logoAttachment = getLogoAttachment();
+    const mailOptions = {
+      from: getFormattedSender(),
+      to: sellerEmail,
+      subject: `Recepción confirmada del pedido #${order.id} — ${totalCredited.toFixed(2)}€ añadidos a tu balance`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    };
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      logger.info({ recipient: sellerEmail, messageId: info.messageId }, 'Item confirmed email sent to seller');
+      results.push({ success: true, messageId: info.messageId });
+    } catch (error) {
+      logger.error({ err: error }, 'Error sending item confirmed email to seller');
+      results.push({ success: false, error: error.message });
+    }
+  }
+
+  return results;
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -1812,4 +2083,7 @@ module.exports = {
   sendDrawEntryConfirmationEmail,
   sendDrawVerificationEmail,
   sendDrawWinnerEmail,
+  sendWithdrawalNotificationEmail,
+  sendItemReceivedEmail,
+  sendItemConfirmedEmail,
 };
