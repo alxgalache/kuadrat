@@ -50,3 +50,9 @@ data/
 
 # Claude
 .claude/
+
+# Gemini
+.gemini/
+
+# Github Copilot
+.github/

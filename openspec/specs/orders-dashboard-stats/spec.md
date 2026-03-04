@@ -30,13 +30,20 @@ Each stat card in the "Gestión de pedidos" section SHALL have an information ic
 - **WHEN** the seller clicks the info icon on the "Total de ventas" card
 - **THEN** the tooltip SHALL explain that this is the total revenue from sales after commission deduction in the selected time period
 
-#### Scenario: Tooltip content for "Total retirado"
-- **WHEN** the seller clicks the info icon on the "Total retirado" card
-- **THEN** the tooltip SHALL explain that this is the total amount withdrawn by the seller in the selected time period
+#### Scenario: Tooltip content for "Total sin comisión"
+- **WHEN** the seller clicks the info icon on the "Total sin comisión" card
+- **THEN** the tooltip SHALL explain that this is the sum of the subtotal of the filtered orders list for the logged-in seller
 
 #### Scenario: Tooltip content for "Pendiente de confirmación"
 - **WHEN** the seller clicks the info icon on the "Pendiente de confirmación" card
 - **THEN** the tooltip SHALL explain that this is the amount from orders that have been paid/sent/arrived but not yet confirmed by the buyer
+
+### Requirement: Total sin comisión stat card
+The stats section SHALL display a "Total sin comisión" card showing the sum of the subtotal of the filtered orders list for the logged-in seller. This card SHALL replace the former "Total retirado" card.
+
+#### Scenario: Total sin comisión calculation
+- **WHEN** the seller views stats with a date filter applied
+- **THEN** the "Total sin comisión" card SHALL display the sum of the subtotal without commission of all orders matching the filter
 
 ### Requirement: Remove "Disponible para retirar" stat card
 The "Disponible para retirar" stat card SHALL be removed from the stats section, as this information is now displayed exclusively in the "Monedero" section.

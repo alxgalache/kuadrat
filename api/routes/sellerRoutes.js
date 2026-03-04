@@ -280,14 +280,14 @@ router.delete('/products/:id', async (req, res) => {
 
 /**
  * GET /api/seller/wallet
- * Get seller's available withdrawal balance and commission rate
+ * Get seller's available withdrawal balance, commission rate, and saved payment details
  */
 router.get('/wallet', async (req, res, next) => {
   try {
     const userId = req.user.id;
 
     const result = await db.execute({
-      sql: 'SELECT available_withdrawal FROM users WHERE id = ?',
+      sql: 'SELECT available_withdrawal, withdrawal_recipient, withdrawal_iban FROM users WHERE id = ?',
       args: [userId],
     });
 
@@ -298,6 +298,8 @@ router.get('/wallet', async (req, res, next) => {
     sendSuccess(res, {
       balance: Number(result.rows[0].available_withdrawal) || 0,
       commissionRate: config.payment.dealerCommission,
+      recipientName: result.rows[0].withdrawal_recipient || '',
+      iban: result.rows[0].withdrawal_iban || '',
     });
   } catch (error) {
     next(error);
@@ -311,7 +313,7 @@ router.get('/wallet', async (req, res, next) => {
 router.post('/withdrawals', validate(createWithdrawalSchema), async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { iban } = req.body;
+    const { iban, recipientName, saveDetails } = req.body;
 
     // Read current balance
     const userResult = await db.execute({
@@ -336,10 +338,18 @@ router.post('/withdrawals', validate(createWithdrawalSchema), async (req, res, n
       'INSERT INTO withdrawals (user_id, amount, iban, status) VALUES (?, ?, ?, ?)',
       [userId, balance, iban.trim(), 'pending']
     );
-    batch.add(
-      'UPDATE users SET available_withdrawal = 0 WHERE id = ? AND available_withdrawal = ?',
-      [userId, balance]
-    );
+
+    if (saveDetails) {
+      batch.add(
+        'UPDATE users SET available_withdrawal = 0, withdrawal_recipient = ?, withdrawal_iban = ? WHERE id = ? AND available_withdrawal = ?',
+        [recipientName?.trim() || null, iban.trim(), userId, balance]
+      );
+    } else {
+      batch.add(
+        'UPDATE users SET available_withdrawal = 0 WHERE id = ? AND available_withdrawal = ?',
+        [userId, balance]
+      );
+    }
     const results = await batch.execute();
 
     // Verify the balance update affected a row (concurrent withdrawal protection)

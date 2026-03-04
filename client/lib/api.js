@@ -1190,10 +1190,10 @@ export const sellerAPI = {
   },
 
   // Withdrawals
-  createWithdrawal: async (iban) => {
+  createWithdrawal: async (iban, recipientName, saveDetails) => {
     return apiRequest('/seller/withdrawals', {
       method: 'POST',
-      body: JSON.stringify({ iban }),
+      body: JSON.stringify({ iban, recipientName, saveDetails }),
     });
   },
 };

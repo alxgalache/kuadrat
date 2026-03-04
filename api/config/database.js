@@ -40,7 +40,9 @@ async function initializeDatabase() {
         pickup_instructions TEXT,
         password_setup_token TEXT DEFAULT NULL,
         password_setup_token_expires DATETIME DEFAULT NULL,
-        available_withdrawal REAL NOT NULL DEFAULT 0
+        available_withdrawal REAL NOT NULL DEFAULT 0,
+        withdrawal_recipient TEXT,
+        withdrawal_iban TEXT
       )
     `);
 

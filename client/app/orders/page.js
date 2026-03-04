@@ -233,9 +233,10 @@ function OrdersPageContent() {
     // Wallet state
     const [walletBalance, setWalletBalance] = useState(0)
     const [loadingWallet, setLoadingWallet] = useState(false)
+    const [savedPaymentDetails, setSavedPaymentDetails] = useState({ recipientName: '', iban: '' })
 
     // Withdrawal modal state
-    const [withdrawalModal, setWithdrawalModal] = useState({open: false, step: 1, iban: '', loading: false, error: '', success: false})
+    const [withdrawalModal, setWithdrawalModal] = useState({open: false, step: 1, recipientName: '', iban: '', saveDetails: false, loading: false, error: '', success: false})
     const observerRef = useRef(null)
     const loadMoreRef = useRef(null)
     // Guard to avoid double fetch in React 18 StrictMode on first mount
@@ -273,6 +274,9 @@ function OrdersPageContent() {
             setLoadingWallet(true)
             const data = await sellerAPI.getWallet()
             setWalletBalance(data.balance || 0)
+            if (data.recipientName || data.iban) {
+                setSavedPaymentDetails({ recipientName: data.recipientName || '', iban: data.iban || '' })
+            }
         } catch (err) {
             console.error('Error loading wallet:', err)
         } finally {
@@ -366,15 +370,27 @@ function OrdersPageContent() {
 
     // Withdrawal modal handlers
     const openWithdrawalModal = () => {
-        setWithdrawalModal({open: true, step: 1, iban: '', loading: false, error: '', success: false})
+        setWithdrawalModal({
+            open: true,
+            step: 1,
+            recipientName: savedPaymentDetails.recipientName || '',
+            iban: savedPaymentDetails.iban || '',
+            saveDetails: false,
+            loading: false,
+            error: '',
+            success: false
+        })
     }
 
     const handleWithdrawalSubmit = async () => {
         setWithdrawalModal(prev => ({...prev, loading: true, error: ''}))
         try {
-            await sellerAPI.createWithdrawal(withdrawalModal.iban)
+            await sellerAPI.createWithdrawal(withdrawalModal.iban, withdrawalModal.recipientName, withdrawalModal.saveDetails)
             setWithdrawalModal(prev => ({...prev, loading: false, success: true}))
             setWalletBalance(0)
+            if (withdrawalModal.saveDetails) {
+                setSavedPaymentDetails({ recipientName: withdrawalModal.recipientName, iban: withdrawalModal.iban })
+            }
         } catch (err) {
             setWithdrawalModal(prev => ({
                 ...prev,
@@ -492,6 +508,7 @@ function OrdersPageContent() {
     }
 
     const hasOrders = orders.length > 0
+    const totalWithoutCommission = orders.reduce((sum, order) => sum + getSubtotalWithoutShipping(order.items), 0)
 
     return (
         // Usamos un fondo gris muy claro para que la tarjeta blanca de stats
@@ -581,18 +598,48 @@ function OrdersPageContent() {
                                     <div>
                                         <DialogTitle className="text-lg font-semibold text-gray-900">Solicitar retirada de fondos</DialogTitle>
                                         <p className="mt-2 text-sm text-gray-500">
-                                            Introduce tu número de cuenta bancaria (IBAN) para recibir la transferencia por importe de {walletBalance.toFixed(2)} €.
+                                            Introduce tus datos para recibir la transferencia por importe de {walletBalance.toFixed(2)} €.
                                         </p>
-                                        <div className="mt-4">
-                                            <label htmlFor="iban" className="block text-sm font-medium text-gray-700">IBAN</label>
-                                            <input
-                                                type="text"
-                                                id="iban"
-                                                value={withdrawalModal.iban}
-                                                onChange={(e) => setWithdrawalModal(prev => ({...prev, iban: e.target.value}))}
-                                                placeholder="ES00 0000 0000 0000 0000 0000"
-                                                className="mt-1 block w-full rounded-md bg-white px-3 py-2 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-black sm:text-sm"
-                                            />
+                                        <div className="mt-4 space-y-4">
+                                            <div>
+                                                <label htmlFor="recipientName" className="block text-sm font-medium text-gray-700">Nombre completo</label>
+                                                <input
+                                                    type="text"
+                                                    id="recipientName"
+                                                    value={withdrawalModal.recipientName}
+                                                    onChange={(e) => setWithdrawalModal(prev => ({...prev, recipientName: e.target.value}))}
+                                                    placeholder="Nombre del titular"
+                                                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label htmlFor="iban" className="block text-sm font-medium text-gray-700">IBAN</label>
+                                                <input
+                                                    type="text"
+                                                    id="iban"
+                                                    value={withdrawalModal.iban}
+                                                    onChange={(e) => {
+                                                        let val = e.target.value.replace(/[^\w]/g, '').toUpperCase()
+                                                        val = val.replace(/(.{4})/g, '$1 ').trim()
+                                                        setWithdrawalModal(prev => ({...prev, iban: val}))
+                                                    }}
+                                                    placeholder="ES00 0000 0000 0000 0000 0000"
+                                                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                                                />
+                                            </div>
+                                            <div className="flex items-center">
+                                                <input
+                                                    id="saveDetails"
+                                                    name="saveDetails"
+                                                    type="checkbox"
+                                                    checked={withdrawalModal.saveDetails}
+                                                    onChange={(e) => setWithdrawalModal(prev => ({...prev, saveDetails: e.target.checked}))}
+                                                    className="h-4 w-4 rounded-sm border-gray-300 text-black focus:ring-black"
+                                                />
+                                                <label htmlFor="saveDetails" className="ml-2 block text-sm text-gray-700">
+                                                    Recordar beneficiario y número de cuenta para futuros pagos
+                                                </label>
+                                            </div>
                                         </div>
                                         {withdrawalModal.error && (
                                             <p className="mt-2 text-sm text-red-600">{withdrawalModal.error}</p>
@@ -621,6 +668,12 @@ function OrdersPageContent() {
                                         </p>
                                         <div className="mt-4 rounded-md bg-gray-50 p-4">
                                             <dl className="space-y-3 text-sm">
+                                                {withdrawalModal.recipientName && (
+                                                    <div className="flex justify-between">
+                                                        <dt className="text-gray-500">Titular</dt>
+                                                        <dd className="font-medium text-gray-900">{withdrawalModal.recipientName}</dd>
+                                                    </div>
+                                                )}
                                                 <div className="flex justify-between">
                                                     <dt className="text-gray-500">IBAN</dt>
                                                     <dd className="font-medium text-gray-900 font-mono">{withdrawalModal.iban}</dd>
@@ -748,13 +801,13 @@ function OrdersPageContent() {
                                 tooltip: 'Importe total de tus ventas tras aplicar la comisión, en el período seleccionado.',
                             },
                             {
-                                name: 'Total retirado',
-                                stat: formatMoney(sellerStats.current.withdrawn),
-                                change: sellerStats.changes?.withdrawn?.change || '0%',
-                                changeType: sellerStats.changes?.withdrawn?.changeType || 'increase',
+                                name: 'Total sin comisión',
+                                stat: formatMoney(totalWithoutCommission),
+                                change: '',
+                                changeType: '',
                                 key: 'withdrawn',
                                 isMoney: true,
-                                tooltip: 'Importe total que has retirado a tu cuenta bancaria en el período seleccionado.',
+                                tooltip: 'Importe total de tus ventas antes de aplicar la comisión, correspondiente a los pedidos mostrados en la lista inferior.',
                             },
                             {
                                 name: 'Pendiente de confirmación',
