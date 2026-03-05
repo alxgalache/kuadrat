@@ -140,6 +140,29 @@ const publicUpdateOrderStatusSchema = z.object({
   }),
 });
 
+const VALID_ORDER_STATUSES = ['pending_payment', 'paid', 'sent', 'arrived', 'confirmed', 'cancelled', 'reimbursed'];
+
+/**
+ * PATCH /api/admin/orders/:orderId/items/:itemId/status
+ * Admin-initiated item status update (any valid status)
+ */
+const adminUpdateItemStatusSchema = z.object({
+  body: z.object({
+    status: z.enum(VALID_ORDER_STATUSES, { message: 'Estado inválido' }),
+    product_type: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
+  }),
+});
+
+/**
+ * PATCH /api/admin/orders/:orderId/status
+ * Admin-initiated order-level status update (any valid status)
+ */
+const adminUpdateOrderStatusSchema = z.object({
+  body: z.object({
+    status: z.enum(VALID_ORDER_STATUSES, { message: 'Estado inválido' }),
+  }),
+});
+
 module.exports = {
   placeOrderSchema,
   confirmOrderPaymentSchema,
@@ -148,4 +171,6 @@ module.exports = {
   updateOrderStatusSchema,
   publicUpdateItemStatusSchema,
   publicUpdateOrderStatusSchema,
+  adminUpdateItemStatusSchema,
+  adminUpdateOrderStatusSchema,
 };

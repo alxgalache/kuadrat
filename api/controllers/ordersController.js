@@ -1365,6 +1365,34 @@ const checkAndUpdateOrderStatusConfirmed = async (orderId) => {
   }
 };
 
+// Helper function to check if all items in an order share the given status and update order accordingly (used by admin)
+const checkAndUpdateOrderStatusGeneric = async (orderId, targetStatus) => {
+  try {
+    const allArtItemsResult = await db.execute({
+      sql: 'SELECT status FROM art_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+
+    const allOtherItemsResult = await db.execute({
+      sql: 'SELECT status FROM other_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+
+    const allItems = [...allArtItemsResult.rows, ...allOtherItemsResult.rows];
+    const allMatch = allItems.length > 0 && allItems.every(item => item.status === targetStatus);
+
+    if (allMatch) {
+      await db.execute({
+        sql: 'UPDATE orders SET status = ? WHERE id = ?',
+        args: [targetStatus, orderId],
+      });
+      logger.info({ orderId, targetStatus }, 'Admin: order status auto-updated - all items share same status');
+    }
+  } catch (error) {
+    logger.error({ err: error, orderId, targetStatus }, 'Error checking and updating order status (admin generic)');
+  }
+};
+
 // Update tracking number for an order item
 const updateItemTracking = async (req, res, next) => {
   try {
@@ -2257,6 +2285,209 @@ const updateOrderStatusPublic = async (req, res, next) => {
   }
 };
 
+// Admin: update a single item's status with available_withdrawal accounting
+const updateItemStatusAdmin = async (req, res, next) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { status, product_type } = req.body;
+
+    // Verify order exists
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE id = ?',
+      args: [orderId],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    const table = product_type === 'art' ? 'art_order_items' : 'other_order_items';
+    const idColumn = product_type === 'art' ? 'art_id' : 'other_id';
+    const productTable = product_type === 'art' ? 'art' : 'others';
+
+    // Get item with seller info
+    const itemResult = await db.execute({
+      sql: `
+        SELECT i.id, i.status, i.price_at_purchase, i.commission_amount, p.seller_id
+        FROM ${table} i
+        LEFT JOIN ${productTable} p ON i.${idColumn} = p.id
+        WHERE i.id = ? AND i.order_id = ?
+      `,
+      args: [itemId, orderId],
+    });
+
+    if (itemResult.rows.length === 0) {
+      throw new ApiError(404, 'Item no encontrado en este pedido', 'Item no encontrado');
+    }
+
+    const item = itemResult.rows[0];
+    const oldStatus = item.status;
+    const sellerId = item.seller_id;
+    const sellerEarning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
+
+    const batch = createBatch();
+    batch.add(`UPDATE ${table} SET status = ? WHERE id = ?`, [status, itemId]);
+
+    // available_withdrawal accounting
+    if (oldStatus !== 'confirmed' && status === 'confirmed' && sellerId && sellerEarning > 0) {
+      batch.add(
+        'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+        [sellerEarning, sellerId]
+      );
+      logger.info({ sellerId, orderId: Number(orderId), itemId: Number(itemId), itemType: product_type, amountCredited: sellerEarning }, 'Admin: seller balance credited on item confirmation');
+    } else if (oldStatus === 'confirmed' && status !== 'confirmed' && sellerId && sellerEarning > 0) {
+      batch.add(
+        'UPDATE users SET available_withdrawal = available_withdrawal - ? WHERE id = ?',
+        [sellerEarning, sellerId]
+      );
+      logger.info({ sellerId, orderId: Number(orderId), itemId: Number(itemId), itemType: product_type, amountDebited: sellerEarning }, 'Admin: seller balance debited on item status reversal from confirmed');
+
+      // Check if balance goes negative
+      const balanceResult = await db.execute({
+        sql: 'SELECT available_withdrawal FROM users WHERE id = ?',
+        args: [sellerId],
+      });
+      if (balanceResult.rows.length > 0) {
+        const currentBalance = Number(balanceResult.rows[0].available_withdrawal) || 0;
+        if (currentBalance - sellerEarning < 0) {
+          logger.warn({ sellerId, currentBalance, debitAmount: sellerEarning, resultingBalance: currentBalance - sellerEarning }, 'Admin: seller available_withdrawal will go negative after debit');
+        }
+      }
+    }
+
+    await batch.execute();
+
+    logger.info({ orderId: Number(orderId), itemId: Number(itemId), oldStatus, newStatus: status, adminUserId: req.user.id }, 'Admin: item status changed');
+
+    // If all items now share the same status, update the order status to match
+    await checkAndUpdateOrderStatusGeneric(orderId, status);
+
+    // Return updated order with all items
+    const updatedOrder = await getOrderWithAllItems(orderId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Estado del producto actualizado correctamente',
+      order: updatedOrder,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Admin: update order status and all items' statuses with available_withdrawal accounting
+const updateOrderStatusAdmin = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    // Verify order exists
+    const orderResult = await db.execute({
+      sql: 'SELECT * FROM orders WHERE id = ?',
+      args: [orderId],
+    });
+
+    if (orderResult.rows.length === 0) {
+      throw new ApiError(404, 'Pedido no encontrado', 'Pedido no encontrado');
+    }
+
+    // Get all items with their current status, price, commission, and seller
+    const artItemsResult = await db.execute({
+      sql: `
+        SELECT aoi.id, aoi.status, aoi.price_at_purchase, aoi.commission_amount, a.seller_id, 'art' as product_type
+        FROM art_order_items aoi
+        LEFT JOIN art a ON aoi.art_id = a.id
+        WHERE aoi.order_id = ?
+      `,
+      args: [orderId],
+    });
+
+    const otherItemsResult = await db.execute({
+      sql: `
+        SELECT ooi.id, ooi.status, ooi.price_at_purchase, ooi.commission_amount, o.seller_id, 'other' as product_type
+        FROM other_order_items ooi
+        LEFT JOIN others o ON ooi.other_id = o.id
+        WHERE ooi.order_id = ?
+      `,
+      args: [orderId],
+    });
+
+    const allItems = [...artItemsResult.rows, ...otherItemsResult.rows];
+
+    const batch = createBatch();
+
+    // Update order status
+    batch.add('UPDATE orders SET status = ? WHERE id = ?', [status, orderId]);
+
+    // Update all items and collect withdrawal adjustments
+    batch.add('UPDATE art_order_items SET status = ? WHERE order_id = ?', [status, orderId]);
+    batch.add('UPDATE other_order_items SET status = ? WHERE order_id = ?', [status, orderId]);
+
+    // Collect per-seller withdrawal adjustments
+    const sellerAdjustments = {};
+
+    for (const item of allItems) {
+      const oldStatus = item.status;
+      const sellerId = item.seller_id;
+      const earning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
+
+      if (!sellerId || earning <= 0) continue;
+
+      if (oldStatus !== 'confirmed' && status === 'confirmed') {
+        // Credit
+        sellerAdjustments[sellerId] = (sellerAdjustments[sellerId] || 0) + earning;
+        logger.info({ sellerId, orderId: Number(orderId), itemId: Number(item.id), itemType: item.product_type, amountCredited: earning }, 'Admin: seller balance credited on bulk order confirmation');
+      } else if (oldStatus === 'confirmed' && status !== 'confirmed') {
+        // Debit
+        sellerAdjustments[sellerId] = (sellerAdjustments[sellerId] || 0) - earning;
+        logger.info({ sellerId, orderId: Number(orderId), itemId: Number(item.id), itemType: item.product_type, amountDebited: earning }, 'Admin: seller balance debited on bulk order status reversal from confirmed');
+      }
+    }
+
+    // Apply withdrawal adjustments per seller
+    for (const [sellerId, adjustment] of Object.entries(sellerAdjustments)) {
+      if (adjustment > 0) {
+        batch.add(
+          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          [adjustment, sellerId]
+        );
+      } else if (adjustment < 0) {
+        batch.add(
+          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          [adjustment, sellerId]
+        );
+
+        // Check for negative balance warning
+        const balanceResult = await db.execute({
+          sql: 'SELECT available_withdrawal FROM users WHERE id = ?',
+          args: [sellerId],
+        });
+        if (balanceResult.rows.length > 0) {
+          const currentBalance = Number(balanceResult.rows[0].available_withdrawal) || 0;
+          if (currentBalance + adjustment < 0) {
+            logger.warn({ sellerId: Number(sellerId), currentBalance, adjustment, resultingBalance: currentBalance + adjustment }, 'Admin: seller available_withdrawal will go negative after bulk debit');
+          }
+        }
+      }
+    }
+
+    await batch.execute();
+
+    logger.info({ orderId: Number(orderId), newStatus: status, itemCount: allItems.length, adminUserId: req.user.id }, 'Admin: order and all items status changed');
+
+    // Return updated order with all items
+    const updatedOrder = await getOrderWithAllItems(orderId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Estado del pedido actualizado correctamente',
+      order: updatedOrder,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   placeOrder,
   confirmOrderPayment,
@@ -2272,6 +2503,8 @@ module.exports = {
   contactSellerForOrder,
   updateItemStatusPublic,
   updateOrderStatusPublic,
+  updateItemStatusAdmin,
+  updateOrderStatusAdmin,
 };
 
 // Confirm order payment (PUT /api/orders)

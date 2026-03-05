@@ -5,8 +5,85 @@ import Link from 'next/link'
 import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { EyeIcon } from '@heroicons/react/20/solid'
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
+import { useBannerNotification } from '@/contexts/BannerNotificationContext'
+
+const ORDER_STATUSES = [
+  { value: 'pending_payment', label: 'Pendiente de pago' },
+  { value: 'paid', label: 'Pagado' },
+  { value: 'sent', label: 'Enviado' },
+  { value: 'arrived', label: 'Recibido' },
+  { value: 'confirmed', label: 'Confirmado' },
+  { value: 'cancelled', label: 'Cancelado' },
+  { value: 'reimbursed', label: 'Reembolsado' },
+]
+
+function StatusChangeModal({ open, onClose, onConfirm, confirming, title }) {
+  const [selectedStatus, setSelectedStatus] = useState('')
+
+  const handleClose = () => {
+    setSelectedStatus('')
+    onClose()
+  }
+
+  const handleConfirm = () => {
+    if (selectedStatus) {
+      onConfirm(selectedStatus)
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={handleClose} className="relative z-50">
+      <DialogBackdrop
+        transition
+        className="fixed inset-0 bg-gray-500/75 transition-opacity data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in"
+      />
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <DialogPanel
+          transition
+          className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl transition-all data-closed:scale-95 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in"
+        >
+          <DialogTitle className="text-lg font-semibold text-gray-900">{title || 'Cambiar estado'}</DialogTitle>
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700">Nuevo estado</label>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              disabled={confirming}
+              className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+            >
+              <option value="">Selecciona un estado</option>
+              {ORDER_STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              onClick={handleClose}
+              disabled={confirming}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 disabled:opacity-60"
+              onClick={handleConfirm}
+              disabled={confirming || !selectedStatus}
+            >
+              {confirming ? 'Guardando...' : 'Confirmar'}
+            </button>
+          </div>
+        </DialogPanel>
+      </div>
+    </Dialog>
+  )
+}
 
 function OrdersPageContent() {
+  const { showBanner } = useBannerNotification()
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -17,6 +94,10 @@ function OrdersPageContent() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+
+  // Order-level status change modal state
+  const [statusDialog, setStatusDialog] = useState({ open: false, order: null })
+  const [changingStatus, setChangingStatus] = useState(false)
 
   // Pagination state
   const [page, setPage] = useState(1)
@@ -124,6 +205,22 @@ function OrdersPageContent() {
     loadOrders(1, false)
   }
 
+  const handleOrderStatusChange = async (newStatus) => {
+    if (!statusDialog.order) return
+    setChangingStatus(true)
+    try {
+      await adminAPI.orders.updateOrderStatus(statusDialog.order.id, newStatus)
+      showBanner('Estado del pedido actualizado correctamente')
+      setStatusDialog({ open: false, order: null })
+      loadOrders(1, false)
+    } catch (err) {
+      showBanner(err.message || 'No se pudo actualizar el estado del pedido')
+      console.error('Error changing order status:', err)
+    } finally {
+      setChangingStatus(false)
+    }
+  }
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('es-ES', {
       year: 'numeric',
@@ -156,10 +253,13 @@ function OrdersPageContent() {
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      pending: { label: 'Pendiente', class: 'bg-yellow-100 text-yellow-800' },
-      completed: { label: 'Completado', class: 'bg-green-100 text-green-800' },
+      pending_payment: { label: 'Pendiente de pago', class: 'bg-blue-100 text-blue-800' },
+      paid: { label: 'Pagado', class: 'bg-amber-100 text-amber-800' },
+      sent: { label: 'Enviado', class: 'bg-indigo-100 text-indigo-800' },
+      arrived: { label: 'Recibido', class: 'bg-emerald-100 text-emerald-800' },
+      confirmed: { label: 'Confirmado', class: 'bg-green-100 text-green-800' },
       cancelled: { label: 'Cancelado', class: 'bg-red-100 text-red-800' },
-      processing: { label: 'Procesando', class: 'bg-blue-100 text-blue-800' },
+      reimbursed: { label: 'Reembolsado', class: 'bg-orange-100 text-orange-800' },
     }
 
     const config = statusConfig[status] || { label: status, class: 'bg-gray-100 text-gray-800' }
@@ -238,10 +338,13 @@ function OrdersPageContent() {
                 className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
               >
                 <option value="">Todos</option>
-                <option value="completed">Completado</option>
-                <option value="pending">Pendiente</option>
-                <option value="processing">Procesando</option>
+                <option value="pending_payment">Pendiente de pago</option>
+                <option value="paid">Pagado</option>
+                <option value="sent">Enviado</option>
+                <option value="arrived">Recibido</option>
+                <option value="confirmed">Confirmado</option>
                 <option value="cancelled">Cancelado</option>
+                <option value="reimbursed">Reembolsado</option>
               </select>
             </div>
           </div>
@@ -351,13 +454,21 @@ function OrdersPageContent() {
                           {getStatusBadge(order.status)}
                         </td>
                         <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
-                          <Link
-                            href={`/admin/pedidos/${order.id}`}
-                            className="inline-flex items-center gap-x-1.5 text-gray-900 hover:text-gray-600"
-                          >
-                            <EyeIcon className="h-5 w-5" />
-                            Ver
-                          </Link>
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              onClick={() => setStatusDialog({ open: true, order })}
+                              className="text-gray-900 hover:text-gray-600"
+                            >
+                              Cambiar estado
+                            </button>
+                            <Link
+                              href={`/admin/pedidos/${order.id}`}
+                              className="inline-flex items-center gap-x-1.5 text-gray-900 hover:text-gray-600"
+                            >
+                              <EyeIcon className="h-5 w-5" />
+                              Ver
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -380,6 +491,15 @@ function OrdersPageContent() {
           </>
         )}
       </div>
+
+      {/* Order status change modal */}
+      <StatusChangeModal
+        open={statusDialog.open}
+        onClose={() => setStatusDialog({ open: false, order: null })}
+        onConfirm={handleOrderStatusChange}
+        confirming={changingStatus}
+        title={statusDialog.order ? `Cambiar estado del pedido #${statusDialog.order.id}` : 'Cambiar estado'}
+      />
     </div>
   )
 }

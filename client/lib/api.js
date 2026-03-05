@@ -679,6 +679,20 @@ export const adminAPI = {
     getById: async (id) => {
       return apiRequest(`/admin/orders/${id}`);
     },
+
+    updateItemStatus: async (orderId, itemId, status, productType) => {
+      return apiRequest(`/admin/orders/${orderId}/items/${itemId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, product_type: productType }),
+      });
+    },
+
+    updateOrderStatus: async (orderId, status) => {
+      return apiRequest(`/admin/orders/${orderId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+    },
   },
 
   // Shipping management
