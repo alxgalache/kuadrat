@@ -191,7 +191,9 @@ async function initializeDatabase() {
         payment_provider TEXT DEFAULT 'revolut',
         stripe_payment_intent_id TEXT,
         stripe_payment_method_id TEXT,
-        stripe_customer_id TEXT
+        stripe_customer_id TEXT,
+        reserved_at DATETIME,
+        payment_mismatch INTEGER NOT NULL DEFAULT 0
       )
     `);
 
@@ -572,6 +574,8 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE draws ADD COLUMN min_participants INTEGER NOT NULL DEFAULT 30');
     await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN ip_address TEXT');
     await safeAlter('ALTER TABLE users ADD COLUMN available_withdrawal REAL NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE orders ADD COLUMN reserved_at DATETIME');
+    await safeAlter('ALTER TABLE orders ADD COLUMN payment_mismatch INTEGER NOT NULL DEFAULT 0');
 
     // ── Withdrawals ──────────────────────────────────────────
     await db.execute(`
@@ -614,6 +618,7 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_stripe_pi ON orders(stripe_payment_intent_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_reserved_at ON orders(status, reserved_at)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_art_order_items_order ON art_order_items(order_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_other_order_items_order ON other_order_items(order_id)`);
 

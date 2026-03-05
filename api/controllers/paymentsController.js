@@ -16,6 +16,7 @@ const {
   loadProductsDetails: sharedLoadProductsDetails,
   buildLineItems: sharedBuildLineItems,
   computeShippingTotal: sharedComputeShippingTotal,
+  verifyShippingCosts: sharedVerifyShippingCosts,
 } = require('../utils/paymentHelpers');
 
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
@@ -201,6 +202,10 @@ const initRevolutOrderEndpoint = async (req, res, next) => {
 
     // Load products from DB
     const { artMap, otherMap } = await loadProductsDetails(compactItems);
+
+    // Verify shipping costs server-side before computing total
+    await sharedVerifyShippingCosts(compactItems, artMap, otherMap);
+
     const { lineItems, productsTotal } = buildLineItems({ compactItems, artMap, otherMap });
     const shippingTotal = computeShippingTotal(compactItems);
     const amountMinor = productsTotal + shippingTotal;
@@ -336,11 +341,47 @@ async function processOrderConfirmation(orderId, paymentId) {
     });
   }
 
-  // Inventory updates (batched for atomicity)
+  // Payment amount verification: re-compute the expected total from order items
+  // and compare against the recorded total. Flag mismatches for review.
+  try {
+    const artItemsForVerify = await db.execute({
+      sql: 'SELECT price_at_purchase, shipping_cost FROM art_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+    const otherItemsForVerify = await db.execute({
+      sql: 'SELECT price_at_purchase, shipping_cost FROM other_order_items WHERE order_id = ?',
+      args: [orderId],
+    });
+    let expectedTotal = 0;
+    for (const row of artItemsForVerify.rows) {
+      expectedTotal += (row.price_at_purchase || 0) + (row.shipping_cost || 0);
+    }
+    for (const row of otherItemsForVerify.rows) {
+      expectedTotal += (row.price_at_purchase || 0) + (row.shipping_cost || 0);
+    }
+    const recordedTotal = order.total_price || 0;
+    // Allow 1 cent tolerance for rounding
+    if (Math.abs(expectedTotal - recordedTotal) > 0.01) {
+      logger.warn(
+        { orderId, expectedTotal, recordedTotal, paymentId, diff: Math.abs(expectedTotal - recordedTotal) },
+        'Payment amount mismatch detected',
+      );
+      await db.execute({
+        sql: 'UPDATE orders SET payment_mismatch = 1 WHERE id = ?',
+        args: [orderId],
+      });
+    }
+  } catch (verifyErr) {
+    logger.error({ err: verifyErr, orderId }, 'Failed to verify payment amount');
+  }
+
+  // Inventory updates: placeOrder already reserves inventory (is_sold=1, stock-=qty)
+  // via atomic conditional UPDATEs. Here we only need to verify consistency
+  // and handle edge cases (e.g., orders created before the reservation system).
   const { createBatch } = require('../utils/transaction');
   const inventoryBatch = createBatch();
 
-  // 1) Mark art items as sold
+  // 1) Ensure art items are marked as sold (idempotent — already set by placeOrder)
   const artItemsRes = await db.execute({
     sql: 'SELECT aoi.art_id FROM art_order_items aoi WHERE aoi.order_id = ?',
     args: [orderId],
@@ -350,7 +391,8 @@ async function processOrderConfirmation(orderId, paymentId) {
     inventoryBatch.add('UPDATE art SET is_sold = 1 WHERE id = ?', [artId]);
   }
 
-  // 2) Decrement others variants stock — read current stock first, then batch all updates
+  // 2) Decrement others variants stock — only if order was NOT reserved by placeOrder
+  // (i.e., legacy orders without reserved_at). For reserved orders, stock was already decremented.
   const otherItemsRes = await db.execute({
     sql: 'SELECT other_var_id FROM other_order_items WHERE order_id = ?',
     args: [orderId],
@@ -371,11 +413,20 @@ async function processOrderConfirmation(orderId, paymentId) {
 
     // Track which parent products need stock check
     const parentProductIds = new Set();
-    for (const v of allVarsRes.rows) {
-      const qty = counts.get(v.id) || 0;
-      const newStock = Math.max(0, (v.stock || 0) - qty);
-      inventoryBatch.add('UPDATE other_vars SET stock = ? WHERE id = ?', [newStock, v.id]);
-      parentProductIds.add(v.other_id);
+
+    // Only decrement stock if this order was NOT already reserved (legacy orders)
+    if (!order.reserved_at) {
+      for (const v of allVarsRes.rows) {
+        const qty = counts.get(v.id) || 0;
+        const newStock = Math.max(0, (v.stock || 0) - qty);
+        inventoryBatch.add('UPDATE other_vars SET stock = ? WHERE id = ?', [newStock, v.id]);
+        parentProductIds.add(v.other_id);
+      }
+    } else {
+      // Stock already decremented by placeOrder — just track parent IDs for is_sold check
+      for (const v of allVarsRes.rows) {
+        parentProductIds.add(v.other_id);
+      }
     }
 
     // Execute all inventory updates atomically

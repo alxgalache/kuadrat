@@ -90,9 +90,6 @@ async function apiRequest(endpoint, options = {}) {
           }
         }
 
-        console.log('API Error:', data);
-        console.log('API Response:', response.status);
-
         // Create a structured error object
         const error = new Error(data.message || 'Solicitud a la API fallida');
         error.status = data.status || response.status;

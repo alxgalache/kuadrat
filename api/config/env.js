@@ -112,6 +112,9 @@ const config = {
     dealerCommission: optionalFloat('DEALER_COMMISSION', 0),
   },
 
+  // --- Order Reservation ---
+  orderReservationTtlMinutes: optionalInt('ORDER_RESERVATION_TTL_MINUTES', 30),
+
   // --- Rate Limiting ---
   rateLimit: {
     general: {

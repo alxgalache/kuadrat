@@ -64,7 +64,7 @@ async function loadProductsDetails(compactItems) {
   if (artIds.length) {
     const placeholders = artIds.map(() => '?').join(',');
     const res = await db.execute({
-      sql: `SELECT id, name, price, slug, basename, description, is_sold FROM art WHERE id IN (${placeholders})`,
+      sql: `SELECT id, name, price, slug, basename, description, is_sold, seller_id FROM art WHERE id IN (${placeholders})`,
       args: artIds,
     });
     for (const row of res.rows) {
@@ -80,7 +80,7 @@ async function loadProductsDetails(compactItems) {
   if (otherIds.length) {
     const placeholders = otherIds.map(() => '?').join(',');
     const res = await db.execute({
-      sql: `SELECT id, name, price, slug, basename, description, is_sold FROM others WHERE id IN (${placeholders})`,
+      sql: `SELECT id, name, price, slug, basename, description, is_sold, seller_id FROM others WHERE id IN (${placeholders})`,
       args: otherIds,
     });
     for (const row of res.rows) {
@@ -152,9 +152,51 @@ function computeShippingTotal(compactItems) {
   return shippingTotal;
 }
 
+/**
+ * Verify shipping costs server-side by looking up each item's shipping zone cost.
+ * For pickup methods, cost must be the zone cost (usually 0).
+ * For delivery methods, cost must match the zone for the seller + method + country.
+ * Throws ApiError(400) if any cost is manipulated.
+ *
+ * @param {Array} compactItems - [{type, id, shipping: {methodId, cost, methodType}}]
+ * @param {Map} artMap - from loadProductsDetails
+ * @param {Map} otherMap - from loadProductsDetails
+ */
+async function verifyShippingCosts(compactItems, artMap, otherMap) {
+  for (const item of compactItems) {
+    if (!item.shipping?.methodId) continue;
+
+    const product = item.type === 'art' ? artMap.get(item.id) : otherMap.get(item.id);
+    if (!product || !product.seller_id) continue;
+
+    const clientCost = item.shipping.cost || 0;
+
+    // Look up the actual zone cost for this seller + method combination
+    const zoneRes = await db.execute({
+      sql: `SELECT sz.cost
+            FROM shipping_zones sz
+            WHERE sz.shipping_method_id = ?
+              AND sz.seller_id = ?
+            LIMIT 1`,
+      args: [item.shipping.methodId, product.seller_id],
+    });
+
+    if (zoneRes.rows.length === 0) {
+      throw new ApiError(400, 'Método de envío no válido para este vendedor', 'Envío inválido');
+    }
+
+    const serverCost = zoneRes.rows[0].cost;
+    // Allow a small tolerance for floating point (0.01)
+    if (Math.abs(clientCost - serverCost) > 0.01) {
+      throw new ApiError(400, 'El coste de envío no coincide. Recarga la página.', 'Coste de envío inválido');
+    }
+  }
+}
+
 module.exports = {
   computeCartTotal,
   loadProductsDetails,
   buildLineItems,
   computeShippingTotal,
+  verifyShippingCosts,
 };

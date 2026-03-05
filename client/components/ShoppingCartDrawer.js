@@ -1119,8 +1119,6 @@ export default function ShoppingCartDrawer({open, onClose}) {
                         showBanner(event.message || 'Error en el pago con Revolut Pay. Por favor, inténtalo de nuevo.')
                         setIsProcessing(false)
                     } else if (event.type === 'cancel') {
-                        // User cancelled - show message but don't navigate
-                        console.log('Revolut Pay cancelled by user')
                         showBanner('Has cancelado el pago. Puedes intentarlo de nuevo cuando quieras.')
                     }
                 })

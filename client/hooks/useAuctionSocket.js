@@ -46,11 +46,6 @@ export default function useAuctionSocket(auctionId) {
   useEffect(() => {
     if (!auctionId) return
 
-    // Debug: log the socket URL being used
-    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
-      console.log('[useAuctionSocket] Connecting to:', SOCKET_URL)
-    }
-
     const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
     })

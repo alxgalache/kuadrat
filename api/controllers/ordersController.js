@@ -114,10 +114,7 @@ const placeOrder = async (req, res, next) => {
         throw new ApiError(404, 'Una o más obras de arte no fueron encontradas', 'Obras no encontradas');
       }
       artProducts.push(...artResult.rows);
-      const soldArt = artProducts.filter((p) => p.is_sold === 1);
-      if (soldArt.length > 0) {
-        throw new ApiError(400, `La obra ${soldArt[0].name} ya ha sido vendida`, 'Obra no disponible');
-      }
+      // Note: is_sold check is deferred to the atomic reservation batch below
     }
 
     // Fetch others products and their variations
@@ -134,10 +131,7 @@ const placeOrder = async (req, res, next) => {
         throw new ApiError(404, 'Uno o más productos no fueron encontrados', 'Productos no encontrados');
       }
       othersProducts.push(...othersResult.rows);
-      const soldOthers = othersProducts.filter((p) => p.is_sold === 1);
-      if (soldOthers.length > 0) {
-        throw new ApiError(400, `El producto ${soldOthers[0].name} ya ha sido vendido`, 'Producto no disponible');
-      }
+      // Note: is_sold check deferred to atomic reservation batch below
       for (const item of othersItems) {
         const varResult = await db.execute({
           sql: 'SELECT * FROM other_vars WHERE id = ? AND other_id = ?',
@@ -146,19 +140,7 @@ const placeOrder = async (req, res, next) => {
         if (varResult.rows.length === 0) {
           throw new ApiError(404, 'Variación no encontrada', 'Variación no encontrada');
         }
-        const variant = varResult.rows[0];
-        const variantQuantity = othersItems.filter(
-          (i) => i.id === item.id && i.variantId === item.variantId,
-        ).length;
-        if (variant.stock < variantQuantity) {
-          const product = othersProducts.find((p) => p.id === item.id);
-          throw new ApiError(
-            400,
-            `Stock insuficiente para ${product.name}. Disponible: ${variant.stock}, solicitado: ${variantQuantity}`,
-            'Stock insuficiente',
-          );
-        }
-        othersVariations.push(variant);
+        othersVariations.push(varResult.rows[0]);
       }
     }
 
@@ -338,8 +320,9 @@ const placeOrder = async (req, res, next) => {
         revolut_order_token,
         payment_provider,
         stripe_payment_intent_id,
-        stripe_customer_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        stripe_customer_id,
+        reserved_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
       args: [
         buyerEmail,
         buyerPhone ?? null,
@@ -371,7 +354,92 @@ const placeOrder = async (req, res, next) => {
 
     const orderId = Number(orderResult.lastInsertRowid);
 
-    // 2) Create order item rows (art and others) without altering inventory yet
+    // 2) Atomically reserve inventory using conditional UPDATEs
+    // This prevents race conditions: if another request already claimed the item,
+    // rowsAffected will be 0 and we rollback.
+    const reservationBatch = createBatch();
+    const reservedArtIds = [];
+    const reservedVariantEntries = []; // { variantId, quantity }
+
+    // Reserve art items: UPDATE art SET is_sold = 1 WHERE id = ? AND is_sold = 0
+    for (const product of artProducts) {
+      reservationBatch.add('UPDATE art SET is_sold = 1 WHERE id = ? AND is_sold = 0', [product.id]);
+      reservedArtIds.push(product.id);
+    }
+
+    // Reserve variant stock: aggregate quantities per variant first
+    const variantQuantities = new Map();
+    for (const item of othersItems) {
+      const key = item.variantId;
+      variantQuantities.set(key, (variantQuantities.get(key) || 0) + 1);
+    }
+    for (const [variantId, qty] of variantQuantities) {
+      reservationBatch.add(
+        'UPDATE other_vars SET stock = stock - ? WHERE id = ? AND stock >= ?',
+        [qty, variantId, qty],
+      );
+      reservedVariantEntries.push({ variantId, quantity: qty });
+    }
+
+    if (reservationBatch.size() > 0) {
+      const reservationResults = await reservationBatch.execute();
+
+      // Verify all reservations succeeded (rowsAffected === 1 for each)
+      let resultIndex = 0;
+
+      // Check art reservations
+      for (const artId of reservedArtIds) {
+        const result = reservationResults[resultIndex];
+        if (!result || result.rowsAffected === 0) {
+          const product = artProducts.find((p) => p.id === artId);
+          // Rollback: release any art items already reserved in this batch
+          const rollbackBatch = createBatch();
+          for (let i = 0; i < resultIndex; i++) {
+            if (i < reservedArtIds.length && reservationResults[i]?.rowsAffected > 0) {
+              rollbackBatch.add('UPDATE art SET is_sold = 0 WHERE id = ?', [reservedArtIds[i]]);
+            }
+          }
+          if (rollbackBatch.size() > 0) await rollbackBatch.execute();
+          // Delete the order we just created
+          await db.execute({ sql: 'DELETE FROM orders WHERE id = ?', args: [orderId] });
+          throw new ApiError(409, `La obra "${product?.name || artId}" ya no está disponible`, 'Obra no disponible');
+        }
+        resultIndex++;
+      }
+
+      // Check variant reservations
+      for (const entry of reservedVariantEntries) {
+        const result = reservationResults[resultIndex];
+        if (!result || result.rowsAffected === 0) {
+          // Rollback all reservations made in this batch
+          const rollbackBatch = createBatch();
+          for (const aid of reservedArtIds) {
+            rollbackBatch.add('UPDATE art SET is_sold = 0 WHERE id = ?', [aid]);
+          }
+          for (let i = 0; i < reservedVariantEntries.indexOf(entry); i++) {
+            const prev = reservedVariantEntries[i];
+            rollbackBatch.add('UPDATE other_vars SET stock = stock + ? WHERE id = ?', [prev.quantity, prev.variantId]);
+          }
+          if (rollbackBatch.size() > 0) await rollbackBatch.execute();
+          await db.execute({ sql: 'DELETE FROM orders WHERE id = ?', args: [orderId] });
+
+          const variant = othersVariations.find((v) => v.id === entry.variantId);
+          const product = othersProducts.find((p) => p.id === variant?.other_id);
+          throw new ApiError(409, `Stock insuficiente para "${product?.name || entry.variantId}"`, 'Stock insuficiente');
+        }
+        resultIndex++;
+      }
+
+      // Log all successful reservations
+      for (const artId of reservedArtIds) {
+        logger.info({ action: 'inventory_reserved', productId: artId, orderId, type: 'art' }, 'Art item reserved');
+      }
+      for (const entry of reservedVariantEntries) {
+        logger.info({ action: 'inventory_reserved', productId: entry.variantId, orderId, type: 'other_variant', quantity: entry.quantity }, 'Variant stock reserved');
+      }
+    }
+
+    // 3) Create order item rows (art and others) — inventory already reserved above
     const dealerCommissionRate = config.payment.dealerCommission / 100;
     
     for (const item of artItems) {
@@ -435,7 +503,7 @@ const placeOrder = async (req, res, next) => {
       });
     }
 
-    // 3) Enrich payment provider order/intent with customer and shipping data
+    // 4) Enrich payment provider order/intent with customer and shipping data
     if (provider === 'revolut' && revolut_order_id) {
       const revPayload = {
         amount: amountMinor,
@@ -518,7 +586,7 @@ const placeOrder = async (req, res, next) => {
       }
     }
 
-    // 4) Load order details (without sending any emails yet)
+    // 5) Load order details (without sending any emails yet)
     const orderDetailsResult = await db.execute({
       sql: `
         SELECT o.*

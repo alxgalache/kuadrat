@@ -11,8 +11,10 @@ const {
   loadProductsDetails,
   buildLineItems,
   computeShippingTotal,
+  verifyShippingCosts,
 } = require('../utils/paymentHelpers');
 const { processOrderConfirmation } = require('./paymentsController');
+const { releaseOrderInventory } = require('../services/inventoryService');
 
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
 const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
@@ -36,6 +38,10 @@ const createPaymentIntentEndpoint = async (req, res, next) => {
 
     // Load products from DB and validate
     const { artMap, otherMap } = await loadProductsDetails(compactItems);
+
+    // Verify shipping costs server-side before computing total
+    await verifyShippingCosts(compactItems, artMap, otherMap);
+
     const { productsTotal } = buildLineItems({
       compactItems,
       artMap,
@@ -131,6 +137,35 @@ const stripeWebhookEndpoint = async (req, res, next) => {
     }
 
     // For other event types, acknowledge receipt
+    // Handle payment failures and cancellations — release reserved inventory
+    if (event.type === 'payment_intent.canceled' || event.type === 'payment_intent.payment_failed') {
+      const paymentIntent = event.data.object;
+      const stripePaymentIntentId = paymentIntent.id;
+
+      const orderRes = await db.execute({
+        sql: 'SELECT id, status FROM orders WHERE stripe_payment_intent_id = ?',
+        args: [stripePaymentIntentId],
+      });
+
+      if (orderRes.rows.length > 0) {
+        const order = orderRes.rows[0];
+        if (order.status === 'pending') {
+          try {
+            await releaseOrderInventory(order.id, event.type === 'payment_intent.canceled' ? 'payment_cancelled' : 'payment_failed');
+            await db.execute({
+              sql: "UPDATE orders SET status = 'expired', reserved_at = NULL WHERE id = ?",
+              args: [order.id],
+            });
+            logger.info({ orderId: order.id, eventType: event.type }, 'Released inventory for failed/cancelled payment');
+          } catch (releaseErr) {
+            logger.error({ err: releaseErr, orderId: order.id }, 'Failed to release inventory on payment failure');
+          }
+        }
+      }
+
+      return res.status(200).json({ received: true, processed: true, reason: event.type });
+    }
+
     return res.status(200).json({ received: true, processed: false, reason: 'unhandled event type' });
   } catch (err) {
     logger.error({ err }, 'Stripe webhook processing error');
@@ -192,6 +227,24 @@ const cancelStripePaymentIntentEndpoint = async (req, res, next) => {
     }
 
     const result = await cancelPaymentIntent(paymentIntentId);
+
+    // Release inventory if there's a pending order linked to this payment intent
+    const orderRes = await db.execute({
+      sql: 'SELECT id, status FROM orders WHERE stripe_payment_intent_id = ?',
+      args: [paymentIntentId],
+    });
+    if (orderRes.rows.length > 0 && orderRes.rows[0].status === 'pending') {
+      try {
+        await releaseOrderInventory(orderRes.rows[0].id, 'payment_cancelled');
+        await db.execute({
+          sql: "UPDATE orders SET status = 'expired', reserved_at = NULL WHERE id = ?",
+          args: [orderRes.rows[0].id],
+        });
+        logger.info({ orderId: orderRes.rows[0].id }, 'Released inventory for cancelled Stripe payment');
+      } catch (releaseErr) {
+        logger.error({ err: releaseErr, orderId: orderRes.rows[0].id }, 'Failed to release inventory on cancel');
+      }
+    }
 
     return res.status(200).json({
       success: true,

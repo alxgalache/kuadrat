@@ -17,12 +17,13 @@ const {
 const { authenticate, optionalAuthenticate, requireAuth } = require('../middleware/authorization');
 const { validate } = require('../middleware/validate');
 const { publicUpdateItemStatusSchema, publicUpdateOrderStatusSchema } = require('../validators/orderSchemas');
+const { sensitiveLimiter } = require('../middleware/rateLimiter');
 
 // Place order for an existing Revolut/Stripe payment (Card Field checkout)
-router.post('/placeOrder', optionalAuthenticate, placeOrder);
+router.post('/placeOrder', sensitiveLimiter, optionalAuthenticate, placeOrder);
 
 // Confirm order payment (attach Revolut info and mark as paid)
-router.put('/', optionalAuthenticate, confirmOrderPayment);
+router.put('/', sensitiveLimiter, optionalAuthenticate, confirmOrderPayment);
 
 // Get seller stats for orders (current and previous periods)
 router.get('/stats', authenticate, requireAuth, getSellerStats);

@@ -48,6 +48,7 @@ const drawRoutes = require('./routes/drawRoutes');
 const setupAuctionSocket = require('./socket/auctionSocket');
 const setupEventSocket = require('./socket/eventSocket');
 const startAuctionScheduler = require('./scheduler/auctionScheduler');
+const startReservationScheduler = require('./scheduler/reservationScheduler');
 
 // Initialize Express app
 const app = express();
@@ -198,6 +199,9 @@ async function startServer() {
 
       // Start auction lifecycle scheduler
       startAuctionScheduler(app);
+
+      // Start reservation cleanup scheduler
+      startReservationScheduler();
     });
 
     // Register graceful shutdown
