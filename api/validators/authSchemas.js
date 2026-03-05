@@ -9,7 +9,7 @@ const loginSchema = z.object({
   body: z.object({
     email: z.string().email('Formato de correo electrónico inválido'),
     password: z.string().min(1, 'La contraseña es obligatoria'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -19,7 +19,7 @@ const loginSchema = z.object({
 const registrationRequestSchema = z.object({
   body: z.object({
     email: z.string().email('Formato de correo electrónico inválido'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -31,7 +31,7 @@ const setPasswordSchema = z.object({
     token: z.string().min(1, 'Token no proporcionado'),
     password: z.string().min(1, 'La contraseña es obligatoria'),
     confirmPassword: z.string().min(1, 'La confirmación de contraseña es obligatoria'),
-  }),
+  }).strip(),
 });
 
 /**

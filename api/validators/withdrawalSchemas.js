@@ -5,7 +5,7 @@ const createWithdrawalSchema = z.object({
     iban: z.string().min(1, 'El IBAN es obligatorio'),
     recipientName: z.string().optional(),
     saveDetails: z.boolean().optional(),
-  }),
+  }).strip(),
 });
 
 module.exports = {

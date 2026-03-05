@@ -21,7 +21,7 @@ const registerBuyerSchema = z.object({
     invoicingCity: z.string().optional(),
     invoicingProvince: z.string().optional(),
     invoicingCountry: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -31,7 +31,7 @@ const sendVerificationSchema = z.object({
   body: z.object({
     email: z.string().min(1, 'Email es obligatorio'),
     dni: z.string().min(1, 'DNI es obligatorio'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -41,7 +41,7 @@ const verifyEmailSchema = z.object({
   body: z.object({
     email: z.string().min(1, 'Email es obligatorio'),
     code: z.string().length(6, 'El código debe tener 6 dígitos'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -50,7 +50,7 @@ const verifyEmailSchema = z.object({
 const setupPaymentSchema = z.object({
   body: z.object({
     drawBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del participante es obligatorio'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -61,7 +61,7 @@ const confirmPaymentSchema = z.object({
     drawBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del participante es obligatorio'),
     setupIntentId: z.string().min(1, 'setupIntentId es obligatorio'),
     customerId: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -70,7 +70,7 @@ const confirmPaymentSchema = z.object({
 const enterDrawSchema = z.object({
   body: z.object({
     drawBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del participante es obligatorio'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -80,7 +80,7 @@ const validatePostalCodeSchema = z.object({
   body: z.object({
     postalCode: z.string().min(1, 'Código postal es obligatorio'),
     country: z.string().length(2, 'Código de país debe tener 2 caracteres').default('ES'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -99,7 +99,7 @@ const createDrawSchema = z.object({
     start_datetime: z.string().min(1, 'Fecha de inicio es obligatoria'),
     end_datetime: z.string().min(1, 'Fecha de fin es obligatoria'),
     status: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -118,7 +118,7 @@ const updateDrawSchema = z.object({
     start_datetime: z.string().optional(),
     end_datetime: z.string().optional(),
     status: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 module.exports = {

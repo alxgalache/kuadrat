@@ -71,7 +71,7 @@ const placeOrderSchema = z.object({
 
     currency: z.string().optional(),
     description: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -82,7 +82,7 @@ const confirmOrderPaymentSchema = z.object({
     order_id: z.union([z.number(), z.string()]).refine(v => !!v, 'order_id es obligatorio'),
     payment_id: z.string().min(1, 'payment_id es obligatorio'),
     provider: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -94,7 +94,7 @@ const updateItemStatusSchema = z.object({
     status: z.string().min(1, 'Estado inválido'),
     product_type: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
     tracking: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -105,7 +105,7 @@ const updateItemTrackingSchema = z.object({
   body: z.object({
     tracking: z.string().min(1, 'El número de seguimiento no puede estar vacío'),
     product_type: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
-  }),
+  }).strip(),
 });
 
 /**
@@ -116,7 +116,7 @@ const updateOrderStatusSchema = z.object({
   body: z.object({
     status: z.string().min(1, 'Estado inválido'),
     tracking: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -127,7 +127,7 @@ const publicUpdateItemStatusSchema = z.object({
   body: z.object({
     status: z.enum(['arrived', 'confirmed'], { message: 'Estado inválido. Solo se permite "arrived" o "confirmed"' }),
     product_type: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
-  }),
+  }).strip(),
 });
 
 /**
@@ -137,7 +137,7 @@ const publicUpdateItemStatusSchema = z.object({
 const publicUpdateOrderStatusSchema = z.object({
   body: z.object({
     status: z.enum(['arrived', 'confirmed'], { message: 'Estado inválido. Solo se permite "arrived" o "confirmed"' }),
-  }),
+  }).strip(),
 });
 
 const VALID_ORDER_STATUSES = ['pending_payment', 'paid', 'sent', 'arrived', 'confirmed', 'cancelled', 'reimbursed'];
@@ -150,7 +150,7 @@ const adminUpdateItemStatusSchema = z.object({
   body: z.object({
     status: z.enum(VALID_ORDER_STATUSES, { message: 'Estado inválido' }),
     product_type: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
-  }),
+  }).strip(),
 });
 
 /**
@@ -160,7 +160,7 @@ const adminUpdateItemStatusSchema = z.object({
 const adminUpdateOrderStatusSchema = z.object({
   body: z.object({
     status: z.enum(VALID_ORDER_STATUSES, { message: 'Estado inválido' }),
-  }),
+  }).strip(),
 });
 
 module.exports = {

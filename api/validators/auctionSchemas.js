@@ -23,7 +23,7 @@ const registerBuyerSchema = z.object({
     invoicingCity: z.string().optional(),
     invoicingProvince: z.string().optional(),
     invoicingCountry: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -35,7 +35,7 @@ const verifyBuyerSchema = z.object({
   body: z.object({
     email: z.string().min(1, 'Email es obligatorio'),
     bidPassword: z.string().min(1, 'Contraseña de puja es obligatoria'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -51,7 +51,7 @@ const placeBidSchema = z.object({
     productType: z.enum(['art', 'other'], { message: 'Tipo de producto inválido' }),
     amount: z.union([z.number(), z.string()]).refine(v => !!v, 'El monto es obligatorio'),
     expectedPrice: z.union([z.number(), z.string()]).optional().nullable(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -62,7 +62,7 @@ const placeBidSchema = z.object({
 const setupPaymentSchema = z.object({
   body: z.object({
     auctionBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del comprador es obligatorio'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -75,7 +75,7 @@ const confirmPaymentSchema = z.object({
     auctionBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del comprador es obligatorio'),
     setupIntentId: z.string().min(1, 'setupIntentId es obligatorio'),
     customerId: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 // Polymorphic postal ref for auction products
@@ -113,7 +113,7 @@ const createAuctionSchema = z.object({
     status: z.string().optional(),
     products: z.array(auctionProductSchema).optional(),
     user_ids: z.array(z.union([z.number(), z.string()])).optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -130,7 +130,7 @@ const updateAuctionSchema = z.object({
     status: z.string().optional(),
     products: z.array(auctionProductSchema).optional(),
     user_ids: z.array(z.union([z.number(), z.string()])).optional(),
-  }),
+  }).strip(),
 });
 
 module.exports = {

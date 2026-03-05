@@ -10,7 +10,7 @@ const registerAttendeeSchema = z.object({
     first_name: z.string().min(1, 'Nombre es obligatorio'),
     last_name: z.string().min(1, 'Apellido es obligatorio'),
     email: z.string().min(1, 'Email es obligatorio'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -21,7 +21,7 @@ const registerAttendeeSchema = z.object({
 const createPaymentSchema = z.object({
   body: z.object({
     attendeeId: z.union([z.number(), z.string()]).refine(v => !!v, 'attendeeId es obligatorio'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -33,7 +33,7 @@ const confirmPaymentSchema = z.object({
   body: z.object({
     attendeeId: z.union([z.number(), z.string()]).refine(v => !!v, 'attendeeId es obligatorio'),
     paymentIntentId: z.string().min(1, 'paymentIntentId es obligatorio'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -45,7 +45,7 @@ const getViewerTokenSchema = z.object({
   body: z.object({
     attendeeId: z.union([z.number(), z.string()]).refine(v => !!v, 'attendeeId es obligatorio'),
     accessToken: z.string().min(1, 'accessToken es obligatorio'),
-  }),
+  }).strip(),
 });
 
 /**
@@ -71,7 +71,7 @@ const createEventSchema = z.object({
     video_url: z.string().optional().nullable(),
     max_attendees: z.union([z.number(), z.string()]).optional().nullable(),
     status: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -96,7 +96,7 @@ const updateEventSchema = z.object({
     video_url: z.string().optional().nullable(),
     max_attendees: z.union([z.number(), z.string()]).optional().nullable(),
     status: z.string().optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -108,7 +108,7 @@ const muteParticipantSchema = z.object({
   body: z.object({
     trackSid: z.string().optional(),
     muted: z.boolean().optional(),
-  }),
+  }).strip(),
 });
 
 module.exports = {

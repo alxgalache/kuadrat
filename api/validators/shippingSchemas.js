@@ -24,7 +24,7 @@ const createMethodSchema = z.object({
     max_articles: z.union([z.number(), z.string()]).optional(),
     estimated_delivery_days: z.union([z.number(), z.string()]).optional(),
     is_active: z.union([z.number(), z.boolean()]).optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -50,7 +50,7 @@ const updateMethodSchema = z.object({
     max_articles: z.union([z.number(), z.string()]).optional(),
     estimated_delivery_days: z.union([z.number(), z.string()]).optional().nullable(),
     is_active: z.union([z.number(), z.boolean()]).optional(),
-  }),
+  }).strip(),
 });
 
 // Polymorphic postal ref
@@ -74,7 +74,7 @@ const createZoneSchema = z.object({
     cost: z.union([z.number(), z.string()]),
     country: z.string().optional(),
     postal_refs: z.array(postalRefSchema).optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -88,7 +88,7 @@ const updateZoneSchema = z.object({
     cost: z.union([z.number(), z.string()]).optional(),
     country: z.string().optional(),
     postal_refs: z.array(postalRefSchema).optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -100,7 +100,7 @@ const updateZoneSchema = z.object({
 const addPostalCodesSchema = z.object({
   body: z.object({
     refs: z.array(postalRefSchema),
-  }),
+  }).strip(),
 });
 
 module.exports = {

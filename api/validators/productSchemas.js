@@ -16,7 +16,7 @@ const updateProductSchema = z.object({
     is_sold: z.union([z.boolean(), z.number(), z.string()]).optional(),
     status: z.string().optional(),
     for_auction: z.union([z.number(), z.string()]).optional(),
-  }),
+  }).strip(),
 });
 
 /**
@@ -30,7 +30,7 @@ const toggleVisibilitySchema = z.object({
   body: z.object({
     product_type: z.enum(['art', 'others'], { message: 'Tipo de producto inválido' }),
     visible: z.union([z.boolean(), z.number()]),
-  }),
+  }).strip(),
 });
 
 // Single variation entry
@@ -50,7 +50,7 @@ const variationSchema = z.object({
 const updateVariationsSchema = z.object({
   body: z.object({
     variations: z.array(variationSchema),
-  }),
+  }).strip(),
 });
 
 /**
@@ -62,7 +62,7 @@ const updateVariationsSchema = z.object({
 const deleteProductSchema = z.object({
   body: z.object({
     product_type: z.enum(['art', 'others'], { message: 'Tipo de producto inválido' }),
-  }),
+  }).strip(),
 });
 
 module.exports = {
