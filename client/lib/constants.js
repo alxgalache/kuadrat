@@ -43,6 +43,10 @@ export const BID_PHASES = {
   SUCCESS: 'success',
 };
 
+// Stale order alert thresholds (days)
+export const STALE_ARRIVED_DAYS = 10;
+export const STALE_SENT_DAYS = 15;
+
 // Event spam detection
 export const SPAM_MAX_MESSAGES = 10;
 export const SPAM_WINDOW_MS = 10000;

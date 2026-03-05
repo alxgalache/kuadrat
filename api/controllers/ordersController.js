@@ -1591,9 +1591,9 @@ const updateItemStatus = async (req, res, next) => {
       // Atomically update item status and increment seller balance
       const batch = createBatch();
       if (tracking && tracking.trim().length > 0) {
-        batch.add(`UPDATE ${table} SET status = ?, tracking = ? WHERE id = ?`, [status, tracking.trim(), itemId]);
+        batch.add(`UPDATE ${table} SET status = ?, tracking = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, tracking.trim(), itemId]);
       } else {
-        batch.add(`UPDATE ${table} SET status = ? WHERE id = ?`, [status, itemId]);
+        batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
       }
       if (sellerId && sellerEarning > 0) {
         batch.add(
@@ -1614,12 +1614,12 @@ const updateItemStatus = async (req, res, next) => {
       // Non-confirmed status updates (existing logic)
       if (tracking && tracking.trim().length > 0) {
         await db.execute({
-          sql: `UPDATE ${table} SET status = ?, tracking = ? WHERE id = ?`,
+          sql: `UPDATE ${table} SET status = ?, tracking = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`,
           args: [status, tracking.trim(), itemId],
         });
       } else {
         await db.execute({
-          sql: `UPDATE ${table} SET status = ? WHERE id = ?`,
+          sql: `UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`,
           args: [status, itemId],
         });
       }
@@ -2088,7 +2088,7 @@ const updateItemStatusPublic = async (req, res, next) => {
 
       // Atomically update item status and increment seller balance
       const batch = createBatch();
-      batch.add(`UPDATE ${table} SET status = ? WHERE id = ?`, [status, itemId]);
+      batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
       if (sellerId && sellerEarning > 0) {
         batch.add(
           'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
@@ -2109,7 +2109,7 @@ const updateItemStatusPublic = async (req, res, next) => {
     } else {
       // Status is 'arrived'
       await db.execute({
-        sql: `UPDATE ${table} SET status = ? WHERE id = ?`,
+        sql: `UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`,
         args: [status, itemId],
       });
 
@@ -2224,10 +2224,10 @@ const updateOrderStatusPublic = async (req, res, next) => {
       // Atomic batch: update all items + credit each seller
       const batch = createBatch();
       if (allArtItems.length > 0) {
-        batch.add('UPDATE art_order_items SET status = ? WHERE order_id = ?', ['confirmed', orderId]);
+        batch.add('UPDATE art_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', ['confirmed', orderId]);
       }
       if (allOtherItems.length > 0) {
-        batch.add('UPDATE other_order_items SET status = ? WHERE order_id = ?', ['confirmed', orderId]);
+        batch.add('UPDATE other_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', ['confirmed', orderId]);
       }
       batch.add('UPDATE orders SET status = ? WHERE id = ?', ['confirmed', orderId]);
 
@@ -2247,10 +2247,10 @@ const updateOrderStatusPublic = async (req, res, next) => {
       // Status is 'arrived' — update all items and order status
       const batch = createBatch();
       if (allArtItems.length > 0) {
-        batch.add('UPDATE art_order_items SET status = ? WHERE order_id = ?', ['arrived', orderId]);
+        batch.add('UPDATE art_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', ['arrived', orderId]);
       }
       if (allOtherItems.length > 0) {
-        batch.add('UPDATE other_order_items SET status = ? WHERE order_id = ?', ['arrived', orderId]);
+        batch.add('UPDATE other_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', ['arrived', orderId]);
       }
       batch.add('UPDATE orders SET status = ? WHERE id = ?', ['arrived', orderId]);
       await batch.execute();
@@ -2326,7 +2326,7 @@ const updateItemStatusAdmin = async (req, res, next) => {
     const sellerEarning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
 
     const batch = createBatch();
-    batch.add(`UPDATE ${table} SET status = ? WHERE id = ?`, [status, itemId]);
+    batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
 
     // available_withdrawal accounting
     if (oldStatus !== 'confirmed' && status === 'confirmed' && sellerId && sellerEarning > 0) {
@@ -2420,8 +2420,8 @@ const updateOrderStatusAdmin = async (req, res, next) => {
     batch.add('UPDATE orders SET status = ? WHERE id = ?', [status, orderId]);
 
     // Update all items and collect withdrawal adjustments
-    batch.add('UPDATE art_order_items SET status = ? WHERE order_id = ?', [status, orderId]);
-    batch.add('UPDATE other_order_items SET status = ? WHERE order_id = ?', [status, orderId]);
+    batch.add('UPDATE art_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', [status, orderId]);
+    batch.add('UPDATE other_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', [status, orderId]);
 
     // Collect per-seller withdrawal adjustments
     const sellerAdjustments = {};
@@ -2488,6 +2488,116 @@ const updateOrderStatusAdmin = async (req, res, next) => {
   }
 };
 
+// Admin: get order items stuck in "arrived" status for more than 10 days
+const getStaleArrivedItems = async (req, res, next) => {
+  try {
+    const query = `
+      SELECT
+        aoi.id AS item_id,
+        o.id AS order_id,
+        a.name AS product_name,
+        'art' AS product_type,
+        CAST(julianday('now') - julianday(aoi.status_modified) AS INTEGER) AS days_stale
+      FROM art_order_items aoi
+      JOIN orders o ON aoi.order_id = o.id
+      JOIN art a ON aoi.art_id = a.id
+      WHERE aoi.status = 'arrived'
+        AND julianday('now') - julianday(aoi.status_modified) > 10
+      UNION ALL
+      SELECT
+        ooi.id AS item_id,
+        o.id AS order_id,
+        ot.name AS product_name,
+        'other' AS product_type,
+        CAST(julianday('now') - julianday(ooi.status_modified) AS INTEGER) AS days_stale
+      FROM other_order_items ooi
+      JOIN orders o ON ooi.order_id = o.id
+      JOIN others ot ON ooi.other_id = ot.id
+      WHERE ooi.status = 'arrived'
+        AND julianday('now') - julianday(ooi.status_modified) > 10
+      ORDER BY days_stale DESC
+    `;
+
+    const result = await db.execute(query);
+    const items = result.rows;
+
+    let emailSent = false;
+    if (items.length > 0) {
+      try {
+        const { sendStaleArrivedAlertEmail } = require('../services/emailService');
+        await sendStaleArrivedAlertEmail(items);
+        emailSent = true;
+      } catch (emailError) {
+        logger.error({ err: emailError }, 'Error sending stale arrived items alert email');
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: items,
+      count: items.length,
+      emailSent,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Admin: get order items stuck in "sent" status for more than 15 days
+const getStaleSentItems = async (req, res, next) => {
+  try {
+    const query = `
+      SELECT
+        aoi.id AS item_id,
+        o.id AS order_id,
+        a.name AS product_name,
+        'art' AS product_type,
+        CAST(julianday('now') - julianday(aoi.status_modified) AS INTEGER) AS days_stale
+      FROM art_order_items aoi
+      JOIN orders o ON aoi.order_id = o.id
+      JOIN art a ON aoi.art_id = a.id
+      WHERE aoi.status = 'sent'
+        AND julianday('now') - julianday(aoi.status_modified) > 15
+      UNION ALL
+      SELECT
+        ooi.id AS item_id,
+        o.id AS order_id,
+        ot.name AS product_name,
+        'other' AS product_type,
+        CAST(julianday('now') - julianday(ooi.status_modified) AS INTEGER) AS days_stale
+      FROM other_order_items ooi
+      JOIN orders o ON ooi.order_id = o.id
+      JOIN others ot ON ooi.other_id = ot.id
+      WHERE ooi.status = 'sent'
+        AND julianday('now') - julianday(ooi.status_modified) > 15
+      ORDER BY days_stale DESC
+    `;
+
+    const result = await db.execute(query);
+    const items = result.rows;
+
+    let emailSent = false;
+    if (items.length > 0) {
+      try {
+        const { sendStaleSentAlertEmail } = require('../services/emailService');
+        await sendStaleSentAlertEmail(items);
+        emailSent = true;
+      } catch (emailError) {
+        logger.error({ err: emailError }, 'Error sending stale sent items alert email');
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: items,
+      count: items.length,
+      emailSent,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   placeOrder,
   confirmOrderPayment,
@@ -2505,6 +2615,8 @@ module.exports = {
   updateOrderStatusPublic,
   updateItemStatusAdmin,
   updateOrderStatusAdmin,
+  getStaleArrivedItems,
+  getStaleSentItems,
 };
 
 // Confirm order payment (PUT /api/orders)

@@ -5,6 +5,8 @@ const {
   getOrderByIdAdmin,
   updateItemStatusAdmin,
   updateOrderStatusAdmin,
+  getStaleArrivedItems,
+  getStaleSentItems,
 } = require('../../controllers/ordersController')
 const { validate } = require('../../middleware/validate')
 const { adminUpdateItemStatusSchema, adminUpdateOrderStatusSchema } = require('../../validators/orderSchemas')
@@ -14,6 +16,18 @@ const { adminUpdateItemStatusSchema, adminUpdateOrderStatusSchema } = require('.
  * Get all orders
  */
 router.get('/', getAllOrdersAdmin);
+
+/**
+ * GET /api/admin/orders/alerts/stale-arrived
+ * Get items stuck in "arrived" status for more than 10 days and send alert email
+ */
+router.get('/alerts/stale-arrived', getStaleArrivedItems);
+
+/**
+ * GET /api/admin/orders/alerts/stale-sent
+ * Get items stuck in "sent" status for more than 15 days and send alert email
+ */
+router.get('/alerts/stale-sent', getStaleSentItems);
 
 /**
  * GET /api/admin/orders/:id

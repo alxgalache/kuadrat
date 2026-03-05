@@ -221,6 +221,7 @@ async function initializeDatabase() {
         commission_amount REAL,
         tracking TEXT,
         status TEXT,
+        status_modified NUMERIC NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (art_id) REFERENCES art(id)
       )
@@ -241,6 +242,7 @@ async function initializeDatabase() {
         commission_amount REAL,
         tracking TEXT,
         status TEXT,
+        status_modified NUMERIC NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (other_id) REFERENCES others(id),
         FOREIGN KEY (other_var_id) REFERENCES other_vars(id)

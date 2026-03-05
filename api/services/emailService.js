@@ -2065,6 +2065,190 @@ const sendItemConfirmedEmail = async (order, products) => {
   return results;
 };
 
+// Send alert email to admin about items stuck in "arrived" status
+const sendStaleArrivedAlertEmail = async (items) => {
+  const config = require('../config/env');
+  const adminEmail = config.registrationEmail;
+  if (!adminEmail) {
+    logger.warn('No REGISTRATION_EMAIL configured, skipping stale arrived alert email');
+    return;
+  }
+
+  const itemRows = items.map(item =>
+    `<tr>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #374151;">#${item.order_id}</td>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #374151;">${escapeForEmail(item.product_name)}</td>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #374151;">${item.product_type === 'art' ? 'Arte' : 'Otro'}</td>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #374151; text-align: center; font-weight: 600;">${item.days_stale}</td>
+    </tr>`
+  ).join('');
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Alerta: Productos recibidos pendientes de confirmación</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Alerta: Productos recibidos pendientes</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Los siguientes <strong>${items.length}</strong> producto(s) llevan más de 10 días en estado <strong>"recibido"</strong> sin ser confirmados por el comprador:
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 20px;">
+                <thead>
+                  <tr style="background-color: #f9fafb;">
+                    <th style="padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb;">Pedido</th>
+                    <th style="padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb;">Producto</th>
+                    <th style="padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb;">Tipo</th>
+                    <th style="padding: 8px 12px; text-align: center; font-size: 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb;">Días</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${itemRows}
+                </tbody>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">Este es un correo automático. Por favor no responder.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const logoAttachment = getLogoAttachment();
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: adminEmail,
+    subject: `Alerta: ${items.length} producto(s) recibido(s) pendiente(s) de confirmación`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  logger.info({ recipient: adminEmail, messageId: info.messageId, count: items.length }, 'Stale arrived items alert email sent');
+  return { success: true, messageId: info.messageId };
+};
+
+// Send alert email to admin about items stuck in "sent" status
+const sendStaleSentAlertEmail = async (items) => {
+  const config = require('../config/env');
+  const adminEmail = config.registrationEmail;
+  if (!adminEmail) {
+    logger.warn('No REGISTRATION_EMAIL configured, skipping stale sent alert email');
+    return;
+  }
+
+  const itemRows = items.map(item =>
+    `<tr>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #374151;">#${item.order_id}</td>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #374151;">${escapeForEmail(item.product_name)}</td>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #374151;">${item.product_type === 'art' ? 'Arte' : 'Otro'}</td>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #374151; text-align: center; font-weight: 600;">${item.days_stale}</td>
+    </tr>`
+  ).join('');
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Alerta: Productos enviados sin recibir</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Alerta: Productos enviados sin recibir</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Los siguientes <strong>${items.length}</strong> producto(s) llevan más de 15 días en estado <strong>"enviado"</strong> sin ser marcados como recibidos:
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 20px;">
+                <thead>
+                  <tr style="background-color: #f9fafb;">
+                    <th style="padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb;">Pedido</th>
+                    <th style="padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb;">Producto</th>
+                    <th style="padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb;">Tipo</th>
+                    <th style="padding: 8px 12px; text-align: center; font-size: 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb;">Días</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${itemRows}
+                </tbody>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">Este es un correo automático. Por favor no responder.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const logoAttachment = getLogoAttachment();
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: adminEmail,
+    subject: `Alerta: ${items.length} producto(s) enviado(s) sin confirmar recepción`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  logger.info({ recipient: adminEmail, messageId: info.messageId, count: items.length }, 'Stale sent items alert email sent');
+  return { success: true, messageId: info.messageId };
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -2086,4 +2270,6 @@ module.exports = {
   sendWithdrawalNotificationEmail,
   sendItemReceivedEmail,
   sendItemConfirmedEmail,
+  sendStaleArrivedAlertEmail,
+  sendStaleSentAlertEmail,
 };

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { EyeIcon } from '@heroicons/react/20/solid'
+import { EyeIcon, EllipsisVerticalIcon } from '@heroicons/react/20/solid'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
 
@@ -98,6 +98,11 @@ function OrdersPageContent() {
   // Order-level status change modal state
   const [statusDialog, setStatusDialog] = useState({ open: false, order: null })
   const [changingStatus, setChangingStatus] = useState(false)
+
+  // Alert menu state
+  const [alertMenuOpen, setAlertMenuOpen] = useState(false)
+  const [alertLoading, setAlertLoading] = useState(null)
+  const alertMenuRef = useRef(null)
 
   // Pagination state
   const [page, setPage] = useState(1)
@@ -221,6 +226,42 @@ function OrdersPageContent() {
     }
   }
 
+  // Close alert menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (alertMenuRef.current && !alertMenuRef.current.contains(event.target)) {
+        setAlertMenuOpen(false)
+      }
+    }
+    if (alertMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [alertMenuOpen])
+
+  const handleStaleAlert = async (type) => {
+    setAlertLoading(type)
+    setAlertMenuOpen(false)
+    try {
+      const data = type === 'arrived'
+        ? await adminAPI.orders.getStaleArrivedAlerts()
+        : await adminAPI.orders.getStaleSentAlerts()
+
+      if (data.count > 0) {
+        const label = type === 'arrived' ? 'recibido(s)' : 'enviado(s)'
+        showBanner(`Se encontraron ${data.count} producto(s) ${label} pendientes. ${data.emailSent ? 'Se ha enviado un email de alerta.' : 'No se pudo enviar el email de alerta.'}`, 'success')
+      } else {
+        const label = type === 'arrived' ? 'recibidos' : 'enviados'
+        showBanner(`No se encontraron productos ${label} pendientes de acción.`, 'info')
+      }
+    } catch (err) {
+      showBanner(err.message || 'Error al comprobar alertas')
+      console.error('Error checking stale alerts:', err)
+    } finally {
+      setAlertLoading(null)
+    }
+  }
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('es-ES', {
       year: 'numeric',
@@ -282,11 +323,45 @@ function OrdersPageContent() {
   return (
     <div className="bg-white">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Pedidos</h1>
-          <p className="mt-2 text-sm text-gray-700">
-            Gestiona todos los pedidos de la plataforma
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">Pedidos</h1>
+            <p className="mt-2 text-sm text-gray-700">
+              Gestiona todos los pedidos de la plataforma
+            </p>
+          </div>
+          <div className="relative" ref={alertMenuRef}>
+            <button
+              type="button"
+              onClick={() => setAlertMenuOpen(!alertMenuOpen)}
+              className="rounded-full p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+              disabled={alertLoading !== null}
+            >
+              <EllipsisVerticalIcon className="h-5 w-5" />
+            </button>
+            {alertMenuOpen && (
+              <div className="absolute right-0 z-10 mt-2 w-72 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5">
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => handleStaleAlert('arrived')}
+                    disabled={alertLoading !== null}
+                    className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    {alertLoading === 'arrived' ? 'Comprobando...' : 'Alertas de productos recibidos'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleStaleAlert('sent')}
+                    disabled={alertLoading !== null}
+                    className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    {alertLoading === 'sent' ? 'Comprobando...' : 'Alertas de productos enviados'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Filter Form */}

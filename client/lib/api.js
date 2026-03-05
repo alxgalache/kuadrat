@@ -693,6 +693,14 @@ export const adminAPI = {
         body: JSON.stringify({ status }),
       });
     },
+
+    getStaleArrivedAlerts: async () => {
+      return apiRequest('/admin/orders/alerts/stale-arrived');
+    },
+
+    getStaleSentAlerts: async () => {
+      return apiRequest('/admin/orders/alerts/stale-sent');
+    },
   },
 
   // Shipping management
