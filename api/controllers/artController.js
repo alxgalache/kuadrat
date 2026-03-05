@@ -3,7 +3,7 @@ const { ApiError, ValidationError } = require('../middleware/errorHandler');
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
-const sizeOf = require('image-size');
+const { imageSize } = require('image-size');
 const slugify = require('slugify');
 
 // Get all art products (public) with pagination and optional author filtering
@@ -221,7 +221,7 @@ const createArtProduct = async (req, res, next) => {
       // Validate image dimensions (>= 600x600)
       let dimensions;
       try {
-        dimensions = sizeOf(req.file.buffer);
+        dimensions = imageSize(req.file.buffer);
         if (!dimensions || dimensions.width < 600 || dimensions.height < 600) {
           imageValidationErrors.push({ field: 'image', message: 'La imagen debe tener al menos 600x600 píxeles' });
         }
