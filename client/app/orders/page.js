@@ -375,7 +375,7 @@ function OrdersPageContent() {
             step: 1,
             recipientName: savedPaymentDetails.recipientName || '',
             iban: savedPaymentDetails.iban || '',
-            saveDetails: false,
+            saveDetails: !!(savedPaymentDetails.recipientName || savedPaymentDetails.iban),
             loading: false,
             error: '',
             success: false
@@ -390,6 +390,8 @@ function OrdersPageContent() {
             setWalletBalance(0)
             if (withdrawalModal.saveDetails) {
                 setSavedPaymentDetails({ recipientName: withdrawalModal.recipientName, iban: withdrawalModal.iban })
+            } else {
+                setSavedPaymentDetails({ recipientName: '', iban: '' })
             }
         } catch (err) {
             setWithdrawalModal(prev => ({
@@ -619,7 +621,7 @@ function OrdersPageContent() {
                                                     id="iban"
                                                     value={withdrawalModal.iban}
                                                     onChange={(e) => {
-                                                        let val = e.target.value.replace(/[^\w]/g, '').toUpperCase()
+                                                        let val = e.target.value.replace(/[^\w]/g, '').toUpperCase().slice(0, 24)
                                                         val = val.replace(/(.{4})/g, '$1 ').trim()
                                                         setWithdrawalModal(prev => ({...prev, iban: val}))
                                                     }}
@@ -634,7 +636,7 @@ function OrdersPageContent() {
                                                     type="checkbox"
                                                     checked={withdrawalModal.saveDetails}
                                                     onChange={(e) => setWithdrawalModal(prev => ({...prev, saveDetails: e.target.checked}))}
-                                                    className="h-4 w-4 rounded-sm border-gray-300 text-black focus:ring-black"
+                                                    className="h-4 w-4 rounded-sm border-gray-300 accent-black text-black focus:ring-black"
                                                 />
                                                 <label htmlFor="saveDetails" className="ml-2 block text-sm text-gray-700">
                                                     Recordar beneficiario y número de cuenta para futuros pagos

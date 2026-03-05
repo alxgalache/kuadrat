@@ -1,23 +1,194 @@
-# Kuadrat AI Guide
-- **Monorepo layout**: `api/` (Express + Turso) and `client/` (Next.js 15 App Router). Shared docs (`API_ENDPOINTS.md`, `DATABASE_SCHEMA.md`) are the canonical source for schema and contract updates—sync changes in both tiers.
-- **Backend startup**: `api/server.js` bootstraps Express, initializes Turso via `initializeDatabase()` and verifies SMTP. Local dev runs with `npm run dev`; Docker compose exposes API on `3001` and client on `3000`.
-- **Database access**: All queries go through `@libsql/client` (`config/database.js`). Prefer parameterized `db.execute({ sql, args })`. The initializer also runs ad-hoc migrations; if you change table shapes, extend that function instead of adding ORM-style migrations.
-- **Auth stack**: Passport local strategy validates email/password against `users.password_hash`; JWT strategy gates protected routes. Use `authenticate` and role guards from `middleware/authorization.js` (seller-only vs buyer-access). Admin APIs require both `authenticate` and `middleware/adminAuth.js`.
-- **Error model**: Throw `ApiError` or `ValidationError` from `middleware/errorHandler.js` so clients receive `{ success:false, status, title, message, errors[] }`. Reuse this shape on new endpoints and bubble errors to the centralized handler.
-- **File handling**: Public product assets live under `api/uploads/products`, author avatars under `api/uploads/authors`. `productsRoutes` expects multipart uploads with field `image` (multer memory storage, min 600x600 enforced in `createProduct`). When adding features, persist files via the same directories and expose through dedicated routes (`/products/images/:basename`).
-- **Orders flow**: `ordersController.js` treats `orders`/`order_items` as transactional; expect to mark `products.is_sold = 1` per line item. If you add bulk operations, keep this flag in sync to avoid selling sold pieces.
-- **Email service**: `services/emailService.js` wraps Nodemailer. Hook new notifications into this module; it already exposes `verifyTransporter`, `sendPurchaseConfirmation`, and `sendRegistrationRequest` and reads SMTP config from `api/.env`.
-- **Admin tooling**: Seed an admin via `node create-admin.js` (defaults to admin@test.com/admin123). Admin endpoints under `/api/admin` support author management and product moderation, using `multer.diskStorage`; mirror their conventions when extending CMS functionality.
-- **Testing**: `cd api && npm test` runs Jest + Supertest against the live Express app; tests currently insert fixtures directly through `db.execute`. If you change request payloads (e.g., image uploads) update the tests or provide test helpers that supply multipart data.
-- **Client data layer**: `client/lib/api.js` centralizes fetch logic, auto-attaches JWT from `localStorage`, handles FormData vs JSON, and triggers logout on 401. Reuse these helpers—do not call `fetch` directly in components.
-- **Auth UX**: Wrap gated pages in `<AuthGuard requireRole="seller" />` or omit `requireRole` for any authenticated user. Guard redirects unauthenticated users to `/autores`, so make sure that page remains publicly accessible.
-- **Notifications**: Surface API failures through `useNotification().showApiError(error)` to render consistent toasts via `NotificationContext` + `Notification.js`.
-- **Gallery patterns**: Infinite scroll and author filters in `app/galeria/page.js` illustrate how to call `productsAPI.getAll` with `author_slug` and category filters. Follow that pattern for other paginated views.
-- **Rich text editing**: Admin product editor uses `QuillEditor` (wrapper around `quill` with Tailwind styling in `components/QuillEditor.js`). When adding rich-text fields, reuse this component to keep formatting consistent.
-- **Image previews**: Client-side validation in admin edit page enforces 600x600 and allowed mime types before hitting the API. Mirror these checks in new upload flows to avoid back-end validation errors.
-- **Environment variables**: API expects Turso creds (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`), JWT settings, SMTP, and `CLIENT_URL`. Client reads `NEXT_PUBLIC_API_URL`. Keep Docker `.env` files in sync when changing defaults.
-- **Sockets**: `server.js` wires Socket.IO and stores the instance on `app.set('io')`. Auction events are placeholders—if you implement them, emit to rooms named `auction-${id}` to match the join/leave helpers.
-- **Deployment**: Docker is the canonical path (`docker-compose up --build`). Ensure `uploads/` directories persist or mount volumes; otherwise image uploads vanish across restarts.
-- **Coding style**: Front-end favors `use client` components with Tailwind classes and Spanish copy. Back-end responses use Spanish messages; maintain this localization.
-- **Docs to update**: On API or schema changes, revise `API_ENDPOINTS.md`, `DATABASE_SCHEMA.md`, and mention new admin workflows in `README.md`.
-- **When unsure**: Check existing controllers/routes before adding new ones—most logic already lives there and new features should slot into the existing patterns.
+# Monorepo Project: "Kuadrat" - A Minimalist Online Art Gallery
+
+## Project Overview
+
+Kuadrat is a minimalist online marketplace for art, functioning as a virtual art gallery. Artists (Sellers) list their work and art enthusiasts (Buyers) purchase it. The dealer takes a commission on each sale. The project includes a RESTful API backend, NextJS frontend, real-time auctions, and live events/streaming, all managed within a dockerized monorepo.
+
+## Technology Stack
+
+* **Backend:** Express.js on Node.js 20
+* **Database:** Turso (libsql/client, SQLite-compatible)
+* **Frontend:** Next.js 16, React 19, JavaScript (no TypeScript), TailwindCSS, App Router
+* **Auth:** Passport.js (passport-local + passport-jwt), JWT tokens
+* **Payments:** Stripe (primary), Revolut (legacy support)
+* **Real-time:** Socket.IO for auctions and event notifications
+* **Streaming:** LiveKit for live events with guest access
+* **Email:** Nodemailer with SMTP
+* **Logging:** Pino (structured JSON in production, pretty in development)
+* **Validation:** Zod schemas for API request validation
+* **Containerization:** Docker and Docker Compose
+* **Monitoring:** Sentry (client + server)
+
+## Design Philosophy
+
+* **Extreme Minimalism:** TailwindCSS components and UI Blocks, no modifications
+* **Focus on Art:** Only images are the artworks themselves
+* **Light Theme Only:** No dark mode
+* **All Spanish UI text** (es-ES locale)
+
+## Architecture
+
+### Backend (`api/`)
+
+```
+api/
+├── config/
+│   ├── database.js      — DB schema (single source of truth, idempotent)
+│   ├── env.js           — Centralized env config with validation
+│   ├── logger.js        — Pino logger (JSON prod, pretty dev)
+│   ├── passport.js      — JWT + Local auth strategies
+│   └── shutdown.js      — Graceful shutdown handler
+├── controllers/
+│   ├── ordersController.js    — Order CRUD (largest controller)
+│   ├── orders/index.js        — Re-export for future splitting
+│   ├── paymentsController.js  — Revolut payment flow
+│   ├── stripePaymentsController.js — Stripe payment flow
+│   ├── artController.js       — Art product CRUD
+│   ├── othersController.js    — Other products CRUD
+│   ├── auctionController.js   — Public auction endpoints
+│   ├── auctionAdminController.js — Admin auction management
+│   ├── eventController.js     — Public event endpoints
+│   ├── eventAdminController.js — Admin event management
+│   ├── authController.js      — Login, register, password reset
+│   ├── usersController.js     — User/author profiles
+│   └── shippingController.js  — Shipping methods and zones
+├── middleware/
+│   ├── errorHandler.js    — ApiError class + global handler
+│   ├── authorization.js   — JWT auth + role checks
+│   ├── adminAuth.js       — Admin-only middleware
+│   ├── rateLimiter.js     — 4-tier rate limiting (uses config/env.js)
+│   ├── securityMiddleware.js — Prototype pollution, command injection, UA filter
+│   ├── validate.js        — Zod schema validation middleware
+│   ├── cache.js           — ETag + Cache-Control header middleware
+│   └── timeout.js         — Request timeout middleware
+├── routes/
+│   ├── admin/             — Split admin routes (authenticate + adminAuth applied at index)
+│   │   ├── index.js       — Main router, mounts sub-routes
+│   │   ├── authorRoutes.js
+│   │   ├── productRoutes.js
+│   │   ├── orderRoutes.js
+│   │   ├── shippingRoutes.js
+│   │   ├── auctionRoutes.js
+│   │   ├── eventRoutes.js
+│   │   └── othersRoutes.js
+│   ├── authRoutes.js, artRoutes.js, othersRoutes.js, ...
+│   └── sellerRoutes.js, shippingRoutes.js, ...
+├── services/
+│   ├── emailService.js    — All email templates and sending
+│   ├── email/index.js     — Re-export for future splitting
+│   ├── stripeService.js   — Stripe API wrapper
+│   ├── auctionService.js  — Auction business logic
+│   ├── eventService.js    — Event CRUD + LiveKit
+│   ├── livekitService.js  — LiveKit token generation
+│   └── revolutService.js  — Revolut payment integration (legacy)
+├── validators/            — Zod request validation schemas
+│   ├── authSchemas.js
+│   ├── orderSchemas.js
+│   ├── productSchemas.js
+│   ├── shippingSchemas.js
+│   ├── auctionSchemas.js
+│   └── eventSchemas.js
+├── utils/
+│   ├── transaction.js     — Turso batch/transaction wrapper
+│   ├── response.js        — Standardized API response helpers
+│   ├── htmlEscape.js      — HTML sanitization
+│   └── paymentHelpers.js  — Currency conversion, VAT
+├── socket/
+│   ├── auctionSocket.js   — Real-time auction events
+│   └── eventSocket.js     — Real-time event notifications
+├── scheduler/
+│   └── auctionScheduler.js — Cron job (every 30s) for auction lifecycle
+└── server.js              — Express + Socket.IO + middleware stack
+```
+
+### Frontend (`client/`)
+
+```
+client/
+├── app/                   — Next.js App Router pages
+│   ├── admin/             — Admin dashboard (AuthGuard wrapper)
+│   ├── galeria/           — Art gallery + product detail
+│   ├── subastas/          — Auction pages
+│   ├── espacios/          — Events/streaming pages
+│   ├── orders/            — Customer order history
+│   ├── seller/            — Seller dashboard
+│   └── layout.js          — Root layout with providers
+├── components/
+│   ├── ErrorBoundary.js   — React error boundary with retry
+│   ├── ShoppingCartDrawer.js — Cart checkout flow (3 steps)
+│   ├── BidModal.js        — Auction bidding interface (9 phases)
+│   ├── EventLiveRoom.js   — LiveKit video integration
+│   ├── Navbar.js, AuthGuard.js, Notification.js, ...
+│   └── cart/, auction/, events/ — Future sub-component directories
+├── contexts/
+│   ├── CartContext.js      — Cart state (useMemo/useCallback optimized)
+│   ├── AuthContext.js      — User auth state
+│   ├── NotificationContext.js
+│   └── BannerNotificationContext.js
+├── hooks/
+│   ├── useDebounce.js     — Generic debounce hook
+│   ├── usePostalCodeValidation.js — Shared postal validation
+│   ├── useAuctionSocket.js — Socket.IO for auctions
+│   ├── useEventSocket.js  — Socket.IO for events
+│   └── useGalleryAuthors.js, useGalleryProducts.js
+├── lib/
+│   ├── api.js             — Centralized API client (1064 lines)
+│   ├── api/index.js       — Re-export for future splitting
+│   ├── constants.js       — App-wide constants (debounce, animation, cart)
+│   ├── serverApi.js       — Server-side API calls
+│   └── stripe.js          — Stripe.js promise loader
+└── next.config.js         — Sentry, CSP headers, standalone output
+```
+
+## Key Patterns
+
+### Backend Patterns
+
+* **Structured Logging:** All files use `const logger = require('../config/logger')` (Pino). No `console.log` in production code.
+* **Centralized Config:** All env vars accessed via `const config = require('../config/env')`. Validates required vars at startup.
+* **Request Validation:** Zod schemas in `api/validators/`, applied via `validate()` middleware in routes.
+* **Response Helpers:** `sendSuccess()`, `sendPaginated()`, `sendCreated()` from `api/utils/response.js`.
+* **Error Handling:** `ApiError` class thrown in controllers, caught by global `errorHandler` middleware.
+* **Transactions:** `createBatch()` from `api/utils/transaction.js` for atomic multi-table operations.
+* **Caching:** `cacheControl()` middleware on public GET endpoints (art, others, authors).
+* **Rate Limiting:** 4-tier via `config.rateLimit.*` (general, auth, sensitive, paymentVerification).
+* **Graceful Shutdown:** SIGTERM/SIGINT handlers close HTTP, Socket.IO, log sequence.
+* **Response Compression:** gzip via `compression` middleware (early in stack).
+
+### Frontend Patterns
+
+* **Performance:** CartContext uses `useMemo`/`useCallback` on all exposed functions.
+* **Error Boundaries:** `<ErrorBoundary>` component for graceful failure handling.
+* **Shared Hooks:** `useDebounce`, `usePostalCodeValidation` avoid duplicate logic.
+* **Constants:** Magic numbers extracted to `lib/constants.js`.
+* **API Client:** Centralized `lib/api.js` with request deduplication and global 401/429 handling.
+
+## Database Schema Management
+
+The database schema is defined in `api/config/database.js`. This file is the **single source of truth**.
+
+**Key rules:**
+* `initializeDatabase()` runs on every startup (idempotent via `IF NOT EXISTS`).
+* Schema changes: update the `CREATE TABLE` statement directly, never add `ALTER TABLE` blocks.
+* 25 tables, 30+ indexes (including performance indexes on orders, products, auctions, events).
+* Orders auto-increment starts at 1000 (for fresh DBs).
+* Postal codes imported from `api/migrations/ES.csv` (only when empty).
+
+## Postal Code References (Polymorphic Pivot Tables)
+
+Three pivot tables use a **polymorphic reference pattern**:
+* `ref_type` — `'postal_code'` | `'province'` | `'country'`
+* `postal_code_id` — set only when `ref_type = 'postal_code'`
+* `ref_value` — province name or country code otherwise
+
+## Environment Variables
+
+All environment variables are validated at startup via `api/config/env.js`. See `api/.env.example` for full documentation. Key groups:
+* **Application:** PORT, NODE_ENV, LOG_LEVEL, CLIENT_URL
+* **Database:** TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
+* **Auth:** JWT_SECRET, JWT_EXPIRES_IN
+* **Email:** SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM
+* **Payments:** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, PAYMENT_PROVIDER
+* **LiveKit:** LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+* **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, etc.
+* **Business:** TAX_VAT_ES, DEALER_COMMISSION

@@ -1664,6 +1664,15 @@ const updateItemStatus = async (req, res, next) => {
       await checkAndUpdateOrderStatusConfirmed(orderId);
     }
 
+    // Re-read order status to capture any cascade update from the checks above
+    const freshOrderResult = await db.execute({
+      sql: 'SELECT status FROM orders WHERE id = ?',
+      args: [orderId],
+    });
+    if (freshOrderResult.rows.length > 0) {
+      order.status = freshOrderResult.rows[0].status;
+    }
+
     res.status(200).json({
       success: true,
       message: 'Estado actualizado correctamente',

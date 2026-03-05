@@ -346,7 +346,7 @@ router.post('/withdrawals', validate(createWithdrawalSchema), async (req, res, n
       );
     } else {
       batch.add(
-        'UPDATE users SET available_withdrawal = 0 WHERE id = ? AND available_withdrawal = ?',
+        'UPDATE users SET available_withdrawal = 0, withdrawal_recipient = NULL, withdrawal_iban = NULL WHERE id = ? AND available_withdrawal = ?',
         [userId, balance]
       );
     }
