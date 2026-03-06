@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcrypt');
 const { authenticate, requireSeller } = require('../middleware/authorization');
 const { db } = require('../config/database');
 const { createBatch } = require('../utils/transaction');
@@ -10,9 +11,79 @@ const { sendSuccess, sendCreated } = require('../utils/response');
 const { sendWithdrawalNotificationEmail } = require('../services/emailService');
 const { validate } = require('../middleware/validate');
 const { createWithdrawalSchema } = require('../validators/withdrawalSchemas');
+const { changePasswordSchema } = require('../validators/sellerSchemas');
+const { validatePassword } = require('../controllers/authController');
 
 // Apply authentication and seller authorization to all routes
 router.use(authenticate, requireSeller);
+
+/**
+ * GET /api/seller/profile
+ * Get the authenticated seller's profile data
+ */
+router.get('/profile', async (req, res, next) => {
+  try {
+    const result = await db.execute({
+      sql: `SELECT id, full_name, email, email_contact, location, bio, profile_img, visible
+            FROM users WHERE id = ?`,
+      args: [req.user.id],
+    });
+
+    if (result.rows.length === 0) {
+      throw new ApiError(404, 'Usuario no encontrado', 'Usuario no encontrado');
+    }
+
+    sendSuccess(res, { profile: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/seller/profile/password
+ * Change the authenticated seller's password
+ */
+router.put('/profile/password', validate(changePasswordSchema), async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (newPassword !== confirmPassword) {
+      throw new ApiError(400, 'Las contraseñas no coinciden', 'Error de validación');
+    }
+
+    const validation = validatePassword(newPassword);
+    if (!validation.isValid) {
+      throw new ApiError(400, validation.errors.join('. '), 'Contraseña insegura');
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT password_hash FROM users WHERE id = ?',
+      args: [req.user.id],
+    });
+
+    if (result.rows.length === 0) {
+      throw new ApiError(404, 'Usuario no encontrado', 'Usuario no encontrado');
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+    if (!isMatch) {
+      throw new ApiError(401, 'La contraseña actual es incorrecta', 'Contraseña incorrecta');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await db.execute({
+      sql: 'UPDATE users SET password_hash = ? WHERE id = ?',
+      args: [hashedPassword, req.user.id],
+    });
+
+    logger.info({ userId: req.user.id }, 'Seller password changed');
+
+    sendSuccess(res, {}, 200, 'Contraseña actualizada correctamente');
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * GET /api/seller/products

@@ -1228,6 +1228,20 @@ export const sellerAPI = {
     });
   },
 
+  // Profile
+  getProfile: async () => {
+    return apiRequest('/seller/profile');
+  },
+
+  changePassword: async (currentPassword, newPassword, confirmPassword) => {
+    return apiRequest('/seller/profile/password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+      // A wrong current password returns 401 — skip global handler to avoid wiping the session
+      skipAuthHandling: true,
+    });
+  },
+
   // Wallet
   getWallet: async () => {
     return apiRequest('/seller/wallet');

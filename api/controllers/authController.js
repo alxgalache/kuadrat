@@ -272,4 +272,5 @@ module.exports = {
   validateSetupToken,
   setPassword,
   getPasswordRequirements,
+  validatePassword,
 };

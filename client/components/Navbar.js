@@ -218,6 +218,13 @@ export default function Navbar() {
                     </div>
                   )}
                   <Link
+                    href="/seller/profile"
+                    onClick={() => close()}
+                    className="block p-2 hover:text-gray-600"
+                  >
+                    Perfil
+                  </Link>
+                  <Link
                     href="/seller/products"
                     onClick={() => close()}
                     className="block p-2 hover:text-gray-600"
@@ -424,6 +431,13 @@ export default function Navbar() {
                   </>
                 ) : isSeller ? (
                   <>
+                    <Link
+                      href="/seller/profile"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Perfil
+                    </Link>
                     <Link
                       href="/seller/products"
                       onClick={() => setMobileMenuOpen(false)}
