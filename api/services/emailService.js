@@ -2249,6 +2249,91 @@ const sendStaleSentAlertEmail = async (items) => {
   return { success: true, messageId: info.messageId };
 };
 
+// Send notification email to admin when a seller creates a new product
+const sendNewProductNotificationEmail = async ({ sellerName, productName, productType }) => {
+  const config = require('../config/env');
+  const adminEmail = config.registrationEmail;
+  if (!adminEmail) {
+    logger.warn('No REGISTRATION_EMAIL configured, skipping new product notification email');
+    return { success: false, error: 'No admin email configured' };
+  }
+
+  const typeLabel = productType === 'art' ? 'Arte' : 'Otro producto';
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Nuevo producto pendiente de validación</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Nuevo producto pendiente de validación</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                El vendedor <strong>${escapeForEmail(sellerName)}</strong> ha creado un nuevo producto que necesita ser validado y aprobado.
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 20px;">
+                <tr>
+                  <td style="padding: 8px 12px; font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Producto</td>
+                  <td style="padding: 8px 12px; font-size: 14px; color: #374151; border-bottom: 1px solid #e5e7eb;">${escapeForEmail(productName)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 12px; font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Categoría</td>
+                  <td style="padding: 8px 12px; font-size: 14px; color: #374151; border-bottom: 1px solid #e5e7eb;">${typeLabel}</td>
+                </tr>
+              </table>
+              <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #374151;">
+                Por favor, revisa y aprueba este producto desde el panel de administración.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">Este es un correo automático. Por favor no responder.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const logoAttachment = getLogoAttachment();
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: adminEmail,
+    subject: `Nuevo producto pendiente de validación: ${escapeForEmail(productName)}`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  logger.info({ recipient: adminEmail, messageId: info.messageId, productName, sellerName }, 'New product notification email sent to admin');
+  return { success: true, messageId: info.messageId };
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -2272,4 +2357,5 @@ module.exports = {
   sendItemConfirmedEmail,
   sendStaleArrivedAlertEmail,
   sendStaleSentAlertEmail,
+  sendNewProductNotificationEmail,
 };

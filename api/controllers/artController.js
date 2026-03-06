@@ -5,6 +5,8 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const { imageSize } = require('image-size');
 const slugify = require('slugify');
+const logger = require('../config/logger');
+const { sendNewProductNotificationEmail } = require('../services/emailService');
 
 // Get all art products (public) with pagination and optional author filtering
 const getAllArtProducts = async (req, res, next) => {
@@ -288,6 +290,13 @@ const createArtProduct = async (req, res, next) => {
       sql: 'SELECT * FROM art WHERE id = ?',
       args: [result.lastInsertRowid],
     });
+
+    // Notify admin about new product (fire-and-forget)
+    sendNewProductNotificationEmail({
+      sellerName: req.user.full_name,
+      productName: name,
+      productType: 'art',
+    }).catch(err => logger.error({ err }, 'Failed to send new product notification email'));
 
     res.status(201).json({
       success: true,

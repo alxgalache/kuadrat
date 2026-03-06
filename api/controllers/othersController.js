@@ -5,6 +5,8 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const { imageSize } = require('image-size');
 const slugify = require('slugify');
+const logger = require('../config/logger');
+const { sendNewProductNotificationEmail } = require('../services/emailService');
 
 // Get all others products (public) with pagination and optional author filtering
 const getAllOthersProducts = async (req, res, next) => {
@@ -354,6 +356,13 @@ const createOthersProduct = async (req, res, next) => {
 
     const product = productResult.rows[0];
     product.variations = variationsResult.rows;
+
+    // Notify admin about new product (fire-and-forget)
+    sendNewProductNotificationEmail({
+      sellerName: req.user.full_name,
+      productName: name,
+      productType: 'other',
+    }).catch(err => logger.error({ err }, 'Failed to send new product notification email'));
 
     res.status(201).json({
       success: true,
