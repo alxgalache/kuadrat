@@ -1166,6 +1166,27 @@ export const eventsAPI = {
     });
   },
 
+  sendVerification: async (eventId, attendeeId) => {
+    return apiRequest(`/events/${eventId}/send-verification`, {
+      method: 'POST',
+      body: JSON.stringify({ attendeeId }),
+    });
+  },
+
+  verifyEmail: async (eventId, attendeeId, code) => {
+    return apiRequest(`/events/${eventId}/verify-email`, {
+      method: 'POST',
+      body: JSON.stringify({ attendeeId, code }),
+    });
+  },
+
+  verifyPassword: async (eventId, email, password) => {
+    return apiRequest(`/events/${eventId}/verify-password`, {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
   getVideoToken: async (eventId, attendeeId = null, accessToken = null) => {
     const body = {};
     if (attendeeId && accessToken) {

@@ -455,6 +455,10 @@ async function initializeDatabase() {
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         ip_address TEXT,
         chat_banned INTEGER NOT NULL DEFAULT 0,
+        access_password TEXT,
+        email_verified INTEGER NOT NULL DEFAULT 0,
+        verification_code_hash TEXT,
+        verification_code_expires_at DATETIME,
         FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
       )
     `);
@@ -576,6 +580,10 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE users ADD COLUMN available_withdrawal REAL NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE orders ADD COLUMN reserved_at DATETIME');
     await safeAlter('ALTER TABLE orders ADD COLUMN payment_mismatch INTEGER NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN access_password TEXT');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN verification_code_hash TEXT');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN verification_code_expires_at DATETIME');
 
     // ── Withdrawals ──────────────────────────────────────────
     await db.execute(`

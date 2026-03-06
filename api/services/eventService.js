@@ -18,6 +18,22 @@ function hashAccessToken(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * Generate a 6-char alphanumeric event password (excludes ambiguous chars: 0OI1L).
+ */
+function generateEventPassword() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let password = '';
+  for (let i = 0; i < 6; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+function generateOTPCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
 function generateSlug(title) {
   return slugify(title, { lower: true, strict: true }) + '-' + randomBytes(4).toString('hex');
 }
@@ -329,6 +345,97 @@ async function isAttendeeChatBanned(attendeeId) {
   return result.rows.length > 0 && result.rows[0].chat_banned === 1;
 }
 
+// ---------------------------------------------------------------------------
+// Email Verification (OTP)
+// ---------------------------------------------------------------------------
+
+async function sendVerificationCode(eventId, attendeeId) {
+  const attendee = await getAttendeeById(attendeeId);
+  if (!attendee || attendee.event_id !== eventId) return null;
+
+  const code = generateOTPCode();
+  const codeHash = createHash('sha256').update(code).digest('hex');
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  await db.execute({
+    sql: `UPDATE event_attendees SET verification_code_hash = ?, verification_code_expires_at = ? WHERE id = ?`,
+    args: [codeHash, expiresAt, attendeeId],
+  });
+
+  return { code, attendee };
+}
+
+async function verifyEmailCode(eventId, attendeeId, code) {
+  const attendee = await getAttendeeById(attendeeId);
+  if (!attendee || attendee.event_id !== eventId) {
+    return { valid: false, error: 'Asistente no encontrado' };
+  }
+
+  if (!attendee.verification_code_hash || !attendee.verification_code_expires_at) {
+    return { valid: false, error: 'No se encontró una verificación pendiente' };
+  }
+
+  if (new Date(attendee.verification_code_expires_at) < new Date()) {
+    return { valid: false, error: 'El código ha expirado. Solicita uno nuevo' };
+  }
+
+  const codeHash = createHash('sha256').update(code).digest('hex');
+  if (codeHash !== attendee.verification_code_hash) {
+    return { valid: false, error: 'Código de verificación incorrecto' };
+  }
+
+  await db.execute({
+    sql: `UPDATE event_attendees SET email_verified = 1, verification_code_hash = NULL, verification_code_expires_at = NULL WHERE id = ?`,
+    args: [attendeeId],
+  });
+
+  return { valid: true };
+}
+
+// ---------------------------------------------------------------------------
+// Password Access
+// ---------------------------------------------------------------------------
+
+async function verifyAttendeePassword(eventId, email, password) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM event_attendees WHERE event_id = ? AND email = ? AND access_password = ?',
+    args: [eventId, email, password],
+  });
+
+  if (result.rows.length === 0) {
+    // Check if email exists but password doesn't match
+    const emailCheck = await db.execute({
+      sql: 'SELECT id, access_password FROM event_attendees WHERE event_id = ? AND email = ?',
+      args: [eventId, email],
+    });
+
+    if (emailCheck.rows.length === 0 || !emailCheck.rows[0].access_password) {
+      return { found: false, error: 'No se encontró un registro con este correo electrónico' };
+    }
+    return { found: false, error: 'Contraseña incorrecta' };
+  }
+
+  const attendee = result.rows[0];
+
+  // Generate a new access token for this session
+  const accessToken = generateAccessToken();
+  const accessTokenHash = hashAccessToken(accessToken);
+
+  await db.execute({
+    sql: 'UPDATE event_attendees SET access_token_hash = ? WHERE id = ?',
+    args: [accessTokenHash, attendee.id],
+  });
+
+  return { found: true, attendee, accessToken };
+}
+
+async function setAttendeePassword(attendeeId, password) {
+  await db.execute({
+    sql: 'UPDATE event_attendees SET access_password = ?, email_verified = 1 WHERE id = ?',
+    args: [password, attendeeId],
+  });
+}
+
 module.exports = {
   createEvent,
   updateEvent,
@@ -352,6 +459,12 @@ module.exports = {
   updateAttendeeIp,
   markAttendeeChatBanned,
   isAttendeeChatBanned,
+  // Email verification & password access
+  generateEventPassword,
+  sendVerificationCode,
+  verifyEmailCode,
+  verifyAttendeePassword,
+  setAttendeePassword,
   // Exposed for token verification
   hashAccessToken,
 };

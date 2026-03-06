@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const eventController = require('../controllers/eventController');
 const { authenticate } = require('../middleware/authorization');
+const { validate } = require('../middleware/validate');
+const { sensitiveLimiter } = require('../middleware/rateLimiter');
+const { sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema } = require('../validators/eventSchemas');
 
 // All routes are public (no authentication required) unless specified
 
@@ -83,5 +86,23 @@ router.post('/:id/participants/:identity/report-spam', eventController.reportSpa
  * Host manually bans a participant from chat (requires auth)
  */
 router.post('/:id/participants/:identity/ban-from-chat', authenticate, eventController.banFromChat);
+
+/**
+ * POST /api/events/:id/send-verification
+ * Send OTP verification code to attendee's email
+ */
+router.post('/:id/send-verification', sensitiveLimiter, validate(sendVerificationSchema), eventController.sendVerification);
+
+/**
+ * POST /api/events/:id/verify-email
+ * Verify OTP code for email verification
+ */
+router.post('/:id/verify-email', sensitiveLimiter, validate(verifyEmailSchema), eventController.verifyEmail);
+
+/**
+ * POST /api/events/:id/verify-password
+ * Verify email + password for returning attendees
+ */
+router.post('/:id/verify-password', sensitiveLimiter, validate(verifyPasswordSchema), eventController.verifyPassword);
 
 module.exports = router;

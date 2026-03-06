@@ -111,6 +111,35 @@ const muteParticipantSchema = z.object({
   }).strip(),
 });
 
+/**
+ * POST /api/events/:id/send-verification
+ */
+const sendVerificationSchema = z.object({
+  body: z.object({
+    attendeeId: z.union([z.number(), z.string()]).refine(v => !!v, 'attendeeId es obligatorio'),
+  }).strip(),
+});
+
+/**
+ * POST /api/events/:id/verify-email
+ */
+const verifyEmailSchema = z.object({
+  body: z.object({
+    attendeeId: z.union([z.number(), z.string()]).refine(v => !!v, 'attendeeId es obligatorio'),
+    code: z.string().length(6, 'El código debe tener 6 dígitos'),
+  }).strip(),
+});
+
+/**
+ * POST /api/events/:id/verify-password
+ */
+const verifyPasswordSchema = z.object({
+  body: z.object({
+    email: z.string().min(1, 'Email es obligatorio'),
+    password: z.string().min(1, 'Contraseña es obligatoria'),
+  }).strip(),
+});
+
 module.exports = {
   registerAttendeeSchema,
   createPaymentSchema,
@@ -119,4 +148,7 @@ module.exports = {
   createEventSchema,
   updateEventSchema,
   muteParticipantSchema,
+  sendVerificationSchema,
+  verifyEmailSchema,
+  verifyPasswordSchema,
 };

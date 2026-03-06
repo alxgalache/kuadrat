@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
-import { XMarkIcon } from '@heroicons/react/24/outline'
+import { XMarkIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { eventsAPI } from '@/lib/api'
@@ -10,18 +10,21 @@ import { eventsAPI } from '@/lib/api'
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
 
 const PHASE = {
+  CHOOSE: 'choose',
   REGISTER: 'register',
+  VERIFY_EMAIL: 'verify_email',
+  VERIFY_PASSWORD: 'verify_password',
   PAYMENT: 'payment',
   SUCCESS: 'success',
 }
 
 /**
  * Modal for registering to access an event.
- * Free events: name + email -> success.
- * Paid events: name + email -> Stripe payment -> success.
+ * Flow: CHOOSE -> REGISTER -> VERIFY_EMAIL -> PAYMENT (paid) -> SUCCESS
+ *   or: CHOOSE -> VERIFY_PASSWORD -> direct access
  */
 export default function EventAccessModal({ isOpen, onClose, event, onAccessGranted }) {
-  const [phase, setPhase] = useState(PHASE.REGISTER)
+  const [phase, setPhase] = useState(PHASE.CHOOSE)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -37,8 +40,42 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
   const [attendeeId, setAttendeeId] = useState(null)
   const [accessToken, setAccessToken] = useState(null)
   const [clientSecret, setClientSecret] = useState(null)
+  const [savedPassword, setSavedPassword] = useState(null)
+
+  // Email verification OTP
+  const [otpCode, setOtpCode] = useState('')
+  const [showResend, setShowResend] = useState(false)
+  const resendTimerRef = useRef(null)
+
+  // Password verification (returning attendees)
+  const [verifyEmail, setVerifyEmail] = useState('')
+  const [verifyPasswordValue, setVerifyPasswordValue] = useState('')
 
   const isPaid = event?.access_type === 'paid'
+
+  // Reset when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setPhase(PHASE.CHOOSE)
+      setFirstName('')
+      setLastName('')
+      setEmail('')
+      setError('')
+      setLoading(false)
+      setTermsAccepted(false)
+      setClientSecret(null)
+      setAttendeeId(null)
+      setAccessToken(null)
+      setSavedPassword(null)
+      setOtpCode('')
+      setShowResend(false)
+      setVerifyEmail('')
+      setVerifyPasswordValue('')
+    }
+    return () => {
+      if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
+    }
+  }, [isOpen])
 
   const handleRegister = async () => {
     if (!firstName.trim() || !lastName.trim() || !email.trim()) {
@@ -74,9 +111,8 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
 
       const nameInfo = { firstName: firstName.trim(), lastName: lastName.trim() }
 
-      // For returning attendees, we check if they already have access
+      // For returning attendees who already completed registration
       if (data.isExisting && data.attendee.status === 'paid') {
-        // Already paid, grant access directly
         storeSession(event.id, { attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken, ...nameInfo })
         onAccessGranted?.({ attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken })
         setPhase(PHASE.SUCCESS)
@@ -84,23 +120,16 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         return
       }
 
-      if (isPaid) {
-        // Create payment intent
-        const payData = await eventsAPI.pay(event.id, data.attendee.id)
-        setClientSecret(payData.clientSecret)
-        // Store session with accessToken (if new)
-        if (data.accessToken) {
-          storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken, ...nameInfo })
-        }
-        setPhase(PHASE.PAYMENT)
-      } else {
-        // Free event - store and grant access
-        if (data.accessToken) {
-          storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken, ...nameInfo })
-        }
-        onAccessGranted?.({ attendeeId: data.attendee.id, accessToken: data.accessToken || getStoredSession(event.id)?.accessToken })
-        setPhase(PHASE.SUCCESS)
+      // Store session with accessToken (if new)
+      if (data.accessToken) {
+        storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken, ...nameInfo })
       }
+
+      // Send verification code
+      await eventsAPI.sendVerification(event.id, data.attendee.id)
+      setShowResend(false)
+      resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
+      setPhase(PHASE.VERIFY_EMAIL)
     } catch (err) {
       setError(err.message || 'Error al registrar')
     } finally {
@@ -108,25 +137,127 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
     }
   }
 
-  const handlePaymentSuccess = () => {
+  const handleVerifyOtp = async () => {
+    setError('')
+    setLoading(true)
+    try {
+      const data = await eventsAPI.verifyEmail(event.id, attendeeId, otpCode)
+
+      if (isPaid) {
+        // Proceed to payment
+        const payData = await eventsAPI.pay(event.id, attendeeId)
+        setClientSecret(payData.clientSecret)
+        setPhase(PHASE.PAYMENT)
+      } else {
+        // Free event — password comes back from verify-email response
+        if (data.accessPassword) {
+          setSavedPassword(data.accessPassword)
+        }
+        const session = getStoredSession(event.id)
+        onAccessGranted?.({ attendeeId, accessToken: session?.accessToken || accessToken })
+        setPhase(PHASE.SUCCESS)
+      }
+    } catch (err) {
+      setError(err.message || 'Error al verificar código')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResendOtp = async () => {
+    setError('')
+    setShowResend(false)
+    setOtpCode('')
+    setLoading(true)
+    try {
+      await eventsAPI.sendVerification(event.id, attendeeId)
+      resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
+    } catch (err) {
+      setError(err.message || 'Error al reenviar código')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePaymentSuccess = async (paymentPassword) => {
+    if (paymentPassword) {
+      setSavedPassword(paymentPassword)
+    }
     const session = getStoredSession(event.id)
     onAccessGranted?.({ attendeeId: session?.attendeeId || attendeeId, accessToken: session?.accessToken || accessToken })
     setPhase(PHASE.SUCCESS)
   }
 
+  const handleVerifyPassword = async () => {
+    if (!verifyEmail.trim() || !verifyPasswordValue.trim()) {
+      setError('Email y contraseña son obligatorios')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const data = await eventsAPI.verifyPassword(event.id, verifyEmail.trim().toLowerCase(), verifyPasswordValue.trim())
+      const nameInfo = { firstName: data.attendee.first_name, lastName: data.attendee.last_name }
+      storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken, ...nameInfo })
+      onAccessGranted?.({ attendeeId: data.attendee.id, accessToken: data.accessToken })
+      handleClose()
+    } catch (err) {
+      setError(err.message || 'Error al verificar')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleClose = () => {
-    setPhase(PHASE.REGISTER)
+    setPhase(PHASE.CHOOSE)
     setFirstName('')
     setLastName('')
     setEmail('')
     setError('')
     setTermsAccepted(false)
     setClientSecret(null)
+    setSavedPassword(null)
+    setOtpCode('')
+    setShowResend(false)
+    setVerifyEmail('')
+    setVerifyPasswordValue('')
+    if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
     onClose()
   }
 
+  // ---- Render helpers ----
+
+  const renderChoose = () => (
+    <div className="space-y-6">
+      <p className="text-sm text-gray-600">Selecciona una opción para continuar:</p>
+      <button
+        type="button"
+        onClick={() => { setError(''); setPhase(PHASE.REGISTER) }}
+        className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
+      >
+        Registrarme en el evento
+      </button>
+      <button
+        type="button"
+        onClick={() => { setError(''); setPhase(PHASE.VERIFY_PASSWORD) }}
+        className="w-full rounded-md bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+      >
+        Ya me apunté previamente al evento. Acceder con contraseña
+      </button>
+    </div>
+  )
+
   const renderRegister = () => (
     <div className="space-y-4">
+      <button
+        type="button"
+        onClick={() => { setError(''); setPhase(PHASE.CHOOSE) }}
+        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900"
+      >
+        <ArrowLeftIcon className="h-4 w-4" /> Volver
+      </button>
       <p className="text-sm text-gray-600">
         {isPaid
           ? `Introduce tus datos para acceder a este evento. El precio es ${event.price} ${event.currency}.`
@@ -207,7 +338,89 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         disabled={loading}
         className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
       >
-        {loading ? 'Registrando...' : isPaid ? 'Continuar al pago' : 'Acceder al evento'}
+        {loading ? 'Registrando...' : 'Continuar'}
+      </button>
+    </div>
+  )
+
+  const renderVerifyEmail = () => (
+    <div className="space-y-4">
+      <div className="rounded-md bg-gray-50 p-3">
+        <p className="text-sm text-gray-700">
+          Hemos enviado un código de verificación a <strong>{email}</strong>. Introdúcelo a continuación.
+        </p>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-900">Código de verificación</label>
+        <input
+          type="text"
+          value={otpCode}
+          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm tracking-widest text-center text-lg"
+          placeholder="000000"
+          maxLength={6}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+        />
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <button
+        type="button"
+        onClick={handleVerifyOtp}
+        disabled={loading || otpCode.length !== 6}
+        className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
+      >
+        {loading ? 'Verificando...' : 'Verificar código'}
+      </button>
+      {showResend && (
+        <button
+          type="button"
+          onClick={handleResendOtp}
+          className="w-full text-sm text-gray-600 hover:text-gray-900 underline"
+        >
+          Reenviar código
+        </button>
+      )}
+    </div>
+  )
+
+  const renderVerifyPassword = () => (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={() => { setError(''); setPhase(PHASE.CHOOSE) }}
+        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900"
+      >
+        <ArrowLeftIcon className="h-4 w-4" /> Volver
+      </button>
+      <div>
+        <label className="block text-sm font-medium text-gray-900">Email</label>
+        <input
+          type="email"
+          value={verifyEmail}
+          onChange={(e) => setVerifyEmail(e.target.value)}
+          className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
+          placeholder="tu@email.com"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-900">Contraseña de acceso</label>
+        <input
+          type="password"
+          value={verifyPasswordValue}
+          onChange={(e) => setVerifyPasswordValue(e.target.value)}
+          className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
+          placeholder="Contraseña recibida al registrarte"
+        />
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <button
+        type="button"
+        onClick={handleVerifyPassword}
+        disabled={loading || !verifyEmail || !verifyPasswordValue}
+        className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
+      >
+        {loading ? 'Verificando...' : 'Acceder'}
       </button>
     </div>
   )
@@ -253,6 +466,17 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
       <p className="text-sm text-gray-600">
         Ya puedes acceder al evento cuando comience.
       </p>
+      {savedPassword && (
+        <div className="rounded-lg border-2 border-gray-900 bg-gray-50 p-4 text-left">
+          <p className="text-sm font-semibold text-gray-900">Guarda esta contraseña</p>
+          <p className="mt-1 text-xs text-gray-600">
+            La necesitarás para acceder al evento desde otro dispositivo o si se borran los datos del navegador.
+          </p>
+          <p className="mt-3 select-all text-center text-lg font-mono font-bold tracking-widest text-gray-900">
+            {savedPassword}
+          </p>
+        </div>
+      )}
       <button
         type="button"
         onClick={handleClose}
@@ -264,13 +488,19 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
   )
 
   const titles = {
-    [PHASE.REGISTER]: 'Acceder al evento',
+    [PHASE.CHOOSE]: 'Acceder al evento',
+    [PHASE.REGISTER]: 'Registro',
+    [PHASE.VERIFY_EMAIL]: 'Verificar email',
+    [PHASE.VERIFY_PASSWORD]: 'Acceder con contraseña',
     [PHASE.PAYMENT]: 'Pago',
     [PHASE.SUCCESS]: isPaid ? 'Pago completado' : 'Registro completado',
   }
 
   const renderContent = {
+    [PHASE.CHOOSE]: renderChoose,
     [PHASE.REGISTER]: renderRegister,
+    [PHASE.VERIFY_EMAIL]: renderVerifyEmail,
+    [PHASE.VERIFY_PASSWORD]: renderVerifyPassword,
     [PHASE.PAYMENT]: renderPayment,
     [PHASE.SUCCESS]: renderSuccess,
   }
@@ -332,8 +562,8 @@ function StripeEventPayment({ eventId, attendeeId, onSuccess, onError }) {
       }
 
       if (paymentIntent && paymentIntent.status === 'succeeded') {
-        await eventsAPI.confirmPayment(eventId, attendeeId, paymentIntent.id)
-        onSuccess()
+        const data = await eventsAPI.confirmPayment(eventId, attendeeId, paymentIntent.id)
+        onSuccess(data.accessPassword)
       } else {
         onError('El pago no se pudo completar. Inténtalo de nuevo.')
       }

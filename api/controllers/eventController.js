@@ -7,6 +7,7 @@ const logger = require('../config/logger');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const stripeService = require('../services/stripeService');
+const { sendEventVerificationEmail, sendEventConfirmationEmail } = require('../services/emailService');
 
 function getClientIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
@@ -204,7 +205,19 @@ const confirmPayment = async (req, res, next) => {
       currency: event.currency,
     });
 
-    res.status(200).json({ success: true });
+    // Generate password and send confirmation email for paid events
+    const password = eventService.generateEventPassword();
+    await eventService.setAttendeePassword(attendeeId, password);
+
+    sendEventConfirmationEmail({
+      email: attendee.email,
+      firstName: attendee.first_name,
+      eventTitle: event.title,
+      accessPassword: password,
+      amountPaid: event.price,
+    }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
+
+    res.status(200).json({ success: true, accessPassword: password });
   } catch (error) {
     next(error);
   }
@@ -688,6 +701,106 @@ const reportSpam = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/send-verification
+// Send OTP code to attendee's email
+// ---------------------------------------------------------------------------
+const sendVerification = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attendeeId } = req.body;
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
+    const result = await eventService.sendVerificationCode(id, attendeeId);
+    if (!result) {
+      throw new ApiError(404, 'Asistente no encontrado', 'Asistente no encontrado');
+    }
+
+    await sendEventVerificationEmail({ email: result.attendee.email, code: result.code });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/verify-email
+// Verify OTP code
+// ---------------------------------------------------------------------------
+const verifyEmail = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attendeeId, code } = req.body;
+
+    const result = await eventService.verifyEmailCode(id, attendeeId, code);
+    if (!result.valid) {
+      throw new ApiError(400, result.error, 'Verificación fallida');
+    }
+
+    // For free events, generate password and send confirmation email now
+    const event = await eventService.getEventById(id);
+    if (event && event.access_type !== 'paid') {
+      const attendee = await eventService.getAttendeeById(attendeeId);
+      const password = eventService.generateEventPassword();
+      await eventService.setAttendeePassword(attendeeId, password);
+
+      sendEventConfirmationEmail({
+        email: attendee.email,
+        firstName: attendee.first_name,
+        eventTitle: event.title,
+        accessPassword: password,
+      }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
+
+      return res.status(200).json({ success: true, accessPassword: password });
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/verify-password
+// Verify email + password for returning attendees
+// ---------------------------------------------------------------------------
+const verifyPassword = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { email, password } = req.body;
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
+    const result = await eventService.verifyAttendeePassword(id, email, password);
+    if (!result.found) {
+      const statusCode = result.error === 'Contraseña incorrecta' ? 401 : 404;
+      throw new ApiError(statusCode, result.error, result.error);
+    }
+
+    res.status(200).json({
+      success: true,
+      attendee: {
+        id: result.attendee.id,
+        first_name: result.attendee.first_name,
+        last_name: result.attendee.last_name,
+        email: result.attendee.email,
+        status: result.attendee.status,
+      },
+      accessToken: result.accessToken,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getEvents,
   getEventBySlug,
@@ -702,4 +815,7 @@ module.exports = {
   demoteParticipant,
   reportSpam,
   banFromChat,
+  sendVerification,
+  verifyEmail,
+  verifyPassword,
 };

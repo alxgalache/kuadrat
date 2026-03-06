@@ -2343,6 +2343,135 @@ const sendNewProductNotificationEmail = async ({ sellerName, productName, produc
   return { success: true, messageId: info.messageId };
 };
 
+const sendEventConfirmationEmail = async ({ email, firstName, eventTitle, accessPassword, amountPaid }) => {
+  const logoAttachment = getLogoAttachment();
+
+  const paymentLine = amountPaid
+    ? `<p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Pago realizado: <strong>${amountPaid}\u00a0€</strong></p>`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Registro confirmado</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 40px 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Registro confirmado</h1>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Hola <strong>${firstName}</strong>,</p>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Tu registro en el evento <strong>${eventTitle}</strong> ha sido confirmado.</p>
+              ${paymentLine}
+              <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 0 0 24px;">
+                <p style="color: #92400e; margin: 0 0 8px 0; font-weight: bold;">Tu contraseña de acceso:</p>
+                <p style="color: #92400e; margin: 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center;">${accessPassword}</p>
+                <p style="color: #92400e; margin: 8px 0 0 0; font-size: 12px;">Guarda esta contraseña. La necesitarás para acceder al evento desde otro dispositivo o si se borran los datos del navegador.</p>
+              </div>
+              <p style="color: #6b7280; font-size: 12px; margin-top: 32px; text-align: center;">\u00a9 ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: `Registro confirmado - ${eventTitle}`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending event confirmation email');
+    return { success: false };
+  }
+};
+
+const sendEventVerificationEmail = async ({ email, code }) => {
+  const logoAttachment = getLogoAttachment();
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Código de verificación</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 40px 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Código de verificación</h1>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Tu código de verificación es:</p>
+              <div style="background-color: #f3f4f6; border-radius: 8px; padding: 24px; text-align: center; margin: 0 0 24px;">
+                <p style="color: #111827; margin: 0; font-size: 32px; font-weight: bold; letter-spacing: 8px; font-family: monospace;">${code}</p>
+              </div>
+              <p style="color: #6b7280; line-height: 1.6; margin: 0 0 16px; font-size: 14px;">Este código expira en 10 minutos. Si no has solicitado este código, puedes ignorar este email.</p>
+              <p style="color: #6b7280; font-size: 12px; margin-top: 32px; text-align: center;">\u00a9 ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: 'Código de verificación - 140d Galería de Arte',
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending event verification email');
+    return { success: false };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -2367,4 +2496,6 @@ module.exports = {
   sendStaleArrivedAlertEmail,
   sendStaleSentAlertEmail,
   sendNewProductNotificationEmail,
+  sendEventConfirmationEmail,
+  sendEventVerificationEmail,
 };
