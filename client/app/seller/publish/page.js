@@ -506,7 +506,7 @@ function PublishProductPageContent() {
                                             type="checkbox"
                                             checked={forAuction}
                                             onChange={(e) => setForAuction(e.target.checked)}
-                                            className="size-4 rounded border-gray-300 text-black focus:ring-black"
+                                            className="size-4 rounded border-gray-300 text-black accent-black focus:ring-black"
                                         />
                                         <label htmlFor="forAuction" className="ml-3 text-sm/6 font-medium text-gray-900">
                                             Disponible para subastas
@@ -521,7 +521,7 @@ function PublishProductPageContent() {
                                             type="checkbox"
                                             checked={aiGenerated}
                                             onChange={(e) => setAiGenerated(e.target.checked)}
-                                            className="size-4 rounded border-gray-300 text-black focus:ring-black"
+                                            className="size-4 rounded border-gray-300 text-black accent-black focus:ring-black"
                                         />
                                         <label htmlFor="aiGenerated" className="ml-3 text-sm/6 font-medium text-gray-900">
                                             Se ha utilizado Inteligencia Artificial en la creación de este producto
@@ -538,7 +538,7 @@ function PublishProductPageContent() {
                                                     type="checkbox"
                                                     checked={hasVariations}
                                                     onChange={(e) => setHasVariations(e.target.checked)}
-                                                    className="size-4 rounded border-gray-300 text-black focus:ring-black"
+                                                    className="size-4 rounded border-gray-300 text-black accent-black focus:ring-black"
                                                 />
                                                 <label htmlFor="hasVariations" className="ml-3 text-sm/6 font-medium text-gray-900">
                                                     Este producto tiene variaciones (tamaño, color, etc.)

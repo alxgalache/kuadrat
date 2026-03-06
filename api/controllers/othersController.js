@@ -361,7 +361,8 @@ const createOthersProduct = async (req, res, next) => {
     sendNewProductNotificationEmail({
       sellerName: req.user.full_name,
       productName: name,
-      productType: 'other',
+      productType: 'others',
+      productId: productId,
     }).catch(err => logger.error({ err }, 'Failed to send new product notification email'));
 
     res.status(201).json({

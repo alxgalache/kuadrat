@@ -201,15 +201,13 @@ export default function OthersProductDetail({ params }) {
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:max-w-7xl lg:px-8">
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
           {/* Image */}
-          <div className="w-full rounded-lg bg-gray-200">
+          <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
             <Image
               alt={product.name}
               src={getOthersImageUrl(product.basename)}
-              width={0}
-              height={0}
+              fill
               sizes="(max-width: 1024px) 100vw, 50vw"
-              style={{ width: '100%', height: 'auto' }}
-              className="object-contain rounded-lg"
+              className="object-cover"
               priority
             />
           </div>

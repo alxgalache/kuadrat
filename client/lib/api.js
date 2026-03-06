@@ -656,6 +656,10 @@ export const adminAPI = {
         body: JSON.stringify({ variations }),
       });
     },
+
+    getPreview: async (id, type) => {
+      return apiRequest(`/admin/products/${id}/preview?type=${type}`);
+    },
   },
 
   // Orders management

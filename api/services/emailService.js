@@ -2250,7 +2250,7 @@ const sendStaleSentAlertEmail = async (items) => {
 };
 
 // Send notification email to admin when a seller creates a new product
-const sendNewProductNotificationEmail = async ({ sellerName, productName, productType }) => {
+const sendNewProductNotificationEmail = async ({ sellerName, productName, productType, productId }) => {
   const config = require('../config/env');
   const adminEmail = config.registrationEmail;
   if (!adminEmail) {
@@ -2259,6 +2259,8 @@ const sendNewProductNotificationEmail = async ({ sellerName, productName, produc
   }
 
   const typeLabel = productType === 'art' ? 'Arte' : 'Otro producto';
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const previewUrl = productId ? `${clientUrl}/admin/products/${productId}/preview?type=${productType}` : null;
 
   const html = `
 <!DOCTYPE html>
@@ -2302,6 +2304,13 @@ const sendNewProductNotificationEmail = async ({ sellerName, productName, produc
                   <td style="padding: 8px 12px; font-size: 14px; color: #374151; border-bottom: 1px solid #e5e7eb;">${typeLabel}</td>
                 </tr>
               </table>
+              ${previewUrl ? `<table cellpadding="0" cellspacing="0" style="margin: 0 0 20px;">
+                <tr>
+                  <td align="center" style="background-color: #111827; border-radius: 6px;">
+                    <a href="${previewUrl}" style="display: inline-block; padding: 12px 24px; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none;">Ver producto</a>
+                  </td>
+                </tr>
+              </table>` : ''}
               <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #374151;">
                 Por favor, revisa y aprueba este producto desde el panel de administración.
               </p>

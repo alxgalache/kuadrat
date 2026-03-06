@@ -75,6 +75,58 @@ router.get('/:id', async (req, res) => {
 })
 
 /**
+ * GET /api/admin/products/:id/preview
+ * Preview a product (art or others) as it would appear publicly, regardless of status/visibility
+ */
+router.get('/:id/preview', async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { type } = req.query;
+
+    if (!type || (type !== 'art' && type !== 'others')) {
+      return res.status(400).json({
+        title: 'Error de validación',
+        message: 'El parámetro "type" es obligatorio y debe ser "art" o "others"'
+      });
+    }
+
+    const table = type === 'art' ? 'art' : 'others';
+    const result = await db.execute({
+      sql: `SELECT t.*, u.full_name as seller_full_name, u.slug as seller_slug
+            FROM ${table} t
+            LEFT JOIN users u ON t.seller_id = u.id
+            WHERE t.id = ? AND t.removed = 0`,
+      args: [productId]
+    });
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        title: 'No encontrado',
+        message: 'Producto no encontrado'
+      });
+    }
+
+    const product = result.rows[0];
+
+    if (type === 'others') {
+      const varsResult = await db.execute({
+        sql: 'SELECT * FROM other_vars WHERE other_id = ?',
+        args: [productId]
+      });
+      product.variations = varsResult.rows;
+    }
+
+    res.json({ product });
+  } catch (error) {
+    logger.error({ err: error }, 'Error fetching product preview');
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudo cargar la previsualización del producto'
+    });
+  }
+});
+
+/**
  * PUT /api/admin/products/:id
  * Update product information
  */

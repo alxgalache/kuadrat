@@ -296,6 +296,7 @@ const createArtProduct = async (req, res, next) => {
       sellerName: req.user.full_name,
       productName: name,
       productType: 'art',
+      productId: result.lastInsertRowid,
     }).catch(err => logger.error({ err }, 'Failed to send new product notification email'));
 
     res.status(201).json({

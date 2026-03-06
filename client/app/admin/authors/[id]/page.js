@@ -308,6 +308,13 @@ function AuthorProfilePageContent({ params }) {
                           </td>
                           <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
                             <div className="flex justify-end gap-2">
+                              <Link
+                                href={`/admin/products/${product.id}/preview?type=${product.product_type}`}
+                                className="text-gray-600 hover:text-gray-900"
+                                title="Previsualizar"
+                              >
+                                <EyeIcon className="size-5" />
+                              </Link>
                               {product.product_type === 'others' && (
                                 <button
                                   onClick={() => handleEditVariations(product)}
