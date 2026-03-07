@@ -72,7 +72,7 @@ export default function RegistroPage() {
           </div>
           <p className="mt-4 text-sm/6 text-gray-900">
             Nos importa tu privacidad. Lee nuestra{' '}
-            <a href="#" className="font-semibold whitespace-nowrap text-black hover:text-gray-800">
+            <a href="/legal/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="font-semibold whitespace-nowrap text-black hover:text-gray-800">
               política de privacidad
             </a>
             .
