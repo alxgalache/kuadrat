@@ -27,6 +27,7 @@ const getAllOthersProducts = async (req, res, next) => {
       LEFT JOIN users u ON o.seller_id = u.id
       WHERE o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved' AND o.removed = 0
         AND (o.for_auction = 0 OR o.for_auction IS NULL)
+        AND (o.for_draw = 0 OR o.for_draw IS NULL)
     `;
     const args = [];
 

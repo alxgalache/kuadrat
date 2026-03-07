@@ -86,6 +86,7 @@ async function initializeDatabase() {
         dimensions TEXT,
         removed INTEGER NOT NULL DEFAULT 0,
         for_auction INTEGER NOT NULL DEFAULT 0,
+        for_draw INTEGER NOT NULL DEFAULT 0,
         ai_generated INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (seller_id) REFERENCES users(id)
       )
@@ -109,6 +110,7 @@ async function initializeDatabase() {
         dimensions TEXT,
         removed INTEGER NOT NULL DEFAULT 0,
         for_auction INTEGER NOT NULL DEFAULT 0,
+        for_draw INTEGER NOT NULL DEFAULT 0,
         ai_generated INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (seller_id) REFERENCES users(id)
       )

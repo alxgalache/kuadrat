@@ -10,6 +10,14 @@ function generateUUID() {
   return randomUUID();
 }
 
+async function setProductDrawFlag(productId, productType, value) {
+  const table = productType === 'art' ? 'art' : 'others';
+  await db.execute({
+    sql: `UPDATE ${table} SET for_draw = ? WHERE id = ?`,
+    args: [value, productId],
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Draw CRUD
 // ---------------------------------------------------------------------------
@@ -21,6 +29,8 @@ async function createDraw({ name, description, product_id, product_type, price, 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [id, name, description || null, product_id, product_type, price, units, min_participants, max_participations, start_datetime, end_datetime, status],
   });
+
+  await setProductDrawFlag(product_id, product_type, 1);
 
   const result = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
   return result.rows[0];
@@ -46,11 +56,24 @@ async function updateDraw(id, fields) {
 
   if (setClauses.length === 0) return draw;
 
+  // Handle product change: reset old product flag, set new product flag
+  const newProductId = fields.product_id !== undefined ? fields.product_id : draw.product_id;
+  const newProductType = fields.product_type !== undefined ? fields.product_type : draw.product_type;
+  const productChanged = newProductId !== draw.product_id || newProductType !== draw.product_type;
+
+  if (productChanged) {
+    await setProductDrawFlag(draw.product_id, draw.product_type, 0);
+  }
+
   args.push(id);
   await db.execute({
     sql: `UPDATE draws SET ${setClauses.join(', ')} WHERE id = ?`,
     args,
   });
+
+  if (productChanged) {
+    await setProductDrawFlag(newProductId, newProductType, 1);
+  }
 
   const updated = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
   return updated.rows[0];
@@ -59,7 +82,10 @@ async function updateDraw(id, fields) {
 async function deleteDraw(id) {
   const current = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
   if (current.rows.length === 0) return false;
-  if (!['draft', 'cancelled'].includes(current.rows[0].status)) return false;
+  const draw = current.rows[0];
+  if (!['draft', 'cancelled'].includes(draw.status)) return false;
+
+  await setProductDrawFlag(draw.product_id, draw.product_type, 0);
 
   await db.execute({ sql: 'DELETE FROM draw_participations WHERE draw_id = ?', args: [id] });
   await db.execute({ sql: 'DELETE FROM draw_buyers WHERE draw_id = ?', args: [id] });
@@ -353,14 +379,17 @@ async function endDraw(id) {
 async function cancelDraw(id) {
   const current = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
   if (current.rows.length === 0) return null;
-  if (current.rows[0].status === 'finished') return null;
+  const draw = current.rows[0];
+  if (draw.status === 'finished') return null;
 
   await db.execute({
     sql: "UPDATE draws SET status = 'cancelled' WHERE id = ?",
     args: [id],
   });
 
-  logger.info({ drawId: id, status: 'cancelled', previousStatus: current.rows[0].status }, 'Draw cancelled');
+  await setProductDrawFlag(draw.product_id, draw.product_type, 0);
+
+  logger.info({ drawId: id, status: 'cancelled', previousStatus: draw.status }, 'Draw cancelled');
 
   const updated = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
   return updated.rows[0];

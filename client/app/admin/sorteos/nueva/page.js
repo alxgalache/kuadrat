@@ -16,6 +16,7 @@ function CreateDrawContent() {
     product_type: 'art',
     price: '',
     units: '1',
+    min_participants: '',
     max_participations: '',
     start_datetime: '',
     end_datetime: '',
@@ -36,6 +37,7 @@ function CreateDrawContent() {
         product_id: parseInt(form.product_id, 10),
         price: parseFloat(form.price),
         units: parseInt(form.units, 10),
+        min_participants: parseInt(form.min_participants, 10),
         max_participations: parseInt(form.max_participations, 10),
       })
       router.push('/admin/sorteos')
@@ -82,7 +84,7 @@ function CreateDrawContent() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Precio (€)</label>
               <input type="number" step="0.01" name="price" value={form.price} onChange={handleChange} required className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
@@ -90,6 +92,13 @@ function CreateDrawContent() {
             <div>
               <label className="block text-sm font-medium text-gray-700">Unidades</label>
               <input type="number" name="units" value={form.units} onChange={handleChange} min="1" required className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Min. participantes</label>
+              <input type="number" name="min_participants" value={form.min_participants} onChange={handleChange} min="1" required className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Max. participantes</label>
