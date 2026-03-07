@@ -244,7 +244,7 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         onClick={() => { setError(''); setPhase(PHASE.VERIFY_PASSWORD) }}
         className="w-full rounded-md bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
       >
-        Ya me apunté previamente al evento. Acceder con contraseña
+        Acceder con contraseña
       </button>
     </div>
   )
