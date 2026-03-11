@@ -63,6 +63,12 @@ router.post('/:id/token', eventController.getViewerToken);
 router.post('/:id/host-token', authenticate, eventController.getHostToken);
 
 /**
+ * POST /api/events/:id/end
+ * End an event (requires auth, host only)
+ */
+router.post('/:id/end', authenticate, eventController.endEvent);
+
+/**
  * POST /api/events/:id/participants/:identity/promote
  * Grant canPublish permission (host-only)
  */

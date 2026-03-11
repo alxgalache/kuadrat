@@ -10,6 +10,7 @@ import EventCountdown from '@/components/EventCountdown'
 import EventAccessModal from '@/components/EventAccessModal'
 import AuthorModal from '@/components/AuthorModal'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 // Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
@@ -73,29 +74,69 @@ export default function EventDetail({ params }) {
   const [kicked, setKicked] = useState(false)
   const [hostAuthor, setHostAuthor] = useState(null)
   const [hostModalOpen, setHostModalOpen] = useState(false)
+  const [streamEndedModalOpen, setStreamEndedModalOpen] = useState(false)
   const [videoToken, setVideoToken] = useState(null)
   const [videoTokenFilename, setVideoTokenFilename] = useState(null)
 
   // Real-time event status and chat via Socket.IO
   const { eventStarted, eventEnded, chatMessages, sendChatMessage } = useEventSocket(event?.id)
 
+  const connectAsViewer = useCallback(async () => {
+    if (!event?.id) return
+    const session = getStoredSession(event.id)
+    if (!session) return
+
+    try {
+      const data = await eventsAPI.getViewerToken(event.id, session.attendeeId, session.accessToken)
+      setLivekitToken(data.token)
+      setLivekitUrl(data.livekitUrl)
+    } catch (err) {
+      console.error('Error getting viewer token:', err)
+    }
+  }, [event?.id])
+
+  const connectAsHost = useCallback(async () => {
+    if (!event?.id) return
+    try {
+      const data = await eventsAPI.getHostToken(event.id)
+      setLivekitToken(data.token)
+      setLivekitUrl(data.livekitUrl)
+    } catch (err) {
+      console.error('Error getting host token:', err)
+    }
+  }, [event?.id])
+
+  const loadEvent = useCallback(async () => {
+    try {
+      const data = await eventsAPI.getBySlug(slug)
+      setEvent(data.event)
+      setAttendeeCount(data.attendeeCount || 0)
+    } catch (err) {
+      setError('Evento no encontrado')
+    } finally {
+      setLoading(false)
+    }
+  }, [slug])
+
   useEffect(() => {
     loadEvent()
-  }, [slug])
+  }, [loadEvent])
 
   // When server broadcasts event_started, re-fetch to trigger auto-connect flow
   useEffect(() => {
     if (eventStarted) {
       loadEvent()
     }
-  }, [eventStarted])
+  }, [eventStarted, loadEvent])
 
-  // When server broadcasts event_ended, re-fetch to show finished state
+  // When server broadcasts event_ended, show modal if viewer
   useEffect(() => {
-    if (eventEnded) {
+    if (eventEnded && !isHost && livekitToken) {
+      setStreamEndedModalOpen(true)
+    } else if (eventEnded) {
       loadEvent()
     }
-  }, [eventEnded])
+  }, [eventEnded, isHost, livekitToken, loadEvent])
 
   // Check for stored session
   useEffect(() => {
@@ -122,42 +163,7 @@ export default function EventDetail({ params }) {
     } else if (hasAccess) {
       connectAsViewer()
     }
-  }, [event?.status, hasAccess, isHost])
-
-  const loadEvent = async () => {
-    try {
-      const data = await eventsAPI.getBySlug(slug)
-      setEvent(data.event)
-      setAttendeeCount(data.attendeeCount || 0)
-    } catch (err) {
-      setError('Evento no encontrado')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const connectAsViewer = async () => {
-    const session = getStoredSession(event.id)
-    if (!session) return
-
-    try {
-      const data = await eventsAPI.getViewerToken(event.id, session.attendeeId, session.accessToken)
-      setLivekitToken(data.token)
-      setLivekitUrl(data.livekitUrl)
-    } catch (err) {
-      console.error('Error getting viewer token:', err)
-    }
-  }
-
-  const connectAsHost = async () => {
-    try {
-      const data = await eventsAPI.getHostToken(event.id)
-      setLivekitToken(data.token)
-      setLivekitUrl(data.livekitUrl)
-    } catch (err) {
-      console.error('Error getting host token:', err)
-    }
-  }
+  }, [event?.status, event?.format, hasAccess, isHost, livekitToken, connectAsHost, connectAsViewer])
 
   const handleAccessGranted = ({ attendeeId, accessToken }) => {
     setHasAccess(true)
@@ -234,7 +240,43 @@ export default function EventDetail({ params }) {
   // The final video URL to pass to the player
   const activeVideoUrl = protectedVideoUrl || resolvedVideoUrl
 
-  if (loading) {
+
+  const renderModals = () => (
+    <>
+      <EventAccessModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        event={event}
+        onAccessGranted={handleAccessGranted}
+      />
+
+      <ConfirmDialog
+        open={streamEndedModalOpen}
+        onClose={() => {
+          setStreamEndedModalOpen(false)
+          window.location.reload()
+        }}
+        onConfirm={() => {
+          setStreamEndedModalOpen(false)
+          window.location.reload()
+        }}
+        title="Evento finalizado"
+        message="El anfitrión ha finalizado el stream de este evento."
+        confirmText="Aceptar"
+        cancelText={null}
+        type="warning"
+      />
+
+      <AuthorModal
+        author={hostAuthor}
+        open={hostModalOpen}
+        onClose={() => setHostModalOpen(false)}
+      />
+    </>
+  )
+
+  const renderContent = () => {
+    if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
         <p className="text-sm text-gray-500">Cargando evento...</p>
@@ -509,22 +551,15 @@ export default function EventDetail({ params }) {
           </div>
         </div>
       </div>
-
-      {/* Access Modal */}
-      <EventAccessModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        event={event}
-        onAccessGranted={handleAccessGranted}
-      />
-
-      {/* Host author modal */}
-      <AuthorModal
-        author={hostAuthor}
-        open={hostModalOpen}
-        onClose={() => setHostModalOpen(false)}
-      />
     </div>
+  )
+  }
+
+  return (
+    <>
+      {renderContent()}
+      {renderModals()}
+    </>
   )
 }
 

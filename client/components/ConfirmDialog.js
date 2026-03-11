@@ -40,21 +40,21 @@ export default function ConfirmDialog({ open, onClose, onConfirm, title, message
                 type="button"
                 onClick={onConfirm}
                 className={`inline-flex w-full justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-xs sm:ml-3 sm:w-auto ${
-                  type === 'danger'
-                    ? 'bg-red-600 hover:bg-red-500'
-                    : 'bg-black hover:bg-gray-900'
+                  type === 'danger' ? 'bg-red-600 hover:bg-red-500' : 'bg-yellow-600 hover:bg-yellow-500'
                 }`}
               >
                 {confirmText}
               </button>
-              <button
-                type="button"
-                data-autofocus
-                onClick={onClose}
-                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
-              >
-                {cancelText}
-              </button>
+              {cancelText && (
+                <button
+                  type="button"
+                  data-autofocus
+                  onClick={onClose}
+                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                >
+                  {cancelText}
+                </button>
+              )}
             </div>
           </DialogPanel>
         </div>

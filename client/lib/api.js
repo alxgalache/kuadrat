@@ -1166,6 +1166,12 @@ export const eventsAPI = {
     });
   },
 
+  endEvent: async (eventId) => {
+    return apiRequest(`/events/${eventId}/end`, {
+      method: 'POST',
+    });
+  },
+
   sendVerification: async (eventId, attendeeId) => {
     return apiRequest(`/events/${eventId}/send-verification`, {
       method: 'POST',

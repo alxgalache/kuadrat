@@ -334,6 +334,50 @@ const getHostToken = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
+// POST /api/events/:id/end
+// End an event and clean up the LiveKit room (host only)
+// ---------------------------------------------------------------------------
+const endEvent = async (req, res, next) => {
+  try {
+    const current = await eventService.getEventById(req.params.id);
+    if (!current) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
+    if (current.status !== 'active') {
+      throw new ApiError(400, 'Solo se pueden finalizar eventos activos', 'No se puede finalizar');
+    }
+
+    // Check that the authenticated user is the host
+    if (!req.user || req.user.id !== current.host_user_id) {
+      throw new ApiError(403, 'Solo el host puede finalizar este evento', 'Acceso denegado');
+    }
+
+    // Delete LiveKit room (only for live format events)
+    if (current.format !== 'video' && current.livekit_room_name) {
+      try {
+        await livekitService.deleteRoom(current.livekit_room_name);
+      } catch (lkError) {
+        logger.error({ err: lkError }, 'Error deleting LiveKit room');
+        // Don't fail, continue ending the event
+      }
+    }
+
+    const event = await eventService.endEvent(req.params.id);
+
+    // Notify clients that the event has ended
+    const eventSocket = req.app.get('eventSocket');
+    if (eventSocket) {
+      eventSocket.broadcastEventEnded(req.params.id);
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /api/events/:id/participants/:identity/promote
 // Grant canPublish permission (host-only)
 // ---------------------------------------------------------------------------
@@ -811,6 +855,7 @@ module.exports = {
   confirmPayment,
   getViewerToken,
   getHostToken,
+  endEvent,
   promoteParticipant,
   demoteParticipant,
   reportSpam,

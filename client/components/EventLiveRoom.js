@@ -15,6 +15,7 @@ import {
 import '@livekit/components-styles'
 import { Track, RoomEvent, DisconnectReason } from 'livekit-client'
 import { eventsAPI } from '@/lib/api'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 // Spam threshold: more than this many messages in the given window triggers a kick
 const SPAM_MAX_MESSAGES = 10
@@ -344,7 +345,7 @@ function RoomContent({ isHost, eventId, onKicked }) {
         {/* Toggle controls for host */}
         {isHost && (
           <div className="mt-3">
-            <HostControls />
+            <HostControls eventId={eventId} />
           </div>
         )}
 
@@ -360,8 +361,8 @@ function RoomContent({ isHost, eventId, onKicked }) {
                   : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50'
               }`}
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l-.075 5.925m3.075-5.925v3m0-3a1.575 1.575 0 013.15 0v3m-3.15 0l-.075 3.925M14.1 7.575v3m0-3a1.575 1.575 0 013.15 0v4.725M6.9 7.575a1.575 1.575 0 00-3.15 0v6.525c0 3.06 1.827 5.625 4.725 6.825a10.49 10.49 0 006.15 0c2.898-1.2 4.725-3.765 4.725-6.825V7.575" />
+              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                <path fillRule="evenodd" clipRule="evenodd" d="M18.906 3.92194C17.8921 2.88646 16.4461 2.50452 15.0306 2.9073C14.6322 3.02066 14.2173 2.78959 14.104 2.39119C13.9906 1.99279 14.2217 1.57792 14.6201 1.46456C16.5583 0.913072 18.5747 1.43959 19.9778 2.8725C20.2676 3.16846 20.2626 3.64331 19.9666 3.9331C19.6706 4.2229 19.1958 4.2179 18.906 3.92194ZM11.1904 3.30839C10.9763 2.94131 10.3525 2.7187 9.71882 3.08085C9.08746 3.44168 8.97642 4.07772 9.18675 4.4384L11.7124 8.76952C11.9211 9.12734 11.8001 9.58656 11.4423 9.79522C11.0845 10.0039 10.6253 9.88296 10.4166 9.52514L7.89098 5.19403C7.89085 5.19381 7.8911 5.19424 7.89098 5.19403L7.04909 3.75032C6.83503 3.38324 6.21122 3.16063 5.57755 3.52278C4.94619 3.88361 4.83515 4.51965 5.04548 4.88033L8.83397 11.377C9.04263 11.7348 8.92171 12.1941 8.56389 12.4027C8.20607 12.6114 7.74685 12.4905 7.53819 12.1326L5.85442 9.24522C5.64036 8.87814 5.01655 8.65553 4.38288 9.01768C3.75152 9.37851 3.64048 10.0145 3.85081 10.3752L7.6393 16.8719C9.24824 19.631 13.2186 20.5264 16.5856 18.6021C19.9502 16.6792 21.1463 12.8377 19.5411 10.085L17.0154 5.75387C16.8013 5.3868 16.1775 5.16418 15.5439 5.52633C14.9125 5.88716 14.8015 6.5232 15.0118 6.88389L16.6956 9.7713C16.7963 9.94411 16.8239 10.15 16.7721 10.3432C16.7203 10.5365 16.5935 10.701 16.4198 10.8003C14.8774 11.6818 14.4047 13.3863 15.0799 14.5443C15.2886 14.9022 15.1677 15.3614 14.8099 15.57C14.4521 15.7787 13.9928 15.6578 13.7842 15.3C12.7249 13.4835 13.3917 11.2368 15.0475 9.92287L11.1904 3.30839ZM13.9186 5.00916L12.4861 2.55277C11.7703 1.32517 10.163 1.09928 8.97453 1.77853C8.60823 1.98787 8.29668 2.27483 8.06179 2.60775C7.26173 1.72687 5.8839 1.62001 4.83326 2.22046C3.64241 2.90104 3.03012 4.40197 3.74971 5.63596L4.75188 7.35452C4.36684 7.39635 3.98493 7.51742 3.63859 7.71536C2.44774 8.39595 1.83545 9.89687 2.55504 11.1309L6.34352 17.6275C8.45427 21.2471 13.408 22.1458 17.3299 19.9044C21.254 17.6617 22.9513 12.9554 20.8368 9.32937L18.3112 4.99825C17.5953 3.77065 15.9881 3.54476 14.7996 4.22401C14.4495 4.42406 14.1495 4.69498 13.9186 5.00916ZM4.41401 17.859C4.77183 17.6504 5.23105 17.7713 5.43971 18.1291C6.26657 19.5471 7.53066 20.6193 9.08954 21.3151C9.46779 21.4839 9.63757 21.9274 9.46875 22.3057C9.29993 22.6839 8.85645 22.8537 8.4782 22.6849C6.66668 21.8764 5.14688 20.6046 4.14393 18.8847C3.93527 18.5269 4.05619 18.0677 4.41401 17.859Z" />
               </svg>
               {handRaised ? 'Bajar mano' : 'Levantar mano'}
             </button>
@@ -394,9 +395,11 @@ function RoomContent({ isHost, eventId, onKicked }) {
 // ---------------------------------------------------------------------------
 // Toggle switches for mic, camera, screen share
 // ---------------------------------------------------------------------------
-function HostControls() {
+function HostControls({ eventId }) {
   const { localParticipant, isCameraEnabled, isMicrophoneEnabled, isScreenShareEnabled } = useLocalParticipant()
   const [deviceError, setDeviceError] = useState('')
+  const [showEndConfirm, setShowEndConfirm] = useState(false)
+  const [isEnding, setIsEnding] = useState(false)
 
   const toggleCamera = useCallback(async () => {
     if (!localParticipant) return
@@ -431,24 +434,59 @@ function HostControls() {
     }
   }, [localParticipant, isScreenShareEnabled])
 
+  const handleEndStream = async () => {
+    setIsEnding(true)
+    try {
+      await eventsAPI.endEvent(eventId)
+      window.location.reload()
+    } catch (err) {
+      console.error('Error ending stream:', err)
+      setDeviceError('Error al finalizar el evento')
+      setIsEnding(false)
+      setShowEndConfirm(false)
+    }
+  }
+
   return (
-    <div className="flex items-center gap-x-6 flex-wrap">
-      <div className="flex items-center gap-x-2">
-        <span className="text-sm text-gray-700">Micrófono</span>
-        <ToggleSwitch checked={isMicrophoneEnabled} onChange={toggleMic} />
+    <>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-x-6 flex-wrap">
+          <div className="flex items-center gap-x-2">
+            <span className="text-sm text-gray-700">Micrófono</span>
+            <ToggleSwitch checked={isMicrophoneEnabled} onChange={toggleMic} />
+          </div>
+          <div className="flex items-center gap-x-2">
+            <span className="text-sm text-gray-700">Cámara</span>
+            <ToggleSwitch checked={isCameraEnabled} onChange={toggleCamera} />
+          </div>
+          <div className="flex items-center gap-x-2">
+            <span className="text-sm text-gray-700">Pantalla</span>
+            <ToggleSwitch checked={isScreenShareEnabled} onChange={toggleScreenShare} />
+          </div>
+          {deviceError && (
+            <span className="text-xs text-red-600">{deviceError}</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowEndConfirm(true)}
+          className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 whitespace-nowrap"
+        >
+          Finalizar stream
+        </button>
       </div>
-      <div className="flex items-center gap-x-2">
-        <span className="text-sm text-gray-700">Cámara</span>
-        <ToggleSwitch checked={isCameraEnabled} onChange={toggleCamera} />
-      </div>
-      <div className="flex items-center gap-x-2">
-        <span className="text-sm text-gray-700">Pantalla</span>
-        <ToggleSwitch checked={isScreenShareEnabled} onChange={toggleScreenShare} />
-      </div>
-      {deviceError && (
-        <span className="text-xs text-red-600">{deviceError}</span>
-      )}
-    </div>
+
+      <ConfirmDialog
+        open={showEndConfirm}
+        onClose={() => setShowEndConfirm(false)}
+        onConfirm={handleEndStream}
+        title="Finalizar stream"
+        message="¿Estás seguro de que quieres finalizar el stream? Esta acción terminará el evento para todos los participantes."
+        confirmText={isEnding ? 'Finalizando...' : 'Finalizar'}
+        cancelText="Cancelar"
+        type="danger"
+      />
+    </>
   )
 }
 
@@ -562,7 +600,7 @@ function ParticipantGrid({ participants, isHost, eventId }) {
   if (sorted.length === 0) return null
 
   return (
-    <div className="mt-3">
+    <div className="mt-3 landscape:max-md:max-h-[30vh] landscape:max-md:overflow-y-auto pr-1">
       <div className="flex flex-wrap gap-2">
         {sorted.map((p) => (
           <ParticipantTile
@@ -747,8 +785,8 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
         {/* Hand raised icon — top left (hidden when actively speaking) */}
         {handRaised && !isLocal && !isHostParticipant && (!canPublish || !isMicActive) && (
           <span className="absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400">
-            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l-.075 5.925m3.075-5.925v3m0-3a1.575 1.575 0 013.15 0v3m-3.15 0l-.075 3.925M14.1 7.575v3m0-3a1.575 1.575 0 013.15 0v4.725M6.9 7.575a1.575 1.575 0 00-3.15 0v6.525c0 3.06 1.827 5.625 4.725 6.825a10.49 10.49 0 006.15 0c2.898-1.2 4.725-3.765 4.725-6.825V7.575" />
+            <svg className="h-3.5 w-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path fillRule="evenodd" clipRule="evenodd" d="M18.906 3.92194C17.8921 2.88646 16.4461 2.50452 15.0306 2.9073C14.6322 3.02066 14.2173 2.78959 14.104 2.39119C13.9906 1.99279 14.2217 1.57792 14.6201 1.46456C16.5583 0.913072 18.5747 1.43959 19.9778 2.8725C20.2676 3.16846 20.2626 3.64331 19.9666 3.9331C19.6706 4.2229 19.1958 4.2179 18.906 3.92194ZM11.1904 3.30839C10.9763 2.94131 10.3525 2.7187 9.71882 3.08085C9.08746 3.44168 8.97642 4.07772 9.18675 4.4384L11.7124 8.76952C11.9211 9.12734 11.8001 9.58656 11.4423 9.79522C11.0845 10.0039 10.6253 9.88296 10.4166 9.52514L7.89098 5.19403C7.89085 5.19381 7.8911 5.19424 7.89098 5.19403L7.04909 3.75032C6.83503 3.38324 6.21122 3.16063 5.57755 3.52278C4.94619 3.88361 4.83515 4.51965 5.04548 4.88033L8.83397 11.377C9.04263 11.7348 8.92171 12.1941 8.56389 12.4027C8.20607 12.6114 7.74685 12.4905 7.53819 12.1326L5.85442 9.24522C5.64036 8.87814 5.01655 8.65553 4.38288 9.01768C3.75152 9.37851 3.64048 10.0145 3.85081 10.3752L7.6393 16.8719C9.24824 19.631 13.2186 20.5264 16.5856 18.6021C19.9502 16.6792 21.1463 12.8377 19.5411 10.085L17.0154 5.75387C16.8013 5.3868 16.1775 5.16418 15.5439 5.52633C14.9125 5.88716 14.8015 6.5232 15.0118 6.88389L16.6956 9.7713C16.7963 9.94411 16.8239 10.15 16.7721 10.3432C16.7203 10.5365 16.5935 10.701 16.4198 10.8003C14.8774 11.6818 14.4047 13.3863 15.0799 14.5443C15.2886 14.9022 15.1677 15.3614 14.8099 15.57C14.4521 15.7787 13.9928 15.6578 13.7842 15.3C12.7249 13.4835 13.3917 11.2368 15.0475 9.92287L11.1904 3.30839ZM13.9186 5.00916L12.4861 2.55277C11.7703 1.32517 10.163 1.09928 8.97453 1.77853C8.60823 1.98787 8.29668 2.27483 8.06179 2.60775C7.26173 1.72687 5.8839 1.62001 4.83326 2.22046C3.64241 2.90104 3.03012 4.40197 3.74971 5.63596L4.75188 7.35452C4.36684 7.39635 3.98493 7.51742 3.63859 7.71536C2.44774 8.39595 1.83545 9.89687 2.55504 11.1309L6.34352 17.6275C8.45427 21.2471 13.408 22.1458 17.3299 19.9044C21.254 17.6617 22.9513 12.9554 20.8368 9.32937L18.3112 4.99825C17.5953 3.77065 15.9881 3.54476 14.7996 4.22401C14.4495 4.42406 14.1495 4.69498 13.9186 5.00916ZM4.41401 17.859C4.77183 17.6504 5.23105 17.7713 5.43971 18.1291C6.26657 19.5471 7.53066 20.6193 9.08954 21.3151C9.46779 21.4839 9.63757 21.9274 9.46875 22.3057C9.29993 22.6839 8.85645 22.8537 8.4782 22.6849C6.66668 21.8764 5.14688 20.6046 4.14393 18.8847C3.93527 18.5269 4.05619 18.0677 4.41401 17.859Z" />
             </svg>
           </span>
         )}
@@ -860,14 +898,21 @@ function ChatPanel({ chatMessages, send, isSending, isHost, isChatBanned, onHost
           </p>
         </div>
       ) : (
-        <form onSubmit={handleSend} className="border-t border-gray-200 px-4 py-3">
+        <form onSubmit={handleSend} className="border-t border-gray-200 px-4 py-3 flex gap-2">
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Escribe un mensaje..."
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
+            className="flex-1 min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
           />
+          <button
+            type="submit"
+            disabled={!message.trim() || isSending}
+            className="flex-shrink-0 inline-flex items-center justify-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Enviar
+          </button>
         </form>
       )}
     </div>
