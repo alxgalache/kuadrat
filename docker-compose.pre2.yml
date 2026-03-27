@@ -61,6 +61,9 @@ services:
         - WEB_APP_HIDDEN=${WEB_APP_HIDDEN}
         - PUBLISHED_VISIBLE=${PUBLISHED_VISIBLE}
         - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL}
+        - NEXT_PUBLIC_DEALER_COMMISSION=${NEXT_PUBLIC_DEALER_COMMISSION}
+        - NEXT_PUBLIC_SENDCLOUD_ENABLED_ART=${NEXT_PUBLIC_SENDCLOUD_ENABLED_ART}
+        - NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS=${NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS}
     image: kuadrat-client-staging
     container_name: kuadrat-client-staging
     # Bind to localhost only - nginx will handle external traffic
