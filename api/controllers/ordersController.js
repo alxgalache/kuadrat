@@ -296,6 +296,7 @@ const placeOrder = async (req, res, next) => {
     // 1) Persist order in DB with status 'pending' and payment provider info
     const orderResult = await db.execute({
       sql: `INSERT INTO orders (
+        full_name,
         email,
         phone,
         guest_email,
@@ -322,8 +323,9 @@ const placeOrder = async (req, res, next) => {
         stripe_payment_intent_id,
         stripe_customer_id,
         reserved_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
       args: [
+        customerBlock?.full_name || customerBlock?.fullName || null,
         buyerEmail,
         buyerPhone ?? null,
         guest_email || null,
@@ -455,8 +457,10 @@ const placeOrder = async (req, res, next) => {
           shipping_method_name,
           shipping_method_type,
           commission_amount,
-          status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          status,
+          sendcloud_shipping_option_code,
+          sendcloud_service_point_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -466,7 +470,9 @@ const placeOrder = async (req, res, next) => {
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
           commissionAmount,
-          'pending'
+          'pending',
+          item.shipping?.shippingOptionCode || null,
+          item.shipping?.servicePointId || null,
         ],
       });
     }
@@ -486,8 +492,10 @@ const placeOrder = async (req, res, next) => {
           shipping_method_name,
           shipping_method_type,
           commission_amount,
-          status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          status,
+          sendcloud_shipping_option_code,
+          sendcloud_service_point_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -498,7 +506,9 @@ const placeOrder = async (req, res, next) => {
           item.shipping?.methodName || null,
           item.shipping?.methodType || null,
           commissionAmount,
-          'pending'
+          'pending',
+          item.shipping?.shippingOptionCode || null,
+          item.shipping?.servicePointId || null,
         ],
       });
     }
@@ -2852,6 +2862,17 @@ async function confirmOrderPayment(req, res, next) {
     } catch (emailErr) {
       logger.error({ err: emailErr }, 'Failed to send order confirmation email after payment');
       // Do not fail the request
+    }
+
+    // Create Sendcloud shipments (non-blocking — errors logged but don't roll back payment)
+    try {
+      const { isSendcloudEnabledForAny } = require('../services/shipping/shippingProviderFactory');
+      if (isSendcloudEnabledForAny()) {
+        const { createSendcloudShipmentsForOrder } = require('./paymentsController');
+        await createSendcloudShipmentsForOrder(order_id);
+      }
+    } catch (scErr) {
+      logger.error({ err: scErr, orderId: order_id }, 'Failed to create Sendcloud shipments — manual intervention needed');
     }
 
     return res.status(200).json({ success: true, order: { id: order_id, status: 'paid' } });

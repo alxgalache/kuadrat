@@ -28,7 +28,13 @@ export const AUCTION_BUYER_SESSION_PREFIX = 'auction_buyer_';
 // Checkout steps
 export const STEP_CART = 1;
 export const STEP_ADDRESS = 2;
-export const STEP_PAYMENT = 3;
+export const STEP_SHIPPING = 3;
+export const STEP_PAYMENT = 4;
+
+// Sendcloud feature flags
+export const SENDCLOUD_ENABLED_ART = process.env.NEXT_PUBLIC_SENDCLOUD_ENABLED_ART === 'true';
+export const SENDCLOUD_ENABLED_OTHERS = process.env.NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS === 'true';
+export const SENDCLOUD_ENABLED = SENDCLOUD_ENABLED_ART || SENDCLOUD_ENABLED_OTHERS;
 
 // Bid modal phases
 export const BID_PHASES = {

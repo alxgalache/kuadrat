@@ -12,6 +12,9 @@ export function CartProvider({ children }) {
   const [cart, setCart] = useState([])
   const [isInitialized, setIsInitialized] = useState(false)
   const [animationTrigger, setAnimationTrigger] = useState(0)
+  // Sendcloud shipping selections keyed by sellerId
+  // { [sellerId]: { optionId, type, carrier, cost, shippingOptionCode, servicePointId, name } }
+  const [shippingSelections, setShippingSelections] = useState({})
 
   // Initialize cart from localStorage
   useEffect(() => {
@@ -87,6 +90,8 @@ export function CartProvider({ children }) {
       variantId = null,
       variantKey = null,
       shipping = null, // { methodId, methodName, methodType, cost, estimatedDays?, pickupAddress? }
+      weight = null,
+      dimensions = null,
     } = item
 
     const itemId = generateCartItemId(productId, productType, variantId)
@@ -119,6 +124,8 @@ export function CartProvider({ children }) {
           variantId,
           variantKey,
           shipping,
+          weight,
+          dimensions,
           addedAt: Date.now()
         }]
       }
@@ -209,12 +216,13 @@ export function CartProvider({ children }) {
     return groups
   }, [cart])
 
-  // Get total price (including shipping, aggregated per shipment)
+  // Get total price (including shipping, aggregated per shipment + Sendcloud)
   const getTotalPrice = useCallback(() => {
     const productsTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
-    const shippingTotal = getShippingBreakdown().reduce((sum, group) => sum + group.totalShipping, 0)
-    return productsTotal + shippingTotal
-  }, [cart, getShippingBreakdown])
+    const legacyShipping = getShippingBreakdown().reduce((sum, group) => sum + group.totalShipping, 0)
+    const sendcloudShipping = Object.values(shippingSelections).reduce((sum, sel) => sum + (sel.cost || 0), 0)
+    return productsTotal + legacyShipping + sendcloudShipping
+  }, [cart, getShippingBreakdown, shippingSelections])
 
   // Get subtotal (products only, no shipping)
   const getSubtotal = useCallback(() => {
@@ -283,6 +291,29 @@ export function CartProvider({ children }) {
     return sellerArtItem?.shipping || null
   }, [cart])
 
+  // Set Sendcloud shipping selection for a seller
+  const setSendcloudShipping = useCallback((sellerId, selection) => {
+    setShippingSelections(prev => ({
+      ...prev,
+      [sellerId]: selection,
+    }))
+  }, [])
+
+  // Clear all Sendcloud shipping selections (e.g., when address changes)
+  const clearShippingSelections = useCallback(() => {
+    setShippingSelections({})
+  }, [])
+
+  // Get Sendcloud shipping selection for a seller
+  const getSendcloudShipping = useCallback((sellerId) => {
+    return shippingSelections[sellerId] || null
+  }, [shippingSelections])
+
+  // Total Sendcloud shipping cost across all sellers
+  const getSendcloudShippingTotal = useCallback(() => {
+    return Object.values(shippingSelections).reduce((sum, sel) => sum + (sel.cost || 0), 0)
+  }, [shippingSelections])
+
   const value = useMemo(() => ({
     cart,
     isInCart,
@@ -303,6 +334,11 @@ export function CartProvider({ children }) {
     getSellerShipping,
     getSellerOthersShipping,
     getSellerArtShipping,
+    shippingSelections,
+    setSendcloudShipping,
+    clearShippingSelections,
+    getSendcloudShipping,
+    getSendcloudShippingTotal,
     animationTrigger,
   }), [
     cart, isInCart, getCartItem, addToCart, removeFromCart,
@@ -310,7 +346,9 @@ export function CartProvider({ children }) {
     getSubtotal, getTotalShipping, getShippingBreakdown,
     updateShipping, getItemsBySeller, updateSellerShipping,
     isSellerInCart, getSellerShipping, getSellerOthersShipping,
-    getSellerArtShipping, animationTrigger,
+    getSellerArtShipping, shippingSelections, setSendcloudShipping,
+    clearShippingSelections, getSendcloudShipping,
+    getSendcloudShippingTotal, animationTrigger,
   ])
 
   return (

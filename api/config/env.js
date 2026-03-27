@@ -141,6 +141,17 @@ const config = {
     profilesSampleRate: optionalFloat('SENTRY_PROFILES_SAMPLE_RATE', 0.0),
   },
 
+  // --- Sendcloud ---
+  sendcloud: {
+    apiKey: optional('SENDCLOUD_API_KEY', ''),
+    apiSecret: optional('SENDCLOUD_API_SECRET', ''),
+    webhookSecret: optional('SENDCLOUD_WEBHOOK_SECRET', ''),
+    enabledArt: optionalBool('SENDCLOUD_ENABLED_ART', false),
+    enabledOthers: optionalBool('SENDCLOUD_ENABLED_OTHERS', false),
+    autoConfirmDays: optionalInt('SENDCLOUD_AUTO_CONFIRM_DAYS', 14),
+    maxAnnouncementRetries: optionalInt('SENDCLOUD_MAX_ANNOUNCEMENT_RETRIES', 3),
+  },
+
   // --- Access Control ---
   webAppHidden: optional('WEB_APP_HIDDEN', ''),
   testAccessPassword: optional('TEST_ACCESS_PASSWORD', ''),

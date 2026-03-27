@@ -20,6 +20,9 @@ const itemShippingSchema = z.object({
   methodName: z.string().optional(),
   methodType: z.string().optional(),
   methodDescription: z.string().optional(),
+  // Sendcloud-specific fields
+  shippingOptionCode: z.string().optional(),
+  servicePointId: z.union([z.number(), z.string()]).nullable().optional(),
 }).optional();
 
 // Single order item -- type is 'art' or 'other'.

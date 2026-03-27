@@ -17,6 +17,8 @@ import {getStripePromise} from '@/lib/stripe'
 import {Elements, useStripe, useElements} from '@stripe/react-stripe-js'
 import StripeCardPayment from './StripeCardPayment'
 import StripeExpressCheckout from './StripeExpressCheckout'
+import ShippingStep from './shipping/ShippingStep'
+import {SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS} from '@/lib/constants'
 
 // Key used to persist a pending Revolut order for a given cart in sessionStorage
 const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
@@ -24,7 +26,8 @@ const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
 // Step constants for clarity
 const STEP_CART = 1
 const STEP_ADDRESS = 2
-const STEP_PAYMENT = 3
+const STEP_SHIPPING = 3
+const STEP_PAYMENT = 4
 
 // Payment method options
 const PAYMENT_METHOD_CARD = 'card'
@@ -101,7 +104,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const paymentTimeoutMs = parseInt(process.env.NEXT_PUBLIC_PAYMENT_TIMEOUT_MS || '30000', 10)
     const revolutPublicKey = process.env.NEXT_PUBLIC_REVOLUT_PUBLIC_KEY || ''
     const revolutMode = (process.env.NEXT_PUBLIC_REVOLUT_MODE || 'sandbox').toLowerCase()
-    const {cart, removeFromCart, updateQuantity, getTotalPrice, getSubtotal, getTotalShipping, getShippingBreakdown, clearCart} = useCart()
+    const {cart, removeFromCart, updateQuantity, getTotalPrice, getSubtotal, getTotalShipping, getShippingBreakdown, clearCart, shippingSelections, clearShippingSelections, getSendcloudShippingTotal} = useCart()
     const {user} = useAuth()
     const {showBanner} = useBannerNotification()
     const router = useRouter()
@@ -147,6 +150,28 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const currentRevolutOrderIdRef = useRef(null)
     const paymentTimeoutRef = useRef(null)
     const paymentSucceededRef = useRef(false) // Prevents cart change effect from cancelling after success
+    const prevAddressRef = useRef({}) // Tracks previous address for Sendcloud selection clearing
+
+    // Clear Sendcloud shipping selections when relevant address fields change
+    useEffect(() => {
+        if (!SENDCLOUD_ENABLED) return
+
+        const prev = prevAddressRef.current
+        const changed = prev.country !== deliveryAddress.country ||
+            prev.postalCode !== deliveryAddress.postalCode ||
+            prev.city !== deliveryAddress.city
+
+        // Skip initial mount (prev is empty) — only clear on actual changes
+        if (changed && (prev.country !== undefined || prev.postalCode !== undefined || prev.city !== undefined)) {
+            clearShippingSelections()
+        }
+
+        prevAddressRef.current = {
+            country: deliveryAddress.country,
+            postalCode: deliveryAddress.postalCode,
+            city: deliveryAddress.city,
+        }
+    }, [deliveryAddress.country, deliveryAddress.postalCode, deliveryAddress.city, clearShippingSelections])
 
     const getImageUrl = (item) => {
         return item.productType === 'art'
@@ -158,6 +183,13 @@ export default function ShoppingCartDrawer({open, onClose}) {
         return item.productType === 'art'
             ? `/galeria/p/${item.slug}`
             : `/tienda/p/${item.slug}`
+    }
+
+    // Check if an item uses Sendcloud shipping (shipping deferred to Step 3)
+    const isSendcloudItem = (item) => {
+        if (item.productType === 'art' && SENDCLOUD_ENABLED_ART) return true
+        if ((item.productType === 'other' || item.productType === 'others') && SENDCLOUD_ENABLED_OTHERS) return true
+        return false
     }
 
     // Build the compact representation of cart items used to initialise a Revolut order.
@@ -378,7 +410,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             showBanner('El carrito está vacío')
             return
         }
-        if (cart.some(item => !item.shipping)) {
+        if (cart.some(item => !item.shipping && !isSendcloudItem(item))) {
             showBanner('Todos los productos deben tener un método de envío seleccionado')
             return
         }
@@ -394,8 +426,8 @@ export default function ShoppingCartDrawer({open, onClose}) {
         setCurrentStep(STEP_ADDRESS)
     }
 
-    // Step 2 -> Step 3: Handle "Ir al pago" click
-    const handleProceedToPaymentStep = async () => {
+    // Step 2 -> Step 3 (Shipping) or Step 4 (Payment): Handle "Continuar" click
+    const handleProceedFromAddress = async () => {
         if (!isPersonalInfoValid()) {
             showBanner('Por favor, completa la información personal con datos válidos')
             return
@@ -404,10 +436,22 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return
         }
 
+        if (SENDCLOUD_ENABLED) {
+            setCurrentStep(STEP_SHIPPING)
+        } else {
+            setCurrentStep(STEP_PAYMENT)
+            setSelectedPaymentMethod(null)
+            if (PAYMENT_PROVIDER === 'stripe') {
+                await initializeStripePayment()
+            }
+        }
+    }
+
+    // Step 3 (Shipping) -> Step 4 (Payment)
+    const handleProceedToPaymentStep = async () => {
         setCurrentStep(STEP_PAYMENT)
         setSelectedPaymentMethod(null)
 
-        // For Stripe, auto-initialize PaymentIntent immediately
         if (PAYMENT_PROVIDER === 'stripe') {
             await initializeStripePayment()
         }
@@ -419,8 +463,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
         setAddressError('')
     }
 
-    const handleBackToAddress = () => {
-        // When going back from payment step, cancel active payment
+    const cancelActivePayment = () => {
         if (PAYMENT_PROVIDER === 'stripe' && stripePaymentIntentId) {
             ;(async () => {
                 try {
@@ -440,14 +483,25 @@ export default function ShoppingCartDrawer({open, onClose}) {
             })()
             cleanupRevolutState()
         }
+    }
 
+    const handleBackToAddress = () => {
+        cancelActivePayment()
         setCurrentStep(STEP_ADDRESS)
         setSelectedPaymentMethod(null)
     }
 
+    const handleBackToShipping = () => {
+        cancelActivePayment()
+        setCurrentStep(STEP_SHIPPING)
+        setSelectedPaymentMethod(null)
+    }
+
     // Check if cart has any delivery shipping methods
+    // Sendcloud items (shipping: null) are treated as needing delivery because
+    // the buyer's address is required for Sendcloud rate calculation at Step 3.
     const hasDeliveryShipping = useCallback(() => {
-        return cart.some(item => item.shipping?.methodType === 'delivery')
+        return cart.some(item => item.shipping?.methodType === 'delivery' || (!item.shipping && isSendcloudItem(item)))
     }, [cart])
 
     // Check if all products use pickup shipping
@@ -630,10 +684,27 @@ export default function ShoppingCartDrawer({open, onClose}) {
     // Place order in our database (shared between Card and Revolut Pay)
     const placeOrderInDatabase = async () => {
         const orderItems = cart.flatMap(item => {
+            let shipping = item.shipping
+
+            // For Sendcloud items, merge shipping from shippingSelections
+            if (!shipping && item.sellerId) {
+                const sc = shippingSelections[item.sellerId]
+                if (sc) {
+                    shipping = {
+                        methodId: sc.shippingOptionCode || sc.optionId,
+                        cost: sc.cost || 0,
+                        methodName: sc.name || '',
+                        methodType: sc.type || 'home_delivery',
+                        shippingOptionCode: sc.shippingOptionCode || '',
+                        servicePointId: sc.servicePointId || null,
+                    }
+                }
+            }
+
             const baseItem = {
                 type: item.productType === 'art' ? 'art' : 'other',
                 id: item.productId,
-                shipping: item.shipping,
+                shipping,
             }
             if (item.productType === 'other') baseItem.variantId = item.variantId
             return Array(item.quantity).fill(baseItem)
@@ -1224,7 +1295,12 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                             )}
                                         </div>
                                     )}
-                                    {!item.shipping && (
+                                    {!item.shipping && isSendcloudItem(item) && (
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Envío: se calculará en el siguiente paso
+                                        </p>
+                                    )}
+                                    {!item.shipping && !isSendcloudItem(item) && (
                                         <p className="mt-1 text-xs text-amber-600">
                                             Método de envío no seleccionado
                                         </p>
@@ -1272,6 +1348,9 @@ export default function ShoppingCartDrawer({open, onClose}) {
     )
 
     // Render order summary (used in all steps)
+    const hasSendcloudItems = cart.some(item => isSendcloudItem(item))
+    const sendcloudTotal = getSendcloudShippingTotal()
+
     const renderOrderSummary = () => (
         <div className="space-y-2">
             <div className="flex justify-between text-sm text-gray-600">
@@ -1280,8 +1359,13 @@ export default function ShoppingCartDrawer({open, onClose}) {
             </div>
             <div className="flex justify-between text-sm text-gray-600">
                 <p>Envío</p>
-                <p>€{getTotalShipping().toFixed(2)}</p>
+                <p>€{(getTotalShipping() + sendcloudTotal).toFixed(2)}</p>
             </div>
+            {hasSendcloudItems && sendcloudTotal === 0 && currentStep < STEP_SHIPPING && (
+                <p className="text-xs text-gray-400">
+                    Algunos gastos de envío se calcularán en un paso posterior
+                </p>
+            )}
             <div className="flex justify-between text-base font-medium text-gray-900 pt-2 border-t border-gray-200">
                 <p>Total</p>
                 <p>€{getTotalPrice().toFixed(2)}</p>
@@ -1505,7 +1589,14 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                 </div>
                                             )}
 
-                                            {/* Step 3: Payment Method Selection */}
+                                            {/* Step 3: Shipping Selection (Sendcloud) */}
+                                            {currentStep === STEP_SHIPPING && (
+                                                <div className="mb-6">
+                                                    <ShippingStep deliveryAddress={deliveryAddress} />
+                                                </div>
+                                            )}
+
+                                            {/* Step 4: Payment Method Selection */}
                                             {currentStep === STEP_PAYMENT && (
                                                 <div className="mb-6 space-y-6">
                                                     {/* Revolut: show payment method cards */}
@@ -1660,13 +1751,13 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                     <>
                                                         <button
                                                             onClick={handleCheckout}
-                                                            disabled={isProcessing || cart.some(item => !item.shipping)}
+                                                            disabled={isProcessing || cart.some(item => !item.shipping && !isSendcloudItem(item))}
                                                             className="flex w-full items-center justify-center gap-2 rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >
                                                             <CreditCardIcon aria-hidden="true" className="size-5"/>
                                                             {isProcessing ? 'Procesando...' : 'Completar pedido'}
                                                         </button>
-                                                        {cart.some(item => !item.shipping) && (
+                                                        {cart.some(item => !item.shipping && !isSendcloudItem(item)) && (
                                                             <p className="mt-2 text-xs text-center text-amber-600">
                                                                 Algunos productos no tienen método de envío seleccionado
                                                             </p>
@@ -1677,11 +1768,11 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                 {currentStep === STEP_ADDRESS && (
                                                     <>
                                                         <button
-                                                            onClick={handleProceedToPaymentStep}
+                                                            onClick={handleProceedFromAddress}
                                                             disabled={isProcessing || !isStep2FormComplete()}
                                                             className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >
-                                                            {isProcessing ? 'Procesando...' : 'Ir al pago'}
+                                                            {isProcessing ? 'Procesando...' : (SENDCLOUD_ENABLED ? 'Elegir envío' : 'Ir al pago')}
                                                         </button>
                                                         {!isStep2FormComplete() && (
                                                             <p className="mt-2 text-xs text-center text-gray-500">
@@ -1689,6 +1780,16 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                             </p>
                                                         )}
                                                     </>
+                                                )}
+
+                                                {currentStep === STEP_SHIPPING && (
+                                                    <button
+                                                        onClick={handleProceedToPaymentStep}
+                                                        disabled={isProcessing || Object.keys(shippingSelections).length === 0}
+                                                        className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {isProcessing ? 'Procesando...' : 'Ir al pago'}
+                                                    </button>
                                                 )}
 
                                                 {currentStep === STEP_PAYMENT && (
@@ -1770,10 +1871,20 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                             Volver al carrito
                                                         </button>
                                                     )}
-                                                    {currentStep === STEP_PAYMENT && (
+                                                    {currentStep === STEP_SHIPPING && (
                                                         <button
                                                             type="button"
                                                             onClick={handleBackToAddress}
+                                                            className="font-medium text-black hover:text-gray-600"
+                                                        >
+                                                            <span aria-hidden="true">&larr; </span>
+                                                            Volver a la dirección
+                                                        </button>
+                                                    )}
+                                                    {currentStep === STEP_PAYMENT && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={SENDCLOUD_ENABLED ? handleBackToShipping : handleBackToAddress}
                                                             className="font-medium text-black hover:text-gray-600"
                                                         >
                                                             <span aria-hidden="true">&larr; </span>

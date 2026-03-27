@@ -1,11 +1,13 @@
 'use client'
 
-import { use, useState, useEffect, useMemo } from 'react'
+import { use, useRef, useState, useEffect, useMemo } from 'react'
 import NextImage from 'next/image'
 import { useRouter } from 'next/navigation'
 import { adminAPI, getAuthorImageUrl } from '@/lib/api'
 import { PhotoIcon } from '@heroicons/react/24/solid'
 import AuthGuard from '@/components/AuthGuard'
+import SendcloudConfigSection from '@/components/admin/SendcloudConfigSection'
+import { SENDCLOUD_ENABLED } from '@/lib/constants'
 import { useDropzone } from 'react-dropzone'
 import { useNotification } from '@/contexts/NotificationContext'
 import QuillEditor from '@/components/QuillEditor'
@@ -30,6 +32,7 @@ function AuthorEditPageContent({ params }) {
   const [previewUrl, setPreviewUrl] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const sendcloudRef = useRef(null)
   const router = useRouter()
   const { showError, showApiError, showSuccess } = useNotification()
 
@@ -201,6 +204,21 @@ function AuthorEditPageContent({ params }) {
         pickup_country: pickupCountry.trim(),
         pickup_instructions: pickupInstructions.trim()
       })
+
+      // Save Sendcloud config if there is data
+      if (SENDCLOUD_ENABLED && sendcloudRef.current) {
+        const { data, isNew } = sendcloudRef.current.getFormData()
+        const hasData = sendcloudRef.current.hasData()
+
+        if (hasData || !isNew) {
+          if (isNew) {
+            await adminAPI.authors.createSendcloudConfig(unwrappedParams.id, data)
+          } else {
+            await adminAPI.authors.updateSendcloudConfig(unwrappedParams.id, data)
+          }
+          sendcloudRef.current.markSaved(data)
+        }
+      }
 
       showSuccess('Actualizado', 'Autor actualizado correctamente')
       router.push(`/admin/authors/${unwrappedParams.id}`)
@@ -494,6 +512,11 @@ function AuthorEditPageContent({ params }) {
               </div>
             </div>
           </div>
+
+          {/* Sendcloud Configuration - only when enabled */}
+          {SENDCLOUD_ENABLED && author && (
+            <SendcloudConfigSection ref={sendcloudRef} authorId={unwrappedParams.id} />
+          )}
 
           <div className="mt-6 flex items-center justify-end gap-x-6">
             <button

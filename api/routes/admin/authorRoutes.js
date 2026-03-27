@@ -7,6 +7,9 @@ const crypto = require('crypto')
 const { db } = require('../../config/database')
 const logger = require('../../config/logger')
 const { sendPasswordSetupEmail } = require('../../services/emailService')
+const { getSendcloudConfig, createSendcloudConfig, updateSendcloudConfig, getShippingMethods } = require('../../controllers/sendcloudConfigController')
+const { createSendcloudConfigSchema, updateSendcloudConfigSchema } = require('../../validators/sendcloudConfigSchemas')
+const { validate } = require('../../middleware/validate')
 
 // Configure multer for author avatar uploads
 const authorStorage = multer.diskStorage({
@@ -197,6 +200,9 @@ router.get('/', async (req, res) => {
     })
   }
 })
+
+// ── Sendcloud: shipping methods (must be before /:id) ───────
+router.get('/shipping-methods', getShippingMethods)
 
 /**
  * GET /api/admin/authors/:id
@@ -490,5 +496,10 @@ router.get('/:id/products', async (req, res) => {
     })
   }
 })
+
+// ── Sendcloud Configuration ─────────────────────────────────
+router.get('/:id/sendcloud-config', getSendcloudConfig)
+router.post('/:id/sendcloud-config', validate(createSendcloudConfigSchema), createSendcloudConfig)
+router.put('/:id/sendcloud-config', validate(updateSendcloudConfigSchema), updateSendcloudConfig)
 
 module.exports = router

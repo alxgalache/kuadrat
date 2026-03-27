@@ -139,7 +139,7 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'others');
 
 const createOthersProduct = async (req, res, next) => {
   try {
-    const { name, description, price, variations, weight, dimensions, for_auction, ai_generated } = req.body;
+    const { name, description, price, variations, weight, dimensions, for_auction, ai_generated, can_copack } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors
@@ -177,8 +177,18 @@ const createOthersProduct = async (req, res, next) => {
       }
     }
 
-    // Validate weight (optional, but if provided must be > 0)
-    if (weight) {
+    // Validate weight (mandatory when Sendcloud is enabled, otherwise optional)
+    const { isSendcloudEnabled } = require('../services/shipping/shippingProviderFactory');
+    if (isSendcloudEnabled('other')) {
+      if (!weight || !weight.toString().trim()) {
+        validationErrors.push({ field: 'weight', message: 'El peso es obligatorio para poder calcular el envío' });
+      } else {
+        const weightNum = parseInt(weight, 10);
+        if (!Number.isInteger(weightNum) || weightNum <= 0) {
+          validationErrors.push({ field: 'weight', message: 'El peso debe ser un número entero mayor que 0' });
+        }
+      }
+    } else if (weight) {
       const weightNum = parseInt(weight, 10);
       if (!Number.isInteger(weightNum) || weightNum <= 0) {
         validationErrors.push({ field: 'weight', message: 'El peso debe ser un número entero mayor que 0' });
@@ -319,12 +329,13 @@ const createOthersProduct = async (req, res, next) => {
     // Insert others product
     const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
     const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
+    const canCopackVal = can_copack === '0' || can_copack === 0 || can_copack === false ? 0 : 1;
     const result = await db.execute({
       sql: `
-        INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions, for_auction, ai_generated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions, for_auction, ai_generated, can_copack)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [seller_id, name, description, priceNum, basename, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal],
+      args: [seller_id, name, description, priceNum, basename, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal, canCopackVal],
     });
 
     const productId = result.lastInsertRowid;

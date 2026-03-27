@@ -2472,6 +2472,485 @@ const sendEventVerificationEmail = async ({ email, code }) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Sendcloud shipment emails
+// ---------------------------------------------------------------------------
+
+/**
+ * Notify buyer that their order has been shipped (triggered by Sendcloud webhook).
+ */
+const sendShipmentSentEmail = async ({ buyerEmail, orderId, trackingNumber, trackingUrl }) => {
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+
+  if (!buyerEmail) {
+    logger.error({ orderId }, 'No buyer email for shipment sent notification');
+    return { success: false, error: 'No buyer email' };
+  }
+
+  const trackingSection = trackingUrl
+    ? `<div style="background-color: #f0fdf4; border-left: 4px solid #22c55e; border-radius: 4px; padding: 16px; margin: 24px 0;">
+        <strong style="color: #166534;">Seguimiento de tu envío:</strong><br>
+        ${trackingNumber ? `<span style="font-size: 14px; color: #374151;">Número: ${trackingNumber}</span><br>` : ''}
+        <a href="${trackingUrl}" style="color: #1d4ed8; text-decoration: underline; word-break: break-all; font-size: 14px;">${trackingUrl}</a>
+      </div>`
+    : '';
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Tu pedido ha sido enviado</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Tu pedido ha sido enviado</h1>
+
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Te informamos de que tu pedido <strong>#${orderId}</strong> ha sido recogido por la empresa de transporte y está en camino.
+              </p>
+
+              ${trackingSection}
+
+              <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 4px; padding: 16px; margin: 24px 0;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #92400e;">
+                  <strong style="color: #78350f;">Importante:</strong> Cuando recibas tu pedido, por favor confirma su llegada desde la página de tu pedido.
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">
+                Este es un correo automático. Por favor no responder.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`.trim();
+
+  const logoAttachment = getLogoAttachment();
+  try {
+    const info = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: buyerEmail,
+      subject: `Tu pedido #${orderId} ha sido enviado`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Shipment sent email sent to buyer');
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    logger.error({ err: error, recipient: buyerEmail }, 'Error sending shipment sent email');
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Notify buyer that their order has been delivered (triggered by Sendcloud webhook).
+ */
+const sendShipmentDeliveredEmail = async ({ buyerEmail, orderId }) => {
+  if (!buyerEmail) {
+    logger.error({ orderId }, 'No buyer email for shipment delivered notification');
+    return { success: false, error: 'No buyer email' };
+  }
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Tu pedido ha sido entregado</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Tu pedido ha sido entregado</h1>
+
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Te confirmamos que tu pedido <strong>#${orderId}</strong> ha sido entregado.
+              </p>
+
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Esperamos que disfrutes de tu compra. Si todo está correcto, por favor confirma la recepción desde la página de tu pedido.
+              </p>
+
+              <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 4px; padding: 16px; margin: 24px 0;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #92400e;">
+                  <strong style="color: #78350f;">Importante:</strong> Si no confirmas la recepción, se confirmará automáticamente pasados unos días.
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">
+                Este es un correo automático. Por favor no responder.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`.trim();
+
+  const logoAttachment = getLogoAttachment();
+  try {
+    const info = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: buyerEmail,
+      subject: `Tu pedido #${orderId} ha sido entregado`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Shipment delivered email sent to buyer');
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    logger.error({ err: error, recipient: buyerEmail }, 'Error sending shipment delivered email');
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Notify seller that a new order has been received and shipment labels are ready.
+ */
+const sendSellerNewOrderEmail = async ({ sellerEmail, sellerName, orderId }) => {
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+
+  if (!sellerEmail) {
+    logger.error({ orderId }, 'No seller email for new order notification');
+    return { success: false, error: 'No seller email' };
+  }
+
+  const sellerOrdersUrl = `${CLIENT_URL}/seller/pedidos`;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Nuevo pedido recibido</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Nuevo pedido recibido</h1>
+
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Hola ${sellerName || ''},
+              </p>
+
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Se ha recibido un nuevo pedido <strong>#${orderId}</strong> que incluye productos tuyos. Las etiquetas de envío ya están disponibles para descargar.
+              </p>
+
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${sellerOrdersUrl}" style="display: inline-block; background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 6px; font-weight: 600; font-size: 16px;">Ver mis pedidos</a>
+              </div>
+
+              <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #6b7280;">
+                Por favor, prepara y envía los productos lo antes posible. Puedes descargar las etiquetas de envío desde tu panel de pedidos.
+              </p>
+
+              <div style="margin: 24px 0 0; padding: 16px; background-color: #FFFBEB; border-left: 4px solid #F59E0B; border-radius: 4px;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #92400E;">
+                  Recuerda que si eliges programar una recogida, debes hacerlo en los detalles del envío dentro de la sección «Mis envíos» en un plazo máximo de 7 días.
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">
+                Este es un correo automático. Por favor no responder.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`.trim();
+
+  const logoAttachment = getLogoAttachment();
+  try {
+    const info = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: sellerEmail,
+      subject: `Nuevo pedido #${orderId} - Etiquetas de envío disponibles`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    logger.info({ recipient: sellerEmail, messageId: info.messageId }, 'New order email sent to seller');
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    logger.error({ err: error, recipient: sellerEmail }, 'Error sending new order email to seller');
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Notify seller that a shipping label is ready, with PDF attached.
+ */
+const sendLabelReadyEmail = async ({ sellerEmail, sellerName, orderId, orderItemId, trackingNumber, parcelId }) => {
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+
+  if (!sellerEmail) {
+    logger.error({ orderId, orderItemId }, 'No seller email for label ready notification');
+    return { success: false, error: 'No seller email' };
+  }
+
+  // Try to download label PDF
+  let labelBuffer = null;
+  if (parcelId) {
+    try {
+      const sendcloudProvider = require('./shipping/sendcloudProvider');
+      labelBuffer = await sendcloudProvider.getLabelPdf(parcelId);
+    } catch (pdfError) {
+      logger.error({ err: pdfError, parcelId }, 'Failed to download label PDF for email attachment');
+    }
+  }
+
+  const sellerOrdersUrl = `${CLIENT_URL}/seller/pedidos`;
+  const escapedSellerName = escapeHtml(sellerName || 'Vendedor');
+  const trackingInfo = trackingNumber
+    ? `<p style="margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: #374151;">Número de seguimiento: <strong>${escapeHtml(trackingNumber)}</strong></p>`
+    : '';
+  const attachmentNote = labelBuffer
+    ? '<p style="margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: #374151;">Encontrarás la etiqueta de envío adjunta a este correo en formato PDF.</p>'
+    : '<p style="margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: #374151;">La etiqueta de envío está disponible para descarga desde tu panel de pedidos.</p>';
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Etiqueta de envío lista</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Etiqueta de envío lista</h1>
+
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                Hola ${escapedSellerName}, la etiqueta de envío para el pedido <strong>#${orderId}</strong> ya está disponible.
+              </p>
+
+              ${trackingInfo}
+              ${attachmentNote}
+
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${sellerOrdersUrl}" style="display: inline-block; padding: 12px 32px; background-color: #111827; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">
+                  Ver mis pedidos
+                </a>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">
+                Este es un correo automático. Por favor no responder.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`.trim();
+
+  const attachments = [];
+  const logoAttachment = getLogoAttachment();
+  if (logoAttachment) attachments.push(logoAttachment);
+  if (labelBuffer) {
+    attachments.push({
+      filename: `etiqueta-envio-${orderId}.pdf`,
+      content: labelBuffer,
+      contentType: 'application/pdf',
+    });
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: sellerEmail,
+      subject: `Etiqueta de envío lista — Pedido #${orderId}`,
+      html,
+      attachments,
+    });
+    logger.info({ recipient: sellerEmail, messageId: info.messageId, hasLabel: !!labelBuffer }, 'Label ready email sent to seller');
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    logger.error({ err: error, recipient: sellerEmail }, 'Error sending label ready email to seller');
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Notify admin that a Sendcloud shipment announcement has failed after max retries.
+ */
+const sendShipmentFailedAdminEmail = async ({ orderId, orderItemId, productName, sellerName, buyerEmail, retryCount, lastError }) => {
+  const adminEmail = process.env.EMAIL_FROM || 'admin@140d.es';
+
+  const escapedProductName = escapeHtml(productName || 'Producto desconocido');
+  const escapedSellerName = escapeHtml(sellerName || 'Vendedor desconocido');
+  const escapedBuyerEmail = escapeHtml(buyerEmail || 'N/A');
+  const escapedError = escapeHtml(lastError || 'Error desconocido');
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fallo en envío Sendcloud</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #dc2626;">Fallo en creación de envío</h1>
+
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">
+                No se ha podido crear el envío en Sendcloud tras <strong>${retryCount}</strong> intentos. Se requiere acción manual.
+              </p>
+
+              <table cellpadding="8" cellspacing="0" style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                <tr><td style="border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #6b7280;">Pedido</td><td style="border-bottom: 1px solid #e5e7eb; color: #111827;">#${orderId}</td></tr>
+                <tr><td style="border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #6b7280;">Item ID</td><td style="border-bottom: 1px solid #e5e7eb; color: #111827;">${orderItemId}</td></tr>
+                <tr><td style="border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #6b7280;">Producto</td><td style="border-bottom: 1px solid #e5e7eb; color: #111827;">${escapedProductName}</td></tr>
+                <tr><td style="border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #6b7280;">Vendedor</td><td style="border-bottom: 1px solid #e5e7eb; color: #111827;">${escapedSellerName}</td></tr>
+                <tr><td style="border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #6b7280;">Comprador</td><td style="border-bottom: 1px solid #e5e7eb; color: #111827;">${escapedBuyerEmail}</td></tr>
+                <tr><td style="border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #6b7280;">Último error</td><td style="border-bottom: 1px solid #e5e7eb; color: #dc2626;">${escapedError}</td></tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`.trim();
+
+  try {
+    const info = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: adminEmail,
+      subject: `[ALERTA] Fallo en envío Sendcloud — Pedido #${orderId}`,
+      html,
+    });
+    logger.info({ recipient: adminEmail, messageId: info.messageId, orderId }, 'Shipment failed admin email sent');
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    logger.error({ err: error, orderId }, 'Error sending shipment failed admin email');
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -2498,4 +2977,9 @@ module.exports = {
   sendNewProductNotificationEmail,
   sendEventConfirmationEmail,
   sendEventVerificationEmail,
+  sendShipmentSentEmail,
+  sendShipmentDeliveredEmail,
+  sendSellerNewOrderEmail,
+  sendLabelReadyEmail,
+  sendShipmentFailedAdminEmail,
 };

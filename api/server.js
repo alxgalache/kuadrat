@@ -49,6 +49,8 @@ const setupAuctionSocket = require('./socket/auctionSocket');
 const setupEventSocket = require('./socket/eventSocket');
 const startAuctionScheduler = require('./scheduler/auctionScheduler');
 const startReservationScheduler = require('./scheduler/reservationScheduler');
+const startConfirmationScheduler = require('./scheduler/confirmationScheduler');
+const startShipmentRetryScheduler = require('./scheduler/shipmentRetryScheduler');
 
 // Initialize Express app
 const app = express();
@@ -202,6 +204,12 @@ async function startServer() {
 
       // Start reservation cleanup scheduler
       startReservationScheduler();
+
+      // Start Sendcloud auto-confirmation scheduler
+      startConfirmationScheduler();
+
+      // Start Sendcloud shipment retry scheduler
+      startShipmentRetryScheduler();
     });
 
     // Register graceful shutdown

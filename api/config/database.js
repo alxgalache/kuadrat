@@ -112,6 +112,7 @@ async function initializeDatabase() {
         for_auction INTEGER NOT NULL DEFAULT 0,
         for_draw INTEGER NOT NULL DEFAULT 0,
         ai_generated INTEGER NOT NULL DEFAULT 0,
+        can_copack INTEGER NOT NULL DEFAULT 1,
         FOREIGN KEY (seller_id) REFERENCES users(id)
       )
     `);
@@ -166,6 +167,7 @@ async function initializeDatabase() {
     await db.execute(`
       CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name TEXT,
         email TEXT,
         phone TEXT,
         guest_email TEXT,
@@ -226,6 +228,14 @@ async function initializeDatabase() {
         tracking TEXT,
         status TEXT,
         status_modified NUMERIC NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        sendcloud_shipment_id TEXT,
+        sendcloud_parcel_id TEXT,
+        sendcloud_tracking_url TEXT,
+        sendcloud_shipping_option_code TEXT,
+        sendcloud_service_point_id TEXT,
+        sendcloud_announcement_retries INTEGER DEFAULT 0,
+        sendcloud_announcement_failed_at DATETIME,
+        sendcloud_carrier_code TEXT,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (art_id) REFERENCES art(id)
       )
@@ -247,6 +257,14 @@ async function initializeDatabase() {
         tracking TEXT,
         status TEXT,
         status_modified NUMERIC NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        sendcloud_shipment_id TEXT,
+        sendcloud_parcel_id TEXT,
+        sendcloud_tracking_url TEXT,
+        sendcloud_shipping_option_code TEXT,
+        sendcloud_service_point_id TEXT,
+        sendcloud_announcement_retries INTEGER DEFAULT 0,
+        sendcloud_announcement_failed_at DATETIME,
+        sendcloud_carrier_code TEXT,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (other_id) REFERENCES others(id),
         FOREIGN KEY (other_var_id) REFERENCES other_vars(id)
@@ -586,6 +604,17 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN verification_code_hash TEXT');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN verification_code_expires_at DATETIME');
+    await safeAlter('ALTER TABLE others ADD COLUMN can_copack INTEGER NOT NULL DEFAULT 1');
+    await safeAlter('ALTER TABLE art_order_items ADD COLUMN sendcloud_shipment_id TEXT');
+    await safeAlter('ALTER TABLE art_order_items ADD COLUMN sendcloud_tracking_url TEXT');
+    await safeAlter('ALTER TABLE other_order_items ADD COLUMN sendcloud_shipment_id TEXT');
+    await safeAlter('ALTER TABLE other_order_items ADD COLUMN sendcloud_tracking_url TEXT');
+    await safeAlter('ALTER TABLE art_order_items ADD COLUMN sendcloud_parcel_id TEXT');
+    await safeAlter('ALTER TABLE other_order_items ADD COLUMN sendcloud_parcel_id TEXT');
+    await safeAlter('ALTER TABLE art_order_items ADD COLUMN sendcloud_announcement_retries INTEGER DEFAULT 0');
+    await safeAlter('ALTER TABLE other_order_items ADD COLUMN sendcloud_announcement_retries INTEGER DEFAULT 0');
+    await safeAlter('ALTER TABLE art_order_items ADD COLUMN sendcloud_announcement_failed_at DATETIME');
+    await safeAlter('ALTER TABLE other_order_items ADD COLUMN sendcloud_announcement_failed_at DATETIME');
 
     // ── Withdrawals ──────────────────────────────────────────
     await db.execute(`
@@ -599,6 +628,60 @@ async function initializeDatabase() {
         completed_at DATETIME DEFAULT NULL,
         admin_notes TEXT DEFAULT NULL,
         FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+
+    // ── User Sendcloud configuration ─────────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS user_sendcloud_configuration (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL UNIQUE,
+        sender_name TEXT,
+        sender_company_name TEXT,
+        sender_address_1 TEXT,
+        sender_address_2 TEXT,
+        sender_house_number TEXT,
+        sender_city TEXT,
+        sender_postal_code TEXT,
+        sender_country TEXT DEFAULT 'ES',
+        sender_phone TEXT,
+        sender_email TEXT,
+        require_signature INTEGER NOT NULL DEFAULT 0,
+        fragile_goods INTEGER NOT NULL DEFAULT 0,
+        insurance_type TEXT NOT NULL DEFAULT 'none' CHECK(insurance_type IN ('none', 'full_value', 'fixed')),
+        insurance_fixed_amount REAL,
+        first_mile TEXT NOT NULL DEFAULT 'dropoff' CHECK(first_mile IN ('pickup', 'dropoff', 'pickup_dropoff', 'fulfilment')),
+        last_mile TEXT NOT NULL DEFAULT 'home_delivery' CHECK(last_mile IN ('home_delivery', 'service_point', 'mailbox', 'locker', 'locker_or_service_point')),
+        preferred_carriers TEXT,
+        excluded_carriers TEXT,
+        default_hs_code TEXT,
+        origin_country TEXT DEFAULT 'ES',
+        vat_number TEXT,
+        eori_number TEXT,
+        self_packs INTEGER NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // ── Sendcloud pickups ──────────────────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS sendcloud_pickups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        seller_id INTEGER NOT NULL,
+        sendcloud_pickup_id TEXT,
+        carrier_code TEXT NOT NULL,
+        status TEXT DEFAULT 'ANNOUNCING',
+        pickup_address TEXT,
+        time_slot_start DATETIME NOT NULL,
+        time_slot_end DATETIME NOT NULL,
+        special_instructions TEXT,
+        total_weight_kg REAL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (order_id) REFERENCES orders(id),
+        FOREIGN KEY (seller_id) REFERENCES users(id)
       )
     `);
 
@@ -661,6 +744,16 @@ async function initializeDatabase() {
     await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_draw_buyers_email_draw ON draw_buyers(email, draw_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draws_status ON draws(status)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_email_verifications_email_draw ON draw_email_verifications(email, draw_id)`);
+
+    // Sendcloud
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_user_sendcloud_config_user ON user_sendcloud_configuration(user_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_art_oi_sendcloud_shipment ON art_order_items(sendcloud_shipment_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_other_oi_sendcloud_shipment ON other_order_items(sendcloud_shipment_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_art_oi_sendcloud_parcel ON art_order_items(sendcloud_parcel_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_other_oi_sendcloud_parcel ON other_order_items(sendcloud_parcel_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_art_oi_status_modified ON art_order_items(status, status_modified)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_other_oi_status_modified ON other_order_items(status, status_modified)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_sendcloud_pickups_order_seller ON sendcloud_pickups(order_id, seller_id)`);
 
     // Withdrawals
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawals(user_id)`);

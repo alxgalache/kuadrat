@@ -12,6 +12,7 @@ import AuthorModal from '@/components/AuthorModal'
 import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import { SENDCLOUD_ENABLED_OTHERS } from '@/lib/constants'
 
 export default function OthersProductDetail({ params }) {
   const unwrappedParams = use(params)
@@ -95,7 +96,31 @@ export default function OthersProductDetail({ params }) {
   const handleAddToCart = () => {
     if (!selectedVariant) return
 
-    // Check if seller already has OTHER 'others' products in cart
+    // When Sendcloud is enabled for others, add to cart without shipping.
+    // Shipping will be selected at Step 3 of the checkout drawer.
+    if (SENDCLOUD_ENABLED_OTHERS) {
+      addToCart({
+        productId: product.id,
+        productType: 'other',
+        name: product.name,
+        price: product.price,
+        basename: product.basename,
+        slug: product.slug,
+        sellerId: product.seller_id,
+        sellerName: product.seller_full_name,
+        quantity: quantity,
+        variantId: selectedVariant.id,
+        variantKey: selectedVariant.key || 'Opción estándar',
+        shipping: null,
+        weight: product.weight || null,
+        dimensions: product.dimensions || null,
+      })
+      showBanner('Producto añadido')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    // Legacy flow: check if seller already has OTHER 'others' products in cart
     // (Art products do NOT share shipping with 'others' products)
     const existingOthersShipping = getSellerOthersShipping(product.seller_id)
 

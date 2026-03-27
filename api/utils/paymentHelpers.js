@@ -55,8 +55,8 @@ async function computeCartTotal(items) {
  * compactItems: [{ type:'art'|'other', id, variantId?, quantity, shipping }]
  */
 async function loadProductsDetails(compactItems) {
-  const artIds = compactItems.filter(i => i.type === 'art').map(i => i.id);
-  const otherIds = compactItems.filter(i => i.type === 'other').map(i => i.id);
+  const artIds = [...new Set(compactItems.filter(i => i.type === 'art').map(i => i.id))];
+  const otherIds = [...new Set(compactItems.filter(i => i.type === 'other').map(i => i.id))];
 
   const artMap = new Map();
   const otherMap = new Map();

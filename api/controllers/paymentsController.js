@@ -79,8 +79,8 @@ async function computeCartTotal(items) {
 // Helper: load product data for line_items
 async function loadProductsDetails(compactItems) {
   // compactItems: [{ type:'art'|'other', id, variantId?, quantity, shipping }]
-  const artIds = compactItems.filter(i => i.type === 'art').map(i => i.id);
-  const otherIds = compactItems.filter(i => i.type === 'other').map(i => i.id);
+  const artIds = [...new Set(compactItems.filter(i => i.type === 'art').map(i => i.id))];
+  const otherIds = [...new Set(compactItems.filter(i => i.type === 'other').map(i => i.id))];
 
   const artMap = new Map();
   const otherMap = new Map();
@@ -292,6 +292,193 @@ function verifyRevolutWebhookSignature(rawPayload, signatureHeader, timestampHea
 
   logger.warn('No matching signature found');
   return false;
+}
+
+/**
+ * After payment confirmation, create Sendcloud shipments for order items
+ * that use the Sendcloud provider. Stores shipment IDs and tracking on order items.
+ */
+async function createSendcloudShipmentsForOrder(orderId) {
+  const { isSendcloudEnabled } = require('../services/shipping/shippingProviderFactory');
+  const sendcloudProvider = require('../services/shipping/sendcloudProvider');
+  const { sendSellerNewOrderEmail } = require('../services/emailService');
+
+  // Load order
+  const orderRes = await db.execute({ sql: 'SELECT * FROM orders WHERE id = ?', args: [orderId] });
+  if (orderRes.rows.length === 0) return;
+  const order = orderRes.rows[0];
+
+  // Load art order items with Sendcloud-managed products
+  const artItems = isSendcloudEnabled('art') ? (await db.execute({
+    sql: `SELECT aoi.id, aoi.art_id, aoi.price_at_purchase, aoi.shipping_method_name,
+          aoi.sendcloud_shipping_option_code, aoi.sendcloud_service_point_id,
+          a.name, a.weight, a.dimensions, a.seller_id
+          FROM art_order_items aoi
+          JOIN art a ON aoi.art_id = a.id
+          WHERE aoi.order_id = ?`,
+    args: [orderId],
+  })).rows : [];
+
+  // Load other order items with Sendcloud-managed products
+  const otherItems = isSendcloudEnabled('other') ? (await db.execute({
+    sql: `SELECT ooi.id, ooi.other_id, ooi.other_var_id, ooi.price_at_purchase,
+          ooi.shipping_method_name, ooi.sendcloud_shipping_option_code,
+          ooi.sendcloud_service_point_id, ot.name, ot.weight, ot.dimensions,
+          ot.seller_id, ot.can_copack
+          FROM other_order_items ooi
+          JOIN others ot ON ooi.other_id = ot.id
+          WHERE ooi.order_id = ?`,
+    args: [orderId],
+  })).rows : [];
+
+  if (artItems.length === 0 && otherItems.length === 0) return;
+
+  // Group by seller
+  const sellerMap = new Map();
+  const allItems = [
+    ...artItems.map(i => ({ ...i, itemType: 'art', productType: 'art', itemId: i.id })),
+    ...otherItems.map(i => ({ ...i, itemType: 'other', productType: 'other', itemId: i.id })),
+  ];
+
+  for (const item of allItems) {
+    // Skip items without a Sendcloud shipping option code (legacy shipping)
+    if (!item.sendcloud_shipping_option_code) continue;
+
+    if (!sellerMap.has(item.seller_id)) {
+      sellerMap.set(item.seller_id, { sellerId: item.seller_id, items: [], shippingOptionCode: null, servicePointId: null });
+    }
+    const group = sellerMap.get(item.seller_id);
+    group.items.push(item);
+    if (!group.shippingOptionCode) {
+      group.shippingOptionCode = item.sendcloud_shipping_option_code;
+    }
+    if (!group.servicePointId && item.sendcloud_service_point_id) {
+      group.servicePointId = item.sendcloud_service_point_id;
+    }
+  }
+
+  // Build item groups for Sendcloud
+  const itemGroups = [];
+  for (const [sellerId, group] of sellerMap) {
+    const parcels = [];
+
+    // Art: each is a separate parcel
+    for (const item of group.items.filter(i => i.productType === 'art')) {
+      parcels.push({
+        weight: item.weight || 1000,
+        dimensions: item.dimensions || null,
+        totalValue: item.price_at_purchase || 0,
+        items: [{ id: item.art_id, name: item.name, weight: item.weight, price: item.price_at_purchase, quantity: 1 }],
+        itemIds: [{ itemId: item.itemId, itemType: 'art' }],
+      });
+    }
+
+    // Others: group co-packable into one parcel
+    const others = group.items.filter(i => i.productType === 'other');
+    const copackable = others.filter(i => i.can_copack !== 0);
+    const nonCopackable = others.filter(i => i.can_copack === 0);
+
+    if (copackable.length > 0) {
+      let totalWeight = 0;
+      let totalValue = 0;
+      const items = [];
+      const itemIds = [];
+      for (const item of copackable) {
+        totalWeight += item.weight || 0;
+        totalValue += item.price_at_purchase || 0;
+        items.push({ id: item.other_id, name: item.name, weight: item.weight, price: item.price_at_purchase, quantity: 1 });
+        itemIds.push({ itemId: item.itemId, itemType: 'other' });
+      }
+      parcels.push({ weight: totalWeight || 1000, dimensions: null, totalValue, items, itemIds });
+    }
+
+    for (const item of nonCopackable) {
+      parcels.push({
+        weight: item.weight || 1000,
+        dimensions: item.dimensions || null,
+        totalValue: item.price_at_purchase || 0,
+        items: [{ id: item.other_id, name: item.name, weight: item.weight, price: item.price_at_purchase, quantity: 1 }],
+        itemIds: [{ itemId: item.itemId, itemType: 'other' }],
+      });
+    }
+
+    if (parcels.length > 0 && group.shippingOptionCode) {
+      itemGroups.push({
+        sellerId,
+        parcels,
+        shippingOptionCode: group.shippingOptionCode,
+        servicePointId: group.servicePointId || null,
+      });
+    }
+  }
+
+  if (itemGroups.length === 0) return;
+
+  const results = await sendcloudProvider.createShipments({
+    order: {
+      id: orderId,
+      deliveryAddress: {
+        addressLine1: order.delivery_address_line_1 || '',
+        addressLine2: order.delivery_address_line_2 || '',
+        postalCode: order.delivery_postal_code || '',
+        city: order.delivery_city || '',
+        country: order.delivery_country || 'ES',
+      },
+      buyerName: order.full_name || '',
+      buyerEmail: order.email || order.guest_email || '',
+      buyerPhone: order.phone || '',
+    },
+    itemGroups,
+  });
+
+  // Update order items with shipment data
+  for (const result of results) {
+    if (!result.sendcloudShipmentId) continue;
+
+    for (const itemRef of result.itemIds || []) {
+      const table = itemRef.itemType === 'art' ? 'art_order_items' : 'other_order_items';
+      await db.execute({
+        sql: `UPDATE ${table} SET
+              sendcloud_shipment_id = ?,
+              sendcloud_parcel_id = ?,
+              tracking = ?,
+              sendcloud_tracking_url = ?,
+              sendcloud_carrier_code = ?
+              WHERE id = ?`,
+        args: [
+          result.sendcloudShipmentId,
+          result.sendcloudParcelId || null,
+          result.trackingNumber || null,
+          result.trackingUrl || null,
+          result.carrierCode || null,
+          itemRef.itemId,
+        ],
+      });
+    }
+  }
+
+  // Notify sellers
+  const sellerIds = [...sellerMap.keys()];
+  for (const sellerId of sellerIds) {
+    try {
+      const sellerRes = await db.execute({
+        sql: 'SELECT email, full_name FROM users WHERE id = ?',
+        args: [sellerId],
+      });
+      if (sellerRes.rows.length > 0 && sellerRes.rows[0].email) {
+        await sendSellerNewOrderEmail({
+          sellerEmail: sellerRes.rows[0].email,
+          sellerName: sellerRes.rows[0].full_name,
+          orderId,
+        });
+      }
+    } catch (emailErr) {
+      logger.error({ err: emailErr, sellerId, orderId }, 'Failed to send seller order notification');
+    }
+  }
+
+  logger.info({ orderId, shipmentCount: results.filter(r => r.sendcloudShipmentId).length },
+    'Sendcloud shipments created for order');
 }
 
 // Helper: Process order confirmation (shared between webhook and manual confirmation)
@@ -508,6 +695,16 @@ async function processOrderConfirmation(orderId, paymentId) {
     logger.error({ err: emailErr }, 'Failed to send order confirmation email');
   }
 
+  // Create Sendcloud shipments (non-blocking — errors logged but don't roll back payment)
+  try {
+    const { isSendcloudEnabledForAny } = require('../services/shipping/shippingProviderFactory');
+    if (isSendcloudEnabledForAny()) {
+      await createSendcloudShipmentsForOrder(orderId);
+    }
+  } catch (scErr) {
+    logger.error({ err: scErr, orderId }, 'Failed to create Sendcloud shipments — manual intervention needed');
+  }
+
   return { success: true, order: { id: orderId, status: 'paid' }, alreadyPaid: false };
 }
 
@@ -690,6 +887,7 @@ module.exports = {
   cancelRevolutOrderEndpoint,
   getOrderStatusByRevolutId,
   processOrderConfirmation,
+  createSendcloudShipmentsForOrder,
 };
 
 // GET /api/payments/revolut/order/:orderId/payments/latest

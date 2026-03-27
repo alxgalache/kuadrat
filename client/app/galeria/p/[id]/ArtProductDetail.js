@@ -12,6 +12,7 @@ import AuthorModal from '@/components/AuthorModal'
 import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import { SENDCLOUD_ENABLED_ART } from '@/lib/constants'
 
 export default function ArtProductDetail({ params }) {
   const unwrappedParams = use(params)
@@ -82,7 +83,29 @@ export default function ArtProductDetail({ params }) {
   }
 
   const handleAddToCart = () => {
-    // For art products, if there is already an art item from this seller in the cart
+    // When Sendcloud is enabled for art, add to cart without shipping.
+    // Shipping will be selected at Step 3 of the checkout drawer.
+    if (SENDCLOUD_ENABLED_ART) {
+      addToCart({
+        productId: product.id,
+        productType: 'art',
+        name: product.name,
+        price: product.price,
+        basename: product.basename,
+        slug: product.slug,
+        sellerId: product.seller_id,
+        sellerName: product.seller_full_name,
+        quantity: 1,
+        shipping: null,
+        weight: product.weight || null,
+        dimensions: product.dimensions || null,
+      })
+      showBanner('Producto añadido')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    // Legacy flow: if there is already an art item from this seller in the cart
     // with a chosen shipping method, reuse that shipping automatically and do not
     // reopen the shipping selection modal. Otherwise, open the modal.
 

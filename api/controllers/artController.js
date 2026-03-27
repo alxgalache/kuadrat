@@ -163,8 +163,18 @@ const createArtProduct = async (req, res, next) => {
       validationErrors.push({ field: 'type', message: 'El soporte no debe exceder 100 caracteres' });
     }
 
-    // Validate weight (optional, but if provided must be > 0)
-    if (weight) {
+    // Validate weight (mandatory when Sendcloud is enabled, otherwise optional)
+    const { isSendcloudEnabled } = require('../services/shipping/shippingProviderFactory');
+    if (isSendcloudEnabled('art')) {
+      if (!weight || !weight.toString().trim()) {
+        validationErrors.push({ field: 'weight', message: 'El peso es obligatorio para poder calcular el envío' });
+      } else {
+        const weightNum = parseInt(weight, 10);
+        if (!Number.isInteger(weightNum) || weightNum <= 0) {
+          validationErrors.push({ field: 'weight', message: 'El peso debe ser un número entero mayor que 0' });
+        }
+      }
+    } else if (weight) {
       const weightNum = parseInt(weight, 10);
       if (!Number.isInteger(weightNum) || weightNum <= 0) {
         validationErrors.push({ field: 'weight', message: 'El peso debe ser un número entero mayor que 0' });

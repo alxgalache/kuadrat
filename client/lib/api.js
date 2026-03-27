@@ -573,6 +573,21 @@ export const shippingAPI = {
 
     return apiRequest(`/shipping/available?${params.toString()}`);
   },
+
+  // Sendcloud shipping options (per-seller, grouped)
+  getShippingOptions: async (items, deliveryAddress) => {
+    return apiRequest('/shipping/options', {
+      method: 'POST',
+      body: JSON.stringify({ items, deliveryAddress }),
+    });
+  },
+
+  // Sendcloud service points
+  getServicePoints: async (carrier, country, postalCode, radius) => {
+    const params = new URLSearchParams({ carrier, country, postalCode });
+    if (radius) params.append('radius', String(radius));
+    return apiRequest(`/shipping/service-points?${params.toString()}`);
+  },
 };
 
 // Admin API (requires admin role)
@@ -619,6 +634,28 @@ export const adminAPI = {
       return apiRequest(`/admin/authors/${id}/resend-invitation`, {
         method: 'POST',
       });
+    },
+
+    getSendcloudConfig: async (id) => {
+      return apiRequest(`/admin/authors/${id}/sendcloud-config`);
+    },
+
+    createSendcloudConfig: async (id, data) => {
+      return apiRequest(`/admin/authors/${id}/sendcloud-config`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    updateSendcloudConfig: async (id, data) => {
+      return apiRequest(`/admin/authors/${id}/sendcloud-config`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    },
+
+    getShippingMethods: async () => {
+      return apiRequest('/admin/authors/shipping-methods');
     },
   },
 
@@ -1258,6 +1295,24 @@ export const sellerAPI = {
     return apiRequest('/seller/withdrawals', {
       method: 'POST',
       body: JSON.stringify({ iban, recipientName, saveDetails }),
+    });
+  },
+
+  // Orders (Sendcloud)
+  getOrders: async (status, page = 1, limit = 20) => {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) params.append('status', status);
+    return apiRequest(`/seller/orders?${params.toString()}`);
+  },
+
+  getOrderLabel: async (itemType, itemId) => {
+    return apiRequest(`/seller/orders/${itemType}/${itemId}/label`);
+  },
+
+  schedulePickup: async (orderId, data) => {
+    return apiRequest(`/seller/orders/${orderId}/pickup`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 };

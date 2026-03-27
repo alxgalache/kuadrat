@@ -7,6 +7,7 @@ import {artAPI, othersAPI} from '@/lib/api'
 import {PhotoIcon, PlusIcon, XMarkIcon} from '@heroicons/react/24/solid'
 import {ChevronDownIcon} from '@heroicons/react/16/solid'
 import AuthGuard from '@/components/AuthGuard'
+import {SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS} from '@/lib/constants'
 import {useDropzone} from 'react-dropzone'
 import {useNotification} from '@/contexts/NotificationContext'
 import QuillEditor from '@/components/QuillEditor'
@@ -20,6 +21,7 @@ function PublishProductPageContent() {
     const [type, setType] = useState('')
     const [weight, setWeight] = useState('')
     const [dimensions, setDimensions] = useState('')
+    const [canCopack, setCanCopack] = useState(true)
     const [forAuction, setForAuction] = useState(false)
     const [aiGenerated, setAiGenerated] = useState(false)
     const [imageFile, setImageFile] = useState(null)
@@ -197,8 +199,11 @@ function PublishProductPageContent() {
             }
         }
 
-        // Validate weight (optional, but if provided must be > 0)
-        if (weight && weight.trim()) {
+        // Validate weight — mandatory when Sendcloud enabled for this product type
+        const weightRequired = (productCategory === 'art' && SENDCLOUD_ENABLED_ART) || (productCategory === 'others' && SENDCLOUD_ENABLED_OTHERS)
+        if (weightRequired && (!weight || !weight.trim())) {
+            validationErrors.push({ field: 'weight', message: 'El peso es obligatorio para poder calcular el envío' })
+        } else if (weight && weight.trim()) {
             const weightNum = parseInt(weight, 10)
             if (isNaN(weightNum) || weightNum <= 0) {
                 validationErrors.push({ field: 'weight', message: 'El peso debe ser un número válido mayor que 0' })
@@ -292,6 +297,7 @@ function PublishProductPageContent() {
                     : [{ key: null, stock: parseInt(globalStock, 10) }]
 
                 formData.append('variations', JSON.stringify(variationsData))
+                formData.append('can_copack', canCopack ? '1' : '0')
                 await othersAPI.create(formData)
             }
 
@@ -458,7 +464,9 @@ function PublishProductPageContent() {
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-8">
                                         <div>
                                             <label htmlFor="weight" className="block text-sm/6 font-medium text-gray-900">
-                                                Peso (gramos) <span className="text-gray-400">(opcional)</span>
+                                                Peso (gramos) {((productCategory === 'art' && SENDCLOUD_ENABLED_ART) || (productCategory === 'others' && SENDCLOUD_ENABLED_OTHERS))
+                                                    ? <span className="text-red-500">*</span>
+                                                    : <span className="text-gray-400">(opcional)</span>}
                                             </label>
                                             <label className="block text-sm/6 font-medium text-gray-400">
                                                 Necesario para calcular costos de envío
@@ -497,6 +505,23 @@ function PublishProductPageContent() {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Co-pack Toggle - only for 'others' products when Sendcloud enabled */}
+                                    {productCategory === 'others' && SENDCLOUD_ENABLED_OTHERS && (
+                                        <div className="flex items-center">
+                                            <input
+                                                id="canCopack"
+                                                name="canCopack"
+                                                type="checkbox"
+                                                checked={canCopack}
+                                                onChange={(e) => setCanCopack(e.target.checked)}
+                                                className="size-4 rounded border-gray-300 text-black accent-black focus:ring-black"
+                                            />
+                                            <label htmlFor="canCopack" className="ml-3 text-sm/6 font-medium text-gray-900">
+                                                Este producto puede empaquetarse junto con otros productos del mismo pedido
+                                            </label>
+                                        </div>
+                                    )}
 
                                     {/* For Auction Toggle */}
                                     <div className="flex items-center">

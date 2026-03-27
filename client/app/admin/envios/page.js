@@ -6,6 +6,7 @@ import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { PencilIcon, TrashIcon, MapPinIcon, PlusIcon } from '@heroicons/react/20/solid'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
+import { SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS } from '@/lib/constants'
 
 function ShippingMethodsPageContent() {
   const [methods, setMethods] = useState([])
@@ -94,6 +95,19 @@ function ShippingMethodsPageContent() {
   return (
     <div className="bg-white">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        {SENDCLOUD_ENABLED && (
+          <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <p className="text-sm text-blue-800">
+              <strong>Sendcloud activo</strong> — Los envíos se gestionan a través de Sendcloud
+              {SENDCLOUD_ENABLED_ART && SENDCLOUD_ENABLED_OTHERS
+                ? ' para todos los tipos de producto.'
+                : SENDCLOUD_ENABLED_ART
+                  ? ' para productos de arte. Los demás productos usan los métodos de envío de abajo.'
+                  : ' para otros productos. Los productos de arte usan los métodos de envío de abajo.'}
+              {' '}La configuración de Sendcloud para cada vendedor se gestiona desde su ficha de autor.
+            </p>
+          </div>
+        )}
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-gray-900">Métodos de envío</h1>

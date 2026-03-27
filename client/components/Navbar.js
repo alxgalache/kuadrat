@@ -9,6 +9,7 @@ import { Bars3Icon, XMarkIcon, ShoppingCartIcon, UserCircleIcon } from '@heroico
 import { useAuth } from '@/contexts/AuthContext'
 import { useCart } from '@/contexts/CartContext'
 import ShoppingCartDrawer from '@/components/ShoppingCartDrawer'
+import { SENDCLOUD_ENABLED } from '@/lib/constants'
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -146,13 +147,15 @@ export default function Navbar() {
                       >
                         Pedidos
                       </Link>
-                      <Link
-                        href="/admin/envios"
-                        onClick={() => close()}
-                        className="block p-2 hover:text-gray-600"
-                      >
-                        Envíos
-                      </Link>
+                      {!SENDCLOUD_ENABLED && (
+                        <Link
+                          href="/admin/envios"
+                          onClick={() => close()}
+                          className="block p-2 hover:text-gray-600"
+                        >
+                          Envíos
+                        </Link>
+                      )}
                       <Link
                         href="/admin/subastas"
                         onClick={() => close()}
@@ -231,6 +234,15 @@ export default function Navbar() {
                   >
                     Artículos
                   </Link>
+                  {SENDCLOUD_ENABLED && (
+                    <Link
+                      href="/seller/pedidos"
+                      onClick={() => close()}
+                      className="block p-2 hover:text-gray-600"
+                    >
+                      Mis envíos
+                    </Link>
+                  )}
                   <Link
                     href="/orders"
                     onClick={() => close()}
@@ -400,13 +412,15 @@ export default function Navbar() {
                     >
                       Pedidos
                     </Link>
-                    <Link
-                      href="/admin/envios"
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
-                    >
-                      Envíos
-                    </Link>
+                    {!SENDCLOUD_ENABLED && (
+                      <Link
+                        href="/admin/envios"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                      >
+                        Envíos
+                      </Link>
+                    )}
                     <Link
                       href="/admin/subastas"
                       onClick={() => setMobileMenuOpen(false)}
@@ -445,6 +459,15 @@ export default function Navbar() {
                     >
                       Artículos
                     </Link>
+                    {SENDCLOUD_ENABLED && (
+                      <Link
+                        href="/seller/pedidos"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                      >
+                        Mis envíos
+                      </Link>
+                    )}
                     <Link
                       href="/orders"
                       onClick={() => setMobileMenuOpen(false)}
