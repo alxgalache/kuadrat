@@ -1,0 +1,106 @@
+###############################################
+# Kuadrat – Docker Compose: STAGING (pre) env #
+###############################################
+
+# Usage (staging environment):
+#   docker compose -f docker-compose.pre2.yml up --build -d
+#
+# This is a standalone staging configuration with security hardening.
+# Similar to production but with staging-specific settings.
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: kuadrat-api-staging
+    # Bind to localhost only - nginx will handle external traffic
+    expose:
+      - "3001"
+    environment:
+      NODE_ENV: staging
+      PORT: 3001
+    env_file:
+      - ./api/.env.staging
+    # STAGING: Bind mount for uploads — accessible via SFTP at /home/axgalache/uploads
+    volumes:
+      - ./uploads:/app/uploads
+    # Security: Run with limited privileges
+    security_opt:
+      - no-new-privileges:true
+    # Restart policy for staging
+    restart: unless-stopped
+    command: npm run start
+    networks:
+      - kuadrat-network-staging
+      - proxy-network
+    # Resource limits to prevent DoS
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.staging
+      args:
+        - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+        - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+        - NEXT_PUBLIC_CART_ADDRESS_FUNC=${NEXT_PUBLIC_CART_ADDRESS_FUNC}
+        - NEXT_PUBLIC_REVOLUT_LOCALE=${NEXT_PUBLIC_REVOLUT_LOCALE}
+        - NEXT_PUBLIC_REVOLUT_MODE=${NEXT_PUBLIC_REVOLUT_MODE}
+        - NEXT_PUBLIC_REVOLUT_PUBLIC_KEY=${NEXT_PUBLIC_REVOLUT_PUBLIC_KEY}
+        - NEXT_PUBLIC_PAYMENT_TIMEOUT_MS=${NEXT_PUBLIC_PAYMENT_TIMEOUT_MS}
+        - NEXT_PUBLIC_PAYMENT_PROVIDER=${NEXT_PUBLIC_PAYMENT_PROVIDER}
+        - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+        - WEB_APP_HIDDEN=${WEB_APP_HIDDEN}
+        - PUBLISHED_VISIBLE=${PUBLISHED_VISIBLE}
+        - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL}
+        - NEXT_PUBLIC_DEALER_COMMISSION=${NEXT_PUBLIC_DEALER_COMMISSION}
+        - NEXT_PUBLIC_SENDCLOUD_ENABLED_ART=${NEXT_PUBLIC_SENDCLOUD_ENABLED_ART}
+        - NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS=${NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS}
+    image: kuadrat-client-staging
+    container_name: kuadrat-client-staging
+    # Bind to localhost only - nginx will handle external traffic
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: staging
+      HOSTNAME: "0.0.0.0"
+      PORT: 3000
+    env_file:
+      - ./client/.env.staging
+    # STAGING: Use read-only filesystem with tmpfs for temporary files
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M,mode=1777
+      - /app/.next/cache:size=200M,mode=1777
+    # Security: Run with limited privileges
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - kuadrat-network-staging
+      - proxy-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  kuadrat-network-staging:
+    driver: bridge
+  proxy-network:
+    external: true

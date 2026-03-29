@@ -15,7 +15,7 @@ const sendcloudConfigBody = z.object({
   fragile_goods: z.union([z.boolean(), z.number()]).optional(),
   insurance_type: z.enum(['none', 'full_value', 'fixed']).optional(),
   insurance_fixed_amount: z.union([z.number(), z.string()]).optional().nullable(),
-  first_mile: z.enum(['pickup', 'dropoff', 'pickup_dropoff']).optional(),
+  first_mile: z.enum(['pickup', 'dropoff', 'pickup_dropoff', '']).optional(),
   preferred_carriers: z.union([z.string(), z.array(z.string())]).optional().nullable(),
   excluded_carriers: z.union([z.string(), z.array(z.string())]).optional().nullable(),
   default_hs_code: z.string().max(20).optional().nullable(),

@@ -89,7 +89,7 @@ const createSendcloudConfig = async (req, res, next) => {
         body.fragile_goods ? 1 : 0,
         body.insurance_type || 'none',
         body.insurance_fixed_amount || null,
-        body.first_mile || 'dropoff',
+        body.first_mile ?? 'dropoff',
         preferredCarriers,
         excludedCarriers,
         body.default_hs_code || null,

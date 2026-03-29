@@ -128,8 +128,8 @@ export default function SellerShippingGroup({
                     )}
                   </div>
                 </div>
-                <div className="text-sm font-medium text-gray-900">
-                  {option.price > 0 ? `${option.price.toFixed(2)} €` : 'Gratis'}
+                <div className="shrink-0 text-sm font-medium text-gray-900">
+                  {option.price > 0 ? `${option.price.toFixed(2)}\u00A0€` : 'Gratis'}
                 </div>
               </label>
             ))}

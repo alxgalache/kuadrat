@@ -137,10 +137,14 @@ async function getDeliveryOptions({ sellerId, parcels, buyerAddress }) {
     requestBody.functionalities = functionalities
   }
 
-  // Filter by preferred carriers if set
+  // Filter by preferred shipping options if set
   const preferred = parseJsonArray(sellerConfig.preferred_carriers)
-  if (preferred.length === 1) {
-    requestBody.carrier_code = preferred[0]
+  if (preferred.length > 0) {
+    // Extract unique carrier codes to pre-filter at API level (accepts only one)
+    const carrierCodes = [...new Set(preferred.map(p => p.split(':')[0]))]
+    if (carrierCodes.length === 1) {
+      requestBody.carrier_code = carrierCodes[0]
+    }
   }
 
   const response = await sendcloud.post('shipping-options', { body: requestBody })
@@ -151,12 +155,12 @@ async function getDeliveryOptions({ sellerId, parcels, buyerAddress }) {
   // Normalize the response
   const options = (data || [])
     .filter(opt => {
-      // Filter excluded carriers
-      if (excluded.length > 0 && opt.carrier?.code && excluded.includes(opt.carrier.code)) {
+      // Filter excluded shipping options (by shipping option code, not carrier code)
+      if (excluded.length > 0 && opt.code && excluded.includes(opt.code)) {
         return false
       }
-      // Filter preferred carriers (if more than 1, filter here since API only accepts one)
-      if (preferred.length > 1 && opt.carrier?.code && !preferred.includes(opt.carrier.code)) {
+      // Filter preferred shipping options (by shipping option code)
+      if (preferred.length > 0 && opt.code && !preferred.includes(opt.code)) {
         return false
       }
       // Filter out options without a valid price total

@@ -650,7 +650,7 @@ async function initializeDatabase() {
         fragile_goods INTEGER NOT NULL DEFAULT 0,
         insurance_type TEXT NOT NULL DEFAULT 'none' CHECK(insurance_type IN ('none', 'full_value', 'fixed')),
         insurance_fixed_amount REAL,
-        first_mile TEXT NOT NULL DEFAULT 'dropoff' CHECK(first_mile IN ('pickup', 'dropoff', 'pickup_dropoff', 'fulfilment')),
+        first_mile TEXT NOT NULL DEFAULT 'dropoff' CHECK(first_mile IN ('pickup', 'dropoff', 'pickup_dropoff', 'fulfilment', '')),
         last_mile TEXT NOT NULL DEFAULT 'home_delivery' CHECK(last_mile IN ('home_delivery', 'service_point', 'mailbox', 'locker', 'locker_or_service_point')),
         preferred_carriers TEXT,
         excluded_carriers TEXT,

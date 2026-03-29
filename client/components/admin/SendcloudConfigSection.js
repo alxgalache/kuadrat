@@ -59,7 +59,7 @@ const SendcloudConfigSection = forwardRef(function SendcloudConfigSection({ auth
           sender_country: data.sender_country || 'ES',
           sender_phone: data.sender_phone || '',
           sender_email: data.sender_email || '',
-          first_mile: data.first_mile || 'dropoff',
+          first_mile: data.first_mile ?? 'dropoff',
           preferred_carriers: parseCarriers(data.preferred_carriers),
           excluded_carriers: parseCarriers(data.excluded_carriers),
           vat_number: data.vat_number || '',
@@ -220,7 +220,7 @@ const SendcloudConfigSection = forwardRef(function SendcloudConfigSection({ auth
             className={inputClass}>
             <option value="dropoff">Entrega en oficina</option>
             <option value="pickup">Recogida a domicilio</option>
-            <option value="pickup_dropoff">Ambos</option>
+            <option value="">Ambos</option>
           </select>
         </div>
 

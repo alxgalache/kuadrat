@@ -6,11 +6,10 @@ const nextConfig = {
     // In development, bypass the optimizer entirely so local http:// API images load without
     // remotePatterns restrictions. In production, only https:// URLs are served anyway.
     unoptimized: process.env.NODE_ENV === 'development',
+    dangerouslyAllowLocalIP: true,
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
+      { protocol: 'https', hostname: 'api.pre.140d.art'},
+      { protocol: 'https', hostname: 'api.140d.art'},
     ],
   },
   async redirects() {
