@@ -33,7 +33,7 @@ function PublishProductPageContent() {
     const [hasVariations, setHasVariations] = useState(false)
     const [globalStock, setGlobalStock] = useState('')
     const [variations, setVariations] = useState([
-        { key: '', stock: '' }
+        { key: '', stock: '', imageFile: null, previewUrl: '' }
     ])
 
     const router = useRouter()
@@ -128,22 +128,30 @@ function PublishProductPageContent() {
     useEffect(() => {
         return () => {
             if (previewUrl) {
-                try {
-                    URL.revokeObjectURL(previewUrl)
-                } catch {
-                }
+                try { URL.revokeObjectURL(previewUrl) } catch {}
             }
+            // Clean up variation preview URLs
+            variations.forEach(v => {
+                if (v.previewUrl) {
+                    try { URL.revokeObjectURL(v.previewUrl) } catch {}
+                }
+            })
         }
     }, [previewUrl])
 
     // Add variation row
     const handleAddVariation = () => {
-        setVariations([...variations, { key: '', stock: '' }])
+        setVariations([...variations, { key: '', stock: '', imageFile: null, previewUrl: '' }])
     }
 
     // Remove variation row
     const handleRemoveVariation = (index) => {
         if (variations.length > 1) {
+            // Revoke preview URL for removed variation
+            const removed = variations[index]
+            if (removed.previewUrl) {
+                try { URL.revokeObjectURL(removed.previewUrl) } catch {}
+            }
             setVariations(variations.filter((_, i) => i !== index))
         }
     }
@@ -153,6 +161,51 @@ function PublishProductPageContent() {
         const newVariations = [...variations]
         newVariations[index][field] = value
         setVariations(newVariations)
+    }
+
+    // Validate and set image for a specific variation
+    const validateAndSetVariationImage = async (index, file) => {
+        if (!file) return
+
+        const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
+        if (!allowedTypes.includes(file.type)) {
+            showError('Formato de imagen inválido', `Variación ${index + 1}: Solo se permiten imágenes PNG, JPG y WEBP`)
+            return
+        }
+
+        if (file.size > 10 * 1024 * 1024) {
+            showError('Archivo demasiado grande', `Variación ${index + 1}: La imagen debe ser de 10MB o menos`)
+            return
+        }
+
+        const objectUrl = URL.createObjectURL(file)
+        try {
+            const img = new Image()
+            const loaded = new Promise((resolve, reject) => {
+                img.onload = resolve
+                img.onerror = reject
+            })
+            img.src = objectUrl
+            await loaded
+
+            if (img.naturalWidth < 600 || img.naturalHeight < 600) {
+                showError('Imagen demasiado pequeña', `Variación ${index + 1}: La imagen debe tener al menos 600x600 píxeles`)
+                URL.revokeObjectURL(objectUrl)
+                return
+            }
+
+            // Revoke previous preview URL
+            const newVariations = [...variations]
+            if (newVariations[index].previewUrl) {
+                try { URL.revokeObjectURL(newVariations[index].previewUrl) } catch {}
+            }
+            newVariations[index].imageFile = file
+            newVariations[index].previewUrl = objectUrl
+            setVariations(newVariations)
+        } catch (err) {
+            showError('Imagen inválida', `Variación ${index + 1}: No se pudo procesar el archivo de imagen`)
+            try { URL.revokeObjectURL(objectUrl) } catch {}
+        }
     }
 
     const handleSubmit = async (e) => {
@@ -238,6 +291,9 @@ function PublishProductPageContent() {
                         if (!v.stock || isNaN(stock) || stock < 0) {
                             validationErrors.push({ field: `variations[${index}].stock`, message: `Variación ${index + 1}: El stock debe ser un número válido` })
                         }
+                        if (!v.imageFile) {
+                            validationErrors.push({ field: `variations[${index}].image`, message: `Variación ${index + 1}: La imagen es obligatoria` })
+                        }
                     })
                 }
             } else {
@@ -298,6 +354,14 @@ function PublishProductPageContent() {
 
                 formData.append('variations', JSON.stringify(variationsData))
                 formData.append('can_copack', canCopack ? '1' : '0')
+
+                // Append variation images in order matching variations array
+                if (hasVariations) {
+                    for (const v of variations) {
+                        formData.append('variation_images', v.imageFile)
+                    }
+                }
+
                 await othersAPI.create(formData)
             }
 
@@ -576,33 +640,65 @@ function PublishProductPageContent() {
                                                         Variaciones del producto
                                                     </label>
                                                     {variations.map((variation, index) => (
-                                                        <div key={index} className="flex gap-2 items-start">
-                                                            <div className="flex-1 grid grid-cols-2 gap-2">
-                                                                <input
-                                                                    type="text"
-                                                                    placeholder="Ej: Verde XL"
-                                                                    value={variation.key}
-                                                                    onChange={(e) => handleVariationChange(index, 'key', e.target.value)}
-                                                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                                                                />
-                                                                <input
-                                                                    type="number"
-                                                                    placeholder="Stock"
-                                                                    min="0"
-                                                                    value={variation.stock}
-                                                                    onChange={(e) => handleVariationChange(index, 'stock', e.target.value)}
-                                                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                                                                />
+                                                        <div key={index} className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 space-y-3">
+                                                            <div className="flex gap-2 items-start">
+                                                                <div className="flex-1 grid grid-cols-2 gap-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        placeholder="Ej: Verde XL"
+                                                                        value={variation.key}
+                                                                        onChange={(e) => handleVariationChange(index, 'key', e.target.value)}
+                                                                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                                                                    />
+                                                                    <input
+                                                                        type="number"
+                                                                        placeholder="Stock"
+                                                                        min="0"
+                                                                        value={variation.stock}
+                                                                        onChange={(e) => handleVariationChange(index, 'stock', e.target.value)}
+                                                                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                                                                    />
+                                                                </div>
+                                                                {variations.length > 1 && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveVariation(index)}
+                                                                        className="mt-1 p-2 text-red-600 hover:text-red-800"
+                                                                    >
+                                                                        <XMarkIcon className="size-5" />
+                                                                    </button>
+                                                                )}
                                                             </div>
-                                                            {variations.length > 1 && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleRemoveVariation(index)}
-                                                                    className="mt-1 p-2 text-red-600 hover:text-red-800"
-                                                                >
-                                                                    <XMarkIcon className="size-5" />
-                                                                </button>
-                                                            )}
+                                                            <div className="flex items-center gap-3">
+                                                                <label className="flex-shrink-0 cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                                                    <input
+                                                                        type="file"
+                                                                        accept="image/png,image/jpeg,image/webp"
+                                                                        className="hidden"
+                                                                        onChange={(e) => {
+                                                                            if (e.target.files?.[0]) {
+                                                                                validateAndSetVariationImage(index, e.target.files[0])
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                    Imagen de variación
+                                                                </label>
+                                                                {variation.previewUrl ? (
+                                                                    <div className="flex items-center gap-2">
+                                                                        <NextImage
+                                                                            src={variation.previewUrl}
+                                                                            alt={`Preview variación ${index + 1}`}
+                                                                            width={48}
+                                                                            height={48}
+                                                                            unoptimized
+                                                                            className="rounded-md object-cover size-12"
+                                                                        />
+                                                                        <span className="text-xs text-green-600">Imagen cargada</span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-xs text-gray-400">Sin imagen</span>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     ))}
                                                     <button
@@ -640,7 +736,7 @@ function PublishProductPageContent() {
                                     {/* Image Upload */}
                                     <div>
                                         <label className="block text-sm/6 font-medium text-gray-900">
-                                            Imagen
+                                            Imagen para el listado de productos
                                         </label>
                                         <div
                                             {...getRootProps()}

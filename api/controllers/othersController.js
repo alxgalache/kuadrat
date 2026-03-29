@@ -137,6 +137,44 @@ const getOthersProductById = async (req, res, next) => {
 // Create new others product (seller only)
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'others');
 
+// Helper: get file extension from mime type
+const getFileExtension = (mimetype) => {
+  switch (mimetype) {
+    case 'image/png': return 'png';
+    case 'image/jpeg': return 'jpg';
+    case 'image/webp': return 'webp';
+    default: return null;
+  }
+};
+
+// Helper: validate a single image file (type + dimensions)
+const validateImageFile = (file, fieldName) => {
+  const errors = [];
+  const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
+
+  if (!allowedMimeTypes.includes(file.mimetype)) {
+    errors.push({ field: fieldName, message: 'Solo se permiten imágenes PNG, JPG y WEBP' });
+  }
+
+  try {
+    const dims = imageSize(file.buffer);
+    if (!dims || dims.width < 600 || dims.height < 600) {
+      errors.push({ field: fieldName, message: 'La imagen debe tener al menos 600x600 píxeles' });
+    }
+  } catch (e) {
+    errors.push({ field: fieldName, message: 'Archivo de imagen inválido' });
+  }
+
+  return errors;
+};
+
+// Helper: generate unique basename for an image file
+const generateUniqueBasename = (mimetype) => {
+  const ext = getFileExtension(mimetype);
+  if (!ext) throw new ApiError(400, 'Formato de imagen no soportado', 'Imagen inválida');
+  return `${randomUUID()}.${ext}`;
+};
+
 const createOthersProduct = async (req, res, next) => {
   try {
     const { name, description, price, variations, weight, dimensions, for_auction, ai_generated, can_copack } = req.body;
@@ -230,9 +268,22 @@ const createOthersProduct = async (req, res, next) => {
       validationErrors.push({ field: 'variations', message: 'Debe proporcionar variaciones o stock global' });
     }
 
-    // Validate image file
-    if (!req.file) {
+    // Validate main image file (always required)
+    const mainImageFile = req.files?.['image']?.[0];
+    if (!mainImageFile) {
       validationErrors.push({ field: 'image', message: 'El archivo de imagen es obligatorio' });
+    }
+
+    // Check if variations have named keys (i.e. real variations, not global stock)
+    const hasNamedVariations = parsedVariations.some(v => v.key !== null);
+    const variationImageFiles = req.files?.['variation_images'] || [];
+
+    // Validate variation images: required when variations have named keys
+    if (hasNamedVariations && variationImageFiles.length !== parsedVariations.length) {
+      validationErrors.push({
+        field: 'variation_images',
+        message: `Se requiere una imagen por cada variación (${parsedVariations.length} variaciones, ${variationImageFiles.length} imágenes proporcionadas)`,
+      });
     }
 
     // If there are validation errors, throw them all at once
@@ -263,124 +314,112 @@ const createOthersProduct = async (req, res, next) => {
       throw new ApiError(400, 'Ya existe un producto con este nombre. Por favor, elige un nombre diferente.', 'Nombre de producto duplicado');
     }
 
-    // File validation (additional checks beyond multer)
-    const imageValidationErrors = [];
+    // Validate main image file content (type + dimensions)
+    const imageValidationErrors = validateImageFile(mainImageFile, 'image');
 
-    if (req.file) {
-      const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
-      if (!allowedMimeTypes.includes(req.file.mimetype)) {
-        imageValidationErrors.push({ field: 'image', message: 'Solo se permiten imágenes PNG, JPG y WEBP' });
-      }
-
-      // Validate image dimensions (>= 600x600)
-      let dimensions;
-      try {
-        dimensions = imageSize(req.file.buffer);
-        if (!dimensions || dimensions.width < 600 || dimensions.height < 600) {
-          imageValidationErrors.push({ field: 'image', message: 'La imagen debe tener al menos 600x600 píxeles' });
-        }
-      } catch (e) {
-        imageValidationErrors.push({ field: 'image', message: 'Archivo de imagen inválido' });
-      }
+    // Validate each variation image file
+    for (let i = 0; i < variationImageFiles.length; i++) {
+      const varErrors = validateImageFile(variationImageFiles[i], `variation_images[${i}]`);
+      imageValidationErrors.push(...varErrors);
     }
 
-    // If there are image validation errors, throw them
     if (imageValidationErrors.length > 0) {
       throw new ValidationError(imageValidationErrors);
-    }
-
-    // Determine file extension based on mime type
-    let fileExtension;
-    switch (req.file.mimetype) {
-      case 'image/png':
-        fileExtension = 'png';
-        break;
-      case 'image/jpeg':
-        fileExtension = 'jpg';
-        break;
-      case 'image/webp':
-        fileExtension = 'webp';
-        break;
-      default:
-        throw new ApiError(400, 'Formato de imagen no soportado', 'Imagen inválida');
     }
 
     // Ensure uploads directory exists
     await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
 
-    // Generate unique basename (uuid.ext) and ensure uniqueness in DB
-    let basename;
-    while (true) {
-      basename = `${randomUUID()}.${fileExtension}`;
-      const existing = await db.execute({
-        sql: 'SELECT id FROM others WHERE basename = ?',
-        args: [basename],
-      });
-      if (existing.rows.length === 0) break;
-    }
+    // Generate basenames and write all image files to disk
+    const writtenFiles = [];
+    try {
+      // Main product image
+      const mainBasename = generateUniqueBasename(mainImageFile.mimetype);
+      await fs.promises.writeFile(path.join(UPLOADS_DIR, mainBasename), mainImageFile.buffer);
+      writtenFiles.push(mainBasename);
 
-    const filePath = path.join(UPLOADS_DIR, basename);
-    await fs.promises.writeFile(filePath, req.file.buffer);
+      // Variation images
+      const variationBasenames = [];
+      for (const varFile of variationImageFiles) {
+        const varBasename = generateUniqueBasename(varFile.mimetype);
+        await fs.promises.writeFile(path.join(UPLOADS_DIR, varBasename), varFile.buffer);
+        writtenFiles.push(varBasename);
+        variationBasenames.push(varBasename);
+      }
 
-    // Prepare weight and dimensions values
-    const weightValue = weight ? parseInt(weight, 10) : null;
-    const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
+      // Prepare weight and dimensions values
+      const weightValue = weight ? parseInt(weight, 10) : null;
+      const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
 
-    // Insert others product
-    const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
-    const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
-    const canCopackVal = can_copack === '0' || can_copack === 0 || can_copack === false ? 0 : 1;
-    const result = await db.execute({
-      sql: `
-        INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions, for_auction, ai_generated, can_copack)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [seller_id, name, description, priceNum, basename, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal, canCopackVal],
-    });
-
-    const productId = result.lastInsertRowid;
-
-    // Insert variations
-    for (const variation of parsedVariations) {
-      await db.execute({
+      // Insert others product
+      const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
+      const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
+      const canCopackVal = can_copack === '0' || can_copack === 0 || can_copack === false ? 0 : 1;
+      const result = await db.execute({
         sql: `
-          INSERT INTO other_vars (other_id, key, stock)
-          VALUES (?, ?, ?)
+          INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions, for_auction, ai_generated, can_copack)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
-        args: [
-          productId,
-          variation.key || null,
-          parseInt(variation.stock, 10),
-        ],
+        args: [seller_id, name, description, priceNum, mainBasename, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal, canCopackVal],
       });
+
+      const productId = result.lastInsertRowid;
+
+      // Insert variations with their basenames
+      for (let i = 0; i < parsedVariations.length; i++) {
+        const variation = parsedVariations[i];
+        const varBasename = variationBasenames[i] || null;
+        await db.execute({
+          sql: `
+            INSERT INTO other_vars (other_id, key, stock, basename)
+            VALUES (?, ?, ?, ?)
+          `,
+          args: [
+            productId,
+            variation.key || null,
+            parseInt(variation.stock, 10),
+            varBasename,
+          ],
+        });
+      }
+
+      // Get the created product with variations
+      const productResult = await db.execute({
+        sql: 'SELECT * FROM others WHERE id = ?',
+        args: [productId],
+      });
+
+      const variationsResult = await db.execute({
+        sql: 'SELECT * FROM other_vars WHERE other_id = ?',
+        args: [productId],
+      });
+
+      const product = productResult.rows[0];
+      product.variations = variationsResult.rows;
+
+      // Notify admin about new product (fire-and-forget)
+      sendNewProductNotificationEmail({
+        sellerName: req.user.full_name,
+        productName: name,
+        productType: 'others',
+        productId: productId,
+      }).catch(err => logger.error({ err }, 'Failed to send new product notification email'));
+
+      res.status(201).json({
+        success: true,
+        product: product,
+      });
+    } catch (dbError) {
+      // Clean up written files if DB operations fail
+      for (const writtenBasename of writtenFiles) {
+        try {
+          await fs.promises.unlink(path.join(UPLOADS_DIR, writtenBasename));
+        } catch (unlinkErr) {
+          logger.error({ err: unlinkErr, basename: writtenBasename }, 'Failed to clean up image file after DB error');
+        }
+      }
+      throw dbError;
     }
-
-    // Get the created product with variations
-    const productResult = await db.execute({
-      sql: 'SELECT * FROM others WHERE id = ?',
-      args: [productId],
-    });
-
-    const variationsResult = await db.execute({
-      sql: 'SELECT * FROM other_vars WHERE other_id = ?',
-      args: [productId],
-    });
-
-    const product = productResult.rows[0];
-    product.variations = variationsResult.rows;
-
-    // Notify admin about new product (fire-and-forget)
-    sendNewProductNotificationEmail({
-      sellerName: req.user.full_name,
-      productName: name,
-      productType: 'others',
-      productId: productId,
-    }).catch(err => logger.error({ err }, 'Failed to send new product notification email'));
-
-    res.status(201).json({
-      success: true,
-      product: product,
-    });
   } catch (error) {
     next(error);
   }
@@ -429,6 +468,21 @@ const deleteOthersProduct = async (req, res, next) => {
       throw new ApiError(400, 'No se puede eliminar un producto vendido', 'No se puede eliminar el producto');
     }
 
+    // Collect all image basenames to delete from disk
+    const basenames = [];
+    if (product.basename) {
+      basenames.push(product.basename);
+    }
+    const varsResult = await db.execute({
+      sql: 'SELECT basename FROM other_vars WHERE other_id = ?',
+      args: [id],
+    });
+    for (const row of varsResult.rows) {
+      if (row.basename) {
+        basenames.push(row.basename);
+      }
+    }
+
     // Delete variations (CASCADE should handle this, but being explicit)
     await db.execute({
       sql: 'DELETE FROM other_vars WHERE other_id = ?',
@@ -440,6 +494,15 @@ const deleteOthersProduct = async (req, res, next) => {
       sql: 'DELETE FROM others WHERE id = ?',
       args: [id],
     });
+
+    // Clean up image files from disk (log errors, don't block)
+    for (const basename of basenames) {
+      try {
+        await fs.promises.unlink(path.join(UPLOADS_DIR, basename));
+      } catch (err) {
+        logger.error({ err, basename }, 'Failed to delete image file during product deletion');
+      }
+    }
 
     res.status(204).send();
   } catch (error) {

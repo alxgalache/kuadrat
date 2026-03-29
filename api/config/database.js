@@ -125,6 +125,7 @@ async function initializeDatabase() {
         key TEXT,
         value TEXT,
         stock INTEGER NOT NULL DEFAULT 0,
+        basename TEXT,
         FOREIGN KEY (other_id) REFERENCES others(id) ON DELETE CASCADE
       )
     `);

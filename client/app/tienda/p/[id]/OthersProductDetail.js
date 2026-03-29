@@ -225,15 +225,16 @@ export default function OthersProductDetail({ params }) {
 
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:max-w-7xl lg:px-8">
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
-          {/* Image */}
+          {/* Image — show variation image if selected variant has one, otherwise main product image */}
           <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
             <Image
               alt={product.name}
-              src={getOthersImageUrl(product.basename)}
+              src={getOthersImageUrl(selectedVariant?.basename || product.basename)}
               fill
               sizes="(max-width: 1024px) 100vw, 50vw"
               className="object-cover"
               priority
+              key={selectedVariant?.basename || product.basename}
             />
           </div>
 
