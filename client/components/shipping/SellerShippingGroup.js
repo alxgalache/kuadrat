@@ -36,8 +36,9 @@ export default function SellerShippingGroup({
     }
   }
 
-  const handleServicePointSelect = (sp) => {
+  const handleServicePointConfirm = (sp) => {
     if (!servicePointOption) return
+    setShowServicePoints(false)
     onSelect(sellerId, {
       optionId: servicePointOption.id,
       type: servicePointOption.type,
@@ -47,6 +48,11 @@ export default function SellerShippingGroup({
       servicePointId: sp.id,
       name: `${servicePointOption.carrier?.name || ''} - ${sp.name}`,
     })
+  }
+
+  const handleServicePointClose = () => {
+    setShowServicePoints(false)
+    setServicePointOption(null)
   }
 
   const handlePickupSelect = () => {
@@ -72,13 +78,15 @@ export default function SellerShippingGroup({
         onClick={() => setExpanded(e => !e)}
         className="flex w-full items-center justify-between p-4"
       >
-        <h4 className="text-sm font-semibold text-gray-900">
-          {sellerName || 'Vendedor'}
-          <span className="ml-2 text-xs font-normal text-gray-500">
-            ({seller.productCount} {seller.productCount === 1 ? 'producto' : 'productos'})
+        <h4 className="min-w-0 text-left text-sm font-semibold text-gray-900">
+          <span className="whitespace-nowrap">
+            {sellerName || 'Vendedor'}
+            <span className="ml-2 text-xs font-normal text-gray-500">
+              ({seller.productCount} {seller.productCount === 1 ? 'producto' : 'productos'})
+            </span>
           </span>
           {selection && (
-            <span className="ml-2 text-xs font-normal text-green-600">
+            <span className="ml-2 block truncate text-xs font-normal text-green-600">
               {selection.name}
             </span>
           )}
@@ -135,14 +143,14 @@ export default function SellerShippingGroup({
             ))}
           </div>
 
-          {/* Service Point Selector */}
+          {/* Service Point Selector Overlay */}
           {showServicePoints && servicePointOption && (
             <ServicePointSelector
               carrier={servicePointOption.carrier?.code || ''}
               country={deliveryAddress?.country || 'ES'}
               postalCode={deliveryAddress?.postalCode || ''}
-              onSelect={handleServicePointSelect}
-              selectedId={selection?.servicePointId}
+              onConfirm={handleServicePointConfirm}
+              onClose={handleServicePointClose}
             />
           )}
 

@@ -32,4 +32,24 @@ const pickupSchema = z.object({
   ),
 })
 
-module.exports = { pickupSchema }
+const bulkPickupSchema = z.object({
+  body: z.object({
+    orderIds: z.array(z.number().int().positive()).min(1, 'Debe seleccionar al menos un pedido'),
+    address: pickupAddressSchema,
+    timeSlotStart: z.string().datetime({ message: 'La fecha de inicio debe ser una fecha válida ISO 8601' }),
+    timeSlotEnd: z.string().datetime({ message: 'La fecha de fin debe ser una fecha válida ISO 8601' }),
+    specialInstructions: z.string().max(500).optional().default(''),
+  }).refine(
+    (data) => new Date(data.timeSlotStart) < new Date(data.timeSlotEnd),
+    { message: 'La fecha de inicio debe ser anterior a la fecha de fin', path: ['timeSlotStart'] }
+  ).refine(
+    (data) => {
+      const diffMs = new Date(data.timeSlotEnd) - new Date(data.timeSlotStart)
+      const maxMs = 48 * 60 * 60 * 1000 // 48 hours
+      return diffMs <= maxMs
+    },
+    { message: 'El intervalo máximo de tiempo es de 2 días', path: ['timeSlotEnd'] }
+  ),
+})
+
+module.exports = { pickupSchema, bulkPickupSchema }

@@ -2,11 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDownIcon } from '@heroicons/react/16/solid'
-
-// Global flags to prevent multiple script loads
-let googleMapsScriptLoading = false
-let googleMapsScriptLoaded = false
-const googleMapsCallbacks = []
+import { loadGoogleMaps } from '@/lib/googleMaps'
 
 /**
  * AddressAutocomplete Component
@@ -65,75 +61,13 @@ export default function AddressAutocomplete({
     }
   }, [])
 
-  // Load Google Maps Script (singleton pattern to load only once)
+  // Load Google Maps Script via shared singleton loader
   useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-
-    if (!apiKey) {
-      setError('Google Maps API key not configured. Please add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to your environment variables.')
-      return
-    }
-
-    // If already fully loaded, set state immediately
-    if (googleMapsScriptLoaded && window.google && window.google.maps && window.google.maps.places) {
-      setIsLoaded(true)
-      return
-    }
-
-    // If currently loading, add callback to be notified when ready
-    if (googleMapsScriptLoading) {
-      googleMapsCallbacks.push(() => setIsLoaded(true))
-      return
-    }
-
-    // Check if script tag already exists in DOM
-    const existingScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')
-    if (existingScript) {
-      // Script exists, wait for it to load
-      googleMapsScriptLoading = true
-      googleMapsCallbacks.push(() => setIsLoaded(true))
-
-      const checkLoaded = () => {
-        if (window.google && window.google.maps && window.google.maps.places) {
-          googleMapsScriptLoaded = true
-          googleMapsScriptLoading = false
-          // Notify all waiting components
-          googleMapsCallbacks.forEach(cb => cb())
-          googleMapsCallbacks.length = 0
-        } else {
-          setTimeout(checkLoaded, 100)
-        }
-      }
-      checkLoaded()
-      return
-    }
-
-    // Load script for the first time
-    googleMapsScriptLoading = true
-    googleMapsCallbacks.push(() => setIsLoaded(true))
-
-    const script = document.createElement('script')
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&language=es`
-    script.async = true
-    script.defer = true
-    script.id = 'google-maps-script' // Add ID for easier detection
-
-    script.onload = () => {
-      googleMapsScriptLoaded = true
-      googleMapsScriptLoading = false
-      // Notify all waiting components
-      googleMapsCallbacks.forEach(cb => cb())
-      googleMapsCallbacks.length = 0
-    }
-
-    script.onerror = () => {
-      googleMapsScriptLoading = false
-      setError('Error al cargar Google Maps. Por favor, verifica tu clave API y la configuración de restricciones en Google Cloud Console.')
-    }
-
-    document.head.appendChild(script)
-
-    // DON'T cleanup the script - let it persist for all components
+    loadGoogleMaps('places')
+      .then(() => setIsLoaded(true))
+      .catch(() => {
+        setError('Error al cargar Google Maps. Por favor, verifica tu clave API y la configuración de restricciones en Google Cloud Console.')
+      })
   }, [])
 
   // Initialize Autocomplete and Map

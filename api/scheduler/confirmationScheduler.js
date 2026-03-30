@@ -22,7 +22,7 @@ module.exports = function startConfirmationScheduler() {
       // Find art order items eligible for auto-confirm
       const artItems = await db.execute({
         sql: `SELECT aoi.id, aoi.order_id, aoi.art_id as product_id,
-              aoi.final_price, a.seller_id
+              aoi.price_at_purchase, a.seller_id
               FROM art_order_items aoi
               JOIN art a ON aoi.art_id = a.id
               WHERE aoi.status = 'arrived'
@@ -34,7 +34,7 @@ module.exports = function startConfirmationScheduler() {
       // Find other order items eligible for auto-confirm
       const otherItems = await db.execute({
         sql: `SELECT ooi.id, ooi.order_id, ooi.other_id as product_id,
-              ooi.final_price, ot.seller_id
+              ooi.price_at_purchase, ot.seller_id
               FROM other_order_items ooi
               JOIN others ot ON ooi.other_id = ot.id
               WHERE ooi.status = 'arrived'
@@ -61,10 +61,10 @@ module.exports = function startConfirmationScheduler() {
           });
 
           // Credit seller available_withdrawal
-          if (item.final_price && item.seller_id) {
+          if (item.price_at_purchase && item.seller_id) {
             await db.execute({
               sql: `UPDATE users SET available_withdrawal = COALESCE(available_withdrawal, 0) + ? WHERE id = ?`,
-              args: [item.final_price, item.seller_id],
+              args: [item.price_at_purchase, item.seller_id],
             });
           }
 

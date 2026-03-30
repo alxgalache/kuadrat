@@ -13,8 +13,8 @@ const { validate } = require('../middleware/validate');
 const { createWithdrawalSchema } = require('../validators/withdrawalSchemas');
 const { changePasswordSchema } = require('../validators/sellerSchemas');
 const { validatePassword } = require('../controllers/authController');
-const { getSellerOrders, downloadOrderLabel, schedulePickup } = require('../controllers/sellerOrdersController');
-const { pickupSchema } = require('../validators/pickupSchemas');
+const { getSellerOrders, downloadOrderLabel, schedulePickup, scheduleBulkPickup } = require('../controllers/sellerOrdersController');
+const { pickupSchema, bulkPickupSchema } = require('../validators/pickupSchemas');
 
 // Apply authentication and seller authorization to all routes
 router.use(authenticate, requireSeller);
@@ -462,6 +462,7 @@ router.post('/withdrawals', validate(createWithdrawalSchema), async (req, res, n
 // Seller orders (Sendcloud-managed shipments)
 router.get('/orders', getSellerOrders);
 router.get('/orders/:itemType/:itemId/label', downloadOrderLabel);
+router.post('/orders/bulk-pickup', validate(bulkPickupSchema), scheduleBulkPickup);
 router.post('/orders/:orderId/pickup', validate(pickupSchema), schedulePickup);
 
 module.exports = router;

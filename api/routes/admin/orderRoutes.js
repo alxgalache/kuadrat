@@ -8,6 +8,7 @@ const {
   getStaleArrivedItems,
   getStaleSentItems,
 } = require('../../controllers/ordersController')
+const { getSellerShipmentsAdmin } = require('../../controllers/sellerOrdersController')
 const { validate } = require('../../middleware/validate')
 const { adminUpdateItemStatusSchema, adminUpdateOrderStatusSchema } = require('../../validators/orderSchemas')
 
@@ -16,6 +17,12 @@ const { adminUpdateItemStatusSchema, adminUpdateOrderStatusSchema } = require('.
  * Get all orders
  */
 router.get('/', getAllOrdersAdmin);
+
+/**
+ * GET /api/admin/orders/seller-shipments
+ * Admin: view any seller's shipments by sellerId query param.
+ */
+router.get('/seller-shipments', getSellerShipmentsAdmin);
 
 /**
  * GET /api/admin/orders/alerts/stale-arrived

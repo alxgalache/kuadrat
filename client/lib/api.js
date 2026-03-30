@@ -739,6 +739,12 @@ export const adminAPI = {
     getStaleSentAlerts: async () => {
       return apiRequest('/admin/orders/alerts/stale-sent');
     },
+
+    getSellerShipments: async (sellerId, status, page = 1, limit = 20) => {
+      const params = new URLSearchParams({ sellerId: String(sellerId), page: String(page), limit: String(limit) });
+      if (status) params.append('status', status);
+      return apiRequest(`/admin/orders/seller-shipments?${params.toString()}`);
+    },
   },
 
   // Shipping management
@@ -1311,6 +1317,13 @@ export const sellerAPI = {
 
   schedulePickup: async (orderId, data) => {
     return apiRequest(`/seller/orders/${orderId}/pickup`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  scheduleBulkPickup: async (data) => {
+    return apiRequest('/seller/orders/bulk-pickup', {
       method: 'POST',
       body: JSON.stringify(data),
     });

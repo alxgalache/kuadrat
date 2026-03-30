@@ -1,0 +1,269 @@
+# Sendcloud API Developer Portal
+
+## Docs
+
+- [Finalize a Deutsche Post order](https://sendcloud.dev/api/v2/air-waybill/finalizing-a-box.md): Finalize a Deutsche Post order by closing the current open box and generating an AWB (Air Waybill) document for all parcels in that box.
+- [Air Waybill API overview](https://sendcloud.dev/api/v2/air-waybill/index.md)
+- [Analytics API overview](https://sendcloud.dev/api/v2/analytics/index.md)
+- [Retrieve carrier transit times](https://sendcloud.dev/api/v2/analytics/retrieve-carrier-transit-times.md): Retrieves the average transit time of a parcel per carrier. You can filter the results by origin and destination country, as well as by start and end dates.
+- [Retrieve shipping method transit times](https://sendcloud.dev/api/v2/analytics/retrieve-shipping-method-transit-times.md): Retrieves the average transit time of a parcel per shipping method and carrier. You can filter the results by origin and destination country, as well as start and end dates.
+- [Retrieve a brand](https://sendcloud.dev/api/v2/brands/retrieve-a-brand.md): Retrieves a user's configured brand and its properties, identified by its unique ID
+- [Retrieve a list of brands](https://sendcloud.dev/api/v2/brands/retrieve-a-list-of-brands.md): Retrieves a list of all brands and their associated properties.
+- [API v2 changelog](https://sendcloud.dev/api/v2/changelog.md)
+- [Contracts API overview](https://sendcloud.dev/api/v2/contracts/index.md)
+- [Retrieve a contract](https://sendcloud.dev/api/v2/contracts/retrieve-a-contract.md): Retrieve information about a specific direct contract by passing its `id` as a path parameter.
+- [Retrieve a list of contracts](https://sendcloud.dev/api/v2/contracts/retrieve-a-list-of-contracts.md): Retrieves information about all of the available contracts you have in your Sendcloud account. It will also return the `contract_id` of your contracts, which you can use to retrieve information about a specific contract.
+- [Dynamic Checkout API overview](https://sendcloud.dev/api/v2/dynamic-checkout/index.md)
+- [Retrieve a list of delivery options](https://sendcloud.dev/api/v2/dynamic-checkout/retrieve-a-list-of-delivery-options.md): Get a list of delivery options to display in your checkout page, based on your Dynamic Checkout configuration in the Sendcloud platform.
+- [Introduction](https://sendcloud.dev/api/v2/index.md)
+- [Create or update a list of shipments](https://sendcloud.dev/api/v2/integrations/create-a-list-of-shipments.md): Insert shipments (or 'orders') into an API integration from your shop system, and have them appear in your Sendcloud account.
+- [Create integration exceptions logs](https://sendcloud.dev/api/v2/integrations/create-integration-exception-logs.md): Create integration exception logs, which will appear in the connection issue log screen of the user's integration.
+- [Delete a shipment](https://sendcloud.dev/api/v2/integrations/delete-a-shipment.md): Allows you to delete a shipment from Sendcloud, e.g. if it has been canceled or deleted in your shop system.
+- [Delete an integration](https://sendcloud.dev/api/v2/integrations/delete-an-integration.md): Delete a shop integration from the Sendcloud system.
+- [Integrations API overview](https://sendcloud.dev/api/v2/integrations/index.md)
+- [Partially update an integration](https://sendcloud.dev/api/v2/integrations/partially-update-an-integration.md): Partially update settings for a specific integration using its `id`.
+- [Retrieve a list of integrations](https://sendcloud.dev/api/v2/integrations/retrieve-a-list-of-integrations.md): Retrieve information about all the shop integrations currently connected to your Sendcloud account.
+- [Retrieve a list of shipments](https://sendcloud.dev/api/v2/integrations/retrieve-a-list-of-shipments.md): Retrieve a list of orders that were imported from a specific webshop integration.
+- [Retrieve all integration exception logs](https://sendcloud.dev/api/v2/integrations/retrieve-all-integration-exception-logs.md): Retrieve all integration exception logs. These logs are created when integrations have problems making API requests to shop systems.
+- [Retrieve an integration](https://sendcloud.dev/api/v2/integrations/retrieve-an-integration.md): Retrieve information about a specific integration using its `id`.
+- [Retrieve exception logs for a specific integration](https://sendcloud.dev/api/v2/integrations/retrieve-exception-logs-for-a-specific-integration.md): Retrieve exception logs for a specific integration. These logs are created when integrations have problems making API requests to shop systems.
+- [Update an integration](https://sendcloud.dev/api/v2/integrations/update-an-integration.md): Update settings for a specific integration using its `id`.
+- [Invoices API overview](https://sendcloud.dev/api/v2/invoices/index.md)
+- [Retrieve a list of invoices](https://sendcloud.dev/api/v2/invoices/retrieve-a-list-of-invoices.md): Retrieve all invoices (with the associated invoice `id`) which have been issued to your account to date.
+- [Retrieve a specific invoice](https://sendcloud.dev/api/v2/invoices/retrieve-a-specific-invoice.md): Retrieve detailed information about a specific invoice issued to your Sendcloud account,  including all line items.
+- [Bulk PDF label printing](https://sendcloud.dev/api/v2/labels/bulk-pdf-label-printing.md): Request multiple shipping labels for an array of parcels at the same time. You will receive URLs to download the labels in PDF format, for both normal and label printers.
+- [Labels API overview](https://sendcloud.dev/api/v2/labels/index.md)
+- [Retrieve a customs declaration PDF](https://sendcloud.dev/api/v2/labels/retrieve-a-customs-declaration-pdf.md): Retrieve the customs documents associated with a label in PDF format for a normal printer.
+- [Retrieve a label for a specific parcel](https://sendcloud.dev/api/v2/labels/retrieve-a-label-for-a-specific-parcel.md): You will receive URLs to download the labels in PDF format, for both normal and label printers. You can get the `id` of a parcel from the [Create a parcel or parcels](/api/v2/parcels/create-a-parcel-or-parcels) endpoint.
+- [Retrieve a PDF label](https://sendcloud.dev/api/v2/labels/retrieve-a-pdf-label.md): Retrieve a shipping label for a specific parcel in PDF format for a normal printer.
+- [Retrieve a specific PDF label for a label printer](https://sendcloud.dev/api/v2/labels/retrieve-a-specific-pdf-label-for-a-label-printer.md): Retrieve a shipping label for a specific parcel in PDF format for a label printer.
+- [Retrieve multiple customs declaration PDFs](https://sendcloud.dev/api/v2/labels/retrieve-multiple-customs-declaration-pdfs.md): Retrieve PDF customs documents suitable for normal printers for multiple different parcels at the same time.
+- [Retrieve multiple PDF labels](https://sendcloud.dev/api/v2/labels/retrieve-multiple-pdf-labels.md): Retrieve PDF label documents suitable for normal printers for multiple different parcels at the same time.
+- [Retrieve PDF labels for a label printer](https://sendcloud.dev/api/v2/labels/retrieve-pdf-labels-for-a-label-printer.md): Retrieve PDF label documents suitable for label printers for multiple different parcels at the same time.
+- [OAuth 2.0 token](https://sendcloud.dev/api/v2/oauth2/token.md): Use this endpoint to get a new OAuth 2.0 access token.
+- [Parcel documents API overview](https://sendcloud.dev/api/v2/parcel-documents/index.md)
+- [Retrieve parcel documents](https://sendcloud.dev/api/v2/parcel-documents/retrieve-parcel-documents.md): Retrieve a document for a given parcel by providing the parcel `id` and document `type`.
+- [Parcel statuses API overview](https://sendcloud.dev/api/v2/parcel-statuses/index.md)
+- [Retrieve a list of parcel statuses](https://sendcloud.dev/api/v2/parcel-statuses/retrieve-a-list-of-parcel-statuses.md): Get a list of all parcel statuses available in the Sendcloud system, with their unique code and friendly description.
+- [Cancel a parcel](https://sendcloud.dev/api/v2/parcels/cancel-a-parcel.md): Cancel an announced parcel (if supported by the carrier) or delete an unannounced parcel.
+- [Create a parcel or parcels](https://sendcloud.dev/api/v2/parcels/create-a-parcel-or-parcels.md): Create one or multiple parcels, either to be immediately announced to the carrier, or to be created for later announcement.
+- [Parcels API overview](https://sendcloud.dev/api/v2/parcels/index.md)
+- [Retrieve a parcel](https://sendcloud.dev/api/v2/parcels/retrieve-a-parcel.md): Retrieve a specific parcel by its `id`.
+- [Retrieve a return portal URL](https://sendcloud.dev/api/v2/parcels/retrieve-a-return-portal-url.md): Check which of your branded return portals is associated with a specific parcel using the parcel's `id`.
+- [Retrieve parcels](https://sendcloud.dev/api/v2/parcels/retrieve-parcels.md): This endpoint allows you to retrieve a list of all the parcels which you have created or imported into your Sendcloud account under your API credentials. You can filter the results based on the query parameters provided below, in order to retrieve a specific parcel or list of parcels which match the…
+- [Update a parcel](https://sendcloud.dev/api/v2/parcels/update-a-parcel.md): Update a parcel which has **not yet been announced**, either to make changes to the original parcel data, or to request a shipping label if one hasn't yet been created.
+- [Create a pickup](https://sendcloud.dev/api/v2/pickups/create-a-pickup.md): Schedule a pickup with a carrier (note that the carrier must support pickups).
+- [Pickups API overview](https://sendcloud.dev/api/v2/pickups/index.md)
+- [Retrieve a list of pickups](https://sendcloud.dev/api/v2/pickups/retrieve-a-list-of-pickups.md): Retrieve information about all pickups which have been created from your account.
+- [Retrieve a pickup](https://sendcloud.dev/api/v2/pickups/retrieve-a-pickup.md): Retrieve information about a specific pickup based on its `id`.
+- [Create a parcels report](https://sendcloud.dev/api/v2/reporting/create-a-parcels-report.md): Generate a CSV report containing information about outgoing or incoming parcels.
+- [Reporting API overview](https://sendcloud.dev/api/v2/reporting/index.md)
+- [Retrieve a parcels report](https://sendcloud.dev/api/v2/reporting/retrieve-a-parcels-report.md): Generate a URL to download a parcels report in CSV format.
+- [Create a file upload for the return portal](https://sendcloud.dev/api/v2/return-portal/create-a-file-upload-for-the-return-portal.md): Upload an image for use in the return portal.
+- [Create a return](https://sendcloud.dev/api/v2/return-portal/create-a-return.md): Create a new return parcel based on an outgoing parcel.
+- [Return portal API overview](https://sendcloud.dev/api/v2/return-portal/index.md)
+- [Retrieve a return label](https://sendcloud.dev/api/v2/return-portal/retrieve-a-return-label.md): Download a return label as a PDF
+- [Retrieve an outgoing parcel](https://sendcloud.dev/api/v2/return-portal/retrieve-an-outgoing-parcel.md): Find an outgoing parcel via two mandatory query parameters: either the tracking number or the order number, and the postal code.
+- [Retrieve return portal settings](https://sendcloud.dev/api/v2/return-portal/retrieve-return-portal-settings.md): Retrieve information about the settings you have configured for your Sendcloud-hosted Return portal, including branding details, delivery options and return methods.
+- [Retrieve the status of a return](https://sendcloud.dev/api/v2/return-portal/retrieve-the-status-of-a-return.md): Find out the label creation status for a return parcel.
+- [Returns API overview](https://sendcloud.dev/api/v2/returns/index.md)
+- [Retrieve a list of returns](https://sendcloud.dev/api/v2/returns/retrieve-a-list-of-returns.md): Retrieve a paginated list of all the returns belonging to the authenticated user, sorted by the creation date.
+- [Retrieve a return](https://sendcloud.dev/api/v2/returns/retrieve-a-return.md): Retrieve the details of a specific return by its unique identifier.
+- [Sender addresses API overview](https://sendcloud.dev/api/v2/sender-addresses/index.md)
+- [Retrieve a list of sender addresses](https://sendcloud.dev/api/v2/sender-addresses/retrieve-a-list-of-sender-addresses.md): Returns a list of all the sender addresses which have been saved to your account.
+- [Retrieve a sender address](https://sendcloud.dev/api/v2/sender-addresses/retrieve-a-sender-address.md): Retrieve information about a specific sender address saved to your account.
+- [Service points API overview](https://sendcloud.dev/api/v2/service-points/index.md)
+- [Retrieve a list of service point carriers](https://sendcloud.dev/api/v2/service-points/retrieve-a-list-of-service-point-carriers.md): Retrieve a list of carriers which are enabled for service point delivery and can be accessed by the authenticating integration. Carriers can be enabled or disabled via the integration settings menu in the Sendcloud platform.
+- [Retrieve a list of service points](https://sendcloud.dev/api/v2/service-points/retrieve-a-list-of-service-points.md): Retrieve a list of available service points and the associated service point `id`.
+- [Retrieve a service point](https://sendcloud.dev/api/v2/service-points/retrieve-a-service-point.md): Retrieve information about a specific service point location, including opening hours and applicable carriers, based on the service point `id`.
+- [Retrieve availability of a service point](https://sendcloud.dev/api/v2/service-points/retrieve-availability-of-a-service-point.md): Retrieve a `true` or `false` value which reflects the current availability of a given service point `id`.
+- [Shipping methods API overview](https://sendcloud.dev/api/v2/shipping-methods/index.md)
+- [Retrieve a list of shipping methods](https://sendcloud.dev/api/v2/shipping-methods/retrieve-a-list-of-shipping-methods.md): Returns a detailed list of all the shipping methods which are available to you under your Sendcloud credentials.
+- [Retrieve a shipping method](https://sendcloud.dev/api/v2/shipping-methods/retrieve-a-shipping-method.md): Get information about a shipping method based on its `id` and your default sender address.
+- [Shipping prices API overview](https://sendcloud.dev/api/v2/shipping-prices/index.md)
+- [Retrieve a shipping price](https://sendcloud.dev/api/v2/shipping-prices/retrieve-a-shipping-price.md): Retrieve shipping rate information for a specific `shipping_method_id` and `from_country`.
+- [Shipping products API overview](https://sendcloud.dev/api/v2/shipping-products/index.md)
+- [Retrieve a list of shipping functionalities](https://sendcloud.dev/api/v2/shipping-products/retrieve-a-list-of-shipping-functionalities.md): Lists all available shipping functionalities across the Sendcloud system.
+- [Retrieve a list of shipping products](https://sendcloud.dev/api/v2/shipping-products/retrieve-a-list-of-shipping-products.md): Retrieve a list of shipping methods that are associated with your account, filtered by specific criteria such as parcel dimensions, weight classes, from and to country and **shipping functionality.**
+- [Tracking API overview](https://sendcloud.dev/api/v2/tracking/index.md)
+- [Retrieve tracking information of a parcel](https://sendcloud.dev/api/v2/tracking/retrieve-tracking-information-of-a-parcel.md): Fetches detailed tracking information, including the status history of the parcel.
+- [Retrieve your user data](https://sendcloud.dev/api/v2/users/retrieve-your-user-data.md): Request the data connected with your user account. The response includes your invoice address details, your Sendcloud username, and a list of all your invoices with the associated invoice `id`s.
+- [Webhooks overview](https://sendcloud.dev/api/v2/webhooks/index.md)
+- [Integration connected](https://sendcloud.dev/api/v2/webhooks/integration-connected.md): A request is sent to the defined webhook whenever the integration is created within our system.
+- [Integration deleted](https://sendcloud.dev/api/v2/webhooks/integration-deleted.md): A request is sent to the defined webhook whenever the integration is deleted from our system.
+- [Integration modified](https://sendcloud.dev/api/v2/webhooks/integration-modified.md): A request is sent to the defined webhook whenever the integration is updated.
+- [Parcel status changed](https://sendcloud.dev/api/v2/webhooks/parcel-status-changed.md): Happens whenever a parcel within this integration shifts to a different status.
+- [Return created](https://sendcloud.dev/api/v2/webhooks/return-created.md): Happens whenever a return is created from a parcel matching the integration.
+- [Validate an address](https://sendcloud.dev/api/v3/address/validate.md): This address validation endpoint allows you to validate shipping addresses before using them. By validating addresses in advance, you can ensure that the shipping information is accurate and complete, reducing the risk of delivery issues and improving overall shipping efficiency. Providing the carri…
+- [Retrieve a brand](https://sendcloud.dev/api/v3/brands/retrieve-a-brand.md): Retrieves a user's configured brand and its properties, identified by its unique ID.
+- [Retrieve a list of brands](https://sendcloud.dev/api/v3/brands/retrieve-a-list-of-brands.md): Retrieves a list of all brands and their associated properties.
+- [Finalize a Deutsche Post order](https://sendcloud.dev/api/v3/carriers-dp/finalize-a-deutsche-post-order.md): Closes the current open order/box and generates AWB (Air Waybill) documents for all parcels in that box.
+- [API v3 Changelog](https://sendcloud.dev/api/v3/changelog.md)
+- [Retrieve a list of shipping options](https://sendcloud.dev/api/v3/compat/retrieve-a-list-of-shipping-options.md): Retrieve a list of shipping options based on the provided shipping method ids.
+- [Create a contract for a carrier](https://sendcloud.dev/api/v3/contracts/create-a-contract-for-a-carrier.md): Create a contract for a supported carrier.
+- [Delete a contract](https://sendcloud.dev/api/v3/contracts/delete-a-contract.md): Delete a specific contract by including the `id` of the contract as a path parameter.
+- [Contracts API overview](https://sendcloud.dev/api/v3/contracts/index.md)
+- [Retrieve a contract](https://sendcloud.dev/api/v3/contracts/retrieve-a-contract.md): Retrieve information about a specific contract by including the `id` of the contract as a path parameter.
+- [Retrieve a list of contract schemas](https://sendcloud.dev/api/v3/contracts/retrieve-a-list-of-contract-schemas.md): Retrieve information about contract schemas (by carrier) to help with creating/updating contracts.
+- [Retrieve a list of contracts](https://sendcloud.dev/api/v3/contracts/retrieve-a-list-of-contracts.md): Retrieve the list of contracts you have in your Sendcloud account. It will also return the `id` of each contract, which you can use to retrieve information about a specific contract.
+- [Update a contract](https://sendcloud.dev/api/v3/contracts/update-a-contract.md): Update or replace a contract by including the `id` of the contract as a path parameter.
+- [Dynamic Checkout API overview](https://sendcloud.dev/api/v3/dynamic-checkout/index.md)
+- [Retrieve a list of delivery options](https://sendcloud.dev/api/v3/dynamic-checkout/retrieve-a-list-of-delivery-options.md): The options returned by this endpoint are based on the [delivery methods](https://support.sendcloud.com/hc/en-us/articles/360057944932-How-to-configure-Dynamic-Checkout#4) previously configured in addition to cart or order information, such as parcel weight, total order value, destination country, a…
+- [Create a connection](https://sendcloud.dev/api/v3/event-subscriptions/create-a-connection.md): Create a new connection to an external endpoint where event notifications will be delivered.
+- [Create a subscription](https://sendcloud.dev/api/v3/event-subscriptions/create-a-subscription.md): Create a new subscription that routes events of a specific type to a connection.
+- [Delete a connection](https://sendcloud.dev/api/v3/event-subscriptions/delete-a-connection.md): Delete a specific connection by its id. Any subscriptions associated with this connection will also be deleted.
+- [Delete a subscription](https://sendcloud.dev/api/v3/event-subscriptions/delete-a-subscription.md): Delete a specific subscription by its id. Event delivery for this subscription will stop immediately.
+- [Get a connection](https://sendcloud.dev/api/v3/event-subscriptions/get-a-connection.md): Retrieve a specific connection by its id.
+- [Get a subscription](https://sendcloud.dev/api/v3/event-subscriptions/get-a-subscription.md): Retrieve a specific subscription by its id.
+- [Event Subscriptions API overview](https://sendcloud.dev/api/v3/event-subscriptions/index.md)
+- [List connections](https://sendcloud.dev/api/v3/event-subscriptions/list-connections.md): Retrieve all connections for the authenticated user's organization.
+- [List connections by type](https://sendcloud.dev/api/v3/event-subscriptions/list-connections-by-type.md): Retrieve all connections of a specific type (e.g., `webhook` or `klaviyo`).
+- [List subscriptions](https://sendcloud.dev/api/v3/event-subscriptions/list-subscriptions.md): Retrieve all subscriptions for the authenticated user's organization.
+- [List subscriptions by event type](https://sendcloud.dev/api/v3/event-subscriptions/list-subscriptions-by-event-type.md): Retrieve all subscriptions for a specific event type.
+- [OAuth2 callback](https://sendcloud.dev/api/v3/event-subscriptions/oauth2-callback.md): Callback endpoint used by the OAuth provider (e.g., Klaviyo) to complete the authorization flow.
+- [Start OAuth2 authorization](https://sendcloud.dev/api/v3/event-subscriptions/start-oauth2-authorization.md): Initiate the OAuth2 authorization flow for a connection that requires it (e.g., Klaviyo). Returns an authorization URL to redirect the user to.
+- [Test event delivery](https://sendcloud.dev/api/v3/event-subscriptions/test-event-delivery.md): Send a test event to the connection endpoint configured for a specific subscription. Use this to verify that your connection is set up correctly before relying on it for production events.
+- [Update a connection](https://sendcloud.dev/api/v3/event-subscriptions/update-a-connection.md): Update an existing connection by its id. Only the fields provided in the request body will be updated.
+- [Update a subscription](https://sendcloud.dev/api/v3/event-subscriptions/update-a-subscription.md): Update an existing subscription by its id. Only the fields provided in the request body will be updated.
+- [Introduction](https://sendcloud.dev/api/v3/index.md)
+- [Create integration exception logs](https://sendcloud.dev/api/v3/integrations/create-integration-exception-logs.md): Create integration exception logs, which will appear in the connection issue log screen of the user's integration.
+- [Create or overwrite shop order statuses](https://sendcloud.dev/api/v3/integrations/create-or-overwrite-shop-order-statuses.md): Insert shop-specific custom statuses into the Sendcloud system.
+- [Create or update custom status mapping for an integration](https://sendcloud.dev/api/v3/integrations/create-or-update-custom-status-mapping-for-an-integration.md): Upsert a map of available shop order statuses and Sendcloud's internal status category for an integration
+- [Delete an integration](https://sendcloud.dev/api/v3/integrations/delete-an-integration.md): Safely delete one of your integrations from the Sendcloud system
+- [Integrations API overview](https://sendcloud.dev/api/v3/integrations/index.md)
+- [Retrieve a list of integrations](https://sendcloud.dev/api/v3/integrations/retrieve-a-list-of-integrations.md): Retrieve all valid integrations from the Sendcloud system for a given user.
+- [Retrieve all integration exception logs](https://sendcloud.dev/api/v3/integrations/retrieve-all-integration-exception-logs.md): Retrieve all integration exception logs. These logs are created when integrations have problems making API requests to shop systems.
+- [Retrieve an integration](https://sendcloud.dev/api/v3/integrations/retrieve-an-integration.md): Get a valid integration from the Sendcloud system
+- [Retrieve custom status mapping for an integration](https://sendcloud.dev/api/v3/integrations/retrieve-custom-status-mapping-for-an-integration.md): Fetch a map of available shop order statuses and Sendcloud's internal status category for the integration.
+- [Retrieve exception logs for a specific integration](https://sendcloud.dev/api/v3/integrations/retrieve-exception-logs-for-a-specific-integration.md): Retrieve exception logs for a specific integration. These logs are created when integrations have problems making API requests to shop systems.
+- [Retrieve shop order statuses for an integration](https://sendcloud.dev/api/v3/integrations/retrieve-shop-order-statuses-for-an-integration.md): Fetch all available shop order statuses for the Prestashop v2 integration, in the default or selected language.
+- [Update certain parts of an integration](https://sendcloud.dev/api/v3/integrations/update-certain-parts-of-an-integration.md): Update the shop name, shop URL, service point settings, webhook settings, and feedback type of an integration.
+- [OAuth 2.0 token](https://sendcloud.dev/api/v3/oauth2/token.md): Use this endpoint to get a new OAuth 2.0 access token.
+- [Create/Update orders in batch](https://sendcloud.dev/api/v3/orders/create-update-orders-in-batch.md): Use this endpoint to insert orders into a Sendcloud API integration.
+- [Delete an order](https://sendcloud.dev/api/v3/orders/delete-an-order.md): Delete an order by its unique id.
+- [Orders API overview](https://sendcloud.dev/api/v3/orders/index.md)
+- [Retrieve a list of orders](https://sendcloud.dev/api/v3/orders/retrieve-a-list-of-orders.md): Get a list of orders filtered by integration, order number, order ID, order status, creation date, and update date. You can also optionally sort the results and pass a `cursor` value.
+- [Retrieve an order](https://sendcloud.dev/api/v3/orders/retrieve-an-order.md): Find a specific order by its order ID.
+- [Update an order](https://sendcloud.dev/api/v3/orders/update-an-order.md): Partially update some fields of an order.
+- [Retrieve organization information](https://sendcloud.dev/api/v3/organization/retrieve-information-about-the-organization.md): Retrieves detailed information about your organization account, including the organization ID, name, and registration date.
+- [Pagination](https://sendcloud.dev/api/v3/pagination.md)
+- [Retrieve a parcel document](https://sendcloud.dev/api/v3/parcel-documents/retrieve-a-parcel-document.md): Retrieve a specific document for a given parcel, and download it in your preferred format and resolution.
+- [Retrieve multiple parcel documents](https://sendcloud.dev/api/v3/parcel-documents/retrieve-multiple-parcel-documents.md): Download multiple parcel documents of the same type in bulk.
+- [Retrieve a list of parcel statuses](https://sendcloud.dev/api/v3/parcel-statuses/retrieve-a-list-of-parcel-statuses.md): Get a list of all parcel statuses available in the Sendcloud system, with their unique code and friendly description.
+- [Create a tracking-only parcel](https://sendcloud.dev/api/v3/parcel-tracking/create-a-tracking-only-parcel.md): Register a parcel in the Sendcloud system for Tracking-Only, based on the provided details. It requires a valid tracking number and parcel information.
+- [Retrieve tracking information for a parcel](https://sendcloud.dev/api/v3/parcel-tracking/retrieve-tracking-information-for-a-parcel.md): Get information about a parcel, including its current status and recent tracking events, using its tracking number
+- [Create a pickup](https://sendcloud.dev/api/v3/pickups/create-a-pickup.md): Schedule a one-time pickup with a supported carrier.
+- [Pickups API overview](https://sendcloud.dev/api/v3/pickups/index.md)
+- [Retrieve a list of pickups](https://sendcloud.dev/api/v3/pickups/retrieve-a-list-of-pickups.md): Get information about all the pickups which have been created from your account.
+- [Retrieve a pickup](https://sendcloud.dev/api/v3/pickups/retrieve-a-pickup.md): Retrieve information about a specific pickup based on the pickup `id`.
+- [Create a return](https://sendcloud.dev/api/v3/returns/create-a-return.md): Create a standalone return
+- [Create a return synchronously](https://sendcloud.dev/api/v3/returns/create-a-return-synchronously.md): Create a return synchronously, i.e. wait for a response from the carrier before continuing.
+- [Returns API overview](https://sendcloud.dev/api/v3/returns/index.md)
+- [Request cancellation of a return](https://sendcloud.dev/api/v3/returns/request-cancellation-of-a-return.md): You can request cancellation for a return by providing the return `id` to this endpoint.
+- [Retrieve a list of returns](https://sendcloud.dev/api/v3/returns/retrieve-a-list-of-returns.md): Retrieve a list of returns which have been created under your API credentials.
+- [Retrieve a return](https://sendcloud.dev/api/v3/returns/retrieve-a-return.md): Retrieve information about a specific return parcel based on the return `id`.
+- [Validate a return](https://sendcloud.dev/api/v3/returns/validate-a-return.md): Check if a return can be announced **without** actually creating the return, or announcing it with the carrier.
+- [Retrieve a list of sender addresses](https://sendcloud.dev/api/v3/sender-addresses/retrieve-a-list-of-sender-addresses.md): Returns a list of all the sender addresses which have been saved to your account.
+- [Retrieve a sender address](https://sendcloud.dev/api/v3/sender-addresses/retrieve-a-sender-address.md): Retrieve information about a specific sender address saved to your account.
+- [Ship an Order API overview](https://sendcloud.dev/api/v3/ship-an-order/index.md)
+- [Request a label for a single order synchronously](https://sendcloud.dev/api/v3/ship-an-order/request-a-label-for-a-single-order-synchronously.md): Request a label for a single order and wait for the results. The label and any other documents will be provided in the response to this request.
+- [Request a label for one or more orders asynchronously](https://sendcloud.dev/api/v3/ship-an-order/request-a-label-for-one-or-more-orders-asynchronously.md): Request a label for a single or multiple orders. This endpoint will fail gracefully if some orders cannot be processed, returning any successfully created labels along with error details for the orders that failed.
+- [Cancel a shipment](https://sendcloud.dev/api/v3/shipments/cancel-a-shipment.md): Use this endpoint to cancel an announced shipment, if the carrier supports cancellation.
+- [Create a shipment with rules and/or defaults and announce it asynchronously](https://sendcloud.dev/api/v3/shipments/create-a-shipment-with-rules-and-or-default-and-announce-it-asynchronously.md): Create and announce a shipment applying shipping rules and/or defaults asynchronously.
+- [Create a shipment with rules and/or defaults and announce it synchronously](https://sendcloud.dev/api/v3/shipments/create-a-shipment-with-rules-and-or-default-and-announce-it-synchronously.md): Create and announce a shipment applying shipping rules and/or defaults
+- [Create and announce a shipment asynchronously](https://sendcloud.dev/api/v3/shipments/create-and-announce-a-shipment-asynchronously.md): This endpoint **announces a shipment asynchronously** under your API credentials.
+- [Create and announce a shipment synchronously](https://sendcloud.dev/api/v3/shipments/create-and-announce-a-shipment-synchronously.md): This endpoint **announces a shipment synchronously** under your API credentials.
+- [Shipments API overview](https://sendcloud.dev/api/v3/shipments/index.md)
+- [Retrieve a return portal URL](https://sendcloud.dev/api/v3/shipments/retrieve-a-return-portal-url.md): Retrieve a return portal link for a specific shipment using the shipment's id.
+- [Retrieve a shipment](https://sendcloud.dev/api/v3/shipments/retrieve-a-shipment.md): This endpoint allows you to retrieve a specific shipment created under your Sendcloud credentials, based on the shipment `id`.
+- [Retrieve shipments](https://sendcloud.dev/api/v3/shipments/retrieve-shipments.md): This endpoint allows you to retrieve a list of all the shipments which you have created or imported into your Sendcloud account under your API credentials. You can filter the results based on several query parameters.
+- [Create a list of shipping options](https://sendcloud.dev/api/v3/shipping-options/create-a-list-of-shipping-options.md): Allows you to retrieve available shipping options along with their corresponding prices, referred to as shipping quotes.
+- [Return a list of available shipping options](https://sendcloud.dev/api/v3/shipping-options/return-a-list-of-available-shipping-options.md): Retrieve available shipping options along with their corresponding prices for entire shipments, supporting multicollo as well.
+- [Create a ticket for a damaged parcel](https://sendcloud.dev/api/v3/support/create-a-ticket-for-a-damaged-parcel.md): Create a ticket for a damaged parcel. It works with both your own contract and parcels created using Sendcloud rates.
+- [Create a ticket for a delayed parcel](https://sendcloud.dev/api/v3/support/create-a-ticket-for-a-delayed-parcel.md): Create a ticket for a delayed parcel. This support type is only available for parcels created using Sendcloud rates.
+- [Create a ticket for a delivered but not received parcel](https://sendcloud.dev/api/v3/support/create-a-ticket-for-a-delivered-but-not-received-parcel.md): Create a ticket for a delivered but not received parcel. It works with both your own contract and parcels created using Sendcloud rates.
+- [Create a ticket for a late delivery](https://sendcloud.dev/api/v3/support/create-a-ticket-for-a-late-delivery.md): Create a ticket for a late delivery. This support type is only available for parcels sent under your own carrier contract.
+- [Create a ticket for a lost parcel](https://sendcloud.dev/api/v3/support/create-a-ticket-for-a-lost-parcel.md): Create a ticket for a lost parcel. It works with both your own contract and parcels created using Sendcloud rates.
+- [Create a ticket for an address change](https://sendcloud.dev/api/v3/support/create-a-ticket-for-an-address-change.md): Create a ticket for an address change. It works with both your own contract and parcels created using Sendcloud rates.
+- [Create a ticket for an unjustly returned parcel](https://sendcloud.dev/api/v3/support/create-a-ticket-for-an-unjustly-returned-parcel.md): Create a ticket for an unjustly returned parcel. It works with both your own contract and parcels created using Sendcloud rates.
+- [Create carrier support contact](https://sendcloud.dev/api/v3/support/create-carrier-support-contact.md): A carrier support contact is required in order to create tickets for shipments sent under your own carrier contract so that we can forward the claim correctly.
+- [Delete a carrier support contact](https://sendcloud.dev/api/v3/support/delete-a-carrier-support-contact.md): A carrier support contact is required in order to create tickets for shipments sent under your own carrier contract so that we can forward the claim correctly.
+- [Upload a file](https://sendcloud.dev/api/v3/support/files.md): API for uploading a file. The uploaded file is stored in the system, and a unique file token is returned in response. Use this token when attaching files to tickets or when submitting requested data.
+- [Create a claim letter](https://sendcloud.dev/api/v3/support/generate-claim-letter.md): Generate a claim letter PDF for a parcel. The claim letter is created based on the provided items, currency, tax rate, and ticket category, combined with parcel and sender details fetched from the system.
+- [Create a sales invoice](https://sendcloud.dev/api/v3/support/generate-sales-invoice.md): Generate a sales invoice PDF for a parcel. The invoice is created based on the provided items, currency, and tax rate, combined with parcel and sender details fetched from the system.
+- [Support API overview](https://sendcloud.dev/api/v3/support/index.md)
+- [Create a requested data response](https://sendcloud.dev/api/v3/support/provide-requested-data.md): Depending on the requested `data_type`, additional documents/photos, text input, or sales data may be required.
+- [Retrieve carrier support contacts](https://sendcloud.dev/api/v3/support/retrieve-carrier-support-contacts.md): A carrier support contact is required in order to create tickets for shipments sent under your own carrier contract so that we can forward the claim correctly.
+- [Retrieve requested data for open tickets](https://sendcloud.dev/api/v3/support/retrieve-requested-data-for-open-tickets.md): Retrieve the list of additional data requests for open tickets handled by Support Automation.
+- [Update a carrier support contact](https://sendcloud.dev/api/v3/support/update-a-carrier-support-contact.md): A carrier support contact is required in order to create tickets for shipments sent under your own carrier contract so that we can forward the claim correctly.
+- [Retrieve metadata associated with the authentication method](https://sendcloud.dev/api/v3/user/retrieve-metadata-associated-with-the-authentication-method.md): Retrieve information about the metadata associated with the authentication method used in the request
+- [Webhooks overview](https://sendcloud.dev/api/v3/webhooks/index.md)
+- [Integration connected](https://sendcloud.dev/api/v3/webhooks/integration-connected.md): A request is sent to the defined webhook whenever the integration is created within our system.
+- [Integration deleted](https://sendcloud.dev/api/v3/webhooks/integration-deleted.md): A request is sent to the defined webhook whenever the integration is deleted from our system.
+- [Integration modified](https://sendcloud.dev/api/v3/webhooks/integration-modified.md): A request is sent to the defined webhook whenever the integration is updated.
+- [Parcel status changed](https://sendcloud.dev/api/v3/webhooks/parcel-status-changed.md): Happens whenever a parcel belonging to this integration shifts to a different status. Only parcels created through this specific integration will trigger this webhook.
+- [Return created](https://sendcloud.dev/api/v3/webhooks/return-created.md): Happens whenever a return is created from a parcel matching the integration.
+- [Creating test labels (API v2)](https://sendcloud.dev/docs/archive/getting-started/creating-test-labels.md)
+- [Cancel a label](https://sendcloud.dev/docs/archive/shipping/cancel-a-label.md)
+- [Create a parcel](https://sendcloud.dev/docs/archive/shipping/create-a-parcel.md)
+- [Handling parcel errors](https://sendcloud.dev/docs/archive/shipping/handling-parcel-errors.md)
+- [Shipping methods](https://sendcloud.dev/docs/archive/shipping/shipping-methods.md)
+- [Shipping rates](https://sendcloud.dev/docs/archive/shipping/shipping-rates.md)
+- [Shipping rules](https://sendcloud.dev/docs/archive/shipping/shipping-rules.md)
+- [Tracking overview](https://sendcloud.dev/docs/archive/tracking/index.md)
+- [Tracking parcels](https://sendcloud.dev/docs/archive/tracking/tracking-parcels.md)
+- [Tracking statuses](https://sendcloud.dev/docs/archive/tracking/tracking-statuses.md)
+- [Dynamic Checkout overview](https://sendcloud.dev/docs/dynamic-checkout/index.md)
+- [Retrieve delivery options](https://sendcloud.dev/docs/dynamic-checkout/retrieve-delivery-options.md)
+- [API client requirements](https://sendcloud.dev/docs/getting-started/api-client-requirements.md)
+- [API user flows](https://sendcloud.dev/docs/getting-started/api-user-flows.md)
+- [Authentication](https://sendcloud.dev/docs/getting-started/authentication.md)
+- [Creating test labels](https://sendcloud.dev/docs/getting-started/creating-test-labels.md)
+- [Glossary](https://sendcloud.dev/docs/getting-started/glossary.md)
+- [How the Sendcloud APIs work](https://sendcloud.dev/docs/getting-started/how-the-sendcloud-apis-work.md)
+- [How to create your API keys](https://sendcloud.dev/docs/getting-started/how-to-create-your-api-keys.md)
+- [Quickstart](https://sendcloud.dev/docs/getting-started/index.md)
+- [Key concepts](https://sendcloud.dev/docs/getting-started/key-concepts.md)
+- [Migration guidelines for API v3](https://sendcloud.dev/docs/getting-started/migration-guidelines-for-api-v3.md)
+- [Postman](https://sendcloud.dev/docs/getting-started/postman.md)
+- [Rate limits](https://sendcloud.dev/docs/getting-started/rate-limits.md)
+- [Centralized integration guidelines](https://sendcloud.dev/docs/marketplaces/centralized-integration-guidelines.md)
+- [Decentralized integration guidelines](https://sendcloud.dev/docs/marketplaces/decentralized-integration-guidelines.md)
+- [Hybrid integration guidelines](https://sendcloud.dev/docs/marketplaces/hybrid-integration-guidelines.md)
+- [Marketplaces overview](https://sendcloud.dev/docs/marketplaces/index.md)
+- [Service points for marketplaces](https://sendcloud.dev/docs/marketplaces/servicepoints-for-marketplaces.md)
+- [Creating and managing orders](https://sendcloud.dev/docs/orders/creating-and-managing-orders.md)
+- [Orders overview](https://sendcloud.dev/docs/orders/index.md)
+- [Ship an order](https://sendcloud.dev/docs/orders/ship-an-order.md)
+- [Creating a tracking-only parcel](https://sendcloud.dev/docs/parcel-tracking/create-a-tracking-only-parcel.md)
+- [Parcel tracking overview](https://sendcloud.dev/docs/parcel-tracking/index.md)
+- [Retrieve tracking information](https://sendcloud.dev/docs/parcel-tracking/retrieve-tracking-info.md)
+- [Returns overview](https://sendcloud.dev/docs/returns/index.md)
+- [Multicollo returns](https://sendcloud.dev/docs/returns/multicollo-returns.md)
+- [Return methods](https://sendcloud.dev/docs/returns/return-methods.md)
+- [Creating a parcel with service point delivery](https://sendcloud.dev/docs/service-points/creating-a-parcel-with-service-point-delivery.md)
+- [How to include service points in your data flow](https://sendcloud.dev/docs/service-points/how-to-include-service-points-in-your-data-flow.md)
+- [Address field limits](https://sendcloud.dev/docs/shipments/address-field-limits.md)
+- [Brands](https://sendcloud.dev/docs/shipments/brands.md)
+- [Cancel a shipment](https://sendcloud.dev/docs/shipments/cancel-a-shipment.md)
+- [Connect your carrier contract](https://sendcloud.dev/docs/shipments/carrier-contracts.md)
+- [Create a shipment](https://sendcloud.dev/docs/shipments/create-a-shipment.md)
+- [Fulfill orders](https://sendcloud.dev/docs/shipments/fulfill-orders.md)
+- [Overview](https://sendcloud.dev/docs/shipments/index.md)
+- [International shipping](https://sendcloud.dev/docs/shipments/international-shipping.md)
+- [Multicollo](https://sendcloud.dev/docs/shipments/multicollo.md)
+- [Pack and Go](https://sendcloud.dev/docs/shipments/pack-and-go.md)
+- [Pickups](https://sendcloud.dev/docs/shipments/pickups.md)
+- [Print your labels](https://sendcloud.dev/docs/shipments/print-your-labels.md)
+- [Retrieve a shipment](https://sendcloud.dev/docs/shipments/retrieve-a-shipment.md)
+- [Sender addresses](https://sendcloud.dev/docs/shipments/sender-addresses.md)
+- [Shipping options & quotes](https://sendcloud.dev/docs/shipments/shipping-options-and-quotes.md)
+- [Shipping rules & shipping defaults](https://sendcloud.dev/docs/shipments/shipping-rules-and-shipping-defaults.md)
+- [Introduction](https://sendcloud.dev/index.md)
+
+## OpenAPI Specs
+
+- [openapi](https://sendcloud.dev/.openapi/v3/shipments/openapi.yaml)
+
+
+Built with [Mintlify](https://mintlify.com).

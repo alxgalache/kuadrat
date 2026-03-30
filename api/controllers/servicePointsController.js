@@ -9,7 +9,7 @@ const sendcloudProvider = require('../services/shipping/sendcloudProvider')
 const getServicePoints = async (req, res, next) => {
   try {
     if (!isSendcloudEnabledForAny()) {
-      return sendSuccess(res, [])
+      return sendSuccess(res, { servicePoints: [] })
     }
 
     const { carrier, country, postalCode, radius } = req.query
@@ -21,7 +21,7 @@ const getServicePoints = async (req, res, next) => {
       radius: radius ? parseInt(radius, 10) : 5000,
     })
 
-    sendSuccess(res, servicePoints)
+    sendSuccess(res, { servicePoints })
   } catch (error) {
     next(error)
   }

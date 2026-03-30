@@ -4,82 +4,81 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { shippingAPI } from '@/lib/api'
 import { loadGoogleMaps } from '@/lib/googleMaps'
-
-function getTodayIndex() {
-  // JS getDay(): 0=Sun…6=Sat → Sendcloud: 0=Mon…6=Sun
-  const jsDay = new Date().getDay()
-  return jsDay === 0 ? 6 : jsDay - 1
-}
+import useDebounce from '@/hooks/useDebounce'
 
 const DAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
-function formatOpeningTimes(openingTimes) {
+function formatAllOpeningTimes(openingTimes) {
   if (!openingTimes) return null
-  const idx = getTodayIndex()
-  const today = openingTimes[String(idx)]
-  if (!today || !Array.isArray(today) || today.length === 0) return 'Hoy: Cerrado'
-  const ranges = today.map(t => typeof t === 'string' ? t : `${t.start || t.open || '?'} - ${t.end || t.close || '?'}`)
-  return `Hoy: ${ranges.join(', ')}`
-}
-
-function getOtherDaysSchedule(openingTimes) {
-  if (!openingTimes) return null
-  const todayIdx = getTodayIndex()
   return DAY_NAMES.map((name, idx) => {
-    if (idx === todayIdx) return null
     const slots = openingTimes[String(idx)]
     if (!slots || !Array.isArray(slots) || slots.length === 0) {
       return { day: name, hours: 'Cerrado' }
     }
     const ranges = slots.map(t => typeof t === 'string' ? t : `${t.start || t.open || '?'}-${t.end || t.close || '?'}`)
     return { day: name, hours: ranges.join(', ') }
-  }).filter(Boolean)
+  })
 }
 
-export default function ServicePointSelector({ carrier, country, postalCode, onConfirm, onClose }) {
+export default function ServicePointsInfoModal({ isOpen, onClose, carrier, country, postalCode }) {
   const [servicePoints, setServicePoints] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [selected, setSelected] = useState(null)
+  const [postalInput, setPostalInput] = useState(postalCode || '')
+  const [highlighted, setHighlighted] = useState(null)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState(false)
-  const [expandedSchedules, setExpandedSchedules] = useState({})
+
+  const debouncedPostal = useDebounce(postalInput, 500)
 
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
   const cardRefsMap = useRef({})
 
+  // Reset postal input when modal opens with new data
+  useEffect(() => {
+    if (isOpen) {
+      setPostalInput(postalCode || '')
+    }
+  }, [isOpen, postalCode])
+
   // Fetch service points
-  const fetchServicePoints = useCallback(() => {
-    if (!carrier || !country || !postalCode) return
+  const fetchServicePoints = useCallback((postal) => {
+    if (!carrier || !country || !postal || postal.length < 4) return
     setLoading(true)
     setError(null)
 
-    shippingAPI.getServicePoints(carrier, country, postalCode)
+    shippingAPI.getServicePoints(carrier, country, postal)
       .then(res => {
         setServicePoints(res.servicePoints || [])
+        setHighlighted(null)
       })
       .catch(() => {
-        setError('No se pudieron cargar los puntos de recogida')
+        setError('No se pudieron cargar los puntos de recogida.')
       })
       .finally(() => setLoading(false))
-  }, [carrier, country, postalCode])
+  }, [carrier, country])
 
-  useEffect(() => { fetchServicePoints() }, [fetchServicePoints])
+  // Trigger fetch on debounced postal change
+  useEffect(() => {
+    if (isOpen && debouncedPostal && debouncedPostal.length >= 4) {
+      fetchServicePoints(debouncedPostal)
+    }
+  }, [isOpen, debouncedPostal, fetchServicePoints])
 
   // Load Google Maps
   useEffect(() => {
+    if (!isOpen) return
     loadGoogleMaps('places,marker')
       .then(() => setMapReady(true))
       .catch(() => setMapError(true))
-  }, [])
+  }, [isOpen])
 
-  // Render map + markers once both data and Maps are ready
+  // Render map + markers
   useEffect(() => {
     if (!mapReady || servicePoints.length === 0 || !mapContainerRef.current) return
 
-    // Create map
     const map = new window.google.maps.Map(mapContainerRef.current, {
       mapTypeControl: false,
       streetViewControl: false,
@@ -87,7 +86,6 @@ export default function ServicePointSelector({ carrier, country, postalCode, onC
     })
     mapRef.current = map
 
-    // Fit bounds to all points
     const bounds = new window.google.maps.LatLngBounds()
     const markers = servicePoints.map(sp => {
       const position = { lat: parseFloat(sp.latitude), lng: parseFloat(sp.longitude) }
@@ -100,9 +98,8 @@ export default function ServicePointSelector({ carrier, country, postalCode, onC
       })
 
       marker.addListener('click', () => {
-        setSelected(sp)
+        setHighlighted(sp.id)
         map.panTo(position)
-        // Scroll card into view
         cardRefsMap.current[sp.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       })
 
@@ -111,7 +108,6 @@ export default function ServicePointSelector({ carrier, country, postalCode, onC
     markersRef.current = markers
 
     map.fitBounds(bounds)
-    // Don't zoom in too far for a single point
     if (servicePoints.length === 1) {
       window.google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
         if (map.getZoom() > 15) map.setZoom(15)
@@ -127,40 +123,43 @@ export default function ServicePointSelector({ carrier, country, postalCode, onC
     }
   }, [mapReady, servicePoints])
 
-  // Update marker icons when selection changes
+  // Update marker icons when highlight changes
   useEffect(() => {
     if (!mapReady || markersRef.current.length === 0) return
-    const defaultIcon = undefined // Google Maps default red pin
     const selectedIcon = 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
 
     markersRef.current.forEach(({ marker, sp }) => {
-      marker.setIcon(selected?.id === sp.id ? selectedIcon : defaultIcon)
+      marker.setIcon(highlighted === sp.id ? selectedIcon : undefined)
     })
-  }, [selected, mapReady])
+  }, [highlighted, mapReady])
 
-  // Handle card click: select + pan map
+  // Handle card click: highlight + pan map
   const handleCardClick = (sp) => {
-    setSelected(sp)
+    setHighlighted(sp.id)
     if (mapRef.current) {
       mapRef.current.panTo({ lat: parseFloat(sp.latitude), lng: parseFloat(sp.longitude) })
     }
   }
 
-  // Backdrop click
-  const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget) onClose()
-  }
+  // Close on Escape
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
+
+  if (!isOpen) return null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-end bg-black/40"
-      onClick={handleBackdropClick}
-    >
-      <div className="flex h-full w-full max-w-md flex-col bg-white lg:max-w-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="flex h-[90vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl mx-4">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <h3 className="text-sm font-semibold text-gray-900">
-            Selecciona un punto de recogida
+            Puntos de entrega
           </h3>
           <button
             type="button"
@@ -169,6 +168,18 @@ export default function ServicePointSelector({ carrier, country, postalCode, onC
           >
             <XMarkIcon className="h-5 w-5" />
           </button>
+        </div>
+
+        {/* Postal code search */}
+        <div className="border-b border-gray-200 px-4 py-2">
+          <label className="block text-xs text-gray-500 mb-1">Código postal</label>
+          <input
+            type="text"
+            value={postalInput}
+            onChange={(e) => setPostalInput(e.target.value)}
+            placeholder="Introduce un código postal"
+            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+          />
         </div>
 
         {/* Content */}
@@ -188,7 +199,7 @@ export default function ServicePointSelector({ carrier, country, postalCode, onC
                 <p className="text-sm text-red-600">{error}</p>
                 <button
                   type="button"
-                  onClick={fetchServicePoints}
+                  onClick={() => fetchServicePoints(debouncedPostal)}
                   className="mt-2 text-sm font-medium text-gray-900 underline"
                 >
                   Reintentar
@@ -226,86 +237,45 @@ export default function ServicePointSelector({ carrier, country, postalCode, onC
               {/* List */}
               <div className="flex-1 space-y-2 overflow-y-auto p-3">
                 {servicePoints.map(sp => {
-                  const isSelected = selected?.id === sp.id
-                  const hours = formatOpeningTimes(sp.openingTimes)
-                  const isExpanded = expandedSchedules[sp.id]
-                  const otherDays = getOtherDaysSchedule(sp.openingTimes)
+                  const isHighlighted = highlighted === sp.id
+                  const schedule = formatAllOpeningTimes(sp.openingTimes)
 
                   return (
                     <div
                       key={sp.id}
                       ref={el => { cardRefsMap.current[sp.id] = el }}
                       onClick={() => handleCardClick(sp)}
-                      className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                        isSelected ? 'border-black bg-gray-50' : 'border-gray-200 hover:bg-gray-50'
+                      className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                        isHighlighted ? 'border-black bg-gray-50' : 'border-gray-200 hover:bg-gray-50'
                       }`}
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-gray-900">{sp.name}</div>
-                        <div className="text-xs text-gray-500">{sp.address}</div>
-                        <div className="text-xs text-gray-500">{sp.postalCode} {sp.city}</div>
-                        {hours && (
-                          <div className="mt-1 text-xs text-gray-400">
-                            {hours}
-                            {otherDays && otherDays.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  setExpandedSchedules(prev => ({ ...prev, [sp.id]: !prev[sp.id] }))
-                                }}
-                                className="ml-1.5 text-[11px] text-gray-500 underline hover:text-gray-700"
-                              >
-                                {isExpanded ? 'menos' : 'más'}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {isExpanded && otherDays && (
-                          <div className="mt-1 space-y-0.5">
-                            {otherDays.map(({ day, hours: h }) => (
-                              <div key={day} className="flex text-[11px]">
-                                <span className="w-20 shrink-0 text-gray-400">{day}</span>
-                                <span className="text-gray-500">{h}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {sp.distance != null && (
-                          <div className="mt-0.5 text-xs text-gray-400">
-                            {sp.distance < 1000
-                              ? `${sp.distance} m`
-                              : `${(sp.distance / 1000).toFixed(1)} km`
-                            }
-                          </div>
-                        )}
-                      </div>
-                      <input
-                        type="radio"
-                        name="servicePoint"
-                        checked={isSelected}
-                        readOnly
-                        className="mt-1 h-4 w-4 shrink-0 border-gray-300 text-black focus:ring-black"
-                      />
+                      <div className="text-sm font-medium text-gray-900">{sp.name}</div>
+                      <div className="text-xs text-gray-500">{sp.address}</div>
+                      <div className="text-xs text-gray-500">{sp.postalCode} {sp.city}</div>
+                      {sp.distance != null && (
+                        <div className="mt-0.5 text-xs text-gray-400">
+                          {sp.distance < 1000
+                            ? `${sp.distance} m`
+                            : `${(sp.distance / 1000).toFixed(1)} km`
+                          }
+                        </div>
+                      )}
+                      {schedule && (
+                        <div className="mt-2 space-y-0.5">
+                          {schedule.map(({ day, hours }) => (
+                            <div key={day} className="flex text-xs">
+                              <span className="w-24 shrink-0 text-gray-500">{day}</span>
+                              <span className="text-gray-600">{hours}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
               </div>
             </>
           )}
-        </div>
-
-        {/* Footer: Aceptar button */}
-        <div className="border-t border-gray-200 p-3">
-          <button
-            type="button"
-            disabled={!selected}
-            onClick={() => selected && onConfirm(selected)}
-            className="w-full rounded-md bg-black px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
-          >
-            Aceptar
-          </button>
         </div>
       </div>
     </div>

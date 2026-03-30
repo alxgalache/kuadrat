@@ -147,6 +147,13 @@ export default function Navbar() {
                       >
                         Pedidos
                       </Link>
+                      <Link
+                        href="/admin/envios-seller"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        Envíos vendedor
+                      </Link>
                       {!SENDCLOUD_ENABLED && (
                         <Link
                           href="/admin/envios"
@@ -411,6 +418,13 @@ export default function Navbar() {
                       className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                     >
                       Pedidos
+                    </Link>
+                    <Link
+                      href="/admin/envios-seller"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Envíos vendedor
                     </Link>
                     {!SENDCLOUD_ENABLED && (
                       <Link

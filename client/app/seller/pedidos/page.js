@@ -5,6 +5,9 @@ import { sellerAPI } from '@/lib/api'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import PickupModal from '@/components/seller/PickupModal'
+import ServicePointsInfoModal from '@/components/seller/ServicePointsInfoModal'
+import BulkPickupModal from '@/components/seller/BulkPickupModal'
+import BulkServicePointsModal from '@/components/seller/BulkServicePointsModal'
 import Image from 'next/image'
 
 const STATUS_LABELS = {
@@ -48,6 +51,11 @@ function formatDeliveryAddress(addr) {
   return parts.join(', ')
 }
 
+function formatCarrierName(code) {
+  if (!code) return ''
+  return code.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 function canShowPickup(sellerConfig, order) {
   if (!sellerConfig) return false
   const firstMile = sellerConfig.firstMile
@@ -63,6 +71,9 @@ function SellerOrdersContent() {
   const [page, setPage] = useState(1)
   const [pagination, setPagination] = useState(null)
   const [pickupModal, setPickupModal] = useState({ open: false, orderId: null })
+  const [servicePointsModal, setServicePointsModal] = useState({ open: false, carrier: null, country: null, postalCode: null })
+  const [bulkPickupModal, setBulkPickupModal] = useState(false)
+  const [bulkServicePointsModal, setBulkServicePointsModal] = useState(false)
   const [notification, setNotification] = useState(null)
 
   const loadOrders = useCallback(async () => {
@@ -114,6 +125,24 @@ function SellerOrdersContent() {
 
   const hasSendcloudShipment = (order) => order.items?.some(i => i.sendcloudShipmentId)
   const hasTrackingUrl = (order) => order.items?.find(i => i.sendcloudTrackingUrl)
+  const getCarrierCode = (order) => order.items?.find(i => i.sendcloudCarrierCode)?.sendcloudCarrierCode
+
+  // Orders eligible for bulk pickup: paid, have carrier, no existing pickup
+  const pickupEligibleOrders = orders.filter(o =>
+    o.status === 'paid' && !o.pickup && getCarrierCode(o) && canShowPickup(sellerConfig, o)
+  )
+  const pickupCarriers = [...new Set(pickupEligibleOrders.map(o => getCarrierCode(o)))]
+
+  // Orders with carrier code (for service points lookup)
+  const servicePointCarriers = [...new Set(
+    orders.filter(o => getCarrierCode(o)).map(o => getCarrierCode(o))
+  )]
+
+  const handleBulkPickupSuccess = useCallback(() => {
+    setNotification('Recogida masiva programada correctamente')
+    setTimeout(() => setNotification(null), 4000)
+    loadOrders()
+  }, [loadOrders])
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
@@ -143,6 +172,28 @@ function SellerOrdersContent() {
           </button>
         ))}
       </div>
+
+      {/* Global Actions (Pagados tab only) */}
+      {statusFilter === 'paid' && !loading && (pickupCarriers.length > 0 || servicePointCarriers.length > 0) && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {pickupCarriers.length > 0 && (
+            <button
+              onClick={() => setBulkPickupModal(true)}
+              className="inline-flex items-center rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Programar recogida masiva
+            </button>
+          )}
+          {servicePointCarriers.length > 0 && (
+            <button
+              onClick={() => setBulkServicePointsModal(true)}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Consultar puntos de entrega
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Orders List */}
       {loading ? (
@@ -201,6 +252,11 @@ function SellerOrdersContent() {
                       Dirección de entrega: {formatDeliveryAddress(order.deliveryAddress)}
                     </p>
                   )}
+                  {getCarrierCode(order) && (
+                    <p className="mt-0.5 text-sm text-gray-500">
+                      Empresa de envío: {formatCarrierName(getCarrierCode(order))}
+                    </p>
+                  )}
                   <p className="mt-0.5 text-xs text-gray-400">Pedido #{order.orderId}</p>
                 </div>
                 <span className={`inline-flex flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-800'}`}>
@@ -236,6 +292,20 @@ function SellerOrdersContent() {
                     className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Programar recogida
+                  </button>
+                )}
+
+                {getCarrierCode(order) && (
+                  <button
+                    onClick={() => setServicePointsModal({
+                      open: true,
+                      carrier: getCarrierCode(order),
+                      country: order.deliveryAddress?.country || 'ES',
+                      postalCode: order.deliveryAddress?.postalCode || '',
+                    })}
+                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Consultar puntos de entrega
                   </button>
                 )}
               </div>
@@ -274,6 +344,33 @@ function SellerOrdersContent() {
         orderId={pickupModal.orderId}
         defaultAddress={sellerConfig?.defaultAddress}
         onSuccess={handlePickupSuccess}
+      />
+
+      {/* Service Points Info Modal */}
+      <ServicePointsInfoModal
+        isOpen={servicePointsModal.open}
+        onClose={() => setServicePointsModal({ open: false, carrier: null, country: null, postalCode: null })}
+        carrier={servicePointsModal.carrier}
+        country={servicePointsModal.country}
+        postalCode={servicePointsModal.postalCode}
+      />
+
+      {/* Bulk Pickup Modal */}
+      <BulkPickupModal
+        isOpen={bulkPickupModal}
+        onClose={() => setBulkPickupModal(false)}
+        carriers={pickupCarriers}
+        orders={pickupEligibleOrders}
+        defaultAddress={sellerConfig?.defaultAddress}
+        onSuccess={handleBulkPickupSuccess}
+      />
+
+      {/* Bulk Service Points Modal */}
+      <BulkServicePointsModal
+        isOpen={bulkServicePointsModal}
+        onClose={() => setBulkServicePointsModal(false)}
+        carriers={servicePointCarriers}
+        orders={orders}
       />
     </div>
   )
