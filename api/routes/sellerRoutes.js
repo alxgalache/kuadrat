@@ -370,7 +370,8 @@ router.get('/wallet', async (req, res, next) => {
 
     sendSuccess(res, {
       balance: Number(result.rows[0].available_withdrawal) || 0,
-      commissionRate: config.payment.dealerCommission,
+      commissionRateArt: config.payment.dealerCommissionArt,
+      commissionRateOthers: config.payment.dealerCommissionOthers,
       recipientName: result.rows[0].withdrawal_recipient || '',
       iban: result.rows[0].withdrawal_iban || '',
     });

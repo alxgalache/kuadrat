@@ -527,7 +527,7 @@ function OrdersPageContent() {
                         cuenta.
                     </p>
                     <p className="text-sm text-gray-700">
-                        Se aplica una comisión del {process.env.NEXT_PUBLIC_DEALER_COMMISSION || '15'}% sobre el total de las transacciones realizadas. Para más información, escribe a <a className="text-black font-bold" href="mailto:info@140d.com">info@140d.com</a>.
+                        Se aplica una comisión del {process.env.NEXT_PUBLIC_DEALER_COMMISSION_ART || '15'}% en obras de arte y del {process.env.NEXT_PUBLIC_DEALER_COMMISSION_OTHERS || '15'}% en otros productos sobre el total de las transacciones realizadas. Para más información, escribe a <a className="text-black font-bold" href="mailto:info@140d.art">info@140d.art</a>.
                     </p>
                 </div>
 

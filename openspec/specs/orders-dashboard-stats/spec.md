@@ -53,11 +53,15 @@ The "Disponible para retirar" stat card SHALL be removed from the stats section,
 - **THEN** there SHALL be no stat card with the title "Disponible para retirar"
 
 ### Requirement: Dynamic commission percentage in Monedero
-The Monedero section SHALL display the commission percentage dynamically from the `NEXT_PUBLIC_DEALER_COMMISSION` environment variable instead of a hardcoded value.
+The Monedero section SHALL display both commission percentages dynamically from the `NEXT_PUBLIC_DEALER_COMMISSION_ART` and `NEXT_PUBLIC_DEALER_COMMISSION_OTHERS` environment variables instead of a single value from `NEXT_PUBLIC_DEALER_COMMISSION`.
 
-#### Scenario: Commission text reflects environment variable
-- **WHEN** `NEXT_PUBLIC_DEALER_COMMISSION` is set to `20`
-- **THEN** the Monedero description text SHALL read "Se aplica una comisión del 20% sobre el total de las transacciones realizadas"
+#### Scenario: Commission text reflects both environment variables
+- **WHEN** `NEXT_PUBLIC_DEALER_COMMISSION_ART` is set to `15` and `NEXT_PUBLIC_DEALER_COMMISSION_OTHERS` is set to `10`
+- **THEN** the Monedero description text SHALL read "Se aplica una comisión del 15% en obras de arte y del 10% en otros productos sobre el total de las transacciones realizadas."
+
+#### Scenario: Default values when variables are not set
+- **WHEN** `NEXT_PUBLIC_DEALER_COMMISSION_ART` and `NEXT_PUBLIC_DEALER_COMMISSION_OTHERS` are not defined
+- **THEN** the Monedero description text SHALL use `15` as the default for both values
 
 ### Requirement: Real balance display in Monedero
 The Monedero section SHALL display the seller's actual `available_withdrawal` balance fetched from the `GET /api/seller/wallet` endpoint, instead of a hardcoded value.

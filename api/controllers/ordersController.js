@@ -442,11 +442,12 @@ const placeOrder = async (req, res, next) => {
     }
 
     // 3) Create order item rows (art and others) — inventory already reserved above
-    const dealerCommissionRate = config.payment.dealerCommission / 100;
-    
+    const dealerCommissionRateArt = config.payment.dealerCommissionArt / 100;
+    const dealerCommissionRateOthers = config.payment.dealerCommissionOthers / 100;
+
     for (const item of artItems) {
       const product = artProducts.find((p) => p.id === item.id);
-      const commissionAmount = product.price * dealerCommissionRate;
+      const commissionAmount = product.price * dealerCommissionRateArt;
       await db.execute({
         sql: `INSERT INTO art_order_items (
           order_id,
@@ -480,7 +481,7 @@ const placeOrder = async (req, res, next) => {
     for (const item of othersItems) {
       const product = othersProducts.find((p) => p.id === item.id);
       const variant = othersVariations.find((v) => v.id === item.variantId);
-      const commissionAmount = product.price * dealerCommissionRate;
+      const commissionAmount = product.price * dealerCommissionRateOthers;
       await db.execute({
         sql: `INSERT INTO other_order_items (
           order_id,
