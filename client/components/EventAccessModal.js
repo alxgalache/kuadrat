@@ -440,7 +440,7 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         <p className="text-sm text-gray-600">
           Completa el pago de {event.price} {event.currency} para acceder al evento.
         </p>
-        <Elements stripe={stripePromise} options={{ clientSecret }}>
+        <Elements stripe={stripePromise} options={{ clientSecret, locale: 'es' }}>
           <StripeEventPayment
             eventId={event.id}
             attendeeId={attendeeId}

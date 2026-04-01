@@ -9,7 +9,7 @@ import { Bars3Icon, XMarkIcon, ShoppingCartIcon, UserCircleIcon } from '@heroico
 import { useAuth } from '@/contexts/AuthContext'
 import { useCart } from '@/contexts/CartContext'
 import ShoppingCartDrawer from '@/components/ShoppingCartDrawer'
-import { SENDCLOUD_ENABLED } from '@/lib/constants'
+import { SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS } from '@/lib/constants'
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -154,7 +154,7 @@ export default function Navbar() {
                       >
                         Envíos vendedor
                       </Link>
-                      {!SENDCLOUD_ENABLED && (
+                      {(!SENDCLOUD_ENABLED_ART || !SENDCLOUD_ENABLED_OTHERS) && (
                         <Link
                           href="/admin/envios"
                           onClick={() => close()}
@@ -426,7 +426,7 @@ export default function Navbar() {
                     >
                       Envíos vendedor
                     </Link>
-                    {!SENDCLOUD_ENABLED && (
+                    {(!SENDCLOUD_ENABLED_ART || !SENDCLOUD_ENABLED_OTHERS) && (
                       <Link
                         href="/admin/envios"
                         onClick={() => setMobileMenuOpen(false)}

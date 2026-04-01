@@ -651,7 +651,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
             <p className="text-sm text-gray-600">
               Se verificará tu método de pago sin realizar ningún cargo. Tu tarjeta quedará guardada para el caso de ganar el sorteo.
             </p>
-            <Elements stripe={stripePromise} options={{ clientSecret }}>
+            <Elements stripe={stripePromise} options={{ clientSecret, locale: 'es' }}>
               <PaymentForm
                 onSuccess={handlePaymentSuccess}
                 onError={(msg) => setError(msg)}

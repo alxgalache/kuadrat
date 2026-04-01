@@ -436,7 +436,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return
         }
 
-        if (SENDCLOUD_ENABLED) {
+        if (cart.some(item => isSendcloudItem(item))) {
             setCurrentStep(STEP_SHIPPING)
         } else {
             setCurrentStep(STEP_PAYMENT)
@@ -1609,6 +1609,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                             stripe={getStripePromise()}
                                                             options={{
                                                                 clientSecret: stripeClientSecret,
+                                                                locale: 'es',
                                                                 fonts: [
                                                                     { cssSrc: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap' },
                                                                 ],
@@ -1772,7 +1773,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                             disabled={isProcessing || !isStep2FormComplete()}
                                                             className="flex w-full items-center justify-center rounded-md border border-transparent bg-black px-6 py-3 text-base font-medium text-white shadow-xs hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >
-                                                            {isProcessing ? 'Procesando...' : (SENDCLOUD_ENABLED ? 'Elegir envío' : 'Ir al pago')}
+                                                            {isProcessing ? 'Procesando...' : (hasSendcloudItems ? 'Elegir envío' : 'Ir al pago')}
                                                         </button>
                                                         {!isStep2FormComplete() && (
                                                             <p className="mt-2 text-xs text-center text-gray-500">
@@ -1884,7 +1885,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                                     {currentStep === STEP_PAYMENT && (
                                                         <button
                                                             type="button"
-                                                            onClick={SENDCLOUD_ENABLED ? handleBackToShipping : handleBackToAddress}
+                                                            onClick={hasSendcloudItems ? handleBackToShipping : handleBackToAddress}
                                                             className="font-medium text-black hover:text-gray-600"
                                                         >
                                                             <span aria-hidden="true">&larr; </span>

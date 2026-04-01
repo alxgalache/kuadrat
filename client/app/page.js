@@ -41,7 +41,7 @@ export default function Home() {
   return (
     <div className="bg-white relative">
       <div className="mx-auto max-w-7xl px-6 lg:px-8 flex flex-col lg:flex-row lg:items-start lg:gap-x-16">
-        <div className="flex-1 pt-24 sm:pt-32 pb-12">
+        <div className="flex-1 sm:pt-32 py-12">
           <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance text-gray-900 sm:text-5xl">
             Descubre obras únicas. Apoya a artistas reales.
           </h1>

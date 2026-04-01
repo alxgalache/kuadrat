@@ -7,6 +7,7 @@ export function getStripePromise() {
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
     if (key) {
       stripePromise = loadStripe(key, {
+        locale: 'es',
         developerTools: {
           assistant: {
             enabled: false

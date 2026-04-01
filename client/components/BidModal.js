@@ -636,7 +636,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
         <p className="text-sm text-gray-600">
           Se verificara tu metodo de pago sin realizar ningun cargo. Tu tarjeta quedara guardada para futuros pagos en caso de ganar la subasta.
         </p>
-        <Elements stripe={stripePromise} options={{ clientSecret }}>
+        <Elements stripe={stripePromise} options={{ clientSecret, locale: 'es' }}>
           <StripePaymentStep
             auctionId={auction.id}
             auctionBuyerId={buyerSession?.auctionBuyerId}
