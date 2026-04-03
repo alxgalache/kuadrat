@@ -72,7 +72,7 @@ services:
     environment:
       NODE_ENV: production
     env_file:
-      - ./client/.env.production
+      - ./client/.env
     # PRODUCTION: Use read-only filesystem with tmpfs for temporary files
     read_only: true
     tmpfs:
