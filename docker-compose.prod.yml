@@ -1,3 +1,12 @@
+###############################################
+# Kuadrat – Docker Compose: PRODUCTION (pre) env #
+###############################################
+
+# Usage (staging environment):
+#   docker compose -f docker-compose.prod.yml up --build -d
+#
+# This is a standalone production configuration with security hardening.
+
 services:
   api:
     build:
@@ -14,7 +23,7 @@ services:
       - ./api/.env
     # PRODUCTION: Only mount the uploads directory, not the entire app
     volumes:
-      - api_uploads:/app/uploads
+      - /home/ubuntu/uploads:/app/uploads
     # Security: Run with limited privileges
     security_opt:
       - no-new-privileges:true
@@ -46,6 +55,15 @@ services:
         - NEXT_PUBLIC_REVOLUT_MODE=${NEXT_PUBLIC_REVOLUT_MODE}
         - NEXT_PUBLIC_REVOLUT_PUBLIC_KEY=${NEXT_PUBLIC_REVOLUT_PUBLIC_KEY}
         - NEXT_PUBLIC_PAYMENT_TIMEOUT_MS=${NEXT_PUBLIC_PAYMENT_TIMEOUT_MS}
+        - NEXT_PUBLIC_PAYMENT_PROVIDER=${NEXT_PUBLIC_PAYMENT_PROVIDER}
+        - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+        - WEB_APP_HIDDEN=${WEB_APP_HIDDEN}
+        - PUBLISHED_VISIBLE=${PUBLISHED_VISIBLE}
+        - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL}
+        - NEXT_PUBLIC_DEALER_COMMISSION_ART=${NEXT_PUBLIC_DEALER_COMMISSION_ART}
+        - NEXT_PUBLIC_DEALER_COMMISSION_OTHERS=${NEXT_PUBLIC_DEALER_COMMISSION_OTHERS}
+        - NEXT_PUBLIC_SENDCLOUD_ENABLED_ART=${NEXT_PUBLIC_SENDCLOUD_ENABLED_ART}
+        - NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS=${NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS}
     image: kuadrat-client
     container_name: kuadrat-client
     # Bind to localhost only - nginx will handle external traffic
@@ -80,7 +98,3 @@ services:
 networks:
   kuadrat-network:
     driver: bridge
-
-volumes:
-  api_uploads:
-    driver: local
