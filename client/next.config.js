@@ -2,6 +2,10 @@
 const nextConfig = {
   // Enable standalone output for production Docker builds
   output: 'standalone',
+  // Use in-memory cache handler for ISR — the production container runs with
+  // read_only: true, which prevents the default handler from writing to .next/server/
+  cacheHandler: require.resolve('./cache-handler.js'),
+  cacheMaxMemorySize: 0,
   images: {
     // In development, bypass the optimizer entirely so local http:// API images load without
     // remotePatterns restrictions. In production, only https:// URLs are served anyway.
