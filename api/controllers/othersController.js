@@ -6,6 +6,8 @@ const { randomUUID } = require('crypto');
 const { imageSize } = require('image-size');
 const slugify = require('slugify');
 const logger = require('../config/logger');
+const config = require('../config/env');
+const s3Service = require('../services/s3Service');
 const { sendNewProductNotificationEmail } = require('../services/emailService');
 
 // Get all others products (public) with pagination and optional author filtering
@@ -327,22 +329,28 @@ const createOthersProduct = async (req, res, next) => {
       throw new ValidationError(imageValidationErrors);
     }
 
-    // Ensure uploads directory exists
-    await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
-
-    // Generate basenames and write all image files to disk
+    // Generate basenames and write all image files
     const writtenFiles = [];
     try {
       // Main product image
       const mainBasename = generateUniqueBasename(mainImageFile.mimetype);
-      await fs.promises.writeFile(path.join(UPLOADS_DIR, mainBasename), mainImageFile.buffer);
+      if (config.useS3) {
+        await s3Service.uploadFile(`others/${mainBasename}`, mainImageFile.buffer, mainImageFile.mimetype);
+      } else {
+        await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
+        await fs.promises.writeFile(path.join(UPLOADS_DIR, mainBasename), mainImageFile.buffer);
+      }
       writtenFiles.push(mainBasename);
 
       // Variation images
       const variationBasenames = [];
       for (const varFile of variationImageFiles) {
         const varBasename = generateUniqueBasename(varFile.mimetype);
-        await fs.promises.writeFile(path.join(UPLOADS_DIR, varBasename), varFile.buffer);
+        if (config.useS3) {
+          await s3Service.uploadFile(`others/${varBasename}`, varFile.buffer, varFile.mimetype);
+        } else {
+          await fs.promises.writeFile(path.join(UPLOADS_DIR, varBasename), varFile.buffer);
+        }
         writtenFiles.push(varBasename);
         variationBasenames.push(varBasename);
       }
@@ -412,10 +420,14 @@ const createOthersProduct = async (req, res, next) => {
     } catch (dbError) {
       // Clean up written files if DB operations fail
       for (const writtenBasename of writtenFiles) {
-        try {
-          await fs.promises.unlink(path.join(UPLOADS_DIR, writtenBasename));
-        } catch (unlinkErr) {
-          logger.error({ err: unlinkErr, basename: writtenBasename }, 'Failed to clean up image file after DB error');
+        if (config.useS3) {
+          await s3Service.deleteFile(`others/${writtenBasename}`);
+        } else {
+          try {
+            await fs.promises.unlink(path.join(UPLOADS_DIR, writtenBasename));
+          } catch (unlinkErr) {
+            logger.error({ err: unlinkErr, basename: writtenBasename }, 'Failed to clean up image file after DB error');
+          }
         }
       }
       throw dbError;
@@ -495,12 +507,16 @@ const deleteOthersProduct = async (req, res, next) => {
       args: [id],
     });
 
-    // Clean up image files from disk (log errors, don't block)
+    // Clean up image files from S3 or disk (log errors, don't block)
     for (const basename of basenames) {
-      try {
-        await fs.promises.unlink(path.join(UPLOADS_DIR, basename));
-      } catch (err) {
-        logger.error({ err, basename }, 'Failed to delete image file during product deletion');
+      if (config.useS3) {
+        await s3Service.deleteFile(`others/${basename}`);
+      } else {
+        try {
+          await fs.promises.unlink(path.join(UPLOADS_DIR, basename));
+        } catch (err) {
+          logger.error({ err, basename }, 'Failed to delete image file during product deletion');
+        }
       }
     }
 

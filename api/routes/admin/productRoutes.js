@@ -1,40 +1,8 @@
 const express = require('express')
 const router = express.Router()
-const multer = require('multer')
-const path = require('path')
-const fs = require('fs')
 const { db } = require('../../config/database')
 const logger = require('../../config/logger')
 const auctionAdminController = require('../../controllers/auctionAdminController')
-
-// Configure multer for product image uploads
-const productStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/products')
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true })
-    }
-    cb(null, uploadDir)
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    const ext = path.extname(file.originalname)
-    cb(null, 'product-' + uniqueSuffix + ext)
-  }
-})
-
-const productUpload = multer({
-  storage: productStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true)
-    } else {
-      cb(new Error('Invalid file type. Only PNG, JPG and WEBP are allowed'))
-    }
-  }
-})
 
 /**
  * GET /api/admin/products/for-auction
@@ -126,87 +94,7 @@ router.get('/:id/preview', async (req, res) => {
   }
 });
 
-/**
- * PUT /api/admin/products/:id
- * Update product information
- */
-router.put('/:id', productUpload.single('image'), async (req, res) => {
-  try {
-    const productId = req.params.id
-    const { name, description, price, type, visible, is_sold, status, for_auction } = req.body
-
-    // Verify product exists
-    const checkResult = await db.execute({
-      sql: 'SELECT id, basename FROM products WHERE id = ?',
-      args: [productId]
-    })
-
-    if (checkResult.rows.length === 0) {
-      if (req.file) {
-        fs.unlinkSync(req.file.path)
-      }
-      return res.status(404).json({
-        title: 'No encontrado',
-        message: 'Producto no encontrado'
-      })
-    }
-
-    const product = checkResult.rows[0]
-
-    // If new image was uploaded, delete old one
-    let imageBasename = product.basename
-    if (req.file) {
-      if (product.basename) {
-        const oldImagePath = path.join(__dirname, '../../uploads/products', product.basename)
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath)
-        }
-      }
-      imageBasename = req.file.filename
-    }
-
-    // Update product
-    const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0
-    await db.execute({
-      sql: `UPDATE products
-            SET name = ?, description = ?, price = ?, type = ?, basename = ?, visible = ?, is_sold = ?, status = ?, for_auction = ?
-            WHERE id = ?`,
-      args: [
-        name,
-        description,
-        parseFloat(price),
-        type,
-        imageBasename,
-        visible ? 1 : 0,
-        is_sold ? 1 : 0,
-        status,
-        forAuctionVal,
-        productId
-      ]
-    })
-
-    // Fetch updated product
-    const updatedResult = await db.execute({
-      sql: 'SELECT * FROM products WHERE id = ?',
-      args: [productId]
-    })
-
-    res.json({
-      title: 'Actualizado',
-      message: 'Producto actualizado correctamente',
-      product: updatedResult.rows[0]
-    })
-  } catch (error) {
-    logger.error({ err: error }, 'Error updating product')
-    if (req.file) {
-      fs.unlinkSync(req.file.path)
-    }
-    res.status(500).json({
-      title: 'Error del servidor',
-      message: 'No se pudo actualizar el producto'
-    })
-  }
-})
+// Legacy PUT /api/admin/products/:id removed (products table is no longer used)
 
 /**
  * PUT /api/admin/products/:id/visibility

@@ -153,9 +153,19 @@ const config = {
     maxAnnouncementRetries: optionalInt('SENDCLOUD_MAX_ANNOUNCEMENT_RETRIES', 3),
   },
 
+  // --- AWS S3 ---
+  aws: {
+    s3Bucket: optional('AWS_S3_BUCKET', ''),
+    s3Region: optional('AWS_S3_REGION', 'eu-west-1'),
+  },
+  cdnBaseUrl: optional('CDN_BASE_URL', ''),
+
   // --- Access Control ---
   webAppHidden: optional('WEB_APP_HIDDEN', ''),
   testAccessPassword: optional('TEST_ACCESS_PASSWORD', ''),
 };
+
+// Convenience flag: true when S3 is configured for media storage
+config.useS3 = !!config.aws.s3Bucket;
 
 module.exports = config;

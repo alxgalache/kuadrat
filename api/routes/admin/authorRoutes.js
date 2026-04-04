@@ -5,31 +5,19 @@ const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
 const { db } = require('../../config/database')
+const config = require('../../config/env')
 const logger = require('../../config/logger')
+const s3Service = require('../../services/s3Service')
 const { sendPasswordSetupEmail } = require('../../services/emailService')
 const { getSendcloudConfig, createSendcloudConfig, updateSendcloudConfig, getShippingMethods } = require('../../controllers/sendcloudConfigController')
 const { createSendcloudConfigSchema, updateSendcloudConfigSchema } = require('../../validators/sendcloudConfigSchemas')
 const { validate } = require('../../middleware/validate')
 
-// Configure multer for author avatar uploads
-const authorStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/authors')
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true })
-    }
-    cb(null, uploadDir)
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    const ext = path.extname(file.originalname)
-    cb(null, 'author-' + uniqueSuffix + ext)
-  }
-})
+const AUTHORS_UPLOADS_DIR = path.join(__dirname, '../../uploads/authors')
 
+// Configure multer for author avatar uploads (memory storage for S3 compatibility)
 const authorUpload = multer({
-  storage: authorStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
@@ -398,8 +386,6 @@ router.post('/:id/upload-avatar', authorUpload.single('avatar'), async (req, res
     })
 
     if (result.rows.length === 0) {
-      // Delete uploaded file
-      fs.unlinkSync(req.file.path)
       return res.status(404).json({
         title: 'No encontrado',
         message: 'Autor no encontrado'
@@ -408,31 +394,46 @@ router.post('/:id/upload-avatar', authorUpload.single('avatar'), async (req, res
 
     const author = result.rows[0]
 
+    // Generate filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    const ext = path.extname(req.file.originalname)
+    const filename = 'author-' + uniqueSuffix + ext
+
     // Delete old avatar if exists
     if (author.profile_img) {
-      const oldImagePath = path.join(__dirname, '../../uploads/authors', author.profile_img)
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath)
+      if (config.useS3) {
+        await s3Service.deleteFile(`authors/${author.profile_img}`)
+      } else {
+        const oldImagePath = path.join(AUTHORS_UPLOADS_DIR, author.profile_img)
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath)
+        }
       }
+    }
+
+    // Upload new avatar
+    if (config.useS3) {
+      await s3Service.uploadFile(`authors/${filename}`, req.file.buffer, req.file.mimetype)
+    } else {
+      if (!fs.existsSync(AUTHORS_UPLOADS_DIR)) {
+        fs.mkdirSync(AUTHORS_UPLOADS_DIR, { recursive: true })
+      }
+      await fs.promises.writeFile(path.join(AUTHORS_UPLOADS_DIR, filename), req.file.buffer)
     }
 
     // Update database with new avatar filename
     await db.execute({
       sql: 'UPDATE users SET profile_img = ? WHERE id = ?',
-      args: [req.file.filename, authorId]
+      args: [filename, authorId]
     })
 
     res.json({
       title: 'Avatar actualizado',
       message: 'Avatar del autor actualizado correctamente',
-      filename: req.file.filename
+      filename: filename
     })
   } catch (error) {
     logger.error({ err: error }, 'Error uploading avatar')
-    // Delete uploaded file on error
-    if (req.file) {
-      fs.unlinkSync(req.file.path)
-    }
     res.status(500).json({
       title: 'Error del servidor',
       message: 'No se pudo subir el avatar'

@@ -64,6 +64,7 @@ services:
         - NEXT_PUBLIC_DEALER_COMMISSION_OTHERS=${NEXT_PUBLIC_DEALER_COMMISSION_OTHERS}
         - NEXT_PUBLIC_SENDCLOUD_ENABLED_ART=${NEXT_PUBLIC_SENDCLOUD_ENABLED_ART}
         - NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS=${NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS}
+        - NEXT_PUBLIC_CDN_URL=${NEXT_PUBLIC_CDN_URL}
     image: kuadrat-client
     container_name: kuadrat-client
     # Bind to localhost only - nginx will handle external traffic

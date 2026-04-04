@@ -6,6 +6,8 @@ const { randomUUID } = require('crypto');
 const { imageSize } = require('image-size');
 const slugify = require('slugify');
 const logger = require('../config/logger');
+const config = require('../config/env');
+const s3Service = require('../services/s3Service');
 const { sendNewProductNotificationEmail } = require('../services/emailService');
 
 // Get all art products (public) with pagination and optional author filtering
@@ -264,9 +266,6 @@ const createArtProduct = async (req, res, next) => {
         throw new ApiError(400, 'Formato de imagen no soportado', 'Imagen inválida');
     }
 
-    // Ensure uploads directory exists
-    await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
-
     // Generate unique basename (uuid.ext) and ensure uniqueness in DB
     let basename;
     while (true) {
@@ -278,8 +277,13 @@ const createArtProduct = async (req, res, next) => {
       if (existing.rows.length === 0) break;
     }
 
-    const filePath = path.join(UPLOADS_DIR, basename);
-    await fs.promises.writeFile(filePath, req.file.buffer);
+    // Store image in S3 or local disk
+    if (config.useS3) {
+      await s3Service.uploadFile(`art/${basename}`, req.file.buffer, req.file.mimetype);
+    } else {
+      await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
+      await fs.promises.writeFile(path.join(UPLOADS_DIR, basename), req.file.buffer);
+    }
 
     // Prepare weight and dimensions values
     const weightValue = weight ? parseInt(weight, 10) : null;
@@ -360,6 +364,19 @@ const deleteArtProduct = async (req, res, next) => {
 
     if (product.is_sold === 1) {
       throw new ApiError(400, 'No se puede eliminar una obra vendida', 'No se puede eliminar la obra');
+    }
+
+    // Delete image from S3 or disk
+    if (product.basename) {
+      if (config.useS3) {
+        await s3Service.deleteFile(`art/${product.basename}`);
+      } else {
+        try {
+          await fs.promises.unlink(path.join(UPLOADS_DIR, product.basename));
+        } catch (err) {
+          logger.error({ err, basename: product.basename }, 'Failed to delete art image file');
+        }
+      }
     }
 
     // Delete product

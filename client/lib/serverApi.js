@@ -84,12 +84,18 @@ export async function fetchAuthor(slug) {
   }
 }
 
+const CDN_BASE_URL = process.env.CDN_BASE_URL || ''
+
 export function getArtImageUrl(basename) {
-  return `${API_URL}/art/images/${encodeURIComponent(basename)}`
+  return CDN_BASE_URL
+    ? `${CDN_BASE_URL}/art/${encodeURIComponent(basename)}`
+    : `${API_URL}/art/images/${encodeURIComponent(basename)}`
 }
 
 export function getOthersImageUrl(basename) {
-  return `${API_URL}/others/images/${encodeURIComponent(basename)}`
+  return CDN_BASE_URL
+    ? `${CDN_BASE_URL}/others/${encodeURIComponent(basename)}`
+    : `${API_URL}/others/images/${encodeURIComponent(basename)}`
 }
 
 export function stripHtml(html) {

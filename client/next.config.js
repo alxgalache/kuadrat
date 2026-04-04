@@ -10,6 +10,7 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'api.pre.140d.art'},
       { protocol: 'https', hostname: 'api.140d.art'},
+      { protocol: 'https', hostname: 'cdn.140d.art'},
     ],
   },
   async redirects() {
@@ -30,6 +31,10 @@ const nextConfig = {
 
     // WebSocket URLs derived from API origin
     const wsOrigin = apiOrigin.replace(/^http/, 'ws');
+
+    // CDN origin for S3 assets (images, story videos)
+    const cdnUrl = process.env.NEXT_PUBLIC_CDN_URL || '';
+    const cdnOrigin = cdnUrl ? new URL(cdnUrl).origin : '';
 
     const cspConnectSrc = [
       "'self'",
@@ -52,11 +57,11 @@ const nextConfig = {
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com https://js.stripe.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      `img-src 'self' data: https: http: blob: ${apiOrigin}`,
+      `img-src 'self' data: https: http: blob: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
       "font-src 'self' https://fonts.gstatic.com",
       `connect-src ${cspConnectSrc}`,
       "frame-src 'self' https://*.revolut.com https://js.stripe.com",
-      `media-src 'self' blob: https: ${apiOrigin}`,
+      `media-src 'self' blob: https: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
       "worker-src 'self' blob:",
     ].join('; ');
 

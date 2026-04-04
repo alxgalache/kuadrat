@@ -1,16 +1,23 @@
-import fs from 'fs'
-import path from 'path'
 import Image from 'next/image'
 import Link from 'next/link'
 import CookieBanner from '@/components/CookieBanner'
 import StoryVideo from '@/components/StoryVideo'
 
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
-const videoDir = path.join(process.cwd(), 'public/video/stories')
-const storyVideos = fs.readdirSync(videoDir).filter((f) => f.endsWith('.mp4'))
-
-export default function Home() {
+export default async function Home() {
+  // Fetch story videos from the API (S3-backed)
+  let storyVideos = []
+  try {
+    const res = await fetch(`${API_URL}/stories/videos`, { next: { revalidate: 3600 } })
+    if (res.ok) {
+      const data = await res.json()
+      storyVideos = data.videos || []
+    }
+  } catch {
+    // Story videos are decorative — fail silently
+  }
   // Coming soon page (shown when app is not published)
   if (!IS_PUBLISHED) {
     return (

@@ -7,7 +7,6 @@ const {
   createProduct,
   deleteProduct,
   getSellerProducts,
-  getProductImage,
   getProductsByAuthorSlug,
 } = require('../controllers/productsController');
 const { authenticate, requireSeller } = require('../middleware/authorization');
@@ -25,7 +24,6 @@ const upload = multer({
 
 // Public routes
 router.get('/', getAllProducts);
-router.get('/images/:basename', getProductImage);
 router.get('/author/:slug', getProductsByAuthorSlug);
 
 // Protected routes - Seller only

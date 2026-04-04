@@ -113,7 +113,6 @@ const getProductById = async (req, res, next) => {
 };
 
 // Create new product (seller only)
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'products');
 
 const createProduct = async (req, res, next) => {
   try {
@@ -296,23 +295,6 @@ const createProduct = async (req, res, next) => {
   }
 };
 
-// Serve product image by basename
-const getProductImage = async (req, res, next) => {
-  try {
-    const { basename } = req.params;
-    if (!/^[A-Za-z0-9_-]+\.(png|jpg|jpeg|webp)$/.test(basename)) {
-      throw new ApiError(400, 'Nombre de imagen inválido', 'Solicitud inválida');
-    }
-    const filePath = path.join(UPLOADS_DIR, basename);
-    if (!fs.existsSync(filePath)) {
-      throw new ApiError(404, 'Imagen no encontrada', 'Imagen no encontrada');
-    }
-    res.sendFile(filePath);
-  } catch (error) {
-    next(error);
-  }
-};
-
 // Delete product (seller only, own products)
 const deleteProduct = async (req, res, next) => {
   try {
@@ -418,6 +400,5 @@ module.exports = {
   createProduct,
   deleteProduct,
   getSellerProducts,
-  getProductImage,
   getProductsByAuthorSlug,
 };

@@ -1,20 +1,42 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const CDN_URL = process.env.NEXT_PUBLIC_CDN_URL || '';
 
-// Helper to build product image URL by basename
+// Helper to build product image URL by basename (legacy, kept for compatibility)
 export const getProductImageUrl = (basename) => `${API_URL}/products/images/${encodeURIComponent(basename)}`;
 
 // Helper to build art product image URL by basename
-export const getArtImageUrl = (basename) => `${API_URL}/art/images/${encodeURIComponent(basename)}`;
+export const getArtImageUrl = (basename) =>
+  CDN_URL
+    ? `${CDN_URL}/art/${encodeURIComponent(basename)}`
+    : `${API_URL}/art/images/${encodeURIComponent(basename)}`;
 
 // Helper to build others product image URL by basename
-export const getOthersImageUrl = (basename) => `${API_URL}/others/images/${encodeURIComponent(basename)}`;
+export const getOthersImageUrl = (basename) =>
+  CDN_URL
+    ? `${CDN_URL}/others/${encodeURIComponent(basename)}`
+    : `${API_URL}/others/images/${encodeURIComponent(basename)}`;
 
 // Helper to build author profile image URL by filename
-export const getAuthorImageUrl = (filename) => `${API_URL}/users/authors/images/${encodeURIComponent(filename)}`;
+export const getAuthorImageUrl = (filename) =>
+  CDN_URL
+    ? `${CDN_URL}/authors/${encodeURIComponent(filename)}`
+    : `${API_URL}/users/authors/images/${encodeURIComponent(filename)}`;
 
 // Build a protected event video URL (requires short-lived vtoken from getVideoToken)
 export const getProtectedEventVideoUrl = (eventId, filename, vtoken) =>
   `${API_URL}/events/${encodeURIComponent(eventId)}/video/${encodeURIComponent(filename)}?vtoken=${encodeURIComponent(vtoken)}`;
+
+// Fetch story video list from the API (used by homepage)
+export const fetchStoryVideos = async () => {
+  try {
+    const res = await fetch(`${API_URL}/stories/videos`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.videos || [];
+  } catch {
+    return [];
+  }
+};
 
 // Helper function to get auth token from localStorage
 const getAuthToken = () => {
