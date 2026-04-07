@@ -109,7 +109,7 @@ function AdminPageContent() {
                 />
                 <h3 className="mt-6 text-sm font-medium text-gray-900">{author.full_name || author.email}</h3>
                 {!author.is_activated && (
-                  <p className="mt-1 text-xs text-amber-600">No ha configurado su contrasena</p>
+                  <p className="mt-1 text-xs text-amber-600">No ha configurado su contraseña</p>
                 )}
               </div>
               <div>

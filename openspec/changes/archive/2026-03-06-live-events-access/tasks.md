@@ -33,7 +33,7 @@
 ## 7. Frontend Modal Refactor
 
 - [x] 7.1 Add CHOOSE, VERIFY_EMAIL, and VERIFY_PASSWORD phases to `client/components/EventAccessModal.js`. Update the phase state machine: CHOOSE → REGISTER or VERIFY_PASSWORD; REGISTER → VERIFY_EMAIL; VERIFY_EMAIL → PAYMENT (paid) or SUCCESS (free); VERIFY_PASSWORD → direct access
-- [x] 7.2 Implement `renderChoose()` in `EventAccessModal.js` — two-button layout matching `renderChoose` in `BidModal.js`, with "Registrarme en el evento" and "Ya me apunte previamente al evento. Acceder con contrasena"
+- [x] 7.2 Implement `renderChoose()` in `EventAccessModal.js` — two-button layout matching `renderChoose` in `BidModal.js`, with "Registrarme en el evento" and "Ya me apunte previamente al evento. Acceder con contraseña"
 - [x] 7.3 Implement `renderVerifyEmail()` in `EventAccessModal.js` — 6-digit code input, submit button, resend button with 30-second countdown timer (matching `DrawParticipationModal.js` pattern)
 - [x] 7.4 Implement `renderVerifyPassword()` in `EventAccessModal.js` — email + password form with submit and back button (matching `BidModal.js` VERIFY phase)
 - [x] 7.5 Modify the SUCCESS phase rendering in `EventAccessModal.js` to display the generated access password in a highlighted box with save instructions (matching `BidModal.js` success pattern)

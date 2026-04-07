@@ -6,7 +6,7 @@ Users who register for live events lose access if they clear browser data or swi
 
 - Add an email verification step (6-digit OTP code) to the event registration flow, inserted between the personal data collection and the payment/confirmation step. Reuses the same pattern already implemented for draws in `DrawParticipationModal.js`.
 - Add a password-based re-access system for events, matching the pattern used for auctions in `BidModal.js`. A password is generated upon successful registration, sent to the user via email, and can be used to regain access from any device.
-- Add an initial "choose" step to the EventAccessModal with two options: "Registrarme en el evento" (new registration) and "Ya me apunte previamente al evento. Acceder con contrasena" (returning with password), matching the `renderChoose` pattern from `BidModal.js`.
+- Add an initial "choose" step to the EventAccessModal with two options: "Registrarme en el evento" (new registration) and "Ya me apunte previamente al evento. Acceder con contraseña" (returning with password), matching the `renderChoose` pattern from `BidModal.js`.
 - Add a backend endpoint for verifying event attendee passwords.
 - Add a backend endpoint for sending and verifying email OTP codes for events.
 - Send a confirmation email with the access password after successful event registration (following the `sendBidConfirmationEmail` pattern).

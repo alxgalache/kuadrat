@@ -9,7 +9,7 @@ The `EventAccessModal.js` SHALL display an initial CHOOSE phase with two options
 - **AND** the user does not have a valid session in localStorage for this event
 - **THEN** the modal SHALL display two buttons:
   - "Registrarme en el evento" (proceeds to REGISTER phase)
-  - "Ya me apunte previamente al evento. Acceder con contrasena" (proceeds to VERIFY_PASSWORD phase)
+  - "Ya me apunte previamente al evento. Acceder con contraseña" (proceeds to VERIFY_PASSWORD phase)
 
 #### Scenario: User has existing localStorage session
 - **WHEN** the user clicks the "Acceder" button on an event page
@@ -29,7 +29,7 @@ The system SHALL allow returning attendees to regain access to an event by enter
 
 #### Scenario: Invalid password
 - **WHEN** a returning attendee enters their email with an incorrect password
-- **THEN** the system SHALL return a 401 error with message "Contrasena incorrecta"
+- **THEN** the system SHALL return a 401 error with message "Contraseña incorrecta"
 - **AND** the attendee SHALL remain on the VERIFY_PASSWORD phase to retry
 
 #### Scenario: Email not found
@@ -96,7 +96,7 @@ The SUCCESS phase of `EventAccessModal.js` SHALL display the generated access pa
 The VERIFY_PASSWORD phase SHALL display a form with email and password fields, a submit button, and a back button to return to the CHOOSE phase.
 
 #### Scenario: VERIFY_PASSWORD phase display
-- **WHEN** the attendee selects "Ya me apunte previamente al evento. Acceder con contrasena" from the CHOOSE step
+- **WHEN** the attendee selects "Ya me apunte previamente al evento. Acceder con contraseña" from the CHOOSE step
 - **THEN** the modal SHALL display:
   - An email input field
   - A password input field

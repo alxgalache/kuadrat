@@ -104,12 +104,12 @@ export default function SetupAccountPage() {
 
     // Validate password
     if (!validation.isValid) {
-      setSubmitError('La contrasena no cumple con los requisitos de seguridad.')
+      setSubmitError('La contraseña no cumple con los requisitos de seguridad.')
       return
     }
 
     if (password !== confirmPassword) {
-      setSubmitError('Las contrasenas no coinciden.')
+      setSubmitError('Las contraseñas no coinciden.')
       return
     }
 
@@ -124,13 +124,13 @@ export default function SetupAccountPage() {
           router.push('/')
         }, 2000)
       } else {
-        setSubmitError(result.message || 'No se ha podido configurar la contrasena.')
+        setSubmitError(result.message || 'No se ha podido configurar la contraseña.')
       }
     } catch (err) {
       if (err.message) {
         setSubmitError(err.message)
       } else {
-        setSubmitError('No se ha podido configurar la contrasena. Por favor, intentalo de nuevo.')
+        setSubmitError('No se ha podido configurar la contraseña. Por favor, intentalo de nuevo.')
       }
     } finally {
       setSubmitting(false)
@@ -191,7 +191,7 @@ export default function SetupAccountPage() {
                 </div>
                 <h1 className="mt-4 text-base font-semibold text-gray-900">Cuenta configurada</h1>
                 <p className="mt-2 text-sm text-gray-600">
-                  Tu contrasena ha sido configurada correctamente. Redirigiendo al inicio...
+                  Tu contraseña ha sido configurada correctamente. Redirigiendo al inicio...
                 </p>
               </div>
             </div>
@@ -211,14 +211,14 @@ export default function SetupAccountPage() {
               Hola, {user?.full_name || ''}
             </h1>
             <p className="mt-2 text-sm text-gray-600">
-              Introduce una contrasena para tu usuario.
+              Introduce una contraseña para tu usuario.
             </p>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               {/* Password field */}
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-900">
-                  Contrasena
+                  Contraseña
                 </label>
                 <input
                   id="password"
@@ -306,7 +306,7 @@ export default function SetupAccountPage() {
               {/* Confirm password field */}
               <div>
                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-900">
-                  Confirmar contrasena
+                  Confirmar contraseña
                 </label>
                 <input
                   id="confirmPassword"
@@ -323,7 +323,7 @@ export default function SetupAccountPage() {
                   }`}
                 />
                 {confirmPassword.length > 0 && !passwordsMatch && (
-                  <p className="mt-1 text-xs text-red-600">Las contrasenas no coinciden</p>
+                  <p className="mt-1 text-xs text-red-600">Las contraseñas no coinciden</p>
                 )}
               </div>
 
@@ -338,7 +338,7 @@ export default function SetupAccountPage() {
                 disabled={submitting || !validation.isValid || !passwordsMatch}
                 className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
               >
-                {submitting ? 'Configurando...' : 'Configurar contrasena'}
+                {submitting ? 'Configurando...' : 'Configurar contraseña'}
               </button>
             </form>
           </div>

@@ -161,7 +161,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
         setPhase(PHASE.PAYMENT)
       }
     } catch (err) {
-      setError(err.message || 'No se pudo verificar. Comprueba tu email y contrasena.')
+      setError(err.message || 'No se pudo verificar. Comprueba tu email y contraseña.')
     } finally {
       setLoading(false)
     }
@@ -325,13 +325,13 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-900">Contrasena de puja</label>
+        <label className="block text-sm font-medium text-gray-900">Contraseña de puja</label>
         <input
           type="password"
           value={verifyPassword}
           onChange={(e) => setVerifyPassword(e.target.value)}
           className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-          placeholder="Contrasena recibida al registrarte"
+          placeholder="Contraseña recibida al registrarte"
         />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -705,7 +705,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       </div>
       {savedBidPassword && (
         <div className="rounded-lg border-2 border-gray-900 bg-gray-50 p-4">
-          <p className="text-sm font-semibold text-gray-900">Guarda esta contrasena</p>
+          <p className="text-sm font-semibold text-gray-900">Guarda esta contraseña</p>
           <p className="mt-1 text-xs text-gray-600">
             La necesitaras para pujar de nuevo en esta subasta.
           </p>

@@ -53,7 +53,7 @@ The project already has two proven patterns for solving these issues:
 ### 4. Modal phase flow: CHOOSE → REGISTER/VERIFY_PASSWORD → VERIFY_EMAIL → PAYMENT → SUCCESS
 
 **Decision:** The updated `EventAccessModal.js` will have these phases:
-- **CHOOSE:** Two buttons — "Registrarme en el evento" / "Ya me apunte previamente. Acceder con contrasena" (same layout as `renderChoose` in `BidModal.js`)
+- **CHOOSE:** Two buttons — "Registrarme en el evento" / "Ya me apunte previamente. Acceder con contraseña" (same layout as `renderChoose` in `BidModal.js`)
 - **REGISTER:** Name + email form (existing)
 - **VERIFY_EMAIL:** 6-digit OTP input + resend button (new, matching draw pattern)
 - **VERIFY_PASSWORD:** Email + password form (new, matching `BidModal.js` VERIFY phase)
@@ -66,7 +66,7 @@ The project already has two proven patterns for solving these issues:
 
 **Decision:** The access password is generated and the confirmation email is sent only after the user has fully completed all registration steps (including payment for paid events). This happens in the same response as the final success confirmation.
 
-**Rationale:** Matches the document requirement: "La generacion de la contrasena y el envio del email se realizara solamente una vez que el usuario ha completado todos los pasos en el registro y ha accedido correctamente al evento."
+**Rationale:** Matches the document requirement: "La generacion de la contraseña y el envio del email se realizara solamente una vez que el usuario ha completado todos los pasos en el registro y ha accedido correctamente al evento."
 
 ### 6. New columns added to event_attendees table
 
@@ -89,7 +89,7 @@ The project already has two proven patterns for solving these issues:
 
 ## Risks / Trade-offs
 
-- **[Risk] Existing attendees without passwords cannot use "Acceder con contrasena"** → They still have localStorage tokens and can access normally. If they lose localStorage, they would need to re-register (same as current behavior). This is acceptable since this is a new feature going forward.
+- **[Risk] Existing attendees without passwords cannot use "Acceder con contraseña"** → They still have localStorage tokens and can access normally. If they lose localStorage, they would need to re-register (same as current behavior). This is acceptable since this is a new feature going forward.
 
 - **[Risk] OTP codes could be brute-forced (6 digits = 1M combinations)** → Mitigated by rate limiting on the verification endpoint (use existing `config.rateLimit.sensitive` tier) and OTP expiry (10 minutes, matching draw pattern).
 

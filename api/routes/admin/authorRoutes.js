@@ -140,7 +140,7 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({
       title: 'Creado',
-      message: 'Autor creado correctamente. Se ha enviado un email para configurar la contrasena.',
+      message: 'Autor creado correctamente. Se ha enviado un email para configurar la contraseña.',
       author: newUser.rows[0],
       emailSent: emailResult.success
     })
@@ -259,7 +259,7 @@ router.post('/:id/resend-invitation', async (req, res) => {
     if (author.password_hash && author.password_hash.length > 0) {
       return res.status(400).json({
         title: 'Error',
-        message: 'Este autor ya ha configurado su contrasena'
+        message: 'Este autor ya ha configurado su contraseña'
       })
     }
 
