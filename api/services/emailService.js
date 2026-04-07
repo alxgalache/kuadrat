@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 const logger = require('../config/logger');
+const config = require('../config/env');
 
 // Import HTML escaping utilities to prevent XSS in email templates
 const { escapeHtml, escapeForEmail, stripHtml } = require('../utils/htmlEscape');
@@ -100,6 +101,20 @@ const getLogoSrc = () => {
   return LOGO_PNG_DATA_URL;
 };
 
+// Build the public URL for a product image.
+// When CDN_BASE_URL is configured (production with S3/CloudFront), returns a CDN URL.
+// Otherwise falls back to the Express API route (dev/pre with local disk).
+const getProductImageUrl = (basename, productType) => {
+  if (config.cdnBaseUrl) {
+    const prefix = productType === 'art' ? 'art' : 'others';
+    return `${config.cdnBaseUrl}/${prefix}/${encodeURIComponent(basename)}`;
+  }
+  const siteApiUrl = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
+  return productType === 'art'
+    ? `${siteApiUrl}/api/art/images/${encodeURIComponent(basename)}`
+    : `${siteApiUrl}/api/others/images/${encodeURIComponent(basename)}`;
+};
+
 // Generate buyer email HTML
 const generateBuyerEmailHTML = (orderDetails) => {
   const { orderId, items, totalPrice, orderToken } = orderDetails;
@@ -144,9 +159,7 @@ const generateBuyerEmailHTML = (orderDetails) => {
   const consolidatedItems = Object.values(groupedItems);
 
   const itemsHTML = consolidatedItems.map(item => {
-    const imageUrl = item.product_type === 'art'
-      ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(item.basename)}`
-      : `${SITE_API_URL}/api/others/images/${encodeURIComponent(item.basename)}`;
+    const imageUrl = getProductImageUrl(item.basename, item.product_type);
 
     return `
     <tr>
@@ -875,9 +888,7 @@ const sendTrackingUpdateEmail = async (order, products) => {
   }
 
   const itemsHTML = products.map(item => {
-    const imageUrl = item.product_type === 'art'
-      ? `${SITE_BASE_URL}/api/art/images/${encodeURIComponent(item.basename)}`
-      : `${SITE_BASE_URL}/api/others/images/${encodeURIComponent(item.basename)}`;
+    const imageUrl = getProductImageUrl(item.basename, item.product_type);
 
     return `
     <tr>
@@ -1008,9 +1019,7 @@ const sendItemsSentEmail = async (order, products) => {
   }
 
   const itemsHTML = products.map(item => {
-    const imageUrl = item.product_type === 'art'
-      ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(item.basename)}`
-      : `${SITE_API_URL}/api/others/images/${encodeURIComponent(item.basename)}`;
+    const imageUrl = getProductImageUrl(item.basename, item.product_type);
 
     return `
     <tr>
@@ -1336,12 +1345,9 @@ Una vez dentro, podrás empezar a subir tus artículos y gestionar tu catálogo 
 
 const sendBidConfirmationEmail = async ({ email, firstName, bidPassword, auctionName, productName, bidAmount, productType, productBasename, sellerName }) => {
   const logoAttachment = getLogoAttachment();
-  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
 
   const imageUrl = productBasename
-    ? (productType === 'art'
-        ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(productBasename)}`
-        : `${SITE_API_URL}/api/others/images/${encodeURIComponent(productBasename)}`)
+    ? getProductImageUrl(productBasename, productType)
     : null;
 
   const html = `<!DOCTYPE html>
@@ -1566,12 +1572,9 @@ const sendSCARequiredEmail = async ({ email, firstName, auctionName, productName
 
 const sendDrawEntryConfirmationEmail = async ({ email, firstName, drawName, productName, productType, productBasename, drawPrice }) => {
   const logoAttachment = getLogoAttachment();
-  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
 
   const imageUrl = productBasename
-    ? (productType === 'art'
-        ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(productBasename)}`
-        : `${SITE_API_URL}/api/others/images/${encodeURIComponent(productBasename)}`)
+    ? getProductImageUrl(productBasename, productType)
     : null;
 
   const html = `<!DOCTYPE html>
@@ -1711,12 +1714,9 @@ const sendDrawVerificationEmail = async ({ email, code }) => {
 
 const sendDrawWinnerEmail = async ({ email, firstName, drawName, productName, productType, productBasename, winningPrice }) => {
   const logoAttachment = getLogoAttachment();
-  const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
 
   const imageUrl = productBasename
-    ? (productType === 'art'
-        ? `${SITE_API_URL}/api/art/images/${encodeURIComponent(productBasename)}`
-        : `${SITE_API_URL}/api/others/images/${encodeURIComponent(productBasename)}`)
+    ? getProductImageUrl(productBasename, productType)
     : null;
 
   const html = `<!DOCTYPE html>
