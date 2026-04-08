@@ -74,7 +74,16 @@ const createZoneSchema = z.object({
     cost: z.union([z.number(), z.string()]),
     country: z.string().optional(),
     postal_refs: z.array(postalRefSchema).optional(),
-  }).strip(),
+    product_id: z.union([z.number(), z.string().transform(Number)]).optional().nullable(),
+    product_type: z.enum(['art', 'other']).optional().nullable(),
+  }).strip().refine(
+    (data) => {
+      const hasId = data.product_id !== undefined && data.product_id !== null && data.product_id !== '';
+      const hasType = data.product_type !== undefined && data.product_type !== null && data.product_type !== '';
+      return hasId === hasType;
+    },
+    { message: 'product_id y product_type deben estar ambos presentes o ambos ausentes' }
+  ),
 });
 
 /**
@@ -88,7 +97,16 @@ const updateZoneSchema = z.object({
     cost: z.union([z.number(), z.string()]).optional(),
     country: z.string().optional(),
     postal_refs: z.array(postalRefSchema).optional(),
-  }).strip(),
+    product_id: z.union([z.number(), z.string().transform(Number)]).optional().nullable(),
+    product_type: z.enum(['art', 'other']).optional().nullable(),
+  }).strip().refine(
+    (data) => {
+      const hasId = data.product_id !== undefined && data.product_id !== null && data.product_id !== '';
+      const hasType = data.product_type !== undefined && data.product_type !== null && data.product_type !== '';
+      return hasId === hasType;
+    },
+    { message: 'product_id y product_type deben estar ambos presentes o ambos ausentes' }
+  ),
 });
 
 /**

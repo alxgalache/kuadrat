@@ -23,7 +23,10 @@ function ZonesManagementContent() {
     country: 'ES',
     postal_refs: [],
     cost: '',
+    product_id: '',
+    product_type: '',
   })
+  const [products, setProducts] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const { showBanner } = useBannerNotification()
 
@@ -32,6 +35,16 @@ function ZonesManagementContent() {
       loadData()
     }
   }, [params.id])
+
+  useEffect(() => {
+    if (formData.seller_id) {
+      adminAPI.authors.getProducts(formData.seller_id)
+        .then(data => setProducts(data.products || []))
+        .catch(() => setProducts([]))
+    } else {
+      setProducts([])
+    }
+  }, [formData.seller_id])
 
   const loadData = async () => {
     try {
@@ -58,10 +71,28 @@ function ZonesManagementContent() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }))
+    setFormData(prev => {
+      const next = { ...prev, [name]: value }
+      if (name === 'seller_id') {
+        next.product_id = ''
+        next.product_type = ''
+      }
+      return next
+    })
+  }
+
+  const handleProductChange = (e) => {
+    const value = e.target.value
+    if (!value) {
+      setFormData(prev => ({ ...prev, product_id: '', product_type: '' }))
+    } else {
+      const [id, type] = value.split(':')
+      setFormData(prev => ({
+        ...prev,
+        product_id: id,
+        product_type: type === 'others' ? 'other' : type,
+      }))
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -88,20 +119,25 @@ function ZonesManagementContent() {
       const sellerId = parseInt(formData.seller_id, 10)
       const country = formData.country.trim()
 
+      const payload = {
+        seller_id: sellerId,
+        country,
+        postal_refs: formData.postal_refs,
+        cost,
+      }
+
+      if (formData.product_id) {
+        payload.product_id = parseInt(formData.product_id, 10)
+        payload.product_type = formData.product_type
+      } else if (editingZone) {
+        payload.product_id = null
+        payload.product_type = null
+      }
+
       if (editingZone) {
-        await adminAPI.shipping.updateZone(editingZone.id, {
-          seller_id: sellerId,
-          country,
-          postal_refs: formData.postal_refs,
-          cost,
-        })
+        await adminAPI.shipping.updateZone(editingZone.id, payload)
       } else {
-        await adminAPI.shipping.createZone(params.id, {
-          seller_id: sellerId,
-          country,
-          postal_refs: formData.postal_refs,
-          cost,
-        })
+        await adminAPI.shipping.createZone(params.id, payload)
       }
 
       // Reload zones
@@ -116,6 +152,8 @@ function ZonesManagementContent() {
         country: 'ES',
         postal_refs: [],
         cost: '',
+        product_id: '',
+        product_type: '',
       })
     } catch (err) {
       setError(err.message || 'No se pudo guardar la zona')
@@ -132,6 +170,8 @@ function ZonesManagementContent() {
       country: zone.country,
       postal_refs: zone.postal_refs || [],
       cost: zone.cost.toString(),
+      product_id: zone.product_id ? zone.product_id.toString() : '',
+      product_type: zone.product_type || '',
     })
     setShowForm(true)
   }
@@ -156,8 +196,10 @@ function ZonesManagementContent() {
     setFormData({
       seller_id: '',
       country: 'ES',
-      postal_codes: [],
+      postal_refs: [],
       cost: '',
+      product_id: '',
+      product_type: '',
     })
     setError('')
   }
@@ -263,6 +305,31 @@ function ZonesManagementContent() {
                   </select>
                 </div>
 
+                {/* Product (optional) */}
+                <div>
+                  <label htmlFor="product" className="block text-sm font-medium text-gray-900">
+                    Producto
+                  </label>
+                  <select
+                    id="product"
+                    name="product"
+                    value={formData.product_id ? `${formData.product_id}:${formData.product_type}` : ''}
+                    onChange={handleProductChange}
+                    disabled={!formData.seller_id}
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  >
+                    <option value="">{formData.seller_id ? 'Sin producto específico' : 'Selecciona un vendedor primero'}</option>
+                    {products.map(product => (
+                      <option key={`${product.id}-${product.product_type}`} value={`${product.id}:${product.product_type}`}>
+                        {product.name} ({product.product_type === 'art' ? 'Arte' : 'Otro'})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Opcional. Si se selecciona, el envío solo se aplicará a este producto.
+                  </p>
+                </div>
+
                 {/* Country */}
                 <div>
                   <label htmlFor="country" className="block text-sm font-medium text-gray-900">
@@ -358,6 +425,9 @@ function ZonesManagementContent() {
                         Vendedor
                       </th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                        Producto
+                      </th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                         País
                       </th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -376,6 +446,15 @@ function ZonesManagementContent() {
                       <tr key={zone.id}>
                         <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
                           {zone.seller_name || `ID: ${zone.seller_id}`}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {zone.product_name ? (
+                            <span className="inline-flex items-center rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800">
+                              {zone.product_name}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           {zone.country}

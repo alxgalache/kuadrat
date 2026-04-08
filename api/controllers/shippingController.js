@@ -300,13 +300,22 @@ const getShippingZones = async (req, res, next) => {
           sz.seller_id,
           sz.country,
           sz.cost,
+          sz.product_id,
+          sz.product_type,
           sz.created_at,
           sz.updated_at,
           u.full_name as seller_name,
           u.email as seller_email,
-          u.profile_img as seller_profile_img
+          u.profile_img as seller_profile_img,
+          CASE
+            WHEN sz.product_type = 'art' THEN a.name
+            WHEN sz.product_type = 'other' THEN o.name
+            ELSE NULL
+          END as product_name
         FROM shipping_zones sz
         INNER JOIN users u ON sz.seller_id = u.id
+        LEFT JOIN art a ON sz.product_id = a.id AND sz.product_type = 'art'
+        LEFT JOIN others o ON sz.product_id = o.id AND sz.product_type = 'other'
         WHERE sz.shipping_method_id = ?
         ORDER BY u.full_name ASC, sz.country ASC
       `,
@@ -377,7 +386,7 @@ const getShippingZones = async (req, res, next) => {
 const createShippingZone = async (req, res, next) => {
   try {
     const { methodId } = req.params;
-    const { seller_id, country, postal_refs, cost } = req.body;
+    const { seller_id, country, postal_refs, cost, product_id, product_type } = req.body;
 
     // Validate required fields
     if (!seller_id || cost === undefined || cost === null) {
@@ -426,11 +435,13 @@ const createShippingZone = async (req, res, next) => {
           seller_id,
           country,
           cost,
+          product_id,
+          product_type,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `,
-      args: [methodId, seller_id, country || null, cost],
+      args: [methodId, seller_id, country || null, cost, product_id || null, product_type || null],
     });
 
     const zoneId = result.lastInsertRowid.toString();
@@ -464,7 +475,7 @@ const createShippingZone = async (req, res, next) => {
 const updateShippingZone = async (req, res, next) => {
   try {
     const { zoneId } = req.params;
-    const { seller_id, country, postal_refs, cost } = req.body;
+    const { seller_id, country, postal_refs, cost, product_id, product_type } = req.body;
 
     // Check if zone exists and get method type
     const existing = await db.execute({
@@ -505,6 +516,17 @@ const updateShippingZone = async (req, res, next) => {
     if (cost !== undefined) {
       updates.push('cost = ?');
       args.push(cost);
+    }
+
+    // product_id and product_type: always sent together (or both null to clear)
+    if (product_id !== undefined) {
+      updates.push('product_id = ?');
+      args.push(product_id || null);
+    }
+
+    if (product_type !== undefined) {
+      updates.push('product_type = ?');
+      args.push(product_type || null);
     }
 
     // Always update timestamp
@@ -655,6 +677,44 @@ const getAvailableShipping = async (req, res, next) => {
       return true;
     };
 
+    // Normalize product_type for DB comparison ('others' → 'other')
+    const normalizedProductType = productType === 'others' ? 'other' : productType;
+
+    // Helper: apply product-specific priority per shipping method.
+    // For each method_id: if a zone with matching product exists, discard generic zones;
+    // otherwise keep only generic zones (exclude zones for other products).
+    // Within each group, keep lowest cost.
+    const applyProductPriority = (rows) => {
+      const grouped = {};
+      for (const row of rows) {
+        if (!grouped[row.id]) {
+          grouped[row.id] = { specific: [], generic: [] };
+        }
+        if (row.zone_product_id !== null && row.zone_product_id !== undefined) {
+          if (
+            Number(row.zone_product_id) === Number(productId) &&
+            row.zone_product_type === normalizedProductType
+          ) {
+            grouped[row.id].specific.push(row);
+          }
+          // Zones for other products are silently discarded
+        } else {
+          grouped[row.id].generic.push(row);
+        }
+      }
+
+      const result = [];
+      for (const methodId of Object.keys(grouped)) {
+        const { specific, generic } = grouped[methodId];
+        const candidates = specific.length > 0 ? specific : generic;
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => a.cost - b.cost);
+          result.push(candidates[0]);
+        }
+      }
+      return result;
+    };
+
     // Get pickup methods for this seller
     const pickupResult = await db.execute({
       sql: `
@@ -669,6 +729,8 @@ const getAvailableShipping = async (req, res, next) => {
           sm.max_articles,
           sm.estimated_delivery_days,
           sz.cost,
+          sz.product_id as zone_product_id,
+          sz.product_type as zone_product_type,
           u.pickup_address,
           u.pickup_city,
           u.pickup_postal_code,
@@ -685,7 +747,7 @@ const getAvailableShipping = async (req, res, next) => {
       args: [productType, sellerId],
     });
 
-    const pickupMethods = pickupResult.rows
+    const pickupMethods = applyProductPriority(pickupResult.rows)
       .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
       .map((method) => ({
         id: method.id,
@@ -736,7 +798,9 @@ const getAvailableShipping = async (req, res, next) => {
               sm.max_articles,
               sm.estimated_delivery_days,
               sz.cost,
-              sz.id as zone_id
+              sz.id as zone_id,
+              sz.product_id as zone_product_id,
+              sz.product_type as zone_product_type
             FROM shipping_methods sm
             INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
             WHERE sm.type = 'delivery'
@@ -782,15 +846,7 @@ const getAvailableShipping = async (req, res, next) => {
           args: [productType, sellerId, country, postalCode, country, postalCode, country, postalCode],
         });
 
-        // Determine match specificity per zone for priority logic
-        const groupedByMethod = {};
-        for (const row of deliveryResult.rows) {
-          if (!groupedByMethod[row.id] || row.cost < groupedByMethod[row.id].cost) {
-            groupedByMethod[row.id] = row;
-          }
-        }
-
-        deliveryMethods = Object.values(groupedByMethod)
+        deliveryMethods = applyProductPriority(deliveryResult.rows)
           .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
           .map((method) => ({
             id: method.id,
@@ -815,7 +871,9 @@ const getAvailableShipping = async (req, res, next) => {
               sm.max_dimensions,
               sm.max_articles,
               sm.estimated_delivery_days,
-              sz.cost
+              sz.cost,
+              sz.product_id as zone_product_id,
+              sz.product_type as zone_product_type
             FROM shipping_methods sm
             INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
             WHERE sm.type = 'delivery'
@@ -831,7 +889,7 @@ const getAvailableShipping = async (req, res, next) => {
           args: [productType, sellerId, country],
         });
 
-        deliveryMethods = deliveryResult.rows
+        deliveryMethods = applyProductPriority(deliveryResult.rows)
           .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
           .map((method) => ({
             id: method.id,

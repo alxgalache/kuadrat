@@ -157,6 +157,8 @@ async function initializeDatabase() {
         country TEXT,
         postal_code TEXT,
         cost REAL NOT NULL,
+        product_id INTEGER,
+        product_type TEXT CHECK(product_type IN ('art','other')),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (shipping_method_id) REFERENCES shipping_methods(id) ON DELETE CASCADE,
@@ -705,6 +707,7 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_seller ON shipping_zones(seller_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_country ON shipping_zones(country)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_postal ON shipping_zones(postal_code)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_product ON shipping_zones(product_id, product_type)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_szpc_zone_ref ON shipping_zones_postal_codes(shipping_zone_id, ref_type)`);
 
     // Orders
