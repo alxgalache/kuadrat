@@ -8,6 +8,8 @@ import AuthGuard from '@/components/AuthGuard'
 import { SafeAuthorBio } from '@/components/SafeHTML'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import VariationEditModal from '@/components/VariationEditModal'
+import StripeConnectSection from '@/components/admin/StripeConnectSection'
+import SellerFiscalForm from '@/components/admin/SellerFiscalForm'
 import { useNotification } from '@/contexts/NotificationContext'
 import { PencilIcon, EyeIcon, EyeSlashIcon, TrashIcon } from '@heroicons/react/24/outline'
 
@@ -353,6 +355,16 @@ function AuthorProfilePageContent({ params }) {
             </div>
           )}
         </div>
+
+        {/* Stripe Connect — Change #1: stripe-connect-accounts */}
+        {author && (
+          <StripeConnectSection seller={author} onUpdate={loadAuthorData} />
+        )}
+
+        {/* Datos fiscales — Change #1: stripe-connect-accounts */}
+        {author && (
+          <SellerFiscalForm seller={author} onUpdate={loadAuthorData} />
+        )}
       </div>
 
       {/* Confirmation Dialog */}

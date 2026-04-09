@@ -1037,6 +1037,48 @@ export const adminAPI = {
       });
     },
   },
+
+  // ── Stripe Connect (admin) ─────────────────────────────────
+  // Change #1: stripe-connect-accounts
+  stripeConnect: {
+    // POST /admin/sellers/:id/stripe-connect/create
+    createAccount: async (sellerId) => {
+      return apiRequest(`/admin/sellers/${sellerId}/stripe-connect/create`, {
+        method: 'POST',
+      });
+    },
+
+    // POST /admin/sellers/:id/stripe-connect/onboarding-link
+    generateLink: async (sellerId) => {
+      return apiRequest(`/admin/sellers/${sellerId}/stripe-connect/onboarding-link`, {
+        method: 'POST',
+      });
+    },
+
+    // POST /admin/sellers/:id/stripe-connect/onboarding-link/email
+    sendLinkEmail: async (sellerId) => {
+      return apiRequest(`/admin/sellers/${sellerId}/stripe-connect/onboarding-link/email`, {
+        method: 'POST',
+      });
+    },
+
+    // GET /admin/sellers/:id/stripe-connect/status
+    getStatus: async (sellerId) => {
+      return apiRequest(`/admin/sellers/${sellerId}/stripe-connect/status`);
+    },
+  },
+
+  // ── Datos fiscales del seller (admin) ──────────────────────
+  // Change #1: stripe-connect-accounts
+  sellerFiscal: {
+    // PUT /admin/sellers/:id/fiscal
+    update: async (sellerId, payload) => {
+      return apiRequest(`/admin/sellers/${sellerId}/fiscal`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    },
+  },
 };
 
 // Public Auctions API (no auth required)
@@ -1349,5 +1391,21 @@ export const sellerAPI = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  // ── Stripe Connect (seller self-service) ───────────────────
+  // Change #1: stripe-connect-accounts
+  stripeConnect: {
+    // POST /seller/stripe-connect/onboarding-link
+    generateLink: async () => {
+      return apiRequest('/seller/stripe-connect/onboarding-link', {
+        method: 'POST',
+      });
+    },
+
+    // GET /seller/stripe-connect/status
+    getStatus: async () => {
+      return apiRequest('/seller/stripe-connect/status');
+    },
   },
 };

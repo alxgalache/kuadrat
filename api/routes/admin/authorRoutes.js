@@ -201,7 +201,13 @@ router.get('/:id', async (req, res) => {
     const result = await db.execute({
       sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, visible, created_at,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
-            password_hash, password_setup_token_expires
+            password_hash, password_setup_token_expires,
+            stripe_connect_account_id, stripe_connect_status, stripe_transfers_capability_active,
+            stripe_connect_requirements_due, stripe_connect_last_synced_at,
+            tax_status, tax_id, fiscal_full_name,
+            fiscal_address_line1, fiscal_address_line2, fiscal_address_city,
+            fiscal_address_postal_code, fiscal_address_province, fiscal_address_country,
+            irpf_retention_rate, autofactura_agreement_signed_at
             FROM users
             WHERE id = ? AND role = 'seller'`,
       args: [req.params.id]

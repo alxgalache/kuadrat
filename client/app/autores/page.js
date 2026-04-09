@@ -28,7 +28,28 @@ export default function AutoresPage() {
 
     try {
       await login(email, password)
-      router.push('/galeria')
+
+      // Fix 17.2.3 — if the user was bounced here from a public Stripe Connect
+      // return/refresh page (return/page.js or refresh/page.js stashed the URL
+      // in sessionStorage before showing the login CTA), resume that flow
+      // instead of sending the user to the gallery. Whitelist enforces that
+      // we only ever redirect back to `/seller/stripe-connect/*`.
+      let returnTo = null
+      if (typeof window !== 'undefined') {
+        try {
+          const stashed = window.sessionStorage.getItem('stripeConnectReturnTo')
+          if (stashed && stashed.startsWith('/seller/stripe-connect/')) {
+            returnTo = stashed
+          }
+          // Always clear the key after reading so a second login doesn't
+          // accidentally bounce the user back to a stale Stripe URL.
+          window.sessionStorage.removeItem('stripeConnectReturnTo')
+        } catch {
+          // sessionStorage may be blocked; fall through to the default redirect.
+        }
+      }
+
+      router.push(returnTo || '/galeria')
       router.refresh()
     } catch (err) {
       setError(err.message || 'Inicio de sesión fallido. Por favor, verifica tus credenciales.')

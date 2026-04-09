@@ -2951,6 +2951,126 @@ const sendShipmentFailedAdminEmail = async ({ orderId, orderItemId, productName,
   }
 };
 
+// ─── Stripe Connect (Change #1: stripe-connect-accounts) ──────────
+// Sends the hosted onboarding link to a seller so they can complete their
+// connected account. Branding MUST be "140d Galería de Arte" — never "Kuadrat".
+const sendSellerOnboardingLink = async ({ seller, url }) => {
+  const logoAttachment = getLogoAttachment();
+  const greetingName = seller.full_name || 'artista';
+  const sellerEmail = seller.email;
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <style>
+    body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    a { color: #000000 !important; }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 40px 20px; text-align: center; background-color: #ffffff;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <!-- Content -->
+          <tr>
+            <td style="padding: 20px 40px 40px; background-color: #ffffff;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Hola, ${escapeHtml(greetingName)}</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #374151;">
+                Para poder recibir transferencias de <strong>140d Galería de Arte</strong>, necesitamos que completes tu cuenta de pagos.
+              </p>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #374151;">
+                Nuestro proveedor de pagos (Stripe) te pedirá algunos datos personales y fiscales:
+              </p>
+              <ul style="margin: 0 0 20px 20px; padding: 0; font-size: 15px; line-height: 1.6; color: #374151;">
+                <li>Tu DNI, NIE o CIF.</li>
+                <li>Tu dirección fiscal.</li>
+                <li>El IBAN de la cuenta donde quieres recibir tus pagos.</li>
+              </ul>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${url}" style="display: inline-block; padding: 14px 32px; background-color: #000000; color: #ffffff !important; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 6px;">
+                  Completar onboarding
+                </a>
+              </div>
+              <p style="margin: 30px 0 10px; font-size: 14px; line-height: 1.6; color: #6b7280;">
+                Si el botón no funciona, copia y pega este enlace en tu navegador:
+              </p>
+              <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #6b7280; word-break: break-all;">
+                ${url}
+              </p>
+              <div style="background-color: #fef3c7; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #92400e;">
+                  <strong>Importante:</strong> Este enlace caduca al cabo de unas horas por motivos de seguridad. Si expira, escríbenos y te enviaremos uno nuevo.
+                </p>
+              </div>
+              <p style="margin: 20px 0 0; font-size: 14px; line-height: 1.6; color: #6b7280;">
+                Si tienes cualquier duda, contáctanos en <a href="mailto:info@140d.art">info@140d.art</a>.
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280; text-align: center;">
+                © ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const textContent = `Hola, ${greetingName}
+
+Para poder recibir transferencias de 140d Galería de Arte, necesitamos que completes tu cuenta de pagos.
+
+Nuestro proveedor de pagos (Stripe) te pedirá:
+- Tu DNI, NIE o CIF.
+- Tu dirección fiscal.
+- El IBAN de la cuenta donde quieres recibir tus pagos.
+
+Completa el onboarding en este enlace:
+${url}
+
+Importante: este enlace caduca al cabo de unas horas por motivos de seguridad. Si expira, escríbenos a info@140d.art y te enviaremos uno nuevo.
+
+© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.`;
+
+  try {
+    const result = await transporter.sendMail({
+      from: getFormattedSender(),
+      to: sellerEmail,
+      subject: '140d Galería de Arte — Completa tu cuenta de pagos',
+      text: textContent,
+      html: htmlContent,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+
+    logger.info(
+      { sellerEmail, sellerId: seller.id, messageId: result.messageId },
+      '[emailService] sellerOnboardingLink sent'
+    );
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error, sellerEmail }, 'Error sending seller onboarding link email');
+    return { success: false };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -2982,4 +3102,5 @@ module.exports = {
   sendSellerNewOrderEmail,
   sendLabelReadyEmail,
   sendShipmentFailedAdminEmail,
+  sendSellerOnboardingLink,
 };

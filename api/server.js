@@ -168,6 +168,14 @@ app.use('/api/others', othersRoutes);
 app.use('/api/orders', sensitiveLimiter, ordersRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/payments/stripe', stripePaymentsRoutes);
+
+// Stripe Connect webhook (Change #1: stripe-connect-accounts)
+// Public endpoint — signature verified via `req.rawBody` captured by the
+// global express.json() verify callback. Distinct from /api/payments/stripe/webhook.
+app.post(
+  '/api/stripe/connect/webhook',
+  require('./controllers/stripeConnectWebhookController').handleConnectWebhook
+);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/seller', sellerRoutes);

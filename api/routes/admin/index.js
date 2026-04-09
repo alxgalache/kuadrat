@@ -16,5 +16,8 @@ router.use('/auctions', require('./auctionRoutes'));
 router.use('/postal-codes', require('./postalCodeRoutes'));
 router.use('/events', require('./eventRoutes'));
 router.use('/draws', require('./drawRoutes'));
+// Stripe Connect lifecycle + fiscal data (Change #1: stripe-connect-accounts)
+// Mounted at the admin root because the paths are seller-scoped, not under a prefix.
+router.use('/', require('./stripeConnectRoutes'));
 
 module.exports = router;

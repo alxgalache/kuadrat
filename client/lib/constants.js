@@ -56,3 +56,9 @@ export const STALE_SENT_DAYS = 15;
 // Event spam detection
 export const SPAM_MAX_MESSAGES = 10;
 export const SPAM_WINDOW_MS = 10000;
+
+// Public brand name — the user-facing marketplace brand.
+// "Kuadrat" is only the internal codename; any text shown to buyers, sellers,
+// or visitors should use these constants instead of the repo/project name.
+export const PUBLIC_BRAND_NAME = '140d Galería de Arte';
+export const PUBLIC_BRAND_NAME_SHORT = '140d';

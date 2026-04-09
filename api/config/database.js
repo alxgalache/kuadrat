@@ -42,7 +42,27 @@ async function initializeDatabase() {
         password_setup_token_expires DATETIME DEFAULT NULL,
         available_withdrawal REAL NOT NULL DEFAULT 0,
         withdrawal_recipient TEXT,
-        withdrawal_iban TEXT
+        withdrawal_iban TEXT,
+        -- Stripe Connect (Change #1: stripe-connect-accounts)
+        stripe_connect_account_id TEXT UNIQUE,
+        stripe_connect_status TEXT
+          CHECK(stripe_connect_status IN ('not_started','pending','active','restricted','rejected'))
+          NOT NULL DEFAULT 'not_started',
+        stripe_transfers_capability_active INTEGER NOT NULL DEFAULT 0,
+        stripe_connect_requirements_due TEXT,
+        stripe_connect_last_synced_at DATETIME,
+        -- Datos fiscales del artista (preparados para Changes #2 y #4)
+        tax_status TEXT CHECK(tax_status IN ('particular','autonomo','sociedad')),
+        tax_id TEXT,
+        fiscal_full_name TEXT,
+        fiscal_address_line1 TEXT,
+        fiscal_address_line2 TEXT,
+        fiscal_address_city TEXT,
+        fiscal_address_postal_code TEXT,
+        fiscal_address_province TEXT,
+        fiscal_address_country TEXT NOT NULL DEFAULT 'ES',
+        irpf_retention_rate REAL,
+        autofactura_agreement_signed_at DATETIME
       )
     `);
 
@@ -618,6 +638,41 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE other_order_items ADD COLUMN sendcloud_announcement_retries INTEGER DEFAULT 0');
     await safeAlter('ALTER TABLE art_order_items ADD COLUMN sendcloud_announcement_failed_at DATETIME');
     await safeAlter('ALTER TABLE other_order_items ADD COLUMN sendcloud_announcement_failed_at DATETIME');
+    // Stripe Connect (Change #1: stripe-connect-accounts) — users table additions
+    await safeAlter('ALTER TABLE users ADD COLUMN stripe_connect_account_id TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN stripe_connect_status TEXT NOT NULL DEFAULT \'not_started\'');
+    await safeAlter('ALTER TABLE users ADD COLUMN stripe_transfers_capability_active INTEGER NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE users ADD COLUMN stripe_connect_requirements_due TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN stripe_connect_last_synced_at DATETIME');
+    await safeAlter('ALTER TABLE users ADD COLUMN tax_status TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN tax_id TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN fiscal_full_name TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_line1 TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_line2 TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_city TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_postal_code TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_province TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_country TEXT NOT NULL DEFAULT \'ES\'');
+    await safeAlter('ALTER TABLE users ADD COLUMN irpf_retention_rate REAL');
+    await safeAlter('ALTER TABLE users ADD COLUMN autofactura_agreement_signed_at DATETIME');
+    // Unique partial index on stripe_connect_account_id (ALTER TABLE can't add UNIQUE in SQLite)
+    await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stripe_connect_account_id ON users(stripe_connect_account_id) WHERE stripe_connect_account_id IS NOT NULL');
+
+    // ── Stripe Connect Events (webhook idempotency + audit log) ──
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS stripe_connect_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stripe_event_id TEXT UNIQUE NOT NULL,
+        stripe_event_type TEXT NOT NULL,
+        account_id TEXT,
+        payload_json TEXT NOT NULL,
+        processed_at DATETIME,
+        processing_error TEXT,
+        received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_stripe_connect_events_account ON stripe_connect_events(account_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_stripe_connect_events_type ON stripe_connect_events(stripe_event_type)');
 
     // ── Withdrawals ──────────────────────────────────────────
     await db.execute(`

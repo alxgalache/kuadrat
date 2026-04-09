@@ -16,6 +16,8 @@ import {
 import {ChevronDownIcon} from '@heroicons/react/16/solid'
 import {Popover, PopoverButton, PopoverPanel, Dialog, DialogBackdrop, DialogPanel, DialogTitle} from '@headlessui/react'
 import {useBannerNotification} from '@/contexts/BannerNotificationContext'
+import {useAuth} from '@/contexts/AuthContext'
+import StripeConnectBanner from '@/components/seller/StripeConnectBanner'
 
 function classNames(...classes) {
     return classes.filter(Boolean).join(' ')
@@ -242,6 +244,8 @@ function OrdersPageContent() {
     // Guard to avoid double fetch in React 18 StrictMode on first mount
     const didInitRef = useRef(false)
     const {showBanner} = useBannerNotification()
+    const {user} = useAuth()
+    const isSeller = user?.role === 'seller'
 
     // Mark order as sent confirmation dialog state
     const [orderSentDialog, setOrderSentDialog] = useState({open: false, orderId: null})
@@ -518,6 +522,9 @@ function OrdersPageContent() {
         // en el ejemplo de Tailwind.
         <div className="bg-white">
             <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+
+                {/* Stripe Connect banner — Change #1: stripe-connect-accounts */}
+                {isSeller && <StripeConnectBanner />}
 
                 {/* Título y subtítulo siempre visibles */}
                 <div className="mb-8 mt-8">

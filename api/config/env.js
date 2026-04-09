@@ -85,6 +85,12 @@ const config = {
     secretKey: optional('STRIPE_SECRET_KEY', ''),
     publishableKey: optional('STRIPE_PUBLISHABLE_KEY', ''),
     webhookSecret: optional('STRIPE_WEBHOOK_SECRET', ''),
+    connect: {
+      enabled: optionalBool('STRIPE_CONNECT_ENABLED', false),
+      refreshUrl: optional('STRIPE_CONNECT_REFRESH_URL', 'https://pre.140d.art/seller/stripe-connect/refresh'),
+      returnUrl: optional('STRIPE_CONNECT_RETURN_URL', 'https://pre.140d.art/seller/stripe-connect/return'),
+      webhookSecret: optional('STRIPE_CONNECT_WEBHOOK_SECRET', ''),
+    },
   },
 
   // --- Revolut ---

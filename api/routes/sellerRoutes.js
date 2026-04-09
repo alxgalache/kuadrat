@@ -15,6 +15,7 @@ const { changePasswordSchema } = require('../validators/sellerSchemas');
 const { validatePassword } = require('../controllers/authController');
 const { getSellerOrders, downloadOrderLabel, schedulePickup, scheduleBulkPickup } = require('../controllers/sellerOrdersController');
 const { pickupSchema, bulkPickupSchema } = require('../validators/pickupSchemas');
+const stripeConnectCtrl = require('../controllers/stripeConnectController');
 
 // Apply authentication and seller authorization to all routes
 router.use(authenticate, requireSeller);
@@ -465,5 +466,10 @@ router.get('/orders', getSellerOrders);
 router.get('/orders/:itemType/:itemId/label', downloadOrderLabel);
 router.post('/orders/bulk-pickup', validate(bulkPickupSchema), scheduleBulkPickup);
 router.post('/orders/:orderId/pickup', validate(pickupSchema), schedulePickup);
+
+// Stripe Connect self-service (Change #1: stripe-connect-accounts)
+// authenticate + requireSeller are already applied globally at line 20.
+router.post('/stripe-connect/onboarding-link', stripeConnectCtrl.generateOnboardingLinkForSelf);
+router.get('/stripe-connect/status', stripeConnectCtrl.getStatusForSelf);
 
 module.exports = router;
