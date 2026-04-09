@@ -27,7 +27,8 @@ router.use(authenticate, requireSeller);
 router.get('/profile', async (req, res, next) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, full_name, email, email_contact, location, bio, profile_img, visible
+      sql: `SELECT id, full_name, email, email_contact, location, bio, profile_img, visible,
+                    stripe_connect_status
             FROM users WHERE id = ?`,
       args: [req.user.id],
     });
@@ -470,6 +471,7 @@ router.post('/orders/:orderId/pickup', validate(pickupSchema), schedulePickup);
 // Stripe Connect self-service (Change #1: stripe-connect-accounts)
 // authenticate + requireSeller are already applied globally at line 20.
 router.post('/stripe-connect/onboarding-link', stripeConnectCtrl.generateOnboardingLinkForSelf);
+router.post('/stripe-connect/login-link', stripeConnectCtrl.generateLoginLinkForSelf);
 router.get('/stripe-connect/status', stripeConnectCtrl.getStatusForSelf);
 
 module.exports = router;

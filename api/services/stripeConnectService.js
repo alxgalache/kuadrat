@@ -245,9 +245,28 @@ async function syncAccountStatus({ user, account = null }) {
   return { ...mapped, account: freshAccount };
 }
 
+/**
+ * Create a single-use login link for a connected account's Express Dashboard.
+ * Uses V1 API (login_links is not available in V2).
+ *
+ * @param {string} stripeAccountId - The acct_* ID.
+ * @returns {Promise<{url: string}>}
+ */
+async function createLoginLink(stripeAccountId) {
+  assertConnectEnabled();
+
+  const loginLink = await callStripe(
+    () => stripeClient.accounts.createLoginLink(stripeAccountId),
+    { op: 'createLoginLink', stripeAccountId }
+  );
+
+  return { url: loginLink.url };
+}
+
 module.exports = {
   createConnectedAccount,
   createOnboardingLink,
+  createLoginLink,
   retrieveAccount,
   mapAccountToLocalStatus,
   syncAccountStatus,

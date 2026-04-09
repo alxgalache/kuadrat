@@ -19,6 +19,7 @@ function SellerProfilePageContent() {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
   const [passwordError, setPasswordError] = useState('')
   const [passwordLoading, setPasswordLoading] = useState(false)
+  const [stripeLinkLoading, setStripeLinkLoading] = useState(false)
 
   const { logout } = useAuth()
   const { showApiError } = useNotification()
@@ -44,6 +45,26 @@ function SellerProfilePageContent() {
     setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
     setPasswordError('')
     setPasswordModalOpen(true)
+  }
+
+  const stripeConnectEnabled = profile?.stripe_connect_status &&
+    ['active', 'pending', 'restricted'].includes(profile.stripe_connect_status)
+
+  const handleOpenStripeDashboard = async () => {
+    setStripeLinkLoading(true)
+    try {
+      const res = await sellerAPI.stripeConnect.getLoginLink()
+      const url = res?.data?.url || res?.url
+      if (url) {
+        window.open(url, '_blank')
+      } else {
+        throw new Error('No se recibió la URL del panel de Stripe')
+      }
+    } catch (err) {
+      showApiError(err)
+    } finally {
+      setStripeLinkLoading(false)
+    }
   }
 
   const handlePasswordSubmit = async (e) => {
@@ -114,6 +135,14 @@ function SellerProfilePageContent() {
             </div>
           </div>
           <div className="mt-6 flex flex-col-reverse justify-stretch space-y-4 space-y-reverse sm:flex-row-reverse sm:justify-end sm:space-y-0 sm:space-x-3 sm:space-x-reverse md:mt-0 md:flex-row md:space-x-3">
+            <button
+              onClick={handleOpenStripeDashboard}
+              disabled={!stripeConnectEnabled || stripeLinkLoading}
+              title={!stripeConnectEnabled ? 'Stripe Connect no está configurado' : 'Abrir panel de Stripe'}
+              className="inline-flex items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {stripeLinkLoading ? 'Abriendo…' : 'Panel de Stripe'}
+            </button>
             <button
               onClick={handleOpenPasswordModal}
               className="inline-flex items-center justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"

@@ -1407,5 +1407,12 @@ export const sellerAPI = {
     getStatus: async () => {
       return apiRequest('/seller/stripe-connect/status');
     },
+
+    // POST /seller/stripe-connect/login-link
+    getLoginLink: async () => {
+      return apiRequest('/seller/stripe-connect/login-link', {
+        method: 'POST',
+      });
+    },
   },
 };
