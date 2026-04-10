@@ -263,6 +263,134 @@ async function createLoginLink(stripeAccountId) {
   return { url: loginLink.url };
 }
 
+// ---------------------------------------------------------------------------
+// Change #2: stripe-connect-manual-payouts — Transfers V1
+// ---------------------------------------------------------------------------
+//
+// Stripe Connect V2 covers account lifecycle but `transfers.create` only
+// exists in V1. Mixing is officially supported: the account is created via
+// v2.core.accounts.create (Change #1) and the transfer is executed via the
+// V1 endpoint here. See docs/stripe_connect/master_plan.md §6.6 and
+// docs/stripe_connect/transfers.md.
+//
+// Design:
+//   - Amount is passed in euros (REAL) to match the rest of the codebase; we
+//     convert to minor units (cents) inside the service using Math.round.
+//   - `source_transaction` is intentionally omitted → financed from platform
+//     balance (separate charges and transfers model).
+//   - Idempotency key is derived from the local withdrawal id:
+//     `transfer_withdrawal_<id>_v1`. Stable across retries.
+
+/**
+ * Convert an amount in euros (float) to Stripe minor units (integer cents).
+ *
+ * @private
+ * @param {number} amountEur
+ * @returns {number}
+ */
+function eurosToCents(amountEur) {
+  return Math.round((Number(amountEur) || 0) * 100);
+}
+
+/**
+ * Create a Stripe Connect Transfer (V1) that moves funds from the platform
+ * balance to a connected account.
+ *
+ * @param {Object} params
+ * @param {Object} params.withdrawal             - Local withdrawal row; MUST contain
+ *                                                  `id`, `user_id`, `amount`, `vat_regime`.
+ * @param {string} params.connectedAccountId     - The seller's acct_* id.
+ * @param {number} params.itemsCount             - Number of items covered by this payout.
+ * @returns {Promise<Object>} The Stripe Transfer object.
+ */
+async function createTransfer({ withdrawal, connectedAccountId, itemsCount }) {
+  assertConnectEnabled();
+
+  if (!withdrawal?.id) {
+    throw new ApiError(500, 'createTransfer: withdrawal.id is required');
+  }
+  if (!connectedAccountId) {
+    throw new ApiError(500, 'createTransfer: connectedAccountId is required');
+  }
+
+  const amountCents = eurosToCents(withdrawal.amount);
+  if (amountCents <= 0) {
+    throw new ApiError(400, 'No se puede ejecutar un payout con importe cero o negativo');
+  }
+
+  const description = `140d Galeria de Arte - pago ${
+    withdrawal.vat_regime === 'art_rebu' ? 'obras' : 'productos/servicios'
+  } (W#${withdrawal.id})`;
+
+  const transfer = await callStripe(
+    () => stripeClient.transfers.create(
+      {
+        amount: amountCents,
+        currency: 'eur',
+        destination: connectedAccountId,
+        description,
+        transfer_group: `WITHDRAWAL_${withdrawal.id}`,
+        metadata: {
+          withdrawal_id: String(withdrawal.id),
+          user_id: String(withdrawal.user_id),
+          vat_regime: String(withdrawal.vat_regime || ''),
+          items_count: String(itemsCount || 0),
+          platform: 'kuadrat',
+        },
+      },
+      {
+        idempotencyKey: `transfer_withdrawal_${withdrawal.id}_v1`,
+      }
+    ),
+    { op: 'createTransfer', withdrawalId: withdrawal.id, connectedAccountId }
+  );
+
+  logger.info(
+    {
+      withdrawalId: withdrawal.id,
+      transferId: transfer.id,
+      amountCents,
+      destination: connectedAccountId,
+      vat_regime: withdrawal.vat_regime,
+    },
+    '[stripe-connect] transfer created'
+  );
+
+  return transfer;
+}
+
+/**
+ * Retrieve a Stripe Transfer by id. Used by webhook handlers to refresh
+ * status when Stripe sends us an event we want to double-check.
+ *
+ * @param {string} transferId
+ * @returns {Promise<Object>} Stripe Transfer object.
+ */
+async function retrieveTransfer(transferId) {
+  assertConnectEnabled();
+
+  return callStripe(
+    () => stripeClient.transfers.retrieve(transferId),
+    { op: 'retrieveTransfer', transferId }
+  );
+}
+
+/**
+ * List reversals for a transfer. Used when syncing a reversal from the
+ * Stripe Dashboard back into our local `withdrawals` row.
+ *
+ * @param {string} transferId
+ * @returns {Promise<{data: Object[]}>}
+ */
+async function listTransferReversals(transferId) {
+  assertConnectEnabled();
+
+  return callStripe(
+    () => stripeClient.transfers.listReversals(transferId),
+    { op: 'listTransferReversals', transferId }
+  );
+}
+
 module.exports = {
   createConnectedAccount,
   createOnboardingLink,
@@ -270,4 +398,8 @@ module.exports = {
   retrieveAccount,
   mapAccountToLocalStatus,
   syncAccountStatus,
+  // Change #2 — Transfers V1
+  createTransfer,
+  retrieveTransfer,
+  listTransferReversals,
 };

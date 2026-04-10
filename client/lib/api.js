@@ -702,6 +702,13 @@ export const adminAPI = {
       });
     },
 
+    updateStatus: async (id, productType, status) => {
+      return apiRequest(`/admin/products/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ product_type: productType, status }),
+      });
+    },
+
     delete: async (id, productType) => {
       return apiRequest(`/admin/products/${id}`, {
         method: 'DELETE',
@@ -1079,6 +1086,54 @@ export const adminAPI = {
       });
     },
   },
+
+  // ── Manual payouts panel (admin) ───────────────────────────
+  // Change #2: stripe-connect-manual-payouts
+  payouts: {
+    // GET /admin/payouts — sellers with positive balance in at least one bucket
+    listSellersWithBalance: async () => {
+      return apiRequest('/admin/payouts');
+    },
+
+    // GET /admin/payouts/:sellerId — full detail (buckets, pending items, history)
+    getSellerDetail: async (sellerId) => {
+      return apiRequest(`/admin/payouts/${sellerId}`);
+    },
+
+    // POST /admin/payouts/:sellerId/preview — returns { token, summary }
+    preview: async (sellerId, { vatRegime, itemIds } = {}) => {
+      return apiRequest(`/admin/payouts/${sellerId}/preview`, {
+        method: 'POST',
+        body: JSON.stringify({
+          vat_regime: vatRegime,
+          ...(itemIds ? { item_ids: itemIds } : {}),
+        }),
+      });
+    },
+
+    // POST /admin/payouts/:sellerId/execute — consumes the confirmation token
+    execute: async (sellerId, { vatRegime, itemIds, confirmationToken } = {}) => {
+      return apiRequest(`/admin/payouts/${sellerId}/execute`, {
+        method: 'POST',
+        body: JSON.stringify({
+          vat_regime: vatRegime,
+          confirmation_token: confirmationToken,
+          ...(itemIds ? { item_ids: itemIds } : {}),
+        }),
+      });
+    },
+
+    // POST /admin/payouts/withdrawals/:id/mark-reversed
+    markReversed: async (withdrawalId, { reversalAmount, reversalReason } = {}) => {
+      return apiRequest(`/admin/payouts/withdrawals/${withdrawalId}/mark-reversed`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reversal_amount: reversalAmount,
+          reversal_reason: reversalReason,
+        }),
+      });
+    },
+  },
 };
 
 // Public Auctions API (no auth required)
@@ -1360,11 +1415,12 @@ export const sellerAPI = {
     return apiRequest('/seller/wallet');
   },
 
-  // Withdrawals
-  createWithdrawal: async (iban, recipientName, saveDetails) => {
+  // Withdrawals — Change #2 (stripe-connect-manual-payouts):
+  // The endpoint is now a "nudge" that just emails the admin; no body required.
+  createWithdrawal: async () => {
     return apiRequest('/seller/withdrawals', {
       method: 'POST',
-      body: JSON.stringify({ iban, recipientName, saveDetails }),
+      body: JSON.stringify({}),
     });
   },
 
@@ -1376,7 +1432,22 @@ export const sellerAPI = {
   },
 
   getOrderLabel: async (itemType, itemId) => {
-    return apiRequest(`/seller/orders/${itemType}/${itemId}/label`);
+    const token = getAuthToken();
+    const response = await fetch(`${API_URL}/seller/orders/${itemType}/${itemId}/label`, {
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      const error = new Error(data.message || 'Error al descargar etiqueta');
+      error.status = response.status;
+      throw error;
+    }
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/pdf')) {
+      const blob = await response.blob();
+      return { blob };
+    }
+    return response.json();
   },
 
   schedulePickup: async (orderId, data) => {

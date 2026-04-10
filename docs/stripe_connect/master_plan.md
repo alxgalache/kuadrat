@@ -342,17 +342,25 @@ Mapeo a nuestra columna `users.stripe_connect_status`:
 | Cuenta creada, transfers `inactive` por requisitos | `restricted` |
 | Cuenta rechazada / desactivada por Stripe | `rejected` |
 
-### 6.5 Webhook de Connect — thin events
+### 6.5 Webhooks — dos destinos en Stripe
 
-**Endpoint nuevo:** `POST /api/stripe/connect/webhook` (raw body, sin auth, validado por firma).
+Stripe separa los destinos webhook por tipo de evento. Se necesitan **dos** endpoints:
 
-Eventos a escuchar (configurar en el dashboard de Stripe):
+**1. Webhook "Cuentas conectadas / V2"** → `POST /api/stripe/connect/webhook`
 - `v2.core.account[requirements].updated`
 - `v2.core.account[configuration.recipient].capability_status_updated`
-- `transfer.created` (legacy snapshot — Change #2)
-- `transfer.reversed` (legacy snapshot — Change #2)
-- `transfer.failed` (legacy snapshot — Change #2)
-- `payout.failed` (legacy snapshot — sólo si en algún momento se activan payouts automáticos del artista, en v1 N/A)
+- Firmado con `STRIPE_CONNECT_WEBHOOK_SECRET`
+- Handler: `stripeConnectWebhookController.js`
+
+**2. Webhook "Mi cuenta" (V1, plataforma)** → `POST /api/payments/stripe/webhook`
+- `payment_intent.succeeded` / `canceled` / `payment_failed` (ya existentes)
+- `transfer.created` (Change #2)
+- `transfer.reversed` (Change #2)
+- `transfer.failed` (Change #2)
+- Firmado con `STRIPE_WEBHOOK_SECRET`
+- Handler: `stripePaymentsController.js` (delega `transfer.*` a handlers de `stripeConnectWebhookController.js`)
+
+> **Nota:** Los eventos `transfer.*` son V1 platform-level ("Mi cuenta"). Stripe **no permite** suscribirlos en un destino de tipo "Connected accounts / V2". Por tanto los handlers se definen en `stripeConnectWebhookController.js` (por cohesión con el dominio Connect) pero se invocan desde el webhook de pagos.
 
 **Parsing de thin events:**
 ```js
@@ -613,3 +621,4 @@ const transfer = await stripeClient.transfers.create({
 | Fecha | Cambio | Autor |
 |---|---|---|
 | 2026-04-08 | Creación inicial tras la fase de exploración (`/opsx:explore`). Captura todas las decisiones de Round 1, Round 2 y final. | Claude (Opus 4.6) en sesión `8ef81333` |
+| 2026-04-09 | Change #2 (`stripe-connect-manual-payouts`) implementado: split del wallet en dos buckets por régimen fiscal (`available_withdrawal_art_rebu` + `available_withdrawal_standard_vat`), nueva tabla `withdrawal_items` con pivot polimórfico, migración de datos legacy al bucket estándar, helper `vatCalculator` (REBU + estándar), servicio `createTransfer`/`retrieveTransfer`/`listTransferReversals`, endpoints admin `GET/POST /api/admin/payouts*` con flujo preview→execute y token single-use TTL 5 min, conversión del endpoint seller `POST /withdrawals` a *nudge* vía email, handlers webhook para `transfer.created`/`reversed`/`failed` con dispatcher V1/V2 unificado, plantillas de email `sendSellerPayoutExecutedEmail`/`sendAdminPayoutFailedEmail`/`sendAdminPayoutReversedEmail`, UI admin en `/admin/payouts` (listado + detalle con dos BucketCard + histórico + `ConfirmPayoutModal`) y UI seller en `/orders` mostrando ambos buckets. Schema, scheduler y controller de órdenes actualizados para enrutar earnings al bucket correcto según tipo de item (`art_order_items` → REBU, `other_order_items` → estándar). | Claude (Opus 4.6) |

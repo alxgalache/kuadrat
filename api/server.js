@@ -18,6 +18,7 @@ const { setupGracefulShutdown } = require('./config/shutdown');
 
 // Import configurations and middleware
 const { initializeDatabase } = require('./config/database');
+const { runWalletSplitMigration } = require('./migrations/2026-04-stripe-connect-wallet-split');
 const passport = require('./config/passport');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { verifyTransporter } = require('./services/emailService');
@@ -200,6 +201,11 @@ async function startServer() {
   try {
     // Initialize database schema
     await initializeDatabase();
+
+    // One-off migration (Change #2: stripe-connect-manual-payouts) — dumps any
+    // remaining legacy `available_withdrawal` balance into the new standard_vat
+    // bucket. Idempotent: no-op when the legacy column is already zero.
+    await runWalletSplitMigration();
 
     // Verify email service (optional)
     await verifyTransporter();

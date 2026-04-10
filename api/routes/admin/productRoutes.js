@@ -97,6 +97,60 @@ router.get('/:id/preview', async (req, res) => {
 // Legacy PUT /api/admin/products/:id removed (products table is no longer used)
 
 /**
+ * PUT /api/admin/products/:id/status
+ * Update the status of a product (art or others) - admin only
+ */
+router.put('/:id/status', async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { product_type, status } = req.body;
+
+    if (!product_type || (product_type !== 'art' && product_type !== 'others')) {
+      return res.status(400).json({
+        title: 'Error de validación',
+        message: 'Tipo de producto inválido'
+      });
+    }
+
+    if (status !== 'approved') {
+      return res.status(400).json({
+        title: 'Error de validación',
+        message: 'Estado no válido. Solo se permite "approved"'
+      });
+    }
+
+    const table = product_type === 'art' ? 'art' : 'others';
+    const productCheck = await db.execute({
+      sql: `SELECT id FROM ${table} WHERE id = ? AND removed = 0`,
+      args: [productId]
+    });
+
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({
+        title: 'No encontrado',
+        message: 'Producto no encontrado'
+      });
+    }
+
+    await db.execute({
+      sql: `UPDATE ${table} SET status = ? WHERE id = ?`,
+      args: [status, productId]
+    });
+
+    res.json({
+      title: 'Producto aprobado',
+      message: 'El estado del producto ha sido actualizado a aprobado'
+    });
+  } catch (error) {
+    logger.error({ err: error }, 'Error updating product status');
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudo actualizar el estado del producto'
+    });
+  }
+});
+
+/**
  * PUT /api/admin/products/:id/visibility
  * Toggle visibility of a product (art or others) - admin version (no ownership check)
  */

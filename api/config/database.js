@@ -658,6 +658,50 @@ async function initializeDatabase() {
     // Unique partial index on stripe_connect_account_id (ALTER TABLE can't add UNIQUE in SQLite)
     await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stripe_connect_account_id ON users(stripe_connect_account_id) WHERE stripe_connect_account_id IS NOT NULL');
 
+    // Stripe Connect (Change #2: stripe-connect-manual-payouts) — two-bucket wallet.
+    // `available_withdrawal` (legacy) stays as a deprecated column — zeroed by
+    // the 2026-04 migration and never written by new code paths.
+    await safeAlter('ALTER TABLE users ADD COLUMN available_withdrawal_art_rebu REAL NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE users ADD COLUMN available_withdrawal_standard_vat REAL NOT NULL DEFAULT 0');
+
+    // Stripe Connect (Change #2) — extend `withdrawals` with Stripe Transfers metadata.
+    // All new columns are NULLable so legacy rows (pre-Stripe-Connect) remain valid.
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN stripe_transfer_id TEXT');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN stripe_transfer_group TEXT');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN vat_regime TEXT');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN taxable_base_total REAL');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN vat_amount_total REAL');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN executed_at DATETIME');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN executed_by_admin_id INTEGER');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN failure_reason TEXT');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN reversed_at DATETIME');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN reversal_amount REAL');
+    await safeAlter('ALTER TABLE withdrawals ADD COLUMN reversal_reason TEXT');
+    // Unique partial index: a Stripe transfer id can appear at most once.
+    await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_withdrawals_stripe_transfer ON withdrawals(stripe_transfer_id) WHERE stripe_transfer_id IS NOT NULL');
+    await safeAlter('CREATE INDEX IF NOT EXISTS idx_withdrawals_vat_regime ON withdrawals(vat_regime)');
+
+    // Stripe Connect (Change #2) — polymorphic pivot table linking a payout to
+    // the concrete items (art/other/event_attendee) it covers, with per-item
+    // VAT snapshot for the fiscal export (Change #4).
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS withdrawal_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        withdrawal_id INTEGER NOT NULL,
+        item_type TEXT NOT NULL CHECK(item_type IN ('art_order_item','other_order_item','event_attendee')),
+        item_id INTEGER NOT NULL,
+        seller_earning REAL NOT NULL,
+        taxable_base REAL NOT NULL,
+        vat_rate REAL NOT NULL,
+        vat_amount REAL NOT NULL,
+        vat_regime TEXT NOT NULL CHECK(vat_regime IN ('art_rebu','standard_vat')),
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (withdrawal_id) REFERENCES withdrawals(id)
+      )
+    `);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_withdrawal_items_withdrawal ON withdrawal_items(withdrawal_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_withdrawal_items_lookup ON withdrawal_items(item_type, item_id)');
+
     // ── Stripe Connect Events (webhook idempotency + audit log) ──
     await db.execute(`
       CREATE TABLE IF NOT EXISTS stripe_connect_events (
@@ -681,13 +725,57 @@ async function initializeDatabase() {
         user_id INTEGER NOT NULL,
         amount REAL NOT NULL,
         iban TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'reversed', 'cancelled')),
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME DEFAULT NULL,
         admin_notes TEXT DEFAULT NULL,
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `);
+
+    // Change #2: migrate the CHECK constraint on withdrawals.status if it still
+    // uses the original three-value set. SQLite does not support ALTER CHECK, so
+    // we recreate the table with the expanded constraint.
+    {
+      const tableInfo = await db.execute(
+        `SELECT sql FROM sqlite_master WHERE type='table' AND name='withdrawals'`
+      );
+      const ddl = tableInfo.rows[0]?.sql || '';
+      if (ddl && !ddl.includes('processing')) {
+        logger.info('[database] Migrating withdrawals CHECK constraint to include new status values');
+        await db.execute(`
+          CREATE TABLE withdrawals_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            iban TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'reversed', 'cancelled')),
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME DEFAULT NULL,
+            admin_notes TEXT DEFAULT NULL,
+            stripe_transfer_id TEXT,
+            stripe_transfer_group TEXT,
+            vat_regime TEXT,
+            taxable_base_total REAL,
+            vat_amount_total REAL,
+            executed_at DATETIME,
+            executed_by_admin_id INTEGER,
+            failure_reason TEXT,
+            reversed_at DATETIME,
+            reversal_amount REAL,
+            reversal_reason TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+          )
+        `);
+        await db.execute(`INSERT INTO withdrawals_new SELECT * FROM withdrawals`);
+        await db.execute(`DROP TABLE withdrawals`);
+        await db.execute(`ALTER TABLE withdrawals_new RENAME TO withdrawals`);
+        // Recreate indexes dropped with the old table.
+        await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_withdrawals_stripe_transfer ON withdrawals(stripe_transfer_id) WHERE stripe_transfer_id IS NOT NULL`);
+        await db.execute(`CREATE INDEX IF NOT EXISTS idx_withdrawals_vat_regime ON withdrawals(vat_regime)`);
+        logger.info('[database] withdrawals CHECK constraint migrated successfully');
+      }
+    }
 
     // ── User Sendcloud configuration ─────────────────────────
     await db.execute(`

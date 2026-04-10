@@ -102,14 +102,18 @@ function SellerOrdersContent() {
   const handleDownloadLabel = async (order) => {
     // Find the first item with a shipment to download its label
     const item = order.items?.find(i => i.sendcloudShipmentId)
-    if (!item) return
+    if (!item || !item.orderItemId) return
 
     try {
       const res = await sellerAPI.getOrderLabel(
         item.productType === 'art' ? 'art' : 'others',
-        item.productId
+        item.orderItemId
       )
-      if (res.data?.labelUrl) {
+      if (res.blob) {
+        // Backend returned PDF binary — open in a new tab
+        const url = URL.createObjectURL(res.blob)
+        window.open(url, '_blank')
+      } else if (res.data?.labelUrl) {
         window.open(res.data.labelUrl, '_blank')
       }
     } catch (err) {

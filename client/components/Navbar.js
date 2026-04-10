@@ -184,6 +184,13 @@ export default function Navbar() {
                       >
                         Espacios
                       </Link>
+                      <Link
+                        href="/admin/payouts"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        Pagos
+                      </Link>
                       <button
                         onClick={() => {
                           close()
@@ -455,6 +462,13 @@ export default function Navbar() {
                       className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                     >
                       Espacios
+                    </Link>
+                    <Link
+                      href="/admin/payouts"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Pagos
                     </Link>
                   </>
                 ) : isSeller ? (

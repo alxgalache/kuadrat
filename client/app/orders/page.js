@@ -232,13 +232,19 @@ function OrdersPageContent() {
     })
     const [loadingStats, setLoadingStats] = useState(false)
 
-    // Wallet state
+    // Wallet state — Change #2 splits the balance into two VAT buckets
+    // (art_rebu for REBU 10% art sales, standard_vat for 21% products/services).
+    // `walletBalance` is kept as the combined total for the main heading.
     const [walletBalance, setWalletBalance] = useState(0)
+    const [walletArtRebu, setWalletArtRebu] = useState(0)
+    const [walletStandardVat, setWalletStandardVat] = useState(0)
     const [loadingWallet, setLoadingWallet] = useState(false)
-    const [savedPaymentDetails, setSavedPaymentDetails] = useState({ recipientName: '', iban: '' })
 
-    // Withdrawal modal state
-    const [withdrawalModal, setWithdrawalModal] = useState({open: false, step: 1, recipientName: '', iban: '', saveDetails: false, loading: false, error: '', success: false})
+    // Withdrawal modal state — Change #2: the modal is now a single-step
+    // "nudge" confirmation. No IBAN or recipient data; the admin receives an
+    // email with a link to the payouts panel and the payout is executed from
+    // there via Stripe Connect.
+    const [withdrawalModal, setWithdrawalModal] = useState({open: false, loading: false, error: '', success: false})
     const observerRef = useRef(null)
     const loadMoreRef = useRef(null)
     // Guard to avoid double fetch in React 18 StrictMode on first mount
@@ -277,10 +283,14 @@ function OrdersPageContent() {
         try {
             setLoadingWallet(true)
             const data = await sellerAPI.getWallet()
-            setWalletBalance(data.balance || 0)
-            if (data.recipientName || data.iban) {
-                setSavedPaymentDetails({ recipientName: data.recipientName || '', iban: data.iban || '' })
-            }
+            // Change #2: the wallet now has two VAT-regime buckets plus the
+            // combined legacy `balance` total (sum of both). Older clients
+            // keep working with just `balance`.
+            const artRebu = Number(data.balanceArtRebu) || 0
+            const standardVat = Number(data.balanceStandardVat) || 0
+            setWalletArtRebu(artRebu)
+            setWalletStandardVat(standardVat)
+            setWalletBalance(Number(data.balance) || (artRebu + standardVat))
         } catch (err) {
             console.error('Error loading wallet:', err)
         } finally {
@@ -372,36 +382,30 @@ function OrdersPageContent() {
         }
     }
 
-    // Withdrawal modal handlers
+    // Withdrawal modal handlers — Change #2 (stripe-connect-manual-payouts):
+    // a single-step confirmation. The seller nudges the admin by email; the
+    // admin executes the payout manually from /admin/payouts. Nothing is
+    // debited from the wallet here — buckets only change when the admin
+    // executes the payout via Stripe Connect.
     const openWithdrawalModal = () => {
         setWithdrawalModal({
             open: true,
-            step: 1,
-            recipientName: savedPaymentDetails.recipientName || '',
-            iban: savedPaymentDetails.iban || '',
-            saveDetails: !!(savedPaymentDetails.recipientName || savedPaymentDetails.iban),
             loading: false,
             error: '',
-            success: false
+            success: false,
         })
     }
 
     const handleWithdrawalSubmit = async () => {
         setWithdrawalModal(prev => ({...prev, loading: true, error: ''}))
         try {
-            await sellerAPI.createWithdrawal(withdrawalModal.iban, withdrawalModal.recipientName, withdrawalModal.saveDetails)
+            await sellerAPI.createWithdrawal()
             setWithdrawalModal(prev => ({...prev, loading: false, success: true}))
-            setWalletBalance(0)
-            if (withdrawalModal.saveDetails) {
-                setSavedPaymentDetails({ recipientName: withdrawalModal.recipientName, iban: withdrawalModal.iban })
-            } else {
-                setSavedPaymentDetails({ recipientName: '', iban: '' })
-            }
         } catch (err) {
             setWithdrawalModal(prev => ({
                 ...prev,
                 loading: false,
-                error: err.message || 'No se pudo procesar la solicitud de retirada'
+                error: err.message || 'No se pudo enviar la solicitud'
             }))
         }
     }
@@ -540,14 +544,42 @@ function OrdersPageContent() {
 
                 <div className="bg-gray-200 shadow-sm sm:rounded-lg">
                     <div className="px-4 py-5 sm:p-6">
-                        <h3 className="text-base font-semibold text-gray-900">
-                            {loadingWallet ? '...' : walletBalance.toFixed(2)} &euro; disponible para retirada a tu cuenta
-                        </h3>
-                        <div className="mt-2 max-w-xl text-sm text-gray-500">
-                            <p>
-                                Introduce tu número de cuenta bancaria para realizar la transferencia.
-                            </p>
+                        <h3 className="text-base font-semibold text-gray-900">Saldo disponible</h3>
+                        <p className="mt-1 text-xs text-gray-600">
+                            Tu saldo se divide en dos bolsas según el régimen fiscal aplicable a cada venta.
+                        </p>
+
+                        <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="rounded-md bg-white p-4 shadow-sm">
+                                <dt className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                                    Arte (REBU 10%)
+                                </dt>
+                                <dd className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">
+                                    {loadingWallet ? '...' : `${walletArtRebu.toFixed(2)} €`}
+                                </dd>
+                            </div>
+                            <div className="rounded-md bg-white p-4 shadow-sm">
+                                <dt className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                                    Productos y servicios (21%)
+                                </dt>
+                                <dd className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">
+                                    {loadingWallet ? '...' : `${walletStandardVat.toFixed(2)} €`}
+                                </dd>
+                            </div>
+                        </dl>
+
+                        <div className="mt-4 flex items-baseline justify-between border-t border-gray-300 pt-3">
+                            <span className="text-sm font-medium text-gray-700">Total disponible</span>
+                            <span className="text-lg font-bold tabular-nums text-gray-900">
+                                {loadingWallet ? '...' : `${walletBalance.toFixed(2)} €`}
+                            </span>
                         </div>
+
+                        <p className="mt-4 text-xs text-gray-600">
+                            140d Galería de Arte ejecuta los pagos manualmente vía Stripe Connect.
+                            Pulsa el botón para notificar a la administración que quieres cobrar tu saldo.
+                        </p>
+
                         <div className="mt-5">
                             <button
                                 type="button"
@@ -560,13 +592,13 @@ function OrdersPageContent() {
                                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 )}
                             >
-                                Realizar transferencia
+                                Solicitar pago a 140d Galería de Arte
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* Withdrawal Modal */}
+                {/* Withdrawal Modal — Change #2: single-step nudge to admin */}
                 <Dialog open={withdrawalModal.open} onClose={() => !withdrawalModal.loading && setWithdrawalModal(prev => ({...prev, open: false}))} className="relative z-50">
                     <DialogBackdrop className="fixed inset-0 bg-gray-500/75 transition-opacity" />
                     <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
@@ -591,7 +623,8 @@ function OrdersPageContent() {
                                         </div>
                                         <DialogTitle className="text-lg font-semibold text-gray-900">Solicitud enviada</DialogTitle>
                                         <p className="mt-2 text-sm text-gray-500">
-                                            Tu solicitud de retirada ha sido registrada. Recibirás la transferencia en los próximos días laborables.
+                                            Hemos notificado a 140d Galería de Arte. Procesarán el pago desde Stripe Connect
+                                            y recibirás una confirmación por email cuando se ejecute.
                                         </p>
                                         <div className="mt-6">
                                             <button
@@ -603,107 +636,40 @@ function OrdersPageContent() {
                                             </button>
                                         </div>
                                     </div>
-                                ) : withdrawalModal.step === 1 ? (
-                                    <div>
-                                        <DialogTitle className="text-lg font-semibold text-gray-900">Solicitar retirada de fondos</DialogTitle>
-                                        <p className="mt-2 text-sm text-gray-500">
-                                            Introduce tus datos para recibir la transferencia por importe de {walletBalance.toFixed(2)} €.
-                                        </p>
-                                        <div className="mt-4 space-y-4">
-                                            <div>
-                                                <label htmlFor="recipientName" className="block text-sm font-medium text-gray-700">Nombre completo</label>
-                                                <input
-                                                    type="text"
-                                                    id="recipientName"
-                                                    value={withdrawalModal.recipientName}
-                                                    onChange={(e) => setWithdrawalModal(prev => ({...prev, recipientName: e.target.value}))}
-                                                    placeholder="Nombre del titular"
-                                                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label htmlFor="iban" className="block text-sm font-medium text-gray-700">IBAN</label>
-                                                <input
-                                                    type="text"
-                                                    id="iban"
-                                                    value={withdrawalModal.iban}
-                                                    onChange={(e) => {
-                                                        let val = e.target.value.replace(/[^\w]/g, '').toUpperCase().slice(0, 24)
-                                                        val = val.replace(/(.{4})/g, '$1 ').trim()
-                                                        setWithdrawalModal(prev => ({...prev, iban: val}))
-                                                    }}
-                                                    placeholder="ES00 0000 0000 0000 0000 0000"
-                                                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                                                />
-                                            </div>
-                                            <div className="flex items-center">
-                                                <input
-                                                    id="saveDetails"
-                                                    name="saveDetails"
-                                                    type="checkbox"
-                                                    checked={withdrawalModal.saveDetails}
-                                                    onChange={(e) => setWithdrawalModal(prev => ({...prev, saveDetails: e.target.checked}))}
-                                                    className="h-4 w-4 rounded-sm border-gray-300 accent-black text-black focus:ring-black"
-                                                />
-                                                <label htmlFor="saveDetails" className="ml-2 block text-sm text-gray-700">
-                                                    Recordar beneficiario y número de cuenta para futuros pagos
-                                                </label>
-                                            </div>
-                                        </div>
-                                        {withdrawalModal.error && (
-                                            <p className="mt-2 text-sm text-red-600">{withdrawalModal.error}</p>
-                                        )}
-                                        <div className="mt-6 flex justify-end">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    if (!withdrawalModal.iban.trim()) {
-                                                        setWithdrawalModal(prev => ({...prev, error: 'Introduce tu IBAN'}))
-                                                        return
-                                                    }
-                                                    setWithdrawalModal(prev => ({...prev, step: 2, error: ''}))
-                                                }}
-                                                className="inline-flex justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900"
-                                            >
-                                                Siguiente
-                                            </button>
-                                        </div>
-                                    </div>
                                 ) : (
                                     <div>
-                                        <DialogTitle className="text-lg font-semibold text-gray-900">Confirmar retirada</DialogTitle>
+                                        <DialogTitle className="text-lg font-semibold text-gray-900">Solicitar pago a 140d Galería de Arte</DialogTitle>
                                         <p className="mt-2 text-sm text-gray-500">
-                                            Revisa los datos antes de confirmar la solicitud de transferencia.
+                                            Vas a notificar al equipo de 140d Galería de Arte que quieres cobrar tu saldo
+                                            disponible. El pago se realizará vía Stripe Connect a tu cuenta conectada.
                                         </p>
                                         <div className="mt-4 rounded-md bg-gray-50 p-4">
-                                            <dl className="space-y-3 text-sm">
-                                                {withdrawalModal.recipientName && (
-                                                    <div className="flex justify-between">
-                                                        <dt className="text-gray-500">Titular</dt>
-                                                        <dd className="font-medium text-gray-900">{withdrawalModal.recipientName}</dd>
-                                                    </div>
-                                                )}
+                                            <dl className="space-y-2 text-sm">
                                                 <div className="flex justify-between">
-                                                    <dt className="text-gray-500">IBAN</dt>
-                                                    <dd className="font-medium text-gray-900 font-mono">{withdrawalModal.iban}</dd>
+                                                    <dt className="text-gray-500">Arte (REBU 10%)</dt>
+                                                    <dd className="font-medium text-gray-900 tabular-nums">{walletArtRebu.toFixed(2)} €</dd>
                                                 </div>
                                                 <div className="flex justify-between">
-                                                    <dt className="text-gray-500">Importe</dt>
-                                                    <dd className="font-semibold text-gray-900">{walletBalance.toFixed(2)} €</dd>
+                                                    <dt className="text-gray-500">Productos y servicios (21%)</dt>
+                                                    <dd className="font-medium text-gray-900 tabular-nums">{walletStandardVat.toFixed(2)} €</dd>
+                                                </div>
+                                                <div className="flex justify-between border-t border-gray-200 pt-2">
+                                                    <dt className="text-gray-900 font-medium">Total</dt>
+                                                    <dd className="font-semibold text-gray-900 tabular-nums">{walletBalance.toFixed(2)} €</dd>
                                                 </div>
                                             </dl>
                                         </div>
                                         {withdrawalModal.error && (
                                             <p className="mt-2 text-sm text-red-600">{withdrawalModal.error}</p>
                                         )}
-                                        <div className="mt-6 flex justify-between">
+                                        <div className="mt-6 flex justify-end gap-2">
                                             <button
                                                 type="button"
-                                                onClick={() => setWithdrawalModal(prev => ({...prev, step: 1, error: ''}))}
+                                                onClick={() => setWithdrawalModal(prev => ({...prev, open: false}))}
                                                 disabled={withdrawalModal.loading}
                                                 className="inline-flex justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                                             >
-                                                Volver
+                                                Cancelar
                                             </button>
                                             <button
                                                 type="button"
@@ -711,7 +677,7 @@ function OrdersPageContent() {
                                                 disabled={withdrawalModal.loading}
                                                 className="inline-flex justify-center rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 disabled:opacity-50"
                                             >
-                                                {withdrawalModal.loading ? 'Procesando...' : 'Confirmar'}
+                                                {withdrawalModal.loading ? 'Enviando...' : 'Enviar solicitud'}
                                             </button>
                                         </div>
                                     </div>

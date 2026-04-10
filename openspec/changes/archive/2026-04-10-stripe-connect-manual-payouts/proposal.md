@@ -86,13 +86,13 @@ El plazo manual de 14 días entre venta y payout se mantiene (es el plazo de dev
 - **`GET /api/seller/withdrawals`** (si existe) — sigue devolviendo el histórico, pero ahora con los dos buckets y los nuevos campos visibles.
 - **Tasas de la endpoint del request body** — `iban` y `recipientName` ya no se usan en el nuevo flujo. Se ignoran si llegan, no rompen el contrato. Eventualmente se eliminan en una limpieza posterior.
 
-### Backend — Webhook Connect (ampliación)
+### Backend — Webhook (transfer.* handlers)
 
-- **`api/controllers/stripeConnectWebhookController.js`** (creado en Change #1) — añadir handlers V1 (no V2) para:
+- **`api/controllers/stripeConnectWebhookController.js`** (creado en Change #1) — añadir handlers V1 para:
   - `transfer.created` — confirma `executed_at` y `stripe_transfer_id` (no-op si ya está; idempotente vía `stripe_connect_events`).
   - `transfer.reversed` — marca `withdrawals.status = 'reversed'`, `reversed_at`, `reversal_amount`, **revierte** el decremento del bucket sumando `reversal_amount` al bucket original. NO borra los `withdrawal_items` (mantiene la trazabilidad histórica).
   - `transfer.failed` — marca `status='failed'`, escribe `failure_reason`, revierte el decremento del bucket. Email al admin.
-- El webhook de Connect ya está montado en `/api/stripe/connect/webhook` (Change #1) y sirve estos eventos también — no hace falta un endpoint nuevo. Sólo añadir los `case` en el switch.
+- **NOTA:** los eventos `transfer.*` son V1 "Mi cuenta" (plataforma), no de "Cuentas conectadas". Stripe no permite suscribirlos en un destino de tipo Connected accounts / V2. Los handlers se definen en `stripeConnectWebhookController.js` pero se invocan desde `stripePaymentsController.js` (webhook de pagos, `/api/payments/stripe/webhook`).
 
 ### Backend — Validators
 
@@ -170,8 +170,8 @@ El plazo manual de 14 días entre venta y payout se mantiene (es el plazo de dev
   - `client/app/seller/dashboard/page.js` (split de balances + nuevo flujo de solicitud).
 - **DB schema**: cambios via `safeAlter` (patrón ya usado en el código). Sin DROP. Migración de datos one-shot por separado, idempotente.
 - **Dependencies**: ninguna nueva. El paquete `stripe` ya incluye `transfers.create` V1.
-- **APIs externas**: Stripe Transfers V1 (`stripe.transfers.create`, `stripe.transfers.retrieve`, `stripe.transfers.listReversals`). Webhook events `transfer.created`, `transfer.reversed`, `transfer.failed` añadidos en el endpoint Connect del Change #1 (no nuevo endpoint).
-- **Config/Infra**: ninguna acción manual nueva en Stripe Dashboard más allá de añadir los 3 eventos `transfer.*` al endpoint webhook ya creado en Change #1.
+- **APIs externas**: Stripe Transfers V1 (`stripe.transfers.create`, `stripe.transfers.retrieve`, `stripe.transfers.listReversals`). Webhook events `transfer.created`, `transfer.reversed`, `transfer.failed` suscritos en el webhook de pagos ("Mi cuenta") ya existente — los eventos `transfer.*` son platform-level V1, no de "Cuentas conectadas". Los handlers viven en `stripeConnectWebhookController.js` y se delegan desde `stripePaymentsController.js`.
+- **Config/Infra**: añadir los 3 eventos `transfer.*` al webhook de pagos (`/api/payments/stripe/webhook`). No al endpoint de Connect (que solo acepta eventos V2 de cuentas conectadas).
 - **Testing manual**: cuenta de Stripe en test mode con Connect activado, al menos un seller con cuenta conectada `active`, balance pre-cargado en la plataforma (vía `topups` o cobros de prueba). Ejecutar al menos un payout end-to-end y verificar el row en BD + el evento en Stripe Dashboard.
 
 ## Non-goals

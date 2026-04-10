@@ -1,76 +1,43 @@
-## ADDED Requirements
+# seller-wallet (MODIFIED)
 
-### Requirement: Seller balance persistence
-The system SHALL store each seller's available withdrawal balance in the `users` table as a `available_withdrawal` column of type `REAL NOT NULL DEFAULT 0`. This column represents the total funds available for the seller to withdraw at any given time.
+## MODIFIED Requirements
 
-#### Scenario: New seller has zero balance
-- **WHEN** a new seller account is created
-- **THEN** their `available_withdrawal` value SHALL be `0`
+### Requirement: Wallet split into two VAT buckets
+The seller wallet SHALL be split from a single `users.available_withdrawal` column into two columns reflecting the fiscal regime of the underlying sale:
+- `available_withdrawal_art_rebu REAL NOT NULL DEFAULT 0` — credits originating from `art_order_items` (REBU 10% on dealer margin).
+- `available_withdrawal_standard_vat REAL NOT NULL DEFAULT 0` — credits originating from `other_order_items` and (in Change #3) `event_attendees` (standard 21% VAT).
 
-#### Scenario: Balance is readable via API
-- **WHEN** an authenticated seller requests `GET /api/seller/wallet`
-- **THEN** the system SHALL return their current `available_withdrawal` value and the dealer commission percentage
+The legacy `available_withdrawal` column is retained as deprecated, set to 0 for all users after the migration, and is not written to by any new code path.
 
-### Requirement: Balance increment on item confirmation
-The system SHALL increment a seller's `available_withdrawal` when an individual order item (in `art_order_items` or `other_order_items`) transitions to `confirmed` status via the `updateItemStatus` endpoint. The balance update and status change MUST occur within the same atomic transaction/batch. The seller is determined by joining the item with its product table (`art.seller_id` or `others.seller_id`).
+#### Scenario: Confirmation scheduler credits the correct bucket
+- **GIVEN** an art order item that crosses the auto-confirmation threshold
+- **WHEN** the confirmation scheduler runs
+- **THEN** `users.available_withdrawal_art_rebu` is incremented by `(price - commission)` for the seller of that item
+- **AND** `users.available_withdrawal_standard_vat` is unchanged
+- **AND** the legacy `available_withdrawal` column is unchanged
 
-#### Scenario: Single item confirmed
-- **WHEN** an order item's status is changed to `confirmed` via `PATCH /api/orders/:orderId/items/:itemId/status`
-- **THEN** the item's seller's `available_withdrawal` SHALL increase by `(price_at_purchase - commission_amount)` for that specific item
+#### Scenario: Manual status change credits the correct bucket
+- **GIVEN** an admin marks an `other_order_items` row as confirmed via `PATCH /api/orders/:orderId/items/:itemId/status`
+- **WHEN** the handler runs
+- **THEN** `users.available_withdrawal_standard_vat` is incremented for the seller
+- **AND** `users.available_withdrawal_art_rebu` is unchanged
 
-#### Scenario: Multi-seller order — items confirmed independently
-- **WHEN** an order contains items from sellers A and B, and only seller A's item is confirmed
-- **THEN** only seller A's `available_withdrawal` SHALL increase; seller B's balance SHALL remain unchanged
+### Requirement: Seller dashboard surfaces both balances
+The seller dashboard SHALL display both balances with clear labels in es-ES:
+- "Saldo arte (REBU 10% IVA)" → `available_withdrawal_art_rebu`.
+- "Saldo otros productos / eventos (21% IVA)" → `available_withdrawal_standard_vat`.
+- A combined total below.
 
-#### Scenario: All items confirmed promotes order status
-- **WHEN** all items in an order (across all sellers) have reached `confirmed` status
-- **THEN** the order-level status (`orders.status`) SHALL also be updated to `confirmed`
+#### Scenario: Seller with credits in both buckets
+- **GIVEN** a seller with `available_withdrawal_art_rebu = 120` and `available_withdrawal_standard_vat = 80`
+- **WHEN** the seller opens their dashboard
+- **THEN** they see "Saldo arte: 120,00 €", "Saldo otros: 80,00 €", and a combined total "200,00 €"
 
-#### Scenario: Duplicate confirmation prevention
-- **WHEN** an item that is already in `confirmed` status receives another `confirmed` status update
-- **THEN** the system SHALL NOT increment the seller's balance a second time (guard against the item's previous status)
+### Requirement: One-time data migration of legacy balances
+On first boot after deploy, the system SHALL execute an idempotent migration that, for every user with `available_withdrawal > 0`, dumps the entire amount into `available_withdrawal_standard_vat` and zeroes the legacy column. The migration logs each affected user and amount via the structured logger.
 
-#### Scenario: Only the specific confirmed item affects balance
-- **WHEN** an order has multiple items and only one is being confirmed
-- **THEN** only that item's `(price_at_purchase - commission_amount)` SHALL be added to the seller's balance; other items in the order are not affected
-
-### Requirement: Commission rate exposure
-The system SHALL expose the dealer commission percentages to the frontend via two environment variables: `NEXT_PUBLIC_DEALER_COMMISSION_ART` (for art products) and `NEXT_PUBLIC_DEALER_COMMISSION_OTHERS` (for other products), each defaulting to `15` if not set.
-
-#### Scenario: Commission displayed from environment variables
-- **WHEN** a seller views the Monedero section
-- **THEN** the commission text SHALL display both rates: "Se aplica una comisión del {art}% en obras de arte y del {others}% en otros productos sobre el total de las transacciones realizadas."
-
-#### Scenario: Default commission when variables are not set
-- **WHEN** `NEXT_PUBLIC_DEALER_COMMISSION_ART` or `NEXT_PUBLIC_DEALER_COMMISSION_OTHERS` are not defined in the environment
-- **THEN** the system SHALL use `15` as the default for each undefined variable
-
-#### Scenario: Wallet endpoint returns two commission rates
-- **WHEN** an authenticated seller requests `GET /api/seller/wallet`
-- **THEN** the response SHALL include `commissionRateArt` and `commissionRateOthers` as separate fields instead of `commissionRate`
-
-### Requirement: Product-type-specific commission calculation
-The system SHALL apply different commission rates when creating order items: `DEALER_COMMISSION_ART` for art products and `DEALER_COMMISSION_OTHERS` for other products. The `commission_amount` stored per item SHALL reflect the rate corresponding to its product type.
-
-#### Scenario: Art item commission uses art rate
-- **WHEN** an order is created containing an art product priced at 100.00 and `DEALER_COMMISSION_ART` is set to `15`
-- **THEN** the `commission_amount` in `art_order_items` SHALL be `15.00`
-
-#### Scenario: Others item commission uses others rate
-- **WHEN** an order is created containing an 'others' product priced at 100.00 and `DEALER_COMMISSION_OTHERS` is set to `10`
-- **THEN** the `commission_amount` in `other_order_items` SHALL be `10.00`
-
-#### Scenario: Mixed order applies correct rates
-- **WHEN** an order contains both an art product (price 200.00, art commission 15%) and an 'others' product (price 50.00, others commission 10%)
-- **THEN** the art item's `commission_amount` SHALL be `30.00` and the others item's `commission_amount` SHALL be `5.00`
-
-### Requirement: Auto-confirmation deducts commission from seller credit
-The `confirmationScheduler` SHALL deduct `commission_amount` from `price_at_purchase` when crediting a seller's `available_withdrawal` upon auto-confirmation. The scheduler queries MUST select `commission_amount` from the order item tables.
-
-#### Scenario: Auto-confirmed art item credits seller after commission
-- **WHEN** an art order item with `price_at_purchase = 100.00` and `commission_amount = 15.00` is auto-confirmed
-- **THEN** the seller's `available_withdrawal` SHALL increase by `85.00`
-
-#### Scenario: Auto-confirmed others item credits seller after commission
-- **WHEN** an other order item with `price_at_purchase = 50.00` and `commission_amount = 5.00` is auto-confirmed
-- **THEN** the seller's `available_withdrawal` SHALL increase by `45.00`
+#### Scenario: Re-running the migration is a no-op
+- **GIVEN** the migration already ran and left every user with `available_withdrawal = 0`
+- **WHEN** the API is restarted
+- **THEN** the migration runs but performs no UPDATEs
+- **AND** no errors are produced

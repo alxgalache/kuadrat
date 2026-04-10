@@ -1675,8 +1675,13 @@ const updateItemStatus = async (req, res, next) => {
         batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
       }
       if (sellerId && sellerEarning > 0) {
+        // Change #2 — credit the bucket matching the item's VAT regime:
+        // art → REBU 10%, others → standard 21%. Never mix regimes.
+        const bucketColumn = product_type === 'art'
+          ? 'available_withdrawal_art_rebu'
+          : 'available_withdrawal_standard_vat';
         batch.add(
-          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          `UPDATE users SET ${bucketColumn} = ${bucketColumn} + ? WHERE id = ?`,
           [sellerEarning, sellerId]
         );
       }
@@ -2169,8 +2174,12 @@ const updateItemStatusPublic = async (req, res, next) => {
       const batch = createBatch();
       batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
       if (sellerId && sellerEarning > 0) {
+        // Change #2 — credit the VAT-regime bucket that matches the item type.
+        const bucketColumn = product_type === 'art'
+          ? 'available_withdrawal_art_rebu'
+          : 'available_withdrawal_standard_vat';
         batch.add(
-          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          `UPDATE users SET ${bucketColumn} = ${bucketColumn} + ? WHERE id = ?`,
           [sellerEarning, sellerId]
         );
       }
@@ -2289,14 +2298,26 @@ const updateOrderStatusPublic = async (req, res, next) => {
     }
 
     if (status === 'confirmed') {
-      // Group items by seller for per-seller balance crediting
-      const sellerEarnings = {};
-      for (const item of allItems) {
+      // Change #2 — credit seller wallets split by VAT regime. Art items feed
+      // the REBU 10% bucket; other items feed the standard 21% bucket. We key
+      // by (sellerId, bucket) to avoid ever mixing regimes inside a single
+      // ledger row even if the buyer bought both kinds in one order.
+      const artEarningsBySeller = {};
+      for (const item of allArtItems) {
         const sellerId = item.seller_id;
         if (!sellerId) continue;
         const earning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
         if (earning > 0) {
-          sellerEarnings[sellerId] = (sellerEarnings[sellerId] || 0) + earning;
+          artEarningsBySeller[sellerId] = (artEarningsBySeller[sellerId] || 0) + earning;
+        }
+      }
+      const otherEarningsBySeller = {};
+      for (const item of allOtherItems) {
+        const sellerId = item.seller_id;
+        if (!sellerId) continue;
+        const earning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
+        if (earning > 0) {
+          otherEarningsBySeller[sellerId] = (otherEarningsBySeller[sellerId] || 0) + earning;
         }
       }
 
@@ -2310,9 +2331,15 @@ const updateOrderStatusPublic = async (req, res, next) => {
       }
       batch.add('UPDATE orders SET status = ? WHERE id = ?', ['confirmed', orderId]);
 
-      for (const [sellerId, earning] of Object.entries(sellerEarnings)) {
+      for (const [sellerId, earning] of Object.entries(artEarningsBySeller)) {
         batch.add(
-          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          'UPDATE users SET available_withdrawal_art_rebu = available_withdrawal_art_rebu + ? WHERE id = ?',
+          [earning, sellerId]
+        );
+      }
+      for (const [sellerId, earning] of Object.entries(otherEarningsBySeller)) {
+        batch.add(
+          'UPDATE users SET available_withdrawal_standard_vat = available_withdrawal_standard_vat + ? WHERE id = ?',
           [earning, sellerId]
         );
       }
@@ -2320,7 +2347,8 @@ const updateOrderStatusPublic = async (req, res, next) => {
 
       logger.info({
         orderId: Number(orderId),
-        sellerEarnings,
+        artEarningsBySeller,
+        otherEarningsBySeller,
       }, 'Order confirmed by buyer - seller balances updated (public)');
     } else {
       // Status is 'arrived' — update all items and order status
@@ -2364,7 +2392,7 @@ const updateOrderStatusPublic = async (req, res, next) => {
   }
 };
 
-// Admin: update a single item's status with available_withdrawal accounting
+// Admin: update a single item's status with seller wallet bucket accounting
 const updateItemStatusAdmin = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
@@ -2407,29 +2435,36 @@ const updateItemStatusAdmin = async (req, res, next) => {
     const batch = createBatch();
     batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
 
-    // available_withdrawal accounting
+    // Change #2 — bucket accounting. Art items hit the REBU bucket, others
+    // the standard bucket. Credit on transition to 'confirmed', debit on
+    // reversal from 'confirmed'. Never write to the legacy column.
+    const bucketColumn = product_type === 'art'
+      ? 'available_withdrawal_art_rebu'
+      : 'available_withdrawal_standard_vat';
+
     if (oldStatus !== 'confirmed' && status === 'confirmed' && sellerId && sellerEarning > 0) {
       batch.add(
-        'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+        `UPDATE users SET ${bucketColumn} = ${bucketColumn} + ? WHERE id = ?`,
         [sellerEarning, sellerId]
       );
-      logger.info({ sellerId, orderId: Number(orderId), itemId: Number(itemId), itemType: product_type, amountCredited: sellerEarning }, 'Admin: seller balance credited on item confirmation');
+      logger.info({ sellerId, orderId: Number(orderId), itemId: Number(itemId), itemType: product_type, amountCredited: sellerEarning, bucket: bucketColumn }, 'Admin: seller balance credited on item confirmation');
     } else if (oldStatus === 'confirmed' && status !== 'confirmed' && sellerId && sellerEarning > 0) {
       batch.add(
-        'UPDATE users SET available_withdrawal = available_withdrawal - ? WHERE id = ?',
+        `UPDATE users SET ${bucketColumn} = ${bucketColumn} - ? WHERE id = ?`,
         [sellerEarning, sellerId]
       );
-      logger.info({ sellerId, orderId: Number(orderId), itemId: Number(itemId), itemType: product_type, amountDebited: sellerEarning }, 'Admin: seller balance debited on item status reversal from confirmed');
+      logger.info({ sellerId, orderId: Number(orderId), itemId: Number(itemId), itemType: product_type, amountDebited: sellerEarning, bucket: bucketColumn }, 'Admin: seller balance debited on item status reversal from confirmed');
 
-      // Check if balance goes negative
+      // Check if the bucket goes negative — a reversal after the artist has
+      // already been paid out should be rare but noisy, so log a warning.
       const balanceResult = await db.execute({
-        sql: 'SELECT available_withdrawal FROM users WHERE id = ?',
+        sql: `SELECT ${bucketColumn} AS bucket_balance FROM users WHERE id = ?`,
         args: [sellerId],
       });
       if (balanceResult.rows.length > 0) {
-        const currentBalance = Number(balanceResult.rows[0].available_withdrawal) || 0;
+        const currentBalance = Number(balanceResult.rows[0].bucket_balance) || 0;
         if (currentBalance - sellerEarning < 0) {
-          logger.warn({ sellerId, currentBalance, debitAmount: sellerEarning, resultingBalance: currentBalance - sellerEarning }, 'Admin: seller available_withdrawal will go negative after debit');
+          logger.warn({ sellerId, bucket: bucketColumn, currentBalance, debitAmount: sellerEarning, resultingBalance: currentBalance - sellerEarning }, 'Admin: seller bucket will go negative after debit');
         }
       }
     }
@@ -2454,7 +2489,7 @@ const updateItemStatusAdmin = async (req, res, next) => {
   }
 };
 
-// Admin: update order status and all items' statuses with available_withdrawal accounting
+// Admin: update order status and all items' statuses with seller wallet bucket accounting
 const updateOrderStatusAdmin = async (req, res, next) => {
   try {
     const { orderId } = req.params;
@@ -2502,7 +2537,14 @@ const updateOrderStatusAdmin = async (req, res, next) => {
     batch.add('UPDATE art_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', [status, orderId]);
     batch.add('UPDATE other_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', [status, orderId]);
 
-    // Collect per-seller withdrawal adjustments
+    // Change #2 — adjustments keyed by (sellerId, bucket) so art items and
+    // other items from the same order are credited/debited independently to
+    // their respective VAT regime buckets.
+    const bucketFor = (productType) => (productType === 'art'
+      ? 'available_withdrawal_art_rebu'
+      : 'available_withdrawal_standard_vat');
+
+    // Shape: { [sellerId]: { available_withdrawal_art_rebu: +/-N, available_withdrawal_standard_vat: +/-N } }
     const sellerAdjustments = {};
 
     for (const item of allItems) {
@@ -2512,39 +2554,47 @@ const updateOrderStatusAdmin = async (req, res, next) => {
 
       if (!sellerId || earning <= 0) continue;
 
+      const bucket = bucketFor(item.product_type);
+
+      if (!sellerAdjustments[sellerId]) {
+        sellerAdjustments[sellerId] = {
+          available_withdrawal_art_rebu: 0,
+          available_withdrawal_standard_vat: 0,
+        };
+      }
+
       if (oldStatus !== 'confirmed' && status === 'confirmed') {
         // Credit
-        sellerAdjustments[sellerId] = (sellerAdjustments[sellerId] || 0) + earning;
-        logger.info({ sellerId, orderId: Number(orderId), itemId: Number(item.id), itemType: item.product_type, amountCredited: earning }, 'Admin: seller balance credited on bulk order confirmation');
+        sellerAdjustments[sellerId][bucket] += earning;
+        logger.info({ sellerId, orderId: Number(orderId), itemId: Number(item.id), itemType: item.product_type, amountCredited: earning, bucket }, 'Admin: seller balance credited on bulk order confirmation');
       } else if (oldStatus === 'confirmed' && status !== 'confirmed') {
         // Debit
-        sellerAdjustments[sellerId] = (sellerAdjustments[sellerId] || 0) - earning;
-        logger.info({ sellerId, orderId: Number(orderId), itemId: Number(item.id), itemType: item.product_type, amountDebited: earning }, 'Admin: seller balance debited on bulk order status reversal from confirmed');
+        sellerAdjustments[sellerId][bucket] -= earning;
+        logger.info({ sellerId, orderId: Number(orderId), itemId: Number(item.id), itemType: item.product_type, amountDebited: earning, bucket }, 'Admin: seller balance debited on bulk order status reversal from confirmed');
       }
     }
 
-    // Apply withdrawal adjustments per seller
-    for (const [sellerId, adjustment] of Object.entries(sellerAdjustments)) {
-      if (adjustment > 0) {
+    // Apply adjustments per seller, per bucket.
+    for (const [sellerId, buckets] of Object.entries(sellerAdjustments)) {
+      for (const [bucketColumn, adjustment] of Object.entries(buckets)) {
+        if (adjustment === 0) continue;
+
         batch.add(
-          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
-          [adjustment, sellerId]
-        );
-      } else if (adjustment < 0) {
-        batch.add(
-          'UPDATE users SET available_withdrawal = available_withdrawal + ? WHERE id = ?',
+          `UPDATE users SET ${bucketColumn} = ${bucketColumn} + ? WHERE id = ?`,
           [adjustment, sellerId]
         );
 
-        // Check for negative balance warning
-        const balanceResult = await db.execute({
-          sql: 'SELECT available_withdrawal FROM users WHERE id = ?',
-          args: [sellerId],
-        });
-        if (balanceResult.rows.length > 0) {
-          const currentBalance = Number(balanceResult.rows[0].available_withdrawal) || 0;
-          if (currentBalance + adjustment < 0) {
-            logger.warn({ sellerId: Number(sellerId), currentBalance, adjustment, resultingBalance: currentBalance + adjustment }, 'Admin: seller available_withdrawal will go negative after bulk debit');
+        if (adjustment < 0) {
+          // Check for negative bucket balance warning
+          const balanceResult = await db.execute({
+            sql: `SELECT ${bucketColumn} AS bucket_balance FROM users WHERE id = ?`,
+            args: [sellerId],
+          });
+          if (balanceResult.rows.length > 0) {
+            const currentBalance = Number(balanceResult.rows[0].bucket_balance) || 0;
+            if (currentBalance + adjustment < 0) {
+              logger.warn({ sellerId: Number(sellerId), bucket: bucketColumn, currentBalance, adjustment, resultingBalance: currentBalance + adjustment }, 'Admin: seller bucket will go negative after bulk debit');
+            }
           }
         }
       }

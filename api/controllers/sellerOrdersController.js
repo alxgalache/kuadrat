@@ -103,6 +103,7 @@ const getSellerOrders = async (req, res, next) => {
             variantName: raw.variant_name || null,
             quantity: 0,
             status: raw.status,
+            orderItemId: raw.sendcloud_shipment_id ? raw.id : null,
             sendcloudShipmentId: raw.sendcloud_shipment_id || null,
             sendcloudTrackingUrl: raw.sendcloud_tracking_url || null,
             sendcloudCarrierCode: raw.sendcloud_carrier_code || null,
@@ -113,6 +114,7 @@ const getSellerOrders = async (req, res, next) => {
         const existing = itemMap.get(key)
         if (!existing.sendcloudShipmentId && raw.sendcloud_shipment_id) {
           existing.sendcloudShipmentId = raw.sendcloud_shipment_id
+          existing.orderItemId = raw.id
         }
         if (!existing.sendcloudTrackingUrl && raw.sendcloud_tracking_url) {
           existing.sendcloudTrackingUrl = raw.sendcloud_tracking_url
@@ -661,6 +663,7 @@ const getSellerShipmentsAdmin = async (req, res, next) => {
             variantName: raw.variant_name || null,
             quantity: 0,
             status: raw.status,
+            orderItemId: raw.sendcloud_shipment_id ? raw.id : null,
             sendcloudShipmentId: raw.sendcloud_shipment_id || null,
             sendcloudTrackingUrl: raw.sendcloud_tracking_url || null,
             sendcloudCarrierCode: raw.sendcloud_carrier_code || null,
@@ -668,7 +671,7 @@ const getSellerShipmentsAdmin = async (req, res, next) => {
         }
         itemMap.get(key).quantity += 1
         const existing = itemMap.get(key)
-        if (!existing.sendcloudShipmentId && raw.sendcloud_shipment_id) existing.sendcloudShipmentId = raw.sendcloud_shipment_id
+        if (!existing.sendcloudShipmentId && raw.sendcloud_shipment_id) { existing.sendcloudShipmentId = raw.sendcloud_shipment_id; existing.orderItemId = raw.id }
         if (!existing.sendcloudTrackingUrl && raw.sendcloud_tracking_url) existing.sendcloudTrackingUrl = raw.sendcloud_tracking_url
         if (!existing.sendcloudCarrierCode && raw.sendcloud_carrier_code) existing.sendcloudCarrierCode = raw.sendcloud_carrier_code
       }

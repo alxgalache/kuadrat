@@ -286,7 +286,7 @@ export default function OthersProductDetail({ params }) {
             )}
 
             {/* Variations - NOTE: User will customize this section */}
-            {product.variations && product.variations.length > 0 && product.is_sold !== 1 && totalStock > 0 && (
+            {product.variations && product.variations.length > 1 && product.is_sold !== 1 && totalStock > 0 && (
               <div className="mt-6">
                 <label htmlFor="variation" className="block text-sm font-medium text-gray-900">
                   Selecciona una opción:

@@ -554,7 +554,7 @@ function PublishProductPageContent() {
                                                 Dimensiones (cm) <span className="text-gray-400">(opcional)</span>
                                             </label>
                                             <label className="block text-sm/6 font-medium text-gray-400">
-                                                Formato: Largo x Ancho x Alto. Ej: "30x20x10"
+                                                Formato: Largo x Ancho x Fondo. Ej: "30x20x5"
                                             </label>
                                             <div className="mt-2">
                                                 <input

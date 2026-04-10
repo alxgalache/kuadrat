@@ -7,10 +7,11 @@ import { useSearchParams } from 'next/navigation'
 import { adminAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import { InformationCircleIcon } from '@heroicons/react/20/solid'
 import AuthGuard from '@/components/AuthGuard'
+import { useNotification } from '@/contexts/NotificationContext'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 
-function ArtPreview({ product }) {
+function ArtPreview({ product, onApprove, approving }) {
   return (
     <>
       <Breadcrumbs items={[
@@ -21,15 +22,26 @@ function ArtPreview({ product }) {
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:max-w-7xl lg:px-8">
         {/* Preview banner */}
         <div className="mb-6 rounded-md bg-yellow-50 p-4">
-          <div className="flex">
-            <div className="shrink-0">
-              <InformationCircleIcon aria-hidden="true" className="size-5 text-yellow-400" />
+          <div className="flex items-start justify-between">
+            <div className="flex">
+              <div className="shrink-0">
+                <InformationCircleIcon aria-hidden="true" className="size-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  Previsualización del producto. Esta es una vista solo para administradores.
+                </p>
+              </div>
             </div>
-            <div className="ml-3">
-              <p className="text-sm text-yellow-700">
-                Previsualización del producto. Esta es una vista solo para administradores.
-              </p>
-            </div>
+            {product.status === 'pending' && (
+              <button
+                onClick={onApprove}
+                disabled={approving}
+                className="ml-4 shrink-0 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {approving ? 'Aprobando...' : 'Aprobar'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -106,7 +118,7 @@ function ArtPreview({ product }) {
   )
 }
 
-function OthersPreview({ product }) {
+function OthersPreview({ product, onApprove, approving }) {
   const [selectedVariant, setSelectedVariant] = useState(null)
 
   useEffect(() => {
@@ -128,15 +140,26 @@ function OthersPreview({ product }) {
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:max-w-7xl lg:px-8">
         {/* Preview banner */}
         <div className="mb-6 rounded-md bg-yellow-50 p-4">
-          <div className="flex">
-            <div className="shrink-0">
-              <InformationCircleIcon aria-hidden="true" className="size-5 text-yellow-400" />
+          <div className="flex items-start justify-between">
+            <div className="flex">
+              <div className="shrink-0">
+                <InformationCircleIcon aria-hidden="true" className="size-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  Previsualización del producto. Esta es una vista solo para administradores.
+                </p>
+              </div>
             </div>
-            <div className="ml-3">
-              <p className="text-sm text-yellow-700">
-                Previsualización del producto. Esta es una vista solo para administradores.
-              </p>
-            </div>
+            {product.status === 'pending' && (
+              <button
+                onClick={onApprove}
+                disabled={approving}
+                className="ml-4 shrink-0 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {approving ? 'Aprobando...' : 'Aprobar'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -239,7 +262,9 @@ function ProductPreviewPageContent({ params }) {
   const type = searchParams.get('type')
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [approving, setApproving] = useState(false)
   const [error, setError] = useState('')
+  const { showSuccess, showApiError } = useNotification()
 
   useEffect(() => {
     if (!type || (type !== 'art' && type !== 'others')) {
@@ -258,6 +283,19 @@ function ProductPreviewPageContent({ params }) {
       setError('No se pudo cargar el producto')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleApprove = async () => {
+    setApproving(true)
+    try {
+      await adminAPI.products.updateStatus(unwrappedParams.id, type, 'approved')
+      setProduct(prev => ({ ...prev, status: 'approved' }))
+      showSuccess('Producto aprobado correctamente')
+    } catch (err) {
+      showApiError(err)
+    } finally {
+      setApproving(false)
     }
   }
 
@@ -280,9 +318,9 @@ function ProductPreviewPageContent({ params }) {
   return (
     <div className="bg-white">
       {type === 'art' ? (
-        <ArtPreview product={product} />
+        <ArtPreview product={product} onApprove={handleApprove} approving={approving} />
       ) : (
-        <OthersPreview product={product} />
+        <OthersPreview product={product} onApprove={handleApprove} approving={approving} />
       )}
     </div>
   )

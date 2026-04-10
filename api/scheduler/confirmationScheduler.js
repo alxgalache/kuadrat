@@ -60,11 +60,18 @@ module.exports = function startConfirmationScheduler() {
             args: [item.id],
           });
 
-          // Credit seller available_withdrawal (deducting commission)
+          // Credit seller wallet (deducting commission). Change #2 splits the
+          // wallet into two VAT buckets: art → REBU 10%, others → standard 21%.
+          // Picking the bucket column based on the source table avoids ever
+          // mixing fiscal regimes inside a single payout. The legacy
+          // `available_withdrawal` column is no longer written to.
           if (item.price_at_purchase && item.seller_id) {
             const sellerEarning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
+            const bucketColumn = item.table === 'art_order_items'
+              ? 'available_withdrawal_art_rebu'
+              : 'available_withdrawal_standard_vat';
             await db.execute({
-              sql: `UPDATE users SET available_withdrawal = COALESCE(available_withdrawal, 0) + ? WHERE id = ?`,
+              sql: `UPDATE users SET ${bucketColumn} = COALESCE(${bucketColumn}, 0) + ? WHERE id = ?`,
               args: [sellerEarning, item.seller_id],
             });
           }

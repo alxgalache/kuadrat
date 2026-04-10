@@ -3,14 +3,12 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const { authenticate, requireSeller } = require('../middleware/authorization');
 const { db } = require('../config/database');
-const { createBatch } = require('../utils/transaction');
 const logger = require('../config/logger');
 const config = require('../config/env');
 const { ApiError } = require('../middleware/errorHandler');
-const { sendSuccess, sendCreated } = require('../utils/response');
+const { sendSuccess } = require('../utils/response');
 const { sendWithdrawalNotificationEmail } = require('../services/emailService');
 const { validate } = require('../middleware/validate');
-const { createWithdrawalSchema } = require('../validators/withdrawalSchemas');
 const { changePasswordSchema } = require('../validators/sellerSchemas');
 const { validatePassword } = require('../controllers/authController');
 const { getSellerOrders, downloadOrderLabel, schedulePickup, scheduleBulkPickup } = require('../controllers/sellerOrdersController');
@@ -355,14 +353,22 @@ router.delete('/products/:id', async (req, res) => {
 
 /**
  * GET /api/seller/wallet
- * Get seller's available withdrawal balance, commission rate, and saved payment details
+ * Get the seller's available withdrawal balance split into the two VAT-regime
+ * buckets introduced in Change #2: `art_rebu` (REBU 10% for art) and
+ * `standard_vat` (21% for everything else). The legacy `balance` field is
+ * preserved and equals the sum of both buckets, so older clients keep working.
  */
 router.get('/wallet', async (req, res, next) => {
   try {
     const userId = req.user.id;
 
     const result = await db.execute({
-      sql: 'SELECT available_withdrawal, withdrawal_recipient, withdrawal_iban FROM users WHERE id = ?',
+      sql: `SELECT available_withdrawal_art_rebu,
+                   available_withdrawal_standard_vat,
+                   withdrawal_recipient,
+                   withdrawal_iban
+            FROM users
+            WHERE id = ?`,
       args: [userId],
     });
 
@@ -370,12 +376,18 @@ router.get('/wallet', async (req, res, next) => {
       throw new ApiError(404, 'Usuario no encontrado', 'Usuario no encontrado');
     }
 
+    const row = result.rows[0];
+    const balanceArtRebu = Number(row.available_withdrawal_art_rebu) || 0;
+    const balanceStandardVat = Number(row.available_withdrawal_standard_vat) || 0;
+
     sendSuccess(res, {
-      balance: Number(result.rows[0].available_withdrawal) || 0,
+      balance: balanceArtRebu + balanceStandardVat,
+      balanceArtRebu,
+      balanceStandardVat,
       commissionRateArt: config.payment.dealerCommissionArt,
       commissionRateOthers: config.payment.dealerCommissionOthers,
-      recipientName: result.rows[0].withdrawal_recipient || '',
-      iban: result.rows[0].withdrawal_iban || '',
+      recipientName: row.withdrawal_recipient || '',
+      iban: row.withdrawal_iban || '',
     });
   } catch (error) {
     next(error);
@@ -384,16 +396,27 @@ router.get('/wallet', async (req, res, next) => {
 
 /**
  * POST /api/seller/withdrawals
- * Create a withdrawal request (full balance)
+ *
+ * Change #2 — this endpoint is now a *nudge*, not a writer. The admin is the
+ * only actor that can create `withdrawals` rows (via the payouts panel), so
+ * here we just:
+ *
+ *   1. Read the seller's current wallet buckets (for context in the email).
+ *   2. Send the admin an email with a link to `/admin/payouts/<sellerId>`.
+ *   3. Return `{ ok: true }`.
+ *
+ * No row is inserted, no balance is zeroed. The seller may call this
+ * repeatedly without side effects.
  */
-router.post('/withdrawals', validate(createWithdrawalSchema), async (req, res, next) => {
+router.post('/withdrawals', async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { iban, recipientName, saveDetails } = req.body;
 
-    // Read current balance
     const userResult = await db.execute({
-      sql: 'SELECT available_withdrawal, full_name, email FROM users WHERE id = ?',
+      sql: `SELECT full_name, email,
+                   available_withdrawal_art_rebu,
+                   available_withdrawal_standard_vat
+            FROM users WHERE id = ?`,
       args: [userId],
     });
 
@@ -402,61 +425,33 @@ router.post('/withdrawals', validate(createWithdrawalSchema), async (req, res, n
     }
 
     const user = userResult.rows[0];
-    const balance = Number(user.available_withdrawal) || 0;
+    const balanceArtRebu = Number(user.available_withdrawal_art_rebu) || 0;
+    const balanceStandardVat = Number(user.available_withdrawal_standard_vat) || 0;
+    const totalBalance = balanceArtRebu + balanceStandardVat;
 
-    if (balance <= 0) {
+    if (totalBalance <= 0) {
       throw new ApiError(400, 'No tienes saldo disponible para retirar', 'Saldo insuficiente');
     }
 
-    // Atomically create withdrawal record and set balance to 0
-    const batch = createBatch();
-    batch.add(
-      'INSERT INTO withdrawals (user_id, amount, iban, status) VALUES (?, ?, ?, ?)',
-      [userId, balance, iban.trim(), 'pending']
-    );
-
-    if (saveDetails) {
-      batch.add(
-        'UPDATE users SET available_withdrawal = 0, withdrawal_recipient = ?, withdrawal_iban = ? WHERE id = ? AND available_withdrawal = ?',
-        [recipientName?.trim() || null, iban.trim(), userId, balance]
-      );
-    } else {
-      batch.add(
-        'UPDATE users SET available_withdrawal = 0, withdrawal_recipient = NULL, withdrawal_iban = NULL WHERE id = ? AND available_withdrawal = ?',
-        [userId, balance]
-      );
-    }
-    const results = await batch.execute();
-
-    // Verify the balance update affected a row (concurrent withdrawal protection)
-    if (results[1].rowsAffected === 0) {
-      throw new ApiError(409, 'El saldo ha cambiado. Por favor, inténtalo de nuevo.', 'Conflicto de saldo');
-    }
-
-    const withdrawalId = Number(results[0].lastInsertRowid);
-
-    // Send admin notification email (non-blocking)
+    // Send admin notification email (non-blocking).
     try {
       await sendWithdrawalNotificationEmail({
+        sellerId: userId,
         sellerName: user.full_name || user.email,
         sellerEmail: user.email,
-        amount: balance,
-        iban: iban.trim(),
+        balanceArtRebu,
+        balanceStandardVat,
       });
     } catch (emailError) {
       logger.error({ err: emailError }, 'Error sending withdrawal notification email');
     }
 
-    logger.info({ userId, withdrawalId, amount: balance }, 'Withdrawal request created');
+    logger.info(
+      { userId, balanceArtRebu, balanceStandardVat, totalBalance },
+      'Seller withdrawal nudge sent to admin'
+    );
 
-    sendCreated(res, {
-      withdrawal: {
-        id: withdrawalId,
-        amount: balance,
-        iban: iban.trim(),
-        status: 'pending',
-      },
-    }, 'Solicitud de retirada creada correctamente');
+    sendSuccess(res, { ok: true }, 200, 'Solicitud enviada');
   } catch (error) {
     next(error);
   }

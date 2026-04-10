@@ -252,7 +252,7 @@ const getViewerToken = async (req, res, next) => {
     }
 
     // For paid events, check payment status
-    if (event.access_type === 'paid' && attendee.status !== 'paid') {
+    if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
       throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
     }
 
@@ -506,7 +506,7 @@ const getVideoToken = async (req, res, next) => {
     if (attendeeId && accessToken) {
       const attendee = await eventService.getAttendeeByAccessToken(id, accessToken);
       if (attendee && attendee.id === attendeeId) {
-        if (event.access_type === 'paid' && attendee.status !== 'paid') {
+        if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
           throw new ApiError(403, 'Se requiere pago para acceder al vídeo', 'Pago requerido');
         }
         subject = attendeeId;

@@ -1795,18 +1795,45 @@ const sendDrawWinnerEmail = async ({ email, firstName, drawName, productName, pr
 };
 
 /**
- * Send withdrawal notification email to admin
- * @param {{ sellerName: string, sellerEmail: string, amount: number, iban: string }} details
+ * Send a withdrawal nudge email to admin.
+ *
+ * Change #2 — Stripe Connect manual payouts made `withdrawals` admin-created,
+ * so this email is no longer a "please process the wire transfer" notice but
+ * a nudge: the seller has clicked "quiero cobrar" and the admin should head
+ * over to `/admin/payouts/<sellerId>` to decide which bucket to pay out.
+ *
+ * No IBAN is shown (Stripe handles payout details). Both wallet buckets are
+ * included for context so the admin knows what they are looking at.
+ *
+ * @param {object} params
+ * @param {number} params.sellerId           - DB id of the seller.
+ * @param {string} params.sellerName         - Display name (full_name or email).
+ * @param {string} params.sellerEmail        - Seller contact email.
+ * @param {number} params.balanceArtRebu     - REBU 10% bucket balance (€).
+ * @param {number} params.balanceStandardVat - Standard 21% bucket balance (€).
  */
-const sendWithdrawalNotificationEmail = async ({ sellerName, sellerEmail, amount, iban }) => {
+const sendWithdrawalNotificationEmail = async ({
+  sellerId,
+  sellerName,
+  sellerEmail,
+  balanceArtRebu,
+  balanceStandardVat,
+}) => {
   const adminEmail = process.env.REGISTRATION_EMAIL;
   if (!adminEmail) {
     logger.warn('No REGISTRATION_EMAIL configured, skipping withdrawal notification');
     return { success: false, error: 'No admin email configured' };
   }
 
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+  const payoutsUrl = `${CLIENT_URL}/admin/payouts/${sellerId}`;
+
   const logoAttachment = getLogoAttachment();
   const date = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const artRebu = Number(balanceArtRebu) || 0;
+  const standardVat = Number(balanceStandardVat) || 0;
+  const total = artRebu + standardVat;
 
   const html = `
     <!DOCTYPE html>
@@ -1818,13 +1845,13 @@ const sendWithdrawalNotificationEmail = async ({ sellerName, sellerEmail, amount
           <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
         </div>
         <div style="background: #ffffff; border-radius: 8px; padding: 32px; border: 1px solid #e5e7eb;">
-          <h2 style="margin: 0 0 16px; font-size: 20px; color: #111827;">Nueva solicitud de retirada</h2>
+          <h2 style="margin: 0 0 16px; font-size: 20px; color: #111827;">Solicitud de pago de un artista</h2>
           <p style="color: #6b7280; font-size: 14px; margin: 0 0 24px;">
-            Un vendedor ha solicitado una transferencia de fondos. Por favor, procesa la transferencia manualmente.
+            ${sellerName} ha solicitado cobrar su saldo. Revisa el panel de pagos para ejecutar el payout desde Stripe Connect.
           </p>
           <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
             <tr>
-              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Vendedor</td>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Artista</td>
               <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${sellerName}</td>
             </tr>
             <tr>
@@ -1832,18 +1859,27 @@ const sendWithdrawalNotificationEmail = async ({ sellerName, sellerEmail, amount
               <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${sellerEmail}</td>
             </tr>
             <tr>
-              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Importe</td>
-              <td style="padding: 8px 0; color: #111827; font-weight: 600; font-size: 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">${amount.toFixed(2)} &euro;</td>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Saldo obras (REBU 10%)</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${artRebu.toFixed(2)} &euro;</td>
             </tr>
             <tr>
-              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">IBAN</td>
-              <td style="padding: 8px 0; color: #111827; font-weight: 500; font-family: monospace; border-bottom: 1px solid #f3f4f6; text-align: right;">${iban}</td>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Saldo productos/servicios (21%)</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${standardVat.toFixed(2)} &euro;</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Saldo total</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 600; font-size: 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">${total.toFixed(2)} &euro;</td>
             </tr>
             <tr>
               <td style="padding: 8px 0; color: #6b7280;">Fecha</td>
               <td style="padding: 8px 0; color: #111827; font-weight: 500; text-align: right;">${date}</td>
             </tr>
           </table>
+          <div style="margin-top: 24px; text-align: center;">
+            <a href="${payoutsUrl}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 14px; font-weight: 600;">
+              Abrir panel de pagos
+            </a>
+          </div>
         </div>
       </div>
     </body>
@@ -1853,17 +1889,17 @@ const sendWithdrawalNotificationEmail = async ({ sellerName, sellerEmail, amount
   const mailOptions = {
     from: getFormattedSender(),
     to: adminEmail,
-    subject: `[ADMIN] Solicitud de retirada - ${sellerName} - ${amount.toFixed(2)}€`,
+    subject: `[ADMIN] Solicitud de pago - ${sellerName} - ${total.toFixed(2)}€`,
     html,
     ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
   };
 
   try {
     const result = await transporter.sendMail(mailOptions);
-    logger.info({ recipient: adminEmail, messageId: result.messageId }, 'Withdrawal notification email sent to admin');
+    logger.info({ recipient: adminEmail, sellerId, messageId: result.messageId }, 'Withdrawal nudge email sent to admin');
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    logger.error({ err: error }, 'Error sending withdrawal notification email');
+    logger.error({ err: error }, 'Error sending withdrawal nudge email');
     return { success: false, error: error.message };
   }
 };
@@ -3071,6 +3107,311 @@ Importante: este enlace caduca al cabo de unas horas por motivos de seguridad. S
   }
 };
 
+// ─── Change #2: stripe-connect-manual-payouts ─────────────────────────────
+
+/**
+ * Human-readable label for a VAT regime. Used across the three payout emails.
+ * @private
+ */
+const vatRegimeLabel = (regime) => {
+  if (regime === 'art_rebu') return 'Arte (REBU 10%)';
+  if (regime === 'standard_vat') return 'Productos y servicios (21%)';
+  return regime || '—';
+};
+
+/**
+ * Notify a seller that the platform has executed a payout to their Stripe
+ * Connect account. Includes amount, VAT regime, and a link to their dashboard
+ * where they can see the transfer reflected.
+ *
+ * @param {Object} params
+ * @param {Object} params.seller    - users row (id, email, full_name)
+ * @param {Object} params.withdrawal - { id, amount, vat_regime, taxable_base_total, vat_amount_total, stripe_transfer_id }
+ * @param {Array}  params.items     - summary line items (for item count only)
+ */
+const sendSellerPayoutExecutedEmail = async ({ seller, withdrawal, items }) => {
+  if (!seller?.email) {
+    logger.warn('[emailService] sendSellerPayoutExecutedEmail: no seller email, skipping');
+    return { success: false, error: 'No seller email' };
+  }
+
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+  const dashboardUrl = `${CLIENT_URL}/orders`;
+  const logoAttachment = getLogoAttachment();
+  const date = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const amount = Number(withdrawal.amount) || 0;
+  const taxableBase = Number(withdrawal.taxable_base_total) || 0;
+  const vatAmount = Number(withdrawal.vat_amount_total) || 0;
+  const itemCount = Array.isArray(items) ? items.length : 0;
+  const sellerName = seller.full_name || seller.email;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f9fafb;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+        </div>
+        <div style="background: #ffffff; border-radius: 8px; padding: 32px; border: 1px solid #e5e7eb;">
+          <h2 style="margin: 0 0 16px; font-size: 20px; color: #111827;">Hemos procesado tu pago</h2>
+          <p style="color: #374151; font-size: 15px; line-height: 1.5; margin: 0 0 24px;">
+            Hola ${escapeHtml(sellerName)}, acabamos de transferir <strong>${amount.toFixed(2)} €</strong>
+            a tu cuenta de Stripe Connect. El importe aparecerá en tu balance de Stripe en breve y se liquidará
+            automáticamente a tu cuenta bancaria según el calendario de payouts que tengas configurado.
+          </p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Importe</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 600; font-size: 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">${amount.toFixed(2)} &euro;</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Régimen fiscal</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${vatRegimeLabel(withdrawal.vat_regime)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Base imponible</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${taxableBase.toFixed(2)} &euro;</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">IVA incluido en la comisión</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${vatAmount.toFixed(2)} &euro;</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Referencia (Withdrawal)</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">#${withdrawal.id}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Nº de items</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${itemCount}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280;">Fecha</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; text-align: right;">${date}</td>
+            </tr>
+          </table>
+          <div style="margin-top: 24px; text-align: center;">
+            <a href="${dashboardUrl}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 14px; font-weight: 600;">
+              Ver panel de pagos
+            </a>
+          </div>
+          <p style="color: #9ca3af; font-size: 12px; line-height: 1.5; margin: 24px 0 0;">
+            Si tienes cualquier duda sobre este pago, responde a este correo y te ayudamos.
+          </p>
+        </div>
+        <p style="text-align: center; color: #9ca3af; font-size: 12px; margin-top: 24px;">
+          &copy; ${new Date().getFullYear()} 140d Galería de Arte
+        </p>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: seller.email,
+    subject: `140d Galería de Arte — Pago enviado (${amount.toFixed(2)} €)`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    logger.info(
+      { sellerEmail: seller.email, withdrawalId: withdrawal.id, messageId: result.messageId },
+      '[emailService] payoutExecuted email sent to seller'
+    );
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error, sellerEmail: seller.email }, 'Error sending payoutExecuted email');
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Alert the admin that a previously executed payout has been flagged as failed
+ * by Stripe (rare async failure). Used by the `transfer.failed` webhook.
+ *
+ * @param {Object} params
+ * @param {Object} params.withdrawal    - the withdrawals row (id, amount, vat_regime, user_id, stripe_transfer_id)
+ * @param {string} params.failureReason - human-readable failure reason from Stripe
+ */
+const sendAdminPayoutFailedEmail = async ({ withdrawal, failureReason }) => {
+  const adminEmail = process.env.REGISTRATION_EMAIL;
+  if (!adminEmail) {
+    logger.warn('[emailService] sendAdminPayoutFailedEmail: no REGISTRATION_EMAIL configured');
+    return { success: false, error: 'No admin email configured' };
+  }
+
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+  const payoutsUrl = `${CLIENT_URL}/admin/payouts/${withdrawal.user_id}`;
+  const logoAttachment = getLogoAttachment();
+  const amount = Number(withdrawal.amount) || 0;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f9fafb;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+        </div>
+        <div style="background: #ffffff; border-radius: 8px; padding: 32px; border: 1px solid #fecaca;">
+          <h2 style="margin: 0 0 16px; font-size: 20px; color: #991b1b;">Payout fallido</h2>
+          <p style="color: #6b7280; font-size: 14px; margin: 0 0 24px;">
+            Stripe ha notificado que la transferencia del pago <strong>#${withdrawal.id}</strong> ha fallado.
+            El importe se ha devuelto al bucket correspondiente del artista (estado local: <code>failed</code>).
+          </p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Withdrawal</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">#${withdrawal.id}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Artista (ID)</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${withdrawal.user_id}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Régimen fiscal</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${vatRegimeLabel(withdrawal.vat_regime)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Importe</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 600; border-bottom: 1px solid #f3f4f6; text-align: right;">${amount.toFixed(2)} &euro;</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Transfer ID</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; font-family: monospace; font-size: 12px; border-bottom: 1px solid #f3f4f6; text-align: right;">${escapeHtml(withdrawal.stripe_transfer_id || '—')}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; vertical-align: top;">Motivo</td>
+              <td style="padding: 8px 0; color: #991b1b; font-weight: 500; text-align: right;">${escapeHtml(failureReason || '—')}</td>
+            </tr>
+          </table>
+          <div style="margin-top: 24px; text-align: center;">
+            <a href="${payoutsUrl}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 14px; font-weight: 600;">
+              Abrir panel de pagos
+            </a>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: adminEmail,
+    subject: `[ADMIN] Payout fallido - Withdrawal #${withdrawal.id} - ${amount.toFixed(2)}€`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    logger.info(
+      { recipient: adminEmail, withdrawalId: withdrawal.id, messageId: result.messageId },
+      '[emailService] adminPayoutFailed email sent'
+    );
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending adminPayoutFailed email');
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Alert the admin that a payout has been reversed (either from the Stripe
+ * dashboard, surfaced via the `transfer.reversed` webhook).
+ *
+ * @param {Object} params
+ * @param {Object} params.withdrawal     - the withdrawals row
+ * @param {number} params.reversalAmount - reversed amount in euros
+ */
+const sendAdminPayoutReversedEmail = async ({ withdrawal, reversalAmount }) => {
+  const adminEmail = process.env.REGISTRATION_EMAIL;
+  if (!adminEmail) {
+    logger.warn('[emailService] sendAdminPayoutReversedEmail: no REGISTRATION_EMAIL configured');
+    return { success: false, error: 'No admin email configured' };
+  }
+
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+  const payoutsUrl = `${CLIENT_URL}/admin/payouts/${withdrawal.user_id}`;
+  const logoAttachment = getLogoAttachment();
+  const amount = Number(reversalAmount) || 0;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f9fafb;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+        </div>
+        <div style="background: #ffffff; border-radius: 8px; padding: 32px; border: 1px solid #fde68a;">
+          <h2 style="margin: 0 0 16px; font-size: 20px; color: #92400e;">Payout revertido</h2>
+          <p style="color: #6b7280; font-size: 14px; margin: 0 0 24px;">
+            Stripe ha notificado la reversión del pago <strong>#${withdrawal.id}</strong>.
+            El importe ha vuelto al bucket del artista (estado local: <code>reversed</code>).
+          </p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Withdrawal</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">#${withdrawal.id}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Artista (ID)</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${withdrawal.user_id}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Régimen fiscal</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${vatRegimeLabel(withdrawal.vat_regime)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Importe revertido</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 600; border-bottom: 1px solid #f3f4f6; text-align: right;">${amount.toFixed(2)} &euro;</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280;">Transfer ID</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; font-family: monospace; font-size: 12px; text-align: right;">${escapeHtml(withdrawal.stripe_transfer_id || '—')}</td>
+            </tr>
+          </table>
+          <div style="margin-top: 24px; text-align: center;">
+            <a href="${payoutsUrl}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 14px; font-weight: 600;">
+              Abrir panel de pagos
+            </a>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: adminEmail,
+    subject: `[ADMIN] Payout revertido - Withdrawal #${withdrawal.id} - ${amount.toFixed(2)}€`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    logger.info(
+      { recipient: adminEmail, withdrawalId: withdrawal.id, messageId: result.messageId },
+      '[emailService] adminPayoutReversed email sent'
+    );
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending adminPayoutReversed email');
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -3103,4 +3444,8 @@ module.exports = {
   sendLabelReadyEmail,
   sendShipmentFailedAdminEmail,
   sendSellerOnboardingLink,
+  // Change #2: stripe-connect-manual-payouts
+  sendSellerPayoutExecutedEmail,
+  sendAdminPayoutFailedEmail,
+  sendAdminPayoutReversedEmail,
 };

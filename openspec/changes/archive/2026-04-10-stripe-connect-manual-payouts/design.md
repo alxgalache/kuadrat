@@ -159,6 +159,19 @@ stripe.transfers.create({ amount, currency:'eur', destination, transfer_group, m
 
 Todos los eventos se desduplican vía `stripe_connect_events.stripe_event_id UNIQUE` (tabla creada en Change #1).
 
+**Routing de webhooks:** Los eventos `transfer.*` son eventos V1 de "Mi cuenta" (plataforma), no de "Cuentas conectadas". Stripe no permite suscribirlos en un destino de tipo "Connected accounts / V2". Por tanto llegan al webhook de pagos (`/api/payments/stripe/webhook`) y se delegan a los handlers definidos en `stripeConnectWebhookController.js`. El webhook de Connect (`/api/stripe/connect/webhook`) solo recibe eventos V2 de cuentas conectadas.
+
+```
+Stripe Dashboard
+├── Webhook "Mi cuenta" → /api/payments/stripe/webhook
+│   ├── payment_intent.succeeded / canceled / payment_failed
+│   └── transfer.created / reversed / failed  ──▶ handlers de stripeConnectWebhookController
+│
+└── Webhook "Cuentas conectadas / V2" → /api/stripe/connect/webhook
+    ├── v2.core.account[requirements].updated
+    └── v2.core.account[configuration.recipient].capability_status_updated
+```
+
 ## 6. Migración de datos
 
 ```js
@@ -196,3 +209,17 @@ async function run() {
 ## 8. Lo que NO entra en este change
 
 Ver la sección **Non-goals** del proposal. En particular: refunds post-payout, reversal vía API automatizado, PDFs de autofactura, IRPF aplicado, eventos acreditando al monedero (eso es Change #3), export a gestoría (Change #4).
+
+## 9. Known limitations (tras la implementación)
+
+Capturadas durante la implementación de Change #2. Son deuda aceptada para v1; revisar en futuros changes si se vuelven bloqueantes.
+
+| # | Limitación | Impacto | Mitigación / plan |
+|---|---|---|---|
+| ~~L1~~ | ~~**CHECK constraint de `withdrawals.status`**~~ | **Resuelto.** La migración en `initializeDatabase()` detecta el CHECK antiguo via `sqlite_master`, recrea la tabla con el CHECK ampliado (`pending`, `processing`, `completed`, `failed`, `reversed`, `cancelled`) y copia los datos. Idempotente. |  |
+| L2 | **Confirmation tokens en memoria (Map).** El TTL de 5 min usa `setTimeout`. Si la API corre en >1 instancia detrás de un load balancer, el token generado en una instancia no existe en otra. | Un admin podría previsualizar en una instancia y ejecutar en otra → error "token inválido". | Actualmente la API corre en una sola instancia. Si escalamos horizontalmente, migrar el store a Redis o a una tabla `confirmation_tokens` con `expires_at`. |
+| L3 | **`withdrawals.iban` sigue NOT NULL.** Los nuevos rows escriben `''`. La UI admin filtra por `vat_regime IS NOT NULL` para no mostrarlo. | Una futura auditoría de columnas vería strings vacíos en IBAN. Menor. | Drop-column + re-create en un change posterior si se quiere limpiar. |
+| L4 | **Refunds post-payout no gestionados.** Si el comprador pide reembolso después de que el artista haya recibido el transfer, la app no revierte el earnings ni recupera el dinero del artista. | Riesgo contable: el platform asume la pérdida, o el admin compensa manualmente con SQL directo. | Out of scope v1. Documentado explícitamente en proposal §Non-goals. |
+| L5 | **Reversals sólo via Stripe Dashboard.** La UI admin ofrece `mark-reversed` (reconciliación manual post-hoc), pero no hay botón "revertir transfer" que llame a `stripe.transfers.createReversal`. | El admin debe tener acceso al dashboard de Stripe para iniciar la reversal. El webhook `transfer.reversed` sí se maneja correctamente y sincroniza el bucket. | Intencional en v1. Añadir en change futuro si fricción operacional lo justifica. |
+| L6 | **Migración conservadora al bucket estándar.** La data migration (fase 2) vuelca *todo* el `available_withdrawal` legacy al bucket `standard_vat`. No hay re-clasificación REBU retroactiva. | Artistas con saldo legacy proveniente de ventas de arte pagarán más IVA del que les correspondería si se hiciera REBU. | Aceptado como conservador. Si el admin quiere rebalancear para un artista concreto, SQL directo. |
+| L7 | **Un payout por régimen.** No hay forma de pagar los dos buckets en un solo `transfers.create`. Son dos transfers separados (uno REBU, uno estándar). | El artista ve dos líneas en su extracto bancario cuando se le paga de ambos buckets. Menor. | Intencional: simplifica el registro fiscal y el reversal. |

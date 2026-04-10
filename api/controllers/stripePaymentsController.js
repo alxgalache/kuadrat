@@ -15,6 +15,11 @@ const {
 } = require('../utils/paymentHelpers');
 const { processOrderConfirmation } = require('./paymentsController');
 const { releaseOrderInventory } = require('../services/inventoryService');
+const {
+  handleTransferCreated,
+  handleTransferReversed,
+  handleTransferFailed,
+} = require('./stripeConnectWebhookController');
 
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
 const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
@@ -164,6 +169,64 @@ const stripeWebhookEndpoint = async (req, res, next) => {
       }
 
       return res.status(200).json({ received: true, processed: true, reason: event.type });
+    }
+
+    // ── Transfer events (Change #2 — Stripe Connect manual payouts) ──────
+    // These are V1 platform-level events that fire when the platform creates,
+    // reverses or fails a transfer to a connected account. They must live on
+    // the "My account" webhook (not the "Connected accounts" one), so they
+    // arrive here and we delegate to the handlers in stripeConnectWebhookController.
+    if (event.type.startsWith('transfer.')) {
+      // Idempotency via stripe_connect_events (same table used by the Connect webhook).
+      let inserted;
+      try {
+        inserted = await db.execute({
+          sql: `INSERT OR IGNORE INTO stripe_connect_events
+                (stripe_event_id, stripe_event_type, account_id, payload_json)
+                VALUES (?, ?, ?, ?)`,
+          args: [event.id, event.type, event.account || null, JSON.stringify(event)],
+        });
+      } catch (err) {
+        logger.error({ err, eventId: event.id }, 'Failed to persist transfer event for idempotency');
+        return res.status(500).json({ error: 'DB persistence failed' });
+      }
+
+      if (inserted.rowsAffected === 0) {
+        logger.info({ eventId: event.id }, 'Duplicate transfer event ignored');
+        return res.status(200).json({ received: true, duplicate: true });
+      }
+
+      try {
+        switch (event.type) {
+          case 'transfer.created':
+            await handleTransferCreated(event);
+            break;
+          case 'transfer.reversed':
+            await handleTransferReversed(event);
+            break;
+          case 'transfer.failed':
+            await handleTransferFailed(event);
+            break;
+          default:
+            logger.info({ eventType: event.type }, 'Unhandled transfer event subtype');
+        }
+        await db.execute({
+          sql: `UPDATE stripe_connect_events SET processed_at = CURRENT_TIMESTAMP WHERE stripe_event_id = ?`,
+          args: [event.id],
+        });
+        return res.status(200).json({ received: true, processed: true });
+      } catch (handlerErr) {
+        logger.error({ err: handlerErr, eventId: event.id, eventType: event.type }, 'Transfer event handler threw');
+        try {
+          await db.execute({
+            sql: `UPDATE stripe_connect_events SET processing_error = ? WHERE stripe_event_id = ?`,
+            args: [String(handlerErr?.stack || handlerErr?.message || handlerErr), event.id],
+          });
+        } catch (updateErr) {
+          logger.error({ err: updateErr }, 'Failed to persist transfer event processing_error');
+        }
+        return res.status(500).json({ error: 'Handler failed' });
+      }
     }
 
     return res.status(200).json({ received: true, processed: false, reason: 'unhandled event type' });
