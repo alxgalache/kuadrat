@@ -19,6 +19,10 @@ router.use('/draws', require('./drawRoutes'));
 // Stripe Connect lifecycle + fiscal data (Change #1: stripe-connect-accounts)
 // Mounted at the admin root because the paths are seller-scoped, not under a prefix.
 router.use('/', require('./stripeConnectRoutes'));
+// Stripe Connect fiscal report export (Change #4: stripe-connect-fiscal-report).
+// Mounted BEFORE the manual-payouts router so that `/payouts/fiscal-export`
+// and `/payouts/summary` beat the parametric `/payouts/:sellerId` route.
+router.use('/payouts', require('./stripeConnectFiscalReportRoutes'));
 // Stripe Connect manual payouts panel (Change #2: stripe-connect-manual-payouts)
 router.use('/payouts', require('./stripeConnectPayoutsRoutes'));
 

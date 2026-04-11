@@ -126,6 +126,26 @@ const config = {
     dealerCommissionOthers: optionalFloat('DEALER_COMMISSION_OTHERS', 0),
   },
 
+  // --- Business fiscal identity (Change #4: stripe-connect-fiscal-report) ---
+  // Used by the fiscal export endpoints as the "platform" block in every
+  // PayoutReport. Not validated at startup (decision #11 of the design):
+  // missing fields surface as a 503 only when the admin triggers an export.
+  // See master_plan.md §9 for the checklist the user must fill before go-live.
+  business: {
+    name: optional('BUSINESS_NAME', '140d Galería de Arte'),
+    legalName: optional('BUSINESS_LEGAL_NAME', ''),
+    taxId: optional('BUSINESS_TAX_ID', ''),
+    address: {
+      line1: optional('BUSINESS_ADDRESS_LINE1', ''),
+      line2: optional('BUSINESS_ADDRESS_LINE2', '') || null,
+      city: optional('BUSINESS_ADDRESS_CITY', ''),
+      postalCode: optional('BUSINESS_ADDRESS_POSTAL_CODE', ''),
+      province: optional('BUSINESS_ADDRESS_PROVINCE', ''),
+      country: optional('BUSINESS_ADDRESS_COUNTRY', 'ES'),
+    },
+    email: optional('BUSINESS_EMAIL', '') || optional('EMAIL_FROM', 'info@140d.art'),
+  },
+
   // --- Order Reservation ---
   orderReservationTtlMinutes: optionalInt('ORDER_RESERVATION_TTL_MINUTES', 30),
 
@@ -181,4 +201,22 @@ const config = {
 // Convenience flag: true when S3 is configured for media storage
 config.useS3 = !!config.aws.s3Bucket;
 
+/**
+ * Returns the list of env var names that must be set before a fiscal export
+ * can be generated (Change #4: stripe-connect-fiscal-report). Empty array
+ * means the config is complete. Used by the export controller to return a
+ * 503 with a clear message when a field is missing.
+ */
+function assertBusinessConfigComplete() {
+  const missing = [];
+  if (!config.business.legalName) missing.push('BUSINESS_LEGAL_NAME');
+  if (!config.business.taxId) missing.push('BUSINESS_TAX_ID');
+  if (!config.business.address.line1) missing.push('BUSINESS_ADDRESS_LINE1');
+  if (!config.business.address.city) missing.push('BUSINESS_ADDRESS_CITY');
+  if (!config.business.address.postalCode) missing.push('BUSINESS_ADDRESS_POSTAL_CODE');
+  if (!config.business.address.province) missing.push('BUSINESS_ADDRESS_PROVINCE');
+  return missing;
+}
+
 module.exports = config;
+module.exports.assertBusinessConfigComplete = assertBusinessConfigComplete;

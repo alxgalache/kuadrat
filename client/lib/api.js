@@ -46,6 +46,55 @@ const getAuthToken = () => {
   return null;
 };
 
+/**
+ * Download a binary/text file from an authenticated admin endpoint
+ * (Change #4: stripe-connect-fiscal-report).
+ *
+ * Returns a Blob — callers typically pass it to `triggerDownload(blob, filename)`.
+ * Throws on non-2xx, preserving the JSON error body when present.
+ */
+async function apiDownloadRequest(endpoint) {
+  const token = getAuthToken();
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+  });
+  if (!res.ok) {
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* ignore — non-JSON body */
+    }
+    const error = new Error(data?.message || 'Descarga fallida');
+    error.status = res.status;
+    error.title = data?.title || 'Error';
+    error.message = data?.message || 'Descarga fallida';
+    error.errors = data?.errors || null;
+    error.response = data;
+    throw error;
+  }
+  return await res.blob();
+}
+
+/**
+ * Kick off a browser download for a Blob using a temporary anchor element.
+ */
+export function triggerDownload(blob, filename) {
+  if (typeof window === 'undefined') return;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Small delay so Safari does not revoke the URL before the download starts.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Simple in-flight requests deduplication for GET requests (avoids duplicate calls in React StrictMode)
 const inflightRequests = new Map();
 
@@ -1163,6 +1212,46 @@ export const adminAPI = {
           reversal_reason: reversalReason,
         }),
       });
+    },
+
+    // ── Fiscal report export (Change #4: stripe-connect-fiscal-report) ──
+
+    // GET /admin/payouts/:withdrawalId/fiscal-export?format=csv → Blob
+    exportPayoutCsv: async (withdrawalId) => {
+      return apiDownloadRequest(
+        `/admin/payouts/${withdrawalId}/fiscal-export?format=csv`
+      );
+    },
+
+    // GET /admin/payouts/:withdrawalId/fiscal-export?format=json → Blob
+    exportPayoutJson: async (withdrawalId) => {
+      return apiDownloadRequest(
+        `/admin/payouts/${withdrawalId}/fiscal-export?format=json`
+      );
+    },
+
+    // GET /admin/payouts/fiscal-export?from=...&to=...&format=csv[&vat_regime][&sellerId] → Blob
+    exportRangeCsv: async ({ from, to, vatRegime, sellerId } = {}) => {
+      const params = new URLSearchParams({ from, to, format: 'csv' });
+      if (vatRegime) params.set('vat_regime', vatRegime);
+      if (sellerId) params.set('sellerId', String(sellerId));
+      return apiDownloadRequest(`/admin/payouts/fiscal-export?${params.toString()}`);
+    },
+
+    // GET /admin/payouts/fiscal-export?format=json&... → Blob
+    exportRangeJson: async ({ from, to, vatRegime, sellerId } = {}) => {
+      const params = new URLSearchParams({ from, to, format: 'json' });
+      if (vatRegime) params.set('vat_regime', vatRegime);
+      if (sellerId) params.set('sellerId', String(sellerId));
+      return apiDownloadRequest(`/admin/payouts/fiscal-export?${params.toString()}`);
+    },
+
+    // GET /admin/payouts/summary?from=...&to=...[&vat_regime][&sellerId] → JSON
+    getPayoutsSummary: async ({ from, to, vatRegime, sellerId } = {}) => {
+      const params = new URLSearchParams({ from, to });
+      if (vatRegime) params.set('vat_regime', vatRegime);
+      if (sellerId) params.set('sellerId', String(sellerId));
+      return apiRequest(`/admin/payouts/summary?${params.toString()}`);
     },
   },
 };

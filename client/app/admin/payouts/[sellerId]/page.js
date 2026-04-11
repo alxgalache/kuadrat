@@ -2,11 +2,21 @@
 
 import { useState, useEffect, useCallback, use } from 'react'
 import Link from 'next/link'
-import { adminAPI } from '@/lib/api'
+import { adminAPI, triggerDownload } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import ConfirmPayoutModal from '@/components/admin/ConfirmPayoutModal'
 import { useNotification } from '@/contexts/NotificationContext'
 import { ArrowLeftIcon } from '@heroicons/react/20/solid'
+
+const NON_EXPORTABLE_STATUSES = new Set(['failed', 'pending', 'processing', 'cancelled'])
+
+function buildSinglePayoutFilename(withdrawalId, ext) {
+  const today = new Date()
+  const yyyy = today.getFullYear()
+  const mm = String(today.getMonth() + 1).padStart(2, '0')
+  const dd = String(today.getDate()).padStart(2, '0')
+  return `payout_${withdrawalId}_${yyyy}${mm}${dd}.${ext}`
+}
 
 /**
  * Admin Payouts — seller detail page
@@ -290,6 +300,24 @@ function AdminPayoutDetailContent({ sellerId }) {
     }
   }, [load, showSuccess, showApiError])
 
+  const handleExportPayoutCsv = useCallback(async (w) => {
+    try {
+      const blob = await adminAPI.payouts.exportPayoutCsv(w.id)
+      triggerDownload(blob, buildSinglePayoutFilename(w.id, 'csv'))
+    } catch (err) {
+      showApiError(err)
+    }
+  }, [showApiError])
+
+  const handleExportPayoutJson = useCallback(async (w) => {
+    try {
+      const blob = await adminAPI.payouts.exportPayoutJson(w.id)
+      triggerDownload(blob, buildSinglePayoutFilename(w.id, 'json'))
+    } catch (err) {
+      showApiError(err)
+    }
+  }, [showApiError])
+
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
@@ -376,12 +404,14 @@ function AdminPayoutDetailContent({ sellerId }) {
                     <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Importe</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Estado</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Transfer ID</th>
+                    <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Exportar</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {history.map((w) => {
                     const statusClass = STATUS_STYLES[w.status] || 'bg-gray-100 text-gray-700'
                     const statusText = STATUS_LABELS[w.status] || w.status
+                    const nonExportable = NON_EXPORTABLE_STATUSES.has(w.status)
                     return (
                       <tr key={w.id}>
                         <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">#{w.id}</td>
@@ -404,6 +434,28 @@ function AdminPayoutDetailContent({ sellerId }) {
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-xs font-mono text-gray-500">
                           {w.stripe_transfer_id || '—'}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                          <div className="inline-flex items-center gap-x-1.5">
+                            <button
+                              type="button"
+                              disabled={nonExportable}
+                              onClick={() => handleExportPayoutCsv(w)}
+                              title="Exportar para gestoría (CSV)"
+                              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              CSV
+                            </button>
+                            <button
+                              type="button"
+                              disabled={nonExportable}
+                              onClick={() => handleExportPayoutJson(w)}
+                              title="Exportar para gestoría (JSON)"
+                              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              JSON
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
