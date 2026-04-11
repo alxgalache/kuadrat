@@ -122,12 +122,106 @@ function BucketCard({ title, regime, balance, summary, onExecute, canExecute, di
   )
 }
 
+const EVENT_STATE_LABELS = {
+  upcoming: 'Próximamente',
+  grace_period: 'En espera (periodo de gracia)',
+  credited: 'Acreditado',
+  excluded: 'Excluido',
+}
+
+const EVENT_STATE_STYLES = {
+  upcoming: 'bg-gray-100 text-gray-700',
+  grace_period: 'bg-amber-100 text-amber-800',
+  credited: 'bg-green-100 text-green-800',
+  excluded: 'bg-red-100 text-red-800',
+}
+
+function EventsCreditPanel({ events, onExcludeCredit, onIncludeCredit, onMarkFinished }) {
+  if (!events || events.length === 0) return null
+
+  return (
+    <section className="mt-10">
+      <h2 className="text-lg font-semibold text-gray-900 mb-2">Eventos de pago</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        Eventos hospedados por este artista que se acreditarán automáticamente al bucket estándar
+        (21% IVA) tras el periodo de gracia. Puedes excluir un evento antes de que se acredite para
+        bloquearlo permanentemente.
+      </p>
+      <div className="overflow-hidden rounded-lg border border-gray-200 shadow-sm">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Evento</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Fecha</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Estado</th>
+              <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Asistentes</th>
+              <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Importe</th>
+              <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 bg-white">
+            {events.map((ev) => {
+              const stateClass = EVENT_STATE_STYLES[ev.state] || 'bg-gray-100 text-gray-700'
+              const stateLabel = EVENT_STATE_LABELS[ev.state] || ev.state
+              return (
+                <tr key={ev.id}>
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{ev.title || `Evento #${ev.id}`}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{formatDate(ev.event_datetime)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${stateClass}`}>
+                      {stateLabel}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm tabular-nums text-right text-gray-700">{ev.paid_attendees}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm tabular-nums text-right text-gray-900">{formatEuro(ev.total_amount)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-right text-xs">
+                    {ev.state === 'upcoming' && (
+                      <button
+                        type="button"
+                        onClick={() => onMarkFinished(ev)}
+                        className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Marcar finalizado
+                      </button>
+                    )}
+                    {(ev.state === 'upcoming' || ev.state === 'grace_period') && !ev.host_credit_excluded && (
+                      <button
+                        type="button"
+                        onClick={() => onExcludeCredit(ev)}
+                        className="ml-2 rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Excluir
+                      </button>
+                    )}
+                    {ev.state === 'excluded' && (
+                      <button
+                        type="button"
+                        onClick={() => onIncludeCredit(ev)}
+                        className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Reactivar
+                      </button>
+                    )}
+                    {ev.state === 'credited' && (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
 function AdminPayoutDetailContent({ sellerId }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [modalRegime, setModalRegime] = useState(null)
-  const { showApiError } = useNotification()
+  const { showApiError, showSuccess } = useNotification()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -155,6 +249,47 @@ function AdminPayoutDetailContent({ sellerId }) {
     load()
   }
 
+  const handleExcludeCredit = useCallback(async (ev) => {
+    if (typeof window === 'undefined') return
+    const reason = window.prompt(
+      `Motivo para excluir el evento "${ev.title}" de la acreditación automática:`
+    )
+    if (!reason || !reason.trim()) return
+    try {
+      await adminAPI.events.excludeCredit(ev.id, { reason: reason.trim() })
+      showSuccess('Evento excluido', `"${ev.title}" no se acreditará al bucket.`)
+      await load()
+    } catch (err) {
+      showApiError(err)
+    }
+  }, [load, showSuccess, showApiError])
+
+  const handleIncludeCredit = useCallback(async (ev) => {
+    if (typeof window === 'undefined') return
+    if (!window.confirm(`¿Reactivar la acreditación automática de "${ev.title}"?`)) return
+    try {
+      await adminAPI.events.includeCredit(ev.id)
+      showSuccess('Evento reactivado', `"${ev.title}" volverá a procesarse.`)
+      await load()
+    } catch (err) {
+      showApiError(err)
+    }
+  }, [load, showSuccess, showApiError])
+
+  const handleMarkFinished = useCallback(async (ev) => {
+    if (typeof window === 'undefined') return
+    if (!window.confirm(
+      `¿Marcar "${ev.title}" como finalizado ahora? Esto inicia el periodo de gracia antes de la acreditación automática.`
+    )) return
+    try {
+      await adminAPI.events.markFinished(ev.id)
+      showSuccess('Evento marcado como finalizado', `"${ev.title}" entrará al periodo de gracia.`)
+      await load()
+    } catch (err) {
+      showApiError(err)
+    }
+  }, [load, showSuccess, showApiError])
+
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
@@ -171,7 +306,7 @@ function AdminPayoutDetailContent({ sellerId }) {
     )
   }
 
-  const { seller, balances, pending, history } = data
+  const { seller, balances, pending, history, eventsPending = [] } = data
   const canExecute = seller.stripe_connect_status === 'active' && seller.stripe_transfers_capability_active
   const disabledReason = !canExecute
     ? 'La cuenta de Stripe del artista no está activa. No se pueden ejecutar pagos hasta que complete el onboarding.'
@@ -216,6 +351,13 @@ function AdminPayoutDetailContent({ sellerId }) {
             disabledReason={disabledReason}
           />
         </div>
+
+        <EventsCreditPanel
+          events={eventsPending}
+          onExcludeCredit={handleExcludeCredit}
+          onIncludeCredit={handleIncludeCredit}
+          onMarkFinished={handleMarkFinished}
+        />
 
         <section className="mt-12">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Histórico de pagos</h2>

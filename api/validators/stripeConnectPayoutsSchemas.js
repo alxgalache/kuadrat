@@ -18,14 +18,17 @@ const vatRegimeEnum = z.enum(['art_rebu', 'standard_vat']);
 /**
  * Body schema for `POST /api/admin/payouts/:sellerId/preview`.
  *
- * `item_ids` is optional — when omitted the controller pays out *all*
- * eligible items for the chosen regime; when present, it restricts the
- * payout to that subset (admin manually deselected a few items).
+ * `item_ids` and `event_attendee_ids` are optional — when both are omitted the
+ * controller pays out *all* eligible items for the chosen regime; when present,
+ * they restrict the payout to the given subset (admin manually deselected a
+ * few items). `event_attendee_ids` is only meaningful for `standard_vat`
+ * (Change #3: stripe-connect-events-wallet).
  */
 const previewPayoutSchema = z.object({
   body: z.object({
     vat_regime: vatRegimeEnum,
     item_ids: z.array(z.number().int().positive()).optional(),
+    event_attendee_ids: z.array(z.string().min(1)).optional(),
   }).strip(),
 });
 
@@ -39,6 +42,7 @@ const executePayoutSchema = z.object({
   body: z.object({
     vat_regime: vatRegimeEnum,
     item_ids: z.array(z.number().int().positive()).optional(),
+    event_attendee_ids: z.array(z.string().min(1)).optional(),
     confirmation_token: z.string().min(1, 'El token de confirmación es obligatorio'),
   }).strip(),
 });

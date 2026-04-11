@@ -395,6 +395,62 @@ router.get('/wallet', async (req, res, next) => {
 });
 
 /**
+ * GET /api/seller/paid-events
+ *
+ * Change #3: stripe-connect-events-wallet — list all paid events hosted by the
+ * authenticated seller, with their credit state (upcoming / grace_period /
+ * credited / excluded) so the seller can track when income will hit their
+ * standard_vat bucket. Informational only — no actions here.
+ */
+router.get('/paid-events', async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await db.execute({
+      sql: `
+        SELECT e.id, e.title, e.event_datetime, e.status,
+               e.finished_at, e.host_credited_at, e.host_credit_excluded,
+               COUNT(CASE WHEN ea.status IN ('paid', 'joined') THEN 1 END) AS paid_attendees,
+               COALESCE(SUM(CASE WHEN ea.status IN ('paid', 'joined') THEN ea.amount_paid ELSE 0 END), 0) AS total_amount
+        FROM events e
+        LEFT JOIN event_attendees ea ON ea.event_id = e.id
+        WHERE e.host_user_id = ?
+          AND e.access_type = 'paid'
+        GROUP BY e.id
+        ORDER BY e.event_datetime DESC
+        LIMIT 50
+      `,
+      args: [userId],
+    });
+
+    const events = result.rows.map((row) => {
+      let state;
+      if (row.host_credit_excluded) state = 'excluded';
+      else if (row.host_credited_at) state = 'credited';
+      else if (row.finished_at) state = 'grace_period';
+      else state = 'upcoming';
+
+      return {
+        id: Number(row.id),
+        title: row.title,
+        status: row.status,
+        event_datetime: row.event_datetime,
+        finished_at: row.finished_at,
+        host_credited_at: row.host_credited_at,
+        host_credit_excluded: Boolean(row.host_credit_excluded),
+        paid_attendees: Number(row.paid_attendees) || 0,
+        total_amount: Number(row.total_amount) || 0,
+        state,
+      };
+    });
+
+    sendSuccess(res, { events });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * POST /api/seller/withdrawals
  *
  * Change #2 — this endpoint is now a *nudge*, not a writer. The admin is the

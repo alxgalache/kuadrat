@@ -53,6 +53,7 @@ const startAuctionScheduler = require('./scheduler/auctionScheduler');
 const startReservationScheduler = require('./scheduler/reservationScheduler');
 const startConfirmationScheduler = require('./scheduler/confirmationScheduler');
 const startShipmentRetryScheduler = require('./scheduler/shipmentRetryScheduler');
+const startEventCreditScheduler = require('./scheduler/eventCreditScheduler');
 
 // Initialize Express app
 const app = express();
@@ -226,6 +227,9 @@ async function startServer() {
 
       // Start Sendcloud shipment retry scheduler
       startShipmentRetryScheduler();
+
+      // Start paid-event credit scheduler (Change #3: stripe-connect-events-wallet)
+      startEventCreditScheduler();
     });
 
     // Register graceful shutdown

@@ -456,6 +456,142 @@ const uploadVideo = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Change #3: stripe-connect-events-wallet — admin overrides
+// ---------------------------------------------------------------------------
+
+// POST /api/admin/events/:id/mark-finished
+// Manual fallback when the host never formally ended a paid event. Sets
+// finished_at (defaults to now) only when still NULL. Idempotent.
+const markFinished = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const finishedAt = req.body?.finished_at || null;
+
+    const current = await eventService.getEventById(id);
+    if (!current) {
+      return res.status(404).json({
+        success: false,
+        title: 'No encontrado',
+        message: 'Evento no encontrado',
+      });
+    }
+
+    if (current.access_type !== 'paid') {
+      return res.status(400).json({
+        success: false,
+        title: 'No aplicable',
+        message: 'Solo se pueden marcar como finalizados eventos de pago',
+      });
+    }
+
+    if (current.finished_at) {
+      return res.status(200).json({
+        success: true,
+        title: 'Ya finalizado',
+        message: 'El evento ya tenía una fecha de finalización; no se ha modificado',
+        event: current,
+      });
+    }
+
+    const updated = await eventService.markEventFinished(id, finishedAt);
+    logger.info(
+      { eventId: id, adminId: req.user?.id, finishedAt: updated?.finished_at },
+      '[eventAdmin] mark-finished'
+    );
+
+    res.status(200).json({
+      success: true,
+      title: 'Evento finalizado',
+      message: 'Se ha marcado la finalización del evento',
+      event: updated,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/admin/events/:id/exclude-credit
+// Flip host_credit_excluded=1. Body: { reason }. Logged.
+const excludeCredit = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    const current = await eventService.getEventById(id);
+    if (!current) {
+      return res.status(404).json({
+        success: false,
+        title: 'No encontrado',
+        message: 'Evento no encontrado',
+      });
+    }
+
+    if (current.access_type !== 'paid') {
+      return res.status(400).json({
+        success: false,
+        title: 'No aplicable',
+        message: 'Solo se pueden excluir eventos de pago',
+      });
+    }
+
+    if (current.host_credited_at) {
+      return res.status(409).json({
+        success: false,
+        title: 'Demasiado tarde',
+        message: 'Este evento ya fue acreditado; no puede excluirse',
+      });
+    }
+
+    const updated = await eventService.setEventCreditExcluded(id, true);
+    logger.warn(
+      { eventId: id, adminId: req.user?.id, reason: reason || null },
+      '[eventAdmin] exclude-credit'
+    );
+
+    res.status(200).json({
+      success: true,
+      title: 'Evento excluido',
+      message: 'El evento no será acreditado automáticamente al host',
+      event: updated,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/admin/events/:id/include-credit
+// Remove the exclusion flag.
+const includeCredit = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const current = await eventService.getEventById(id);
+    if (!current) {
+      return res.status(404).json({
+        success: false,
+        title: 'No encontrado',
+        message: 'Evento no encontrado',
+      });
+    }
+
+    const updated = await eventService.setEventCreditExcluded(id, false);
+    logger.info(
+      { eventId: id, adminId: req.user?.id },
+      '[eventAdmin] include-credit'
+    );
+
+    res.status(200).json({
+      success: true,
+      title: 'Exclusión retirada',
+      message: 'El evento volverá a ser candidato para acreditación automática',
+      event: updated,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createEvent,
   listEvents,
@@ -470,4 +606,8 @@ module.exports = {
   demoteParticipant,
   muteParticipant,
   listParticipants,
+  // Change #3
+  markFinished,
+  excludeCredit,
+  includeCredit,
 };

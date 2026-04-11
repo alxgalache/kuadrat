@@ -132,7 +132,7 @@ const createPayment = async (req, res, next) => {
       throw new ApiError(404, 'Asistente no encontrado', 'Asistente no encontrado');
     }
 
-    if (attendee.status === 'paid') {
+    if (['paid', 'joined'].includes(attendee.status)) {
       throw new ApiError(400, 'Ya has pagado este evento', 'Pago duplicado');
     }
 

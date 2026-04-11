@@ -140,6 +140,30 @@ const verifyPasswordSchema = z.object({
   }).strip(),
 });
 
+/**
+ * POST /api/admin/events/:id/mark-finished
+ *
+ * Change #3 — admin fallback for setting `events.finished_at` when the host
+ * never triggered the end-of-event endpoint.
+ */
+const markEventFinishedSchema = z.object({
+  body: z.object({
+    finished_at: z.string().datetime({ offset: true }).optional(),
+  }).strip(),
+});
+
+/**
+ * POST /api/admin/events/:id/exclude-credit
+ *
+ * Change #3 — flag a paid event so the credit scheduler skips it. Body carries
+ * a mandatory short reason for audit logging.
+ */
+const excludeEventCreditSchema = z.object({
+  body: z.object({
+    reason: z.string().min(1, 'Motivo obligatorio').max(500, 'Motivo demasiado largo'),
+  }).strip(),
+});
+
 module.exports = {
   registerAttendeeSchema,
   createPaymentSchema,
@@ -151,4 +175,6 @@ module.exports = {
   sendVerificationSchema,
   verifyEmailSchema,
   verifyPasswordSchema,
+  markEventFinishedSchema,
+  excludeEventCreditSchema,
 };

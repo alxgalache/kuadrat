@@ -11,6 +11,32 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
 
+const PAID_EVENT_STATE_LABELS = {
+  upcoming: 'Próximamente',
+  grace_period: 'En espera (24 h de gracia)',
+  credited: 'Acreditado',
+  excluded: 'Excluido',
+}
+
+const PAID_EVENT_STATE_STYLES = {
+  upcoming: 'bg-gray-100 text-gray-700',
+  grace_period: 'bg-amber-100 text-amber-800',
+  credited: 'bg-green-100 text-green-800',
+  excluded: 'bg-red-100 text-red-800',
+}
+
+function formatEuro(value) {
+  const n = Number(value) || 0
+  return `${n.toFixed(2)} €`
+}
+
+function formatDate(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
 function SellerProfilePageContent() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -20,6 +46,7 @@ function SellerProfilePageContent() {
   const [passwordError, setPasswordError] = useState('')
   const [passwordLoading, setPasswordLoading] = useState(false)
   const [stripeLinkLoading, setStripeLinkLoading] = useState(false)
+  const [paidEvents, setPaidEvents] = useState([])
 
   const { logout } = useAuth()
   const { showApiError } = useNotification()
@@ -28,6 +55,7 @@ function SellerProfilePageContent() {
 
   useEffect(() => {
     loadProfile()
+    loadPaidEvents()
   }, [])
 
   const loadProfile = async () => {
@@ -38,6 +66,15 @@ function SellerProfilePageContent() {
       setError('No se pudieron cargar los datos del perfil')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadPaidEvents = async () => {
+    try {
+      const data = await sellerAPI.getPaidEvents()
+      setPaidEvents(data?.events || [])
+    } catch {
+      // Silently ignore — this is a non-critical informational section.
     }
   }
 
@@ -188,6 +225,52 @@ function SellerProfilePageContent() {
             <dd className="mt-1 text-sm text-gray-900">{profile.visible ? 'Sí' : 'No'}</dd>
           </div>
         </div>
+
+        {/* Mis eventos de pago — Change #3: stripe-connect-events-wallet */}
+        {paidEvents.length > 0 && (
+          <section className="mt-12">
+            <h2 className="text-lg font-medium text-gray-900">Mis eventos de pago</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Los ingresos de cada evento se acreditan a tu balance estándar (21% IVA) tras un
+              periodo de gracia de 24 horas desde el final del evento.
+            </p>
+            <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Evento</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Fecha</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Estado</th>
+                    <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Asistentes</th>
+                    <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Importe bruto</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {paidEvents.map((ev) => {
+                    const stateClass = PAID_EVENT_STATE_STYLES[ev.state] || 'bg-gray-100 text-gray-700'
+                    let stateLabel = PAID_EVENT_STATE_LABELS[ev.state] || ev.state
+                    if (ev.state === 'credited' && ev.host_credited_at) {
+                      stateLabel = `Acreditado el ${formatDate(ev.host_credited_at)}`
+                    }
+                    return (
+                      <tr key={ev.id}>
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{ev.title || `Evento #${ev.id}`}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{formatDate(ev.event_datetime)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${stateClass}`}>
+                            {stateLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm tabular-nums text-right text-gray-700">{ev.paid_attendees}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm tabular-nums text-right text-gray-900">{formatEuro(ev.total_amount)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
       </div>
 
       {/* Password Change Modal */}

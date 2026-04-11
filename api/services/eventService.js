@@ -1,6 +1,7 @@
 const { db } = require('../config/database');
 const { randomUUID, createHash, randomBytes } = require('crypto');
 const slugify = require('slugify');
+const logger = require('../config/logger');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -284,9 +285,67 @@ async function startEvent(id, { livekitRoomName = null, videoStartedAt = null } 
 }
 
 async function endEvent(id) {
+  // Change #3: also stamp finished_at (guarded so re-ending an event does not
+  // reset the timestamp the credit scheduler uses to compute the grace period).
   await db.execute({
-    sql: `UPDATE events SET status = 'finished' WHERE id = ?`,
+    sql: `UPDATE events
+          SET status = 'finished',
+              finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP)
+          WHERE id = ?`,
     args: [id],
+  });
+  const event = await getEventById(id);
+  if (event && event.access_type === 'paid') {
+    logger.info(
+      { eventId: id, finishedAt: event.finished_at, hostUserId: event.host_user_id },
+      '[eventService] Paid event finished — eligible for credit scheduler after grace period'
+    );
+  }
+  return event;
+}
+
+/**
+ * Change #3 — Admin fallback: mark a paid event finished when the end-of-stream
+ * hook never fired. Sets `finished_at` (default: now) only if it is still NULL,
+ * and flips status to 'finished'. Idempotent.
+ *
+ * @param {string} id
+ * @param {string|null} [finishedAt] ISO timestamp; defaults to CURRENT_TIMESTAMP.
+ * @returns {Promise<object|null>} Updated event, or null if not found.
+ */
+async function markEventFinished(id, finishedAt = null) {
+  const current = await getEventById(id);
+  if (!current) return null;
+
+  if (finishedAt) {
+    await db.execute({
+      sql: `UPDATE events
+            SET status = 'finished',
+                finished_at = ?
+            WHERE id = ? AND finished_at IS NULL`,
+      args: [finishedAt, id],
+    });
+  } else {
+    await db.execute({
+      sql: `UPDATE events
+            SET status = 'finished',
+                finished_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND finished_at IS NULL`,
+      args: [id],
+    });
+  }
+  return getEventById(id);
+}
+
+/**
+ * Change #3 — Admin override: set/clear `host_credit_excluded` on an event. The
+ * event credit scheduler skips excluded events permanently until unexcluded.
+ */
+async function setEventCreditExcluded(id, excluded) {
+  const value = excluded ? 1 : 0;
+  await db.execute({
+    sql: `UPDATE events SET host_credit_excluded = ? WHERE id = ?`,
+    args: [value, id],
   });
   return getEventById(id);
 }
@@ -453,6 +512,8 @@ module.exports = {
   getAttendeeCount,
   startEvent,
   endEvent,
+  markEventFinished,
+  setEventCreditExcluded,
   banAttendee,
   isEmailBanned,
   isIpBanned,

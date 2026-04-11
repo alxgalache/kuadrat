@@ -111,6 +111,13 @@ const config = {
     apiSecret: optional('LIVEKIT_API_SECRET', ''),
   },
 
+  // --- Events (Change #3: stripe-connect-events-wallet) ---
+  events: {
+    creditGraceDays: optionalInt('EVENT_CREDIT_GRACE_DAYS', 1),
+    creditSchedulerCron: optional('EVENT_CREDIT_SCHEDULER_CRON', '0 * * * *'),
+    creditSchedulerEnabled: optionalBool('EVENT_CREDIT_SCHEDULER_ENABLED', true),
+  },
+
   // --- Business ---
   payment: {
     provider: optional('PAYMENT_PROVIDER', 'stripe'),

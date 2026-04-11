@@ -4,6 +4,11 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 const eventAdminController = require('../../controllers/eventAdminController')
+const { validate } = require('../../middleware/validate')
+const {
+  markEventFinishedSchema,
+  excludeEventCreditSchema,
+} = require('../../validators/eventSchemas')
 
 // Configure multer for event video uploads
 const eventVideoStorage = multer.diskStorage({
@@ -107,9 +112,33 @@ router.post('/:id/participants/:identity/demote', eventAdminController.demotePar
 router.post('/:id/participants/:identity/mute', eventAdminController.muteParticipant);
 
 /**
- * POST /api/admin/espacios/:id/upload-video
+ * POST /api/admin/events/:id/upload-video
  * Upload a video file for a video-format event
  */
 router.post('/:id/upload-video', eventVideoUpload.single('video'), eventAdminController.uploadVideo);
+
+// ---------------------------------------------------------------------------
+// Change #3: stripe-connect-events-wallet — credit lifecycle admin endpoints
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/admin/events/:id/mark-finished
+ * Manual fallback to set finished_at when the host disconnect hook never fired.
+ * Body (optional): { finished_at: ISO8601 }
+ */
+router.post('/:id/mark-finished', validate(markEventFinishedSchema), eventAdminController.markFinished);
+
+/**
+ * POST /api/admin/events/:id/exclude-credit
+ * Flag a paid event so the credit scheduler skips it permanently.
+ * Body: { reason: string }
+ */
+router.post('/:id/exclude-credit', validate(excludeEventCreditSchema), eventAdminController.excludeCredit);
+
+/**
+ * POST /api/admin/events/:id/include-credit
+ * Revert a previous exclusion.
+ */
+router.post('/:id/include-credit', eventAdminController.includeCredit);
 
 module.exports = router

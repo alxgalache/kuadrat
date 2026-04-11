@@ -3412,6 +3412,111 @@ const sendAdminPayoutReversedEmail = async ({ withdrawal, reversalAmount }) => {
   }
 };
 
+/**
+ * Notify the host that their paid event has been credited to the
+ * `available_withdrawal_standard_vat` bucket after the grace period.
+ *
+ * Change #3: stripe-connect-events-wallet
+ *
+ * @param {Object} params
+ * @param {Object} params.host           - host user row (id, full_name, email)
+ * @param {Object} params.event          - events row (id, title, finished_at)
+ * @param {number} params.totalCredit    - credited amount in euros (seller earning, VAT-inclusive)
+ * @param {number} params.attendeeCount  - number of paid attendees included
+ */
+const sendHostEventCreditedEmail = async ({ host, event, totalCredit, attendeeCount }) => {
+  if (!host?.email) {
+    logger.warn('[emailService] sendHostEventCreditedEmail: no host email, skipping');
+    return { success: false, error: 'No host email' };
+  }
+
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+  const dashboardUrl = `${CLIENT_URL}/seller/dashboard`;
+  const logoAttachment = getLogoAttachment();
+  const date = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const amount = Number(totalCredit) || 0;
+  const hostName = host.full_name || host.email;
+  const eventTitle = event?.title || `Evento #${event?.id}`;
+  const count = Number(attendeeCount) || 0;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f9fafb;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+        </div>
+        <div style="background: #ffffff; border-radius: 8px; padding: 32px; border: 1px solid #e5e7eb;">
+          <h2 style="margin: 0 0 16px; font-size: 20px; color: #111827;">Evento acreditado</h2>
+          <p style="color: #374151; font-size: 15px; line-height: 1.5; margin: 0 0 24px;">
+            Hola ${escapeHtml(hostName)}, hemos acreditado los ingresos de tu evento
+            <strong>${escapeHtml(eventTitle)}</strong> a tu balance. El importe ya está disponible
+            para solicitar su retirada desde el panel de vendedor.
+          </p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Importe acreditado</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 600; font-size: 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">${amount.toFixed(2)} &euro;</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Evento</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${escapeHtml(eventTitle)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Asistentes de pago</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${count}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Régimen fiscal</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">Estándar (IVA 21%)</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280;">Fecha de acreditación</td>
+              <td style="padding: 8px 0; color: #111827; font-weight: 500; text-align: right;">${date}</td>
+            </tr>
+          </table>
+          <div style="margin-top: 24px; text-align: center;">
+            <a href="${dashboardUrl}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 14px; font-weight: 600;">
+              Ver mi panel
+            </a>
+          </div>
+          <p style="color: #9ca3af; font-size: 12px; line-height: 1.5; margin: 24px 0 0;">
+            El importe se sumará al bucket de retirada estándar. Podrás solicitar la retirada en cualquier
+            momento desde tu panel de vendedor.
+          </p>
+        </div>
+        <p style="text-align: center; color: #9ca3af; font-size: 12px; margin-top: 24px;">
+          &copy; ${new Date().getFullYear()} 140d Galería de Arte
+        </p>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: host.email,
+    subject: `140d Galería de Arte — Evento acreditado (${amount.toFixed(2)} €)`,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    logger.info(
+      { hostEmail: host.email, eventId: event?.id, messageId: result.messageId },
+      '[emailService] hostEventCredited email sent'
+    );
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error, hostEmail: host.email, eventId: event?.id }, 'Error sending hostEventCredited email');
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   verifyTransporter,
   sendPurchaseConfirmation,
@@ -3448,4 +3553,6 @@ module.exports = {
   sendSellerPayoutExecutedEmail,
   sendAdminPayoutFailedEmail,
   sendAdminPayoutReversedEmail,
+  // Change #3: stripe-connect-events-wallet
+  sendHostEventCreditedEmail,
 };

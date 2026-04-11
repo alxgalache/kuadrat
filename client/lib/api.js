@@ -1043,6 +1043,33 @@ export const adminAPI = {
         body: formData,
       });
     },
+
+    // ── Credit lifecycle (Change #3: stripe-connect-events-wallet) ──
+
+    // POST /admin/events/:id/mark-finished — body: { finished_at? (ISO8601) }
+    markFinished: async (eventId, { finishedAt } = {}) => {
+      return apiRequest(`/admin/events/${eventId}/mark-finished`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...(finishedAt ? { finished_at: finishedAt } : {}),
+        }),
+      });
+    },
+
+    // POST /admin/events/:id/exclude-credit — body: { reason }
+    excludeCredit: async (eventId, { reason } = {}) => {
+      return apiRequest(`/admin/events/${eventId}/exclude-credit`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+    },
+
+    // POST /admin/events/:id/include-credit
+    includeCredit: async (eventId) => {
+      return apiRequest(`/admin/events/${eventId}/include-credit`, {
+        method: 'POST',
+      });
+    },
   },
 
   // ── Stripe Connect (admin) ─────────────────────────────────
@@ -1101,24 +1128,28 @@ export const adminAPI = {
     },
 
     // POST /admin/payouts/:sellerId/preview — returns { token, summary }
-    preview: async (sellerId, { vatRegime, itemIds } = {}) => {
+    // `itemIds`: integer ids of other_order_items
+    // `eventAttendeeIds`: UUIDs of event_attendees (Change #3)
+    preview: async (sellerId, { vatRegime, itemIds, eventAttendeeIds } = {}) => {
       return apiRequest(`/admin/payouts/${sellerId}/preview`, {
         method: 'POST',
         body: JSON.stringify({
           vat_regime: vatRegime,
           ...(itemIds ? { item_ids: itemIds } : {}),
+          ...(eventAttendeeIds ? { event_attendee_ids: eventAttendeeIds } : {}),
         }),
       });
     },
 
     // POST /admin/payouts/:sellerId/execute — consumes the confirmation token
-    execute: async (sellerId, { vatRegime, itemIds, confirmationToken } = {}) => {
+    execute: async (sellerId, { vatRegime, itemIds, eventAttendeeIds, confirmationToken } = {}) => {
       return apiRequest(`/admin/payouts/${sellerId}/execute`, {
         method: 'POST',
         body: JSON.stringify({
           vat_regime: vatRegime,
           confirmation_token: confirmationToken,
           ...(itemIds ? { item_ids: itemIds } : {}),
+          ...(eventAttendeeIds ? { event_attendee_ids: eventAttendeeIds } : {}),
         }),
       });
     },
@@ -1413,6 +1444,11 @@ export const sellerAPI = {
   // Wallet
   getWallet: async () => {
     return apiRequest('/seller/wallet');
+  },
+
+  // Change #3: stripe-connect-events-wallet — paid events hosted by the seller
+  getPaidEvents: async () => {
+    return apiRequest('/seller/paid-events');
   },
 
   // Withdrawals — Change #2 (stripe-connect-manual-payouts):

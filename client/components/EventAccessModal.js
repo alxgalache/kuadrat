@@ -111,8 +111,10 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
 
       const nameInfo = { firstName: firstName.trim(), lastName: lastName.trim() }
 
-      // For returning attendees who already completed registration
-      if (data.isExisting && data.attendee.status === 'paid') {
+      // For returning attendees who already completed registration. Both
+      // `paid` and `joined` mean the attendee already paid — `joined` is the
+      // terminal state after they entered the LiveKit room.
+      if (data.isExisting && ['paid', 'joined'].includes(data.attendee.status)) {
         storeSession(event.id, { attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken, ...nameInfo })
         onAccessGranted?.({ attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken })
         setPhase(PHASE.SUCCESS)

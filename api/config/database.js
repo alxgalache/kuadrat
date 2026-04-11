@@ -658,6 +658,16 @@ async function initializeDatabase() {
     // Unique partial index on stripe_connect_account_id (ALTER TABLE can't add UNIQUE in SQLite)
     await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stripe_connect_account_id ON users(stripe_connect_account_id) WHERE stripe_connect_account_id IS NOT NULL');
 
+    // Stripe Connect (Change #3: stripe-connect-events-wallet) — paid events credit
+    // the host's standard_vat bucket after a 1-day grace period. `finished_at` is
+    // set when the host ends the event; `host_credited_at` is set by the
+    // eventCreditScheduler; `host_credit_excluded` is an admin override.
+    await safeAlter('ALTER TABLE events ADD COLUMN finished_at DATETIME');
+    await safeAlter('ALTER TABLE events ADD COLUMN host_credited_at DATETIME');
+    await safeAlter('ALTER TABLE events ADD COLUMN host_credit_excluded INTEGER NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN commission_amount REAL');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN host_credited_at DATETIME');
+
     // Stripe Connect (Change #2: stripe-connect-manual-payouts) — two-bucket wallet.
     // `available_withdrawal` (legacy) stays as a deprecated column — zeroed by
     // the 2026-04 migration and never written by new code paths.
@@ -882,6 +892,9 @@ async function initializeDatabase() {
     // Events
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendees_event ON event_attendees(event_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)`);
+    // Change #3 — partial indexes for eventCreditScheduler lookups
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_pending_credit ON events(finished_at, host_credited_at) WHERE access_type='paid' AND host_credited_at IS NULL`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendees_credit ON event_attendees(event_id, status, host_credited_at)`);
 
     // Draws
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_participations_draw ON draw_participations(draw_id)`);

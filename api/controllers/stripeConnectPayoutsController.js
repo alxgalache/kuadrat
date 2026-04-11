@@ -79,9 +79,10 @@ function bucketColumnFor(vatRegime) {
 }
 
 function itemTypeFor(vatRegime) {
-  // For now the two supported item kinds are art_order_items (REBU) and
-  // other_order_items (standard_vat). Event attendees are included in the
-  // schema for Change #4 but this controller does not credit them yet.
+  // Default item kind for a given VAT regime. A standard_vat payout can carry
+  // both `other_order_item` and `event_attendee` rows (Change #3). Each row
+  // already carries its own `item_type`; this helper is used only when the
+  // row does not specify one.
   if (vatRegime === 'art_rebu') return 'art_order_item';
   if (vatRegime === 'standard_vat') return 'other_order_item';
   throw new ApiError(400, 'vat_regime inválido');
@@ -151,16 +152,16 @@ async function findItemsAlreadyInActiveWithdrawal(itemRefs) {
 }
 
 /**
- * Fetch the list of "pending" items for a seller in a given VAT regime.
+ * Fetch the list of "pending" order items for a seller in a given VAT regime.
  * Pending = confirmed (credited to the wallet) AND not yet in any active
  * withdrawal. If `restrictIds` is provided, only those are considered.
  *
  * @param {number} sellerId
  * @param {'art_rebu'|'standard_vat'} vatRegime
  * @param {number[]} [restrictIds]
- * @returns {Promise<Array>} rows with {id, order_id, price_at_purchase, commission_amount}
+ * @returns {Promise<Array>} rows with {id, order_id, price_at_purchase, commission_amount, item_type}
  */
-async function loadPendingItems(sellerId, vatRegime, restrictIds) {
+async function loadPendingOrderItems(sellerId, vatRegime, restrictIds) {
   const table = itemTableFor(vatRegime);
   const { productTable, idColumn } = productJoinFor(vatRegime);
   const itemType = itemTypeFor(vatRegime);
@@ -175,7 +176,8 @@ async function loadPendingItems(sellerId, vatRegime, restrictIds) {
   // Confirmed items only. Exclude items that are already in an active
   // withdrawal (status not in failed/cancelled).
   const sql = `
-    SELECT i.id, i.order_id, i.price_at_purchase, i.commission_amount
+    SELECT i.id, i.order_id, i.price_at_purchase, i.commission_amount,
+           '${itemType}' AS item_type
     FROM ${table} i
     JOIN ${productTable} p ON i.${idColumn} = p.id
     WHERE p.seller_id = ?
@@ -197,7 +199,104 @@ async function loadPendingItems(sellerId, vatRegime, restrictIds) {
 }
 
 /**
+ * Fetch paid event attendees that have been credited to the host's standard_vat
+ * bucket (Change #3: stripe-connect-events-wallet) and are not yet part of any
+ * active withdrawal. Event attendees always map to the `standard_vat` bucket.
+ *
+ * Note: `event_attendees.id` is a TEXT UUID. SQLite's flexible typing stores
+ * the UUID verbatim in `withdrawal_items.item_id` (declared INTEGER) and
+ * compares textually, so the NOT EXISTS join works without casts.
+ *
+ * @param {number} hostUserId
+ * @param {string[]} [restrictIds]
+ * @returns {Promise<Array>} rows with {id, event_id, event_title, price_at_purchase, commission_amount, item_type}
+ */
+async function loadPendingEventAttendees(hostUserId, restrictIds) {
+  const args = [hostUserId];
+  let whereIds = '';
+  if (Array.isArray(restrictIds) && restrictIds.length > 0) {
+    whereIds = `AND ea.id IN (${restrictIds.map(() => '?').join(', ')}) `;
+    args.push(...restrictIds);
+  }
+
+  const sql = `
+    SELECT ea.id AS id,
+           ea.event_id AS event_id,
+           e.title AS event_title,
+           ea.amount_paid AS price_at_purchase,
+           ea.commission_amount AS commission_amount,
+           'event_attendee' AS item_type
+    FROM event_attendees ea
+    JOIN events e ON ea.event_id = e.id
+    WHERE e.host_user_id = ?
+      AND e.access_type = 'paid'
+      AND ea.status IN ('paid', 'joined')
+      AND ea.host_credited_at IS NOT NULL
+      ${whereIds}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM withdrawal_items wi
+        JOIN withdrawals w ON wi.withdrawal_id = w.id
+        WHERE wi.item_type = 'event_attendee'
+          AND wi.item_id = ea.id
+          AND w.status NOT IN ('failed', 'cancelled')
+      )
+    ORDER BY ea.event_id ASC, ea.id ASC
+  `;
+
+  const result = await db.execute({ sql, args });
+  return result.rows;
+}
+
+/**
+ * Fetch the unified list of "pending" items for a seller in a given VAT regime.
+ *
+ * - For `art_rebu`: returns art_order_items (REBU regime) only.
+ * - For `standard_vat`: returns both other_order_items AND event_attendees.
+ *
+ * @param {number} sellerId
+ * @param {'art_rebu'|'standard_vat'} vatRegime
+ * @param {Object} [options]
+ * @param {number[]} [options.restrictOrderItemIds]  — restrict order items to these integer ids
+ * @param {string[]} [options.restrictEventAttendeeIds] — restrict event attendees to these UUIDs
+ * @returns {Promise<Array>} unified pending-item rows, each tagged with `item_type`
+ */
+async function loadPendingItems(sellerId, vatRegime, options = {}) {
+  const { restrictOrderItemIds, restrictEventAttendeeIds } = options;
+
+  if (vatRegime === 'art_rebu') {
+    return loadPendingOrderItems(sellerId, vatRegime, restrictOrderItemIds);
+  }
+
+  if (vatRegime === 'standard_vat') {
+    // When neither restriction is supplied, load all pending of both kinds.
+    // When either restriction is supplied, only load the matching kind(s).
+    const bothUnset =
+      !Array.isArray(restrictOrderItemIds) && !Array.isArray(restrictEventAttendeeIds);
+    const loadOrders = bothUnset || Array.isArray(restrictOrderItemIds);
+    const loadEvents = bothUnset || Array.isArray(restrictEventAttendeeIds);
+
+    const [orderItems, eventAttendees] = await Promise.all([
+      loadOrders
+        ? loadPendingOrderItems(sellerId, 'standard_vat', restrictOrderItemIds)
+        : Promise.resolve([]),
+      loadEvents
+        ? loadPendingEventAttendees(sellerId, restrictEventAttendeeIds)
+        : Promise.resolve([]),
+    ]);
+
+    return [...orderItems, ...eventAttendees];
+  }
+
+  throw new ApiError(400, 'vat_regime inválido');
+}
+
+/**
  * Compute a payout summary from a list of pending items + VAT regime.
+ *
+ * Each row may specify its own `item_type` (e.g. `event_attendee` rows inside a
+ * `standard_vat` payout); rows without it fall back to the default kind for
+ * the given VAT regime.
  *
  * @param {Array} items
  * @param {'art_rebu'|'standard_vat'} vatRegime
@@ -205,7 +304,7 @@ async function loadPendingItems(sellerId, vatRegime, restrictIds) {
  */
 function buildPayoutSummary(items, vatRegime) {
   const compute = vatComputeFor(vatRegime);
-  const itemType = itemTypeFor(vatRegime);
+  const defaultItemType = itemTypeFor(vatRegime);
 
   let total = 0;
   let taxableBase = 0;
@@ -220,10 +319,24 @@ function buildPayoutSummary(items, vatRegime) {
     total += split.sellerEarning;
     taxableBase += split.taxableBase;
     vatAmount += split.vatAmount;
+    const itemType = item.item_type || defaultItemType;
+    // `event_attendee` ids are UUID text; keep as-is. Other item kinds are
+    // integer ids.
+    const itemId = itemType === 'event_attendee' ? String(item.id) : Number(item.id);
+    // For `event_attendee` rows, `order_id` is not meaningful; we surface
+    // `event_id` instead so the UI can link to the event detail.
+    // event_id is a TEXT UUID (not integer), order_id is an integer.
+    const orderId =
+      itemType === 'event_attendee'
+        ? (item.event_id !== undefined && item.event_id !== null ? String(item.event_id) : null)
+        : Number(item.order_id);
     lines.push({
       item_type: itemType,
-      item_id: Number(item.id),
-      order_id: Number(item.order_id),
+      item_id: itemId,
+      order_id: orderId,
+      ...(itemType === 'event_attendee' && item.event_title
+        ? { event_title: item.event_title }
+        : {}),
       seller_earning: split.sellerEarning,
       taxable_base: split.taxableBase,
       vat_rate: split.vatRate,
@@ -239,6 +352,59 @@ function buildPayoutSummary(items, vatRegime) {
     item_count: lines.length,
     items: lines,
   };
+}
+
+/**
+ * Fetch all paid events hosted by `hostUserId` that are still visible in the
+ * credit pipeline: upcoming, in grace, credited but not yet drawn into a
+ * withdrawal, or excluded. Used by `getSellerPayoutDetail` to render the
+ * "eventos en espera de acreditación" section of the admin payouts panel.
+ *
+ * @param {number} hostUserId
+ */
+async function loadEventsCreditState(hostUserId) {
+  const result = await db.execute({
+    sql: `
+      SELECT e.id, e.title, e.access_type, e.status, e.event_datetime,
+             e.finished_at, e.host_credited_at, e.host_credit_excluded,
+             COUNT(CASE WHEN ea.status IN ('paid', 'joined') THEN 1 END) AS paid_attendees,
+             COALESCE(SUM(CASE WHEN ea.status IN ('paid', 'joined') THEN ea.amount_paid ELSE 0 END), 0) AS total_amount
+      FROM events e
+      LEFT JOIN event_attendees ea ON ea.event_id = e.id
+      WHERE e.host_user_id = ?
+        AND e.access_type = 'paid'
+      GROUP BY e.id
+      ORDER BY e.event_datetime DESC
+      LIMIT 50
+    `,
+    args: [hostUserId],
+  });
+
+  return result.rows.map((row) => {
+    let state;
+    if (row.host_credit_excluded) {
+      state = 'excluded';
+    } else if (row.host_credited_at) {
+      state = 'credited';
+    } else if (row.finished_at) {
+      state = 'grace_period';
+    } else {
+      state = 'upcoming';
+    }
+
+    return {
+      id: row.id, // events.id is TEXT (UUID), not an integer
+      title: row.title,
+      status: row.status,
+      event_datetime: row.event_datetime,
+      finished_at: row.finished_at,
+      host_credited_at: row.host_credited_at,
+      host_credit_excluded: Boolean(row.host_credit_excluded),
+      paid_attendees: Number(row.paid_attendees) || 0,
+      total_amount: Number(row.total_amount) || 0,
+      state,
+    };
+  });
 }
 
 // ─── HTTP handlers ─────────────────────────────────────────────────────────
@@ -299,10 +465,11 @@ async function getSellerPayoutDetail(req, res, next) {
     const seller = await loadSellerOrThrow(sellerId);
 
     const pendingArt = await loadPendingItems(sellerId, 'art_rebu');
-    const pendingOthers = await loadPendingItems(sellerId, 'standard_vat');
+    const pendingStandard = await loadPendingItems(sellerId, 'standard_vat');
+    const eventsState = await loadEventsCreditState(sellerId);
 
     const artSummary = buildPayoutSummary(pendingArt, 'art_rebu');
-    const standardSummary = buildPayoutSummary(pendingOthers, 'standard_vat');
+    const standardSummary = buildPayoutSummary(pendingStandard, 'standard_vat');
 
     const historyResult = await db.execute({
       sql: `
@@ -334,6 +501,7 @@ async function getSellerPayoutDetail(req, res, next) {
         art_rebu: artSummary,
         standard_vat: standardSummary,
       },
+      eventsPending: eventsState,
       history: historyResult.rows.map((w) => ({
         id: Number(w.id),
         amount: Number(w.amount) || 0,
@@ -358,6 +526,31 @@ async function getSellerPayoutDetail(req, res, next) {
 }
 
 /**
+ * Normalize legacy `item_ids` from the request body into the new shape
+ * expected by `loadPendingItems` / `buildPayoutSummary`.
+ *
+ * Accepted body shapes:
+ *   - Legacy: `{ item_ids: [1, 2, 3] }` (integer ids of order items)
+ *   - New:    `{ item_ids: [1, 2, 3], event_attendee_ids: ['uuid-1', 'uuid-2'] }`
+ *
+ * Returns `{ restrictOrderItemIds, restrictEventAttendeeIds }` where either
+ * can be undefined to signal "no restriction for that kind".
+ */
+function parseItemRestrictions(body) {
+  const restrictOrderItemIds =
+    Array.isArray(body?.item_ids) && body.item_ids.length > 0
+      ? body.item_ids.map((id) => Number(id)).filter((n) => Number.isInteger(n))
+      : undefined;
+
+  const restrictEventAttendeeIds =
+    Array.isArray(body?.event_attendee_ids) && body.event_attendee_ids.length > 0
+      ? body.event_attendee_ids.map((id) => String(id))
+      : undefined;
+
+  return { restrictOrderItemIds, restrictEventAttendeeIds };
+}
+
+/**
  * POST /api/admin/payouts/:sellerId/preview
  * Compute a non-persistent preview summary and return a single-use token.
  */
@@ -368,12 +561,13 @@ async function previewPayout(req, res, next) {
       throw new ApiError(400, 'sellerId inválido');
     }
 
-    const { vat_regime: vatRegime, item_ids: itemIds } = req.body;
+    const { vat_regime: vatRegime } = req.body;
+    const restrictions = parseItemRestrictions(req.body);
 
     const seller = await loadSellerOrThrow(sellerId);
 
     // Fetch pending items for that regime.
-    const pending = await loadPendingItems(sellerId, vatRegime, itemIds);
+    const pending = await loadPendingItems(sellerId, vatRegime, restrictions);
     if (pending.length === 0) {
       throw new ApiError(400, 'No hay items pendientes de pago para este régimen');
     }
@@ -424,9 +618,9 @@ async function executePayout(req, res, next) {
 
     const {
       vat_regime: vatRegime,
-      item_ids: itemIds,
       confirmation_token: confirmationToken,
     } = req.body;
+    const restrictions = parseItemRestrictions(req.body);
 
     // Validate and consume the confirmation token.
     const tokenEntry = consumeConfirmationToken(confirmationToken);
@@ -452,7 +646,7 @@ async function executePayout(req, res, next) {
       );
     }
 
-    const pending = await loadPendingItems(sellerId, vatRegime, itemIds);
+    const pending = await loadPendingItems(sellerId, vatRegime, restrictions);
     if (pending.length === 0) {
       throw new ApiError(400, 'No hay items pendientes de pago para este régimen');
     }
