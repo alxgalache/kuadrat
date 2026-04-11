@@ -3,9 +3,8 @@
 /**
  * SellerFiscalForm — Change #1: stripe-connect-accounts
  *
- * Admin form to capture the fiscal/tax data of a seller required for:
- *   1) Creating a Stripe connected account (format-only prechecks)
- *   2) Generating autofacturas for particular/non-autónomo artists
+ * Admin form to capture the fiscal/tax data of a seller required for
+ *   creating a Stripe connected account (format-only prechecks).
  *
  * Validation mirrors `api/validators/fiscalSchemas.js` so typos are caught
  * client-side before the request hits the backend. Real KYC still happens
@@ -29,7 +28,7 @@ function validateTaxId(value) {
 }
 
 const EMPTY_FORM = {
-  tax_status: 'particular',
+  tax_status: 'autonomo',
   tax_id: '',
   fiscal_full_name: '',
   fiscal_address_line1: '',
@@ -39,13 +38,12 @@ const EMPTY_FORM = {
   fiscal_address_province: '',
   fiscal_address_country: 'ES',
   irpf_retention_rate: '',
-  autofactura_agreement_signed: false,
 }
 
 function sellerToForm(seller) {
   if (!seller) return { ...EMPTY_FORM }
   return {
-    tax_status: seller.tax_status || 'particular',
+    tax_status: seller.tax_status || 'autonomo',
     tax_id: seller.tax_id || '',
     fiscal_full_name: seller.fiscal_full_name || '',
     fiscal_address_line1: seller.fiscal_address_line1 || '',
@@ -58,16 +56,6 @@ function sellerToForm(seller) {
       seller.irpf_retention_rate !== null && seller.irpf_retention_rate !== undefined
         ? String(seller.irpf_retention_rate)
         : '',
-    autofactura_agreement_signed: Boolean(seller.autofactura_agreement_signed_at),
-  }
-}
-
-function formatDate(iso) {
-  if (!iso) return null
-  try {
-    return new Date(iso).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })
-  } catch {
-    return iso
   }
 }
 
@@ -82,11 +70,6 @@ export default function SellerFiscalForm({ seller, onUpdate }) {
     setForm(sellerToForm(seller))
     setErrors({})
   }, [seller])
-
-  // Track original signed flag separately to show the contextual hints below
-  // the checkbox (will-be-stamped / will-be-cleared).
-  const originallySigned = Boolean(seller?.autofactura_agreement_signed_at)
-  const signedToggled = form.autofactura_agreement_signed !== originallySigned
 
   function handleChange(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -139,7 +122,6 @@ export default function SellerFiscalForm({ seller, onUpdate }) {
       fiscal_address_city: form.fiscal_address_city.trim(),
       fiscal_address_province: form.fiscal_address_province.trim(),
       fiscal_address_country: form.fiscal_address_country.trim().toUpperCase() || 'ES',
-      autofactura_agreement_signed: form.autofactura_agreement_signed,
     }
     if (form.irpf_retention_rate !== '') {
       payload.irpf_retention_rate = Number(form.irpf_retention_rate)
@@ -162,8 +144,8 @@ export default function SellerFiscalForm({ seller, onUpdate }) {
       <div>
         <h2 className="text-lg font-semibold text-gray-900">Datos fiscales</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Información fiscal del artista. Se usa para crear la cuenta conectada en Stripe y,
-          en caso de particulares, para generar autofacturas.
+          Información fiscal del artista. Se usa para crear la cuenta conectada en Stripe y
+          para el informe fiscal trimestral de la gestoría.
         </p>
       </div>
 
@@ -179,7 +161,6 @@ export default function SellerFiscalForm({ seller, onUpdate }) {
             onChange={(e) => handleChange('tax_status', e.target.value)}
             className="mt-1 block w-full rounded-md border-0 py-2 px-3 text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-black text-sm"
           >
-            <option value="particular">Particular</option>
             <option value="autonomo">Autónomo</option>
             <option value="sociedad">Sociedad</option>
           </select>
@@ -335,41 +316,6 @@ export default function SellerFiscalForm({ seller, onUpdate }) {
           {errors.irpf_retention_rate && (
             <p className="mt-1 text-xs text-red-600">{errors.irpf_retention_rate}</p>
           )}
-        </div>
-
-        {/* Autofactura agreement */}
-        <div className="sm:col-span-2">
-          <div className="flex items-start gap-3">
-            <div className="flex h-6 items-center">
-              <input
-                id="autofactura_agreement_signed"
-                type="checkbox"
-                checked={form.autofactura_agreement_signed}
-                onChange={(e) => handleChange('autofactura_agreement_signed', e.target.checked)}
-                className="size-4 rounded border-gray-300 text-black focus:ring-black"
-              />
-            </div>
-            <div className="text-sm">
-              <label htmlFor="autofactura_agreement_signed" className="font-medium text-gray-900">
-                El artista ha firmado el acuerdo de autofacturación
-              </label>
-              {originallySigned && seller?.autofactura_agreement_signed_at && (
-                <p className="text-gray-500 text-xs mt-1">
-                  Firmado el {formatDate(seller.autofactura_agreement_signed_at)}
-                </p>
-              )}
-              {signedToggled && form.autofactura_agreement_signed && (
-                <p className="text-xs text-green-700 mt-1">
-                  Se registrará la fecha actual al guardar.
-                </p>
-              )}
-              {signedToggled && !form.autofactura_agreement_signed && (
-                <p className="text-xs text-red-700 mt-1">
-                  Se eliminará el registro de firma.
-                </p>
-              )}
-            </div>
-          </div>
         </div>
 
         <div className="sm:col-span-2 flex justify-end">

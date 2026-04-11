@@ -30,7 +30,7 @@ export default function ConfirmPayoutModal({
   const [errorMessage, setErrorMessage] = useState('')
   const { showSuccess, showApiError } = useNotification()
 
-  const regimeLabel = vatRegime === 'art_rebu' ? 'Arte (REBU 10%)' : 'Productos y servicios (21%)'
+  const regimeLabel = vatRegime === 'art_rebu' ? 'Arte (REBU)' : 'Productos y servicios (21%)'
 
   useEffect(() => {
     if (!open || !sellerId || !vatRegime) return
@@ -133,15 +133,21 @@ export default function ConfirmPayoutModal({
                   <span className="font-medium text-gray-900 tabular-nums">{summary.item_count}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Base imponible</span>
+                  <span className="text-gray-600">Base imponible (de mi comisión)</span>
                   <span className="font-medium text-gray-900 tabular-nums">
                     {summary.taxable_base.toFixed(2)} €
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">IVA incluido</span>
+                  <span className="text-gray-600">IVA incluido (de mi comisión) (21%)</span>
                   <span className="font-medium text-gray-900 tabular-nums">
                     {summary.vat_amount.toFixed(2)} €
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Comisión a facturar al artista</span>
+                  <span className="font-medium text-gray-900 tabular-nums">
+                    {(summary.taxable_base + summary.vat_amount).toFixed(2)} €
                   </span>
                 </div>
                 <div className="pt-2 border-t border-gray-200 flex items-center justify-between">

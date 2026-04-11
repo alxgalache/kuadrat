@@ -6,14 +6,15 @@
  *
  *   - sellerEarning → the net amount the artist will receive (price - commission)
  *   - taxableBase   → the base imponible of the platform's invoice/self-billing
- *   - vatRate       → 0.10 (REBU) or 0.21 (standard)
+ *   - vatRate       → 0.21 (both REBU and standard)
  *   - vatAmount     → the VAT the platform owes to the tax authority
  *
  * Two regimes are supported:
  *
- *   - REBU 10% (art):
+ *   - REBU 21% (art):
  *       The platform's margin = commission. The commission already contains
- *       VAT included; we extract it at 10%. Seller earning is untouched.
+ *       VAT included; we extract it at 21% (general rate applied to the
+ *       gallery's margin under REBU). Seller earning is untouched.
  *
  *   - Standard 21% (others / events):
  *       The commission is what the platform bills back to the seller. It is
@@ -30,7 +31,7 @@
  * floating-point drift creeping into the `withdrawal_items` rows.
  */
 
-const VAT_RATE_REBU = 0.10;
+const VAT_RATE_REBU = 0.21;
 const VAT_RATE_STANDARD = 0.21;
 
 /**
@@ -42,7 +43,7 @@ function round2(n) {
 }
 
 /**
- * REBU 10% (Régimen Especial de Bienes Usados) — used for art sales.
+ * REBU 21% (Régimen Especial de Bienes Usados) — used for art sales.
  *
  * @param {object} args
  * @param {number} args.price       - Item price paid by the buyer (€).

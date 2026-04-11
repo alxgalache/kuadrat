@@ -4,7 +4,7 @@
  * Splits the legacy single-bucket seller wallet (`users.available_withdrawal`)
  * into the two new VAT-regime buckets introduced in Change #2:
  *
- *   - `available_withdrawal_art_rebu`       → REBU 10% bucket (art)
+ *   - `available_withdrawal_art_rebu`       → REBU 21% bucket (art)
  *   - `available_withdrawal_standard_vat`   → Standard 21% bucket (others/events)
  *
  * All legacy balances are dumped into the *standard_vat* bucket because we have

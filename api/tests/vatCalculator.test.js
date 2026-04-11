@@ -13,28 +13,28 @@ const {
 } = require('../utils/vatCalculator');
 
 describe('vatCalculator', () => {
-  describe('computeRebuVat (10% REBU, art)', () => {
+  describe('computeRebuVat (21% REBU, art)', () => {
     it('splits an integer-priced art sale correctly', () => {
       // price 1000€, commission 100€ → platform margin = 100€
-      // taxableBase = 100 / 1.10 = 90.91
-      // vatAmount = 100 - 90.91 = 9.09
+      // taxableBase = 100 / 1.21 = 82.64
+      // vatAmount = 100 - 82.64 = 17.36
       // sellerEarning = 1000 - 100 = 900
       const result = computeRebuVat({ price: 1000, commission: 100 });
       expect(result.sellerEarning).toBe(900);
-      expect(result.taxableBase).toBe(90.91);
+      expect(result.taxableBase).toBe(82.64);
       expect(result.vatRate).toBe(VAT_RATE_REBU);
-      expect(result.vatAmount).toBe(9.09);
+      expect(result.vatAmount).toBe(17.36);
     });
 
     it('handles decimals without floating-point drift', () => {
       // price 123.45€, commission 12.34€
       // sellerEarning = 111.11
-      // taxableBase = 12.34 / 1.10 = 11.2181… → 11.22
-      // vatAmount = 12.34 - 11.22 = 1.12
+      // taxableBase = 12.34 / 1.21 = 10.1983… → 10.20
+      // vatAmount = 12.34 - 10.20 = 2.14
       const result = computeRebuVat({ price: 123.45, commission: 12.34 });
       expect(result.sellerEarning).toBe(111.11);
-      expect(result.taxableBase).toBe(11.22);
-      expect(result.vatAmount).toBe(1.12);
+      expect(result.taxableBase).toBe(10.20);
+      expect(result.vatAmount).toBe(2.14);
       expect(result.vatRate).toBe(VAT_RATE_REBU);
     });
 
@@ -48,12 +48,12 @@ describe('vatCalculator', () => {
 
     it('produces zero seller earning when commission equals price', () => {
       // Degenerate case: platform keeps everything.
-      // taxableBase = 200 / 1.10 = 181.82
-      // vatAmount = 200 - 181.82 = 18.18
+      // taxableBase = 200 / 1.21 = 165.29
+      // vatAmount = 200 - 165.29 = 34.71
       const result = computeRebuVat({ price: 200, commission: 200 });
       expect(result.sellerEarning).toBe(0);
-      expect(result.taxableBase).toBe(181.82);
-      expect(result.vatAmount).toBe(18.18);
+      expect(result.taxableBase).toBe(165.29);
+      expect(result.vatAmount).toBe(34.71);
     });
   });
 

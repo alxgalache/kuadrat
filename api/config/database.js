@@ -52,7 +52,7 @@ async function initializeDatabase() {
         stripe_connect_requirements_due TEXT,
         stripe_connect_last_synced_at DATETIME,
         -- Datos fiscales del artista (preparados para Changes #2 y #4)
-        tax_status TEXT CHECK(tax_status IN ('particular','autonomo','sociedad')),
+        tax_status TEXT CHECK(tax_status IN ('autonomo','sociedad')),
         tax_id TEXT,
         fiscal_full_name TEXT,
         fiscal_address_line1 TEXT,
@@ -61,8 +61,7 @@ async function initializeDatabase() {
         fiscal_address_postal_code TEXT,
         fiscal_address_province TEXT,
         fiscal_address_country TEXT NOT NULL DEFAULT 'ES',
-        irpf_retention_rate REAL,
-        autofactura_agreement_signed_at DATETIME
+        irpf_retention_rate REAL
       )
     `);
 
@@ -654,7 +653,7 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_province TEXT');
     await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_country TEXT NOT NULL DEFAULT \'ES\'');
     await safeAlter('ALTER TABLE users ADD COLUMN irpf_retention_rate REAL');
-    await safeAlter('ALTER TABLE users ADD COLUMN autofactura_agreement_signed_at DATETIME');
+    await safeAlter('ALTER TABLE users DROP COLUMN autofactura_agreement_signed_at');
     // Unique partial index on stripe_connect_account_id (ALTER TABLE can't add UNIQUE in SQLite)
     await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stripe_connect_account_id ON users(stripe_connect_account_id) WHERE stripe_connect_account_id IS NOT NULL');
 
@@ -854,6 +853,23 @@ async function initializeDatabase() {
       )
     `);
 
+    // ── Invoices (PDF generation tracking + numbering) ──────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_number TEXT NOT NULL UNIQUE,
+        series TEXT NOT NULL CHECK(series IN ('A','P','C','L')),
+        year INTEGER NOT NULL,
+        sequence INTEGER NOT NULL,
+        invoice_type TEXT NOT NULL CHECK(invoice_type IN ('buyer_rebu','buyer_standard','commission','settlement_rebu')),
+        order_id INTEGER,
+        withdrawal_id INTEGER,
+        event_attendee_id TEXT,
+        issued_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(series, year, sequence)
+      )
+    `);
+
     // ── Indexes ──────────────────────────────────────────────
     // Shipping
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_method ON shipping_zones(shipping_method_id)`);
@@ -917,6 +933,12 @@ async function initializeDatabase() {
 
     // Withdrawals
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawals(user_id)`);
+
+    // Invoices
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_invoices_order ON invoices(order_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_invoices_withdrawal ON invoices(withdrawal_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_invoices_event_attendee ON invoices(event_attendee_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_invoices_type ON invoices(invoice_type)`);
 
     // Postal codes
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_code_country ON postal_codes(postal_code, country)`);

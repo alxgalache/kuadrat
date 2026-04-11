@@ -233,7 +233,7 @@ function OrdersPageContent() {
     const [loadingStats, setLoadingStats] = useState(false)
 
     // Wallet state — Change #2 splits the balance into two VAT buckets
-    // (art_rebu for REBU 10% art sales, standard_vat for 21% products/services).
+    // (art_rebu for REBU art sales, standard_vat for 21% products/services).
     // `walletBalance` is kept as the combined total for the main heading.
     const [walletBalance, setWalletBalance] = useState(0)
     const [walletArtRebu, setWalletArtRebu] = useState(0)
@@ -552,7 +552,7 @@ function OrdersPageContent() {
                         <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div className="rounded-md bg-white p-4 shadow-sm">
                                 <dt className="text-xs font-medium uppercase tracking-wider text-gray-500">
-                                    Arte (REBU 10%)
+                                    Arte (REBU)
                                 </dt>
                                 <dd className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">
                                     {loadingWallet ? '...' : `${walletArtRebu.toFixed(2)} €`}
@@ -646,7 +646,7 @@ function OrdersPageContent() {
                                         <div className="mt-4 rounded-md bg-gray-50 p-4">
                                             <dl className="space-y-2 text-sm">
                                                 <div className="flex justify-between">
-                                                    <dt className="text-gray-500">Arte (REBU 10%)</dt>
+                                                    <dt className="text-gray-500">Arte (REBU)</dt>
                                                     <dd className="font-medium text-gray-900 tabular-nums">{walletArtRebu.toFixed(2)} €</dd>
                                                 </div>
                                                 <div className="flex justify-between">

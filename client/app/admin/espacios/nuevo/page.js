@@ -398,6 +398,9 @@ function NewEventPageContent() {
                       onChange={(e) => setPrice(e.target.value)}
                       className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                     />
+                    <p className="mt-1 text-xs text-gray-500">
+                      El precio introducido incluye un IVA del 21%.
+                    </p>
                   </div>
 
                   <div>

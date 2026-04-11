@@ -20,7 +20,7 @@ const taxIdSchema = z.string().refine(
 );
 
 const sellerFiscalDataSchema = z.object({
-  tax_status: z.enum(['particular', 'autonomo', 'sociedad']),
+  tax_status: z.enum(['autonomo', 'sociedad']),
   tax_id: taxIdSchema,
   fiscal_full_name: z.string().min(1).max(200),
   fiscal_address_line1: z.string().min(1).max(200),
@@ -30,7 +30,6 @@ const sellerFiscalDataSchema = z.object({
   fiscal_address_province: z.string().min(1).max(100),
   fiscal_address_country: z.string().length(2).default('ES'),
   irpf_retention_rate: z.number().min(0).max(0.5).optional().nullable(),
-  autofactura_agreement_signed: z.boolean().optional(),
 });
 
 module.exports = {

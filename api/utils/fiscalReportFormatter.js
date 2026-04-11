@@ -45,9 +45,7 @@ const STATUS_LABEL_ES = {
 };
 
 const INVOICING_MODE_LABEL_ES = {
-  autofactura: 'Autofactura',
   factura_recibida: 'Factura recibida',
-  pending_agreement: 'Pendiente de acuerdo',
   error: 'Error (datos incompletos)',
 };
 
@@ -152,7 +150,7 @@ function csvRow(fields) {
  * See design.md §6.
  *
  * @param {object} user  Seller row from `users`.
- * @returns {{ mode: 'autofactura'|'factura_recibida'|'pending_agreement'|'error', explanation: string }}
+ * @returns {{ mode: 'factura_recibida'|'error', explanation: string }}
  */
 function inferInvoicingMode(user) {
   if (!user || !user.tax_status) {
@@ -161,32 +159,18 @@ function inferInvoicingMode(user) {
       explanation: 'Datos fiscales incompletos para el artista.',
     };
   }
-  if (user.tax_status === 'particular') {
-    if (user.autofactura_agreement_signed_at) {
-      return {
-        mode: 'autofactura',
-        explanation:
-          '140d emite autofactura por la comisión en nombre del artista (art. 5 Reglamento de Facturación).',
-      };
-    }
-    return {
-      mode: 'pending_agreement',
-      explanation:
-        'Artista particular sin acuerdo de autofacturación firmado. Debe firmarse antes de declarar el trimestre.',
-    };
-  }
   if (user.tax_status === 'autonomo') {
     return {
       mode: 'factura_recibida',
       explanation:
-        'El artista autónomo emite su propia factura a 140d por el importe de la comisión.',
+        'El artista autónomo emite factura a 140d por su parte de la venta (precio − comisión) con el IVA correspondiente (10% obras de arte, 21% otros). Para productos estándar, 140d emite factura al artista por la comisión con IVA del 21%.',
     };
   }
   if (user.tax_status === 'sociedad') {
     return {
       mode: 'factura_recibida',
       explanation:
-        'La sociedad artística emite factura a 140d por el importe de la comisión.',
+        'La sociedad artística emite factura a 140d por su parte de la venta (precio − comisión) con el IVA correspondiente (10% obras de arte, 21% otros). Para productos estándar, 140d emite factura a la sociedad por la comisión con IVA del 21%.',
     };
   }
   return {
@@ -237,7 +221,6 @@ function buildSellerBlock(user) {
     irpf_retention_rate: user.irpf_retention_rate !== null && user.irpf_retention_rate !== undefined
       ? Number(user.irpf_retention_rate)
       : null,
-    autofactura_agreement_signed_at: user.autofactura_agreement_signed_at || null,
     stripe_connect_account_id: user.stripe_connect_account_id || null,
   };
 }
@@ -323,7 +306,7 @@ async function loadSellerUserById(userId) {
              fiscal_address_line1, fiscal_address_line2,
              fiscal_address_city, fiscal_address_postal_code,
              fiscal_address_province, fiscal_address_country,
-             irpf_retention_rate, autofactura_agreement_signed_at
+             irpf_retention_rate
       FROM users
       WHERE id = ?
     `,
@@ -346,7 +329,7 @@ async function loadSellerUsersByIds(userIds) {
              fiscal_address_line1, fiscal_address_line2,
              fiscal_address_city, fiscal_address_postal_code,
              fiscal_address_province, fiscal_address_country,
-             irpf_retention_rate, autofactura_agreement_signed_at
+             irpf_retention_rate
       FROM users
       WHERE id IN (${placeholders})
     `,
@@ -678,14 +661,6 @@ function formatSinglePayoutCsv(report) {
       report.seller.irpf_retention_rate !== null
         ? `${formatMoneyEs(report.seller.irpf_retention_rate)}%`
         : 'No informado',
-    ])
-  );
-  rows.push(
-    csvRow([
-      'Acuerdo autofacturación',
-      report.seller.autofactura_agreement_signed_at
-        ? `Firmado el ${formatDateEs(report.seller.autofactura_agreement_signed_at)}`
-        : 'No firmado',
     ])
   );
   rows.push(csvRow(['Cuenta Stripe Connect', report.seller.stripe_connect_account_id || '']));

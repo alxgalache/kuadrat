@@ -30,12 +30,12 @@
 
 - El comprador paga a 140d (vía Stripe). La factura emitida al comprador final lleva los datos fiscales de 140d.
 - El artista **no emite factura al comprador**. El artista recibe del marketplace el **importe neto de la venta menos la comisión** pactada.
-- 140d retiene una comisión sobre cada venta. Es **sobre esta comisión** donde se articula el régimen fiscal declarable por la gestoría (REBU 10 % o IVA estándar 21 %, ver §3).
-- El artista, en la parte fiscal que le corresponde, o bien emite factura a 140d por el importe de la comisión (si es autónomo/sociedad), o bien acepta la autofacturación emitida por 140d (si es particular con acuerdo firmado). Ver §5.
+- 140d retiene una comisión sobre cada venta. Es **sobre esta comisión** donde se articula el régimen fiscal declarable por la gestoría (REBU al 21 % sobre el margen, o IVA estándar 21 %, ver §3).
+- El artista emite su propia factura a 140d por el importe de su parte de la venta (precio de venta menos comisión). Todos los artistas deben estar dados de alta en Hacienda (036/037) y emiten factura propia. Ver §5.
 
 La consecuencia operativa es que la gestoría ve dos tipos de ingreso:
 
-1. **Ingresos por ventas al cliente final** (lo cobrado a los compradores), con el IVA repercutido al 10 % (arte) o 21 % (otros productos/eventos).
+1. **Ingresos por ventas al cliente final** (lo cobrado a los compradores). Para arte (REBU): el comprador paga el importe total sin desglose de IVA en su factura; el IVA al 21 % se calcula sólo sobre el margen de la galería (ver §3.1). Para otros productos y eventos: IVA estándar 21 % sobre el precio.
 2. **Ingresos por comisiones retenidas** a los artistas, que es el **dato clave del informe de payout** descrito en este documento. Estas comisiones son el margen real del marketplace.
 
 Los gastos directos de la operación (transporte — ver §6, comisiones de Stripe, etc.) son gastos de 140d y la gestoría los documenta con las facturas habituales recibidas de los proveedores (Sendcloud, Stripe, etc.). Esos gastos **no aparecen en el informe de payout**; este documento se centra exclusivamente en la relación 140d ↔ artista.
@@ -50,22 +50,22 @@ Cada venta en la plataforma se asigna a **uno y sólo uno** de los tres regímen
 
 - **Tipo de item**: cuadros, dibujos, esculturas, fotografías, originales de artistas. En la plataforma son los items con `item_type = 'art_order_item'`.
 - **Base imponible**: el **margen del marketplace** — es decir, la comisión retenida por 140d.
-- **Tipo de IVA**: **10 % sobre el margen** (no sobre el precio total de la obra).
+- **Tipo de IVA**: **21 % sobre el margen** (tipo general; no confundir con el tipo reducido del 10 % que el artista aplica como creador al vender a la galería — ese 10 % forma parte del coste de adquisición de la galería y no es deducible bajo REBU).
 - **Cómo se calcula en el informe**:
   - `seller_earning   = price - commission`  (lo que cobra el artista, ya neto)
-  - `taxable_base     = commission / 1,10`   (base imponible del margen)
-  - `vat_amount       = commission - taxable_base`  (IVA al 10 % incluido en la comisión)
-  - `vat_rate         = 10 %`
+  - `taxable_base     = commission / 1,21`   (base imponible del margen)
+  - `vat_amount       = commission - taxable_base`  (IVA al 21 % incluido en la comisión)
+  - `vat_rate         = 21 %`
 - **Ejemplo numérico** (obra vendida a 1 000 €, comisión del marketplace 30 %):
   | Concepto | Cálculo | Importe |
   |---|---|---|
   | Precio pagado por el comprador | — | **1 000,00 €** |
   | Comisión retenida por 140d (30 %) | `1000 × 0,30` | **300,00 €** |
   | Ganancia neta del artista | `1000 - 300` | **700,00 €** |
-  | Base imponible (margen) | `300 / 1,10` | **272,73 €** |
-  | IVA al 10 % (incluido en la comisión) | `300 - 272,73` | **27,27 €** |
+  | Base imponible (margen) | `300 / 1,21` | **247,93 €** |
+  | IVA al 21 % (incluido en la comisión) | `300 - 247,93` | **52,07 €** |
 
-  Este payout contribuye a los ingresos declarables por 140d con `272,73 €` de base imponible y `27,27 €` de IVA repercutido (régimen REBU).
+  Este payout contribuye a los ingresos declarables por 140d con `247,93 €` de base imponible y `52,07 €` de IVA repercutido (régimen REBU).
 
 ### 3.2 Otros productos — IVA estándar 21 %
 
@@ -98,7 +98,7 @@ Cada venta en la plataforma se asigna a **uno y sólo uno** de los tres regímen
 
 ## 4. Flujo de cobro y pago
 
-1. **Cobro via Stripe**. El comprador paga el importe total (producto + transporte + IVA al tipo aplicable al item) a la cuenta de Stripe de 140d. El dinero queda en el *platform balance* de 140d.
+1. **Cobro via Stripe**. El comprador paga el importe total a la cuenta de Stripe de 140d. Para arte (REBU), el comprador paga el precio íntegro sin desglose de IVA; para otros productos y eventos, el precio incluye IVA 21 %. El dinero queda en el *platform balance* de 140d.
 2. **Acreditación al monedero del artista**. Un proceso programado (`confirmationScheduler`) recorre las órdenes:
    - **Items físicos (arte + otros productos)**: tras **14 días** desde la entrega (plazo de verificación de que el comprador no ha disputado la compra) la comisión correspondiente se calcula con los helpers del §3 y el saldo neto del artista se acredita a uno de sus dos buckets:
      - **Bucket REBU** (`available_withdrawal_art_rebu`) para items `art_order_item`.
@@ -109,22 +109,20 @@ Cada venta en la plataforma se asigna a **uno y sólo uno** de los tres regímen
 
 ---
 
-## 5. Autofacturación (art. 5 Reglamento de Facturación)
+## 5. Facturación artista → galería
 
-140d aplica **autofacturación** (art. 5 del Real Decreto 1619/2012, Reglamento de Facturación) sólo en el caso específico de artistas **particulares** (no profesionales) con acuerdo de autofacturación firmado. El comportamiento es el siguiente:
+Todos los artistas de la plataforma deben estar dados de alta en Hacienda (modelo 036 o 037) como autónomos o sociedad. **No se contempla el caso de artistas particulares sin alta censal.**
 
-| Estado fiscal del artista (`tax_status`) | Acuerdo autofactura firmado (`autofactura_agreement_signed_at`) | Modo aplicable | Significado |
-|---|---|---|---|
-| `particular` | NOT NULL | **`autofactura`** | 140d emite autofactura por la comisión retenida en nombre del artista. El artista particular no tiene que emitir factura. |
-| `particular` | NULL | **`pending_agreement`** | Artista particular sin acuerdo firmado. **Debe firmarse antes de declarar el trimestre** o el payout quedará en estado fiscalmente pendiente. |
-| `autonomo` | — (no aplica) | **`factura_recibida`** | El artista autónomo emite su propia factura a 140d por el importe de la comisión. 140d recibe y contabiliza esa factura. |
-| `sociedad` | — (no aplica) | **`factura_recibida`** | La sociedad artística emite factura a 140d por el importe de la comisión. |
+| Estado fiscal del artista (`tax_status`) | Modo aplicable | Significado |
+|---|---|---|
+| `autonomo` | **`factura_recibida`** | El artista autónomo emite su propia factura a 140d por el importe de su parte de la venta (precio − comisión). 140d recibe y contabiliza esa factura. |
+| `sociedad` | **`factura_recibida`** | La sociedad artística emite factura a 140d por el importe de su parte de la venta (precio − comisión). |
 
-> Esta inferencia es **automática** en el informe: aparece en el campo `Modo facturación` / `invoicing.mode` con una explicación en español adjunta en `invoicing.explanation`. Si la gestoría ve `pending_agreement`, significa que hay que regularizar con el artista antes de poder emitir ninguna factura por esa comisión.
+> En el informe de payout, el campo `Modo facturación` / `invoicing.mode` siempre será `factura_recibida` con la explicación correspondiente.
 >
-> En condiciones normales — es decir, con el onboarding del artista completado por admin y los datos fiscales rellenos — no deberían aparecer registros en `pending_agreement` en el informe. Si aparecen, es una alerta operativa.
-
-El **quinto caso** (artista sin `tax_status` registrado) es técnicamente imposible si el alta del artista se completó correctamente; si aun así ocurriera, el endpoint de export devolvería un error 500 con el mensaje `"Datos fiscales incompletos para el artista"`.
+> **Nota importante**: la factura que el artista emite a 140d es por el importe de su parte (p. ej. 700 € de una venta de 1 000 € con 30 % de comisión), **no** por el importe de la comisión. La comisión es el margen que retiene 140d; el artista factura lo que cobra.
+>
+> La responsabilidad de emitir la factura es del propio artista. 140d puede proporcionar los datos del payout para facilitar la emisión, pero no emite facturas en nombre del artista.
 
 ---
 
@@ -147,7 +145,7 @@ El modelo de datos de 140d tiene un campo `irpf_retention_rate` por artista — 
 
 - **El payout transfiere al artista el saldo íntegro del bucket**, sin retención IRPF.
 - El campo `irpf_retention_rate` aparece en el informe como **metadato informativo**: la gestoría puede leerlo y aplicar manualmente la retención que corresponda en el trimestre si el artista es autónomo o sociedad con obligación de retención.
-- Si en el futuro se decide automatizar la retención (v2), el master plan §8 decisión #13 marca este punto como a reabrir. De momento, **la gestoría es responsable de verificar si procede retención y aplicarla en la autofactura o factura recibida**.
+- Si en el futuro se decide automatizar la retención (v2), el master plan §8 decisión #13 marca este punto como a reabrir. De momento, **la gestoría es responsable de verificar si procede retención y aplicarla en la factura recibida del artista**.
 
 Columnas relevantes en el informe:
 
@@ -198,20 +196,19 @@ Dirección;Calle Mayor 1, 28001 Madrid, Madrid (ES);;;;;;;
 Email fiscal;info@140d.art;;;;;;;
 ;;;;;;;;
 Artista;Juan Pérez García;;;;;;;
-Estado fiscal;particular;;;;;;;
+Estado fiscal;autónomo;;;;;;;
 NIF/NIE/CIF;12345678Z;;;;;;;
 Dirección;Calle del Arte 7, 08001 Barcelona, Barcelona (ES);;;;;;;
 IRPF (tipo informado);0%;;;;;;;
-Acuerdo autofacturación;Firmado el 01/02/2026;;;;;;;
-Modo de facturación;Autofactura;;;;;;;
-Explicación;140d emite autofactura por la comisión en nombre del artista (art. 5 Reglamento de Facturación).;;;;;;;
+Modo de facturación;Factura recibida;;;;;;;
+Explicación;El artista emite su propia factura a 140d por el importe de su parte de la venta.;;;;;;;
 Stripe Connect ID;acct_1PxxxABC;;;;;;;
 ;;;;;;;;
 Tipo;Referencia;Descripción;Comprador;Ganancia artista;Base imponible;% IVA;IVA;Total línea
-Arte;art_order_item:789;Cuadro «Sin título» — acuarela sobre papel;order:456/art_order_item:789;700,00;272,73;10%;27,27;300,00
-Arte;art_order_item:790;Dibujo «Retrato» — tinta china sobre papel;order:457/art_order_item:790;350,00;136,36;10%;13,64;150,00
+Arte;art_order_item:789;Cuadro «Sin título» — acuarela sobre papel;order:456/art_order_item:789;700,00;247,93;21%;52,07;300,00
+Arte;art_order_item:790;Dibujo «Retrato» — tinta china sobre papel;order:457/art_order_item:790;350,00;123,97;21%;26,03;150,00
 ;;;;;;;;
-Totales;;;;1050,00;409,09;;40,91;450,00
+Totales;;;;1050,00;371,90;;78,10;450,00
 Importe transferido (EUR);;;;1050,00;;;;
 Importe revertido (EUR);;;;0,00;;;;
 Neto tras reversiones (EUR);;;;1050,00;;;;
@@ -222,7 +219,7 @@ Puntos a destacar:
 - El bloque "Totales" al final suma **sólo las columnas del detalle de líneas**. Representa la suma de bases imponibles, IVA e importes totales de las líneas — pero **la cifra que 140d ha transferido efectivamente al artista** es `Importe transferido` (= suma de `Ganancia artista`).
 - Las dos filas `Importe revertido` y `Neto tras reversiones` son siempre visibles. Si el payout está completo y sin reversiones, el revertido es `0,00` y el neto coincide con el transferido.
 - La columna `Comprador` enlaza la línea con la orden original (o el attendee, en eventos). Ver §10.
-- La columna `% IVA` muestra el tipo aplicado como porcentaje legible (10 % o 21 %).
+- La columna `% IVA` muestra el tipo aplicado como porcentaje legible (21 % en ambos regímenes).
 
 ### 8.2 CSV agregado — estructura
 
@@ -230,8 +227,8 @@ El CSV de rango es una tabla "long" (una fila por cada línea de payout), con la
 
 ```csv
 Withdrawal ID;Fecha;Estado;Régimen;Modo facturación;Stripe transfer ID;Artista;NIF artista;Tipo item;Referencia;Descripción;Ganancia artista;Base imponible;% IVA;IVA;Total línea
-1234;10/04/2026;completado;REBU (Arte);Autofactura;tr_1PxyzABC;Juan Pérez García;12345678Z;Arte;art_order_item:789;Cuadro «Sin título»;700,00;272,73;10%;27,27;300,00
-1234;10/04/2026;completado;REBU (Arte);Autofactura;tr_1PxyzABC;Juan Pérez García;12345678Z;Arte;art_order_item:790;Dibujo «Retrato»;350,00;136,36;10%;13,64;150,00
+1234;10/04/2026;completado;REBU (Arte);Factura recibida;tr_1PxyzABC;Juan Pérez García;12345678Z;Arte;art_order_item:789;Cuadro «Sin título»;700,00;247,93;21%;52,07;300,00
+1234;10/04/2026;completado;REBU (Arte);Factura recibida;tr_1PxyzABC;Juan Pérez García;12345678Z;Arte;art_order_item:790;Dibujo «Retrato»;350,00;123,97;21%;26,03;150,00
 1235;11/04/2026;completado;IVA estándar 21%;Factura recibida;tr_1PxyzDEF;Ana Gómez López;87654321X;Evento;event_attendee:550e8400-e29b-41d4-a716-446655440000;Entrada: Masterclass acuarela;21,00;6,61;21%;1,39;8,00
 1235;11/04/2026;completado;IVA estándar 21%;Factura recibida;tr_1PxyzDEF;Ana Gómez López;87654321X;Evento;event_attendee:6ba7b810-9dad-11d1-80b4-00c04fd430c8;Entrada: Masterclass acuarela;21,00;6,61;21%;1,39;8,00
 1236;12/04/2026;completado;IVA estándar 21%;Factura recibida;tr_1PxyzGHI;Marta Ruiz Soler;11223344A;Otro;other_order_item:321;Catálogo «Exposición 2026»;16,00;3,31;21%;0,69;4,00
@@ -286,8 +283,8 @@ Cada ERP tiene su propio formato de importación, pero todos los ERP españoles 
 
 1. Abrir el CSV con Excel (doble click — el BOM hace que Excel reconozca UTF-8 automáticamente).
 2. Verificar que las columnas, los acentos, los decimales y las fechas están correctos. Si Excel muestra el contenido pegado en una sola columna, revisar que el separador del sistema sea `;` o usar "Datos > Texto en columnas" con separador `;` explícito.
-3. Si el ERP requiere un formato específico, usar el CSV como origen de una hoja intermedia con fórmulas que mapean columnas al formato del ERP (p. ej. `Número de factura = CONCATENAR("AF-"; A2)` si se autonumeran las autofacturas).
-4. Para el régimen REBU, el ERP debe aceptar el tipo de IVA al **10 %** sobre el margen como operación diferenciada. En el modelo 303, las casillas habituales son las del régimen especial de bienes usados.
+3. Si el ERP requiere un formato específico, usar el CSV como origen de una hoja intermedia con fórmulas que mapean columnas al formato del ERP.
+4. Para el régimen REBU, el ERP debe aceptar el tipo de IVA al **21 %** sobre el margen como operación diferenciada. En el modelo 303, las casillas habituales son las del régimen especial de bienes usados.
 5. Para el régimen estándar, el tipo de IVA es el **21 %** habitual.
 
 ---
@@ -336,12 +333,11 @@ Si una línea muestra `"(Item no encontrado)"` en el campo `Descripción`, signi
 | `Fecha de ejecución` / `withdrawal.executed_at` | Instante en que el admin ejecutó el payout (ISO 8601 en el JSON, `DD/MM/YYYY HH:MM` en el CSV, zona **Europe/Madrid**). |
 | `Ejecutado por` / `withdrawal.executed_by_admin_email` | Email del admin que ejecutó el payout. Sirve de auditoría. |
 | `Artista` / `seller.fiscal_full_name` | Nombre fiscal completo del artista tal y como está registrado en la BD. |
-| `Estado fiscal` / `seller.tax_status` | `particular`, `autonomo` o `sociedad`. |
+| `Estado fiscal` / `seller.tax_status` | `autonomo` o `sociedad`. |
 | `NIF/NIE/CIF` / `seller.tax_id` | Documento fiscal del artista. |
 | `Dirección` / `seller.address` | Dirección fiscal del artista. |
 | `IRPF (tipo informado)` / `seller.irpf_retention_rate` | Tipo de IRPF informado. **No se aplica al payout en v1** — ver §7. |
-| `Acuerdo autofacturación` / `seller.autofactura_agreement_signed_at` | Fecha en que el artista firmó el acuerdo de autofacturación (o vacío si no aplica / no firmado). |
-| `Modo de facturación` / `invoicing.mode` | `autofactura`, `factura_recibida` o `pending_agreement`. Ver §5. |
+| `Modo de facturación` / `invoicing.mode` | `factura_recibida` — todos los artistas emiten su propia factura a 140d. |
 | `Explicación` / `invoicing.explanation` | Descripción en español del modo aplicable. |
 | `Stripe Connect ID` / `seller.stripe_connect_account_id` | `acct_...` — identificador de la cuenta conectada del artista en Stripe. |
 | `Tipo` / `line.item_type_label` | `Arte`, `Otro`, o `Evento`. |
@@ -350,7 +346,7 @@ Si una línea muestra `"(Item no encontrado)"` en el campo `Descripción`, signi
 | `Comprador` / — | Alias en el CSV individual de `Referencia` (se muestra como columna específica para facilitar lectura). En el JSON es el mismo `buyer_reference`. |
 | `Ganancia artista` / `line.seller_earning` | `price - commission`. Lo que el artista cobra neto por esa línea. |
 | `Base imponible` / `line.taxable_base` | `commission / (1 + vat_rate)`. Base imponible sobre la que se liquida el IVA. |
-| `% IVA` / `line.vat_rate` | `10%` (REBU) o `21%` (estándar). |
+| `% IVA` / `line.vat_rate` | `21%` (tanto para REBU como para estándar — el tipo general se aplica en ambos casos sobre el margen). |
 | `IVA` / `line.vat_amount` | `commission - taxable_base`. IVA incluido en la comisión. |
 | `Total línea` / `line.line_total` | `taxable_base + vat_amount` = commission. Coincide con el importe de comisión retenida en esa línea. |
 | `Importe transferido` / `totals.transferred_amount` | Suma de `seller_earning` de todas las líneas del payout. **Es la cifra real transferida** al Stripe Connect account del artista. |

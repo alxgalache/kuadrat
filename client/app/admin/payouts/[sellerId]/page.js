@@ -55,7 +55,7 @@ const STATUS_LABELS = {
 }
 
 const regimeLabel = (regime) => {
-  if (regime === 'art_rebu') return 'Arte (REBU 10%)'
+  if (regime === 'art_rebu') return 'Arte (REBU)'
   if (regime === 'standard_vat') return 'Productos y servicios (21%)'
   return regime || '—'
 }
@@ -100,12 +100,16 @@ function BucketCard({ title, regime, balance, summary, onExecute, canExecute, di
               <dd className="font-medium tabular-nums text-gray-900">{summary.item_count}</dd>
             </div>
             <div className="flex items-center justify-between">
-              <dt className="text-gray-600">Base imponible</dt>
+              <dt className="text-gray-600">Base imponible (de mi comisión)</dt>
               <dd className="font-medium tabular-nums text-gray-900">{formatEuro(summary.taxable_base)}</dd>
             </div>
             <div className="flex items-center justify-between">
-              <dt className="text-gray-600">IVA incluido</dt>
+              <dt className="text-gray-600">IVA incluido (de mi comisión) (21%)</dt>
               <dd className="font-medium tabular-nums text-gray-900">{formatEuro(summary.vat_amount)}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-gray-600">Comisión a facturar al artista</dt>
+              <dd className="font-medium tabular-nums text-gray-900">{formatEuro(summary.taxable_base + summary.vat_amount)}</dd>
             </div>
             <div className="flex items-center justify-between border-t border-gray-100 pt-2">
               <dt className="text-sm font-medium text-gray-900">Total a pagar</dt>
@@ -115,7 +119,7 @@ function BucketCard({ title, regime, balance, summary, onExecute, canExecute, di
         )}
       </dl>
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-3">
         <button
           type="button"
           onClick={onExecute}
@@ -127,6 +131,13 @@ function BucketCard({ title, regime, balance, summary, onExecute, canExecute, di
         {!canExecute && disabledReason && (
           <p className="mt-2 text-xs text-amber-700">{disabledReason}</p>
         )}
+        <button
+          type="button"
+          disabled
+          className="w-full rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed"
+        >
+          Generar autofactura en nombre del artista
+        </button>
       </div>
     </section>
   )
@@ -231,6 +242,7 @@ function AdminPayoutDetailContent({ sellerId }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [modalRegime, setModalRegime] = useState(null)
+  const [downloadingDoc, setDownloadingDoc] = useState(null)
   const { showApiError, showSuccess } = useNotification()
 
   const load = useCallback(async () => {
@@ -315,6 +327,30 @@ function AdminPayoutDetailContent({ sellerId }) {
       triggerDownload(blob, buildSinglePayoutFilename(w.id, 'json'))
     } catch (err) {
       showApiError(err)
+    }
+  }, [showApiError])
+
+  const handleCommissionInvoice = useCallback(async (w) => {
+    setDownloadingDoc(`commission-${w.id}`)
+    try {
+      const blob = await adminAPI.invoices.downloadCommissionInvoice(w.id)
+      triggerDownload(blob, `factura_comision_${w.id}.pdf`)
+    } catch (err) {
+      showApiError(err)
+    } finally {
+      setDownloadingDoc(null)
+    }
+  }, [showApiError])
+
+  const handleSettlementNote = useCallback(async (w) => {
+    setDownloadingDoc(`settlement-${w.id}`)
+    try {
+      const blob = await adminAPI.invoices.downloadSettlementNote(w.id)
+      triggerDownload(blob, `liquidacion_rebu_${w.id}.pdf`)
+    } catch (err) {
+      showApiError(err)
+    } finally {
+      setDownloadingDoc(null)
     }
   }, [showApiError])
 
@@ -405,6 +441,7 @@ function AdminPayoutDetailContent({ sellerId }) {
                     <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Estado</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Transfer ID</th>
                     <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Exportar</th>
+                    <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">Documentos</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
@@ -456,6 +493,34 @@ function AdminPayoutDetailContent({ sellerId }) {
                               JSON
                             </button>
                           </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                          {w.status === 'completed' && (
+                            <div className="inline-flex items-center gap-x-1.5">
+                              {w.vat_regime === 'standard_vat' && (
+                                <button
+                                  type="button"
+                                  disabled={downloadingDoc === `commission-${w.id}`}
+                                  onClick={() => handleCommissionInvoice(w)}
+                                  title="Factura de comisión"
+                                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  {downloadingDoc === `commission-${w.id}` ? '...' : 'Factura comisión'}
+                                </button>
+                              )}
+                              {w.vat_regime === 'art_rebu' && (
+                                <button
+                                  type="button"
+                                  disabled={downloadingDoc === `settlement-${w.id}`}
+                                  onClick={() => handleSettlementNote(w)}
+                                  title="Nota de liquidación REBU"
+                                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  {downloadingDoc === `settlement-${w.id}` ? '...' : 'Nota liquidación'}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )

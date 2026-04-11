@@ -29,7 +29,7 @@
 
 | Tipo | Variable backend | Variable frontend | Aplicación |
 |---|---|---|---|
-| Obra de arte (`art`) | `DEALER_COMMISSION_ART` (default `0.25`) | `NEXT_PUBLIC_DEALER_COMMISSION_ART` | Tributa REBU 10% |
+| Obra de arte (`art`) | `DEALER_COMMISSION_ART` (default `0.25`) | `NEXT_PUBLIC_DEALER_COMMISSION_ART` | REBU (IVA 21% sobre el margen) |
 | Otros productos (`others`) | `DEALER_COMMISSION_OTHERS` (default `0.10`) | `NEXT_PUBLIC_DEALER_COMMISSION_OTHERS` | IVA estándar 21% |
 | Eventos de pago | `DEALER_COMMISSION_OTHERS` (mismo que others) | `NEXT_PUBLIC_DEALER_COMMISSION_OTHERS` | IVA estándar 21% |
 
@@ -39,22 +39,31 @@
 
 | Producto | Régimen | IVA |
 |---|---|---|
-| Obras de arte originales (`art`) | **REBU** (Régimen Especial de Bienes Usados, Objetos de Arte, Antigüedades y Objetos de Colección) | **10 %** sobre el margen del dealer (no se desglosa al cliente final) |
+| Obras de arte originales (`art`) | **REBU** (Régimen Especial de Bienes Usados, Objetos de Arte, Antigüedades y Objetos de Colección) | **21 %** sobre el margen del dealer (no se desglosa al comprador — régimen REBU) |
 | Otros productos (`others`) | Régimen general | **21 %** |
 | Eventos de pago | Régimen general (servicios) | **21 %** |
 | Gastos de envío (Sendcloud / MBE) | Régimen general (servicios de transporte) | **21 %** (NO es suplido — la factura del transportista llega a 140d) |
 
-**Decisión crítica:** un mismo "payout" hacia un artista NO puede mezclar líneas REBU con líneas de IVA estándar, porque la factura/autofactura emitida después tiene una base imponible y un tipo distinto. Por tanto **se separan los saldos del monedero del artista en dos cubos: REBU y estándar** (ver §4.2).
+**Decisión crítica:** un mismo "payout" hacia un artista NO puede mezclar líneas REBU con líneas de IVA estándar, porque la factura tiene una base imponible y un tipo distinto. Por tanto **se separan los saldos del monedero del artista en dos cubos: REBU y estándar** (ver §4.2).
 
-### 2.3 Estado fiscal del artista (particular vs autónomo)
+### 2.3 Estado fiscal del artista
 
-Tres casos posibles a soportar:
+> ⚠️ **Corrección (2026-04-11):** se elimina el estatus `particular` y toda referencia a autofacturación. Todos los artistas deben estar dados de alta en el Censo de Empresarios de Hacienda (modelo 036/037), independientemente de su relación con la Seguridad Social. La exención del SMI sólo aplica a la cuota de autónomos (SS), no a las obligaciones con Hacienda. Ver `docs/rebuild_invoicing/master_rebuild.md`.
 
-1. **Particular sin actividad económica (no autónomo)** — el dealer emite **autofactura** (art. 5 del Reglamento de Facturación) en nombre del artista. Para arte: REBU 10%. Para otros: estándar 21%. Posible IRPF retenido (out of scope v1, sólo guardamos el campo).
-2. **Autónomo** — el artista emite su propia factura al dealer. El dealer recibe la factura del artista y la registra como gasto.
-3. **Sociedad** — caso excepcional, mismo flujo que autónomo.
+Dos casos posibles:
 
-**Out of scope v1:** generación automática de PDFs de autofactura. Sólo se exporta CSV/JSON con todos los datos para que la gestoría los emita en su ERP (decisión del usuario).
+1. **Autónomo** — el artista está dado de alta como autónomo en Hacienda y la Seguridad Social. Emite su propia factura a la galería por **su parte** de la venta (75% en arte, 90% en otros/eventos).
+2. **Sociedad** — el artista opera a través de una persona jurídica (SL, SLU, etc.). Mismo flujo de facturación que el autónomo.
+
+**Modelo de facturación artista → galería:**
+- El artista emite factura a la galería por el importe de **su parte** de la venta (no por la comisión de la galería).
+- La galería **nunca** emite factura al artista — es el artista quien factura a la galería.
+- La galería no genera facturas en nombre del artista (no hay autofacturación).
+- El informe fiscal (`fiscal-export`) proporciona todos los datos necesarios para que la gestoría verifique las facturas recibidas de los artistas.
+
+**Nota sobre el IVA en la factura del artista a la galería:**
+- Para **obras de arte** (REBU): el artista como creador aplica el tipo reducido del **10%** en su factura a la galería. Este IVA soportado por la galería NO es deducible bajo el REBU — forma parte del coste de adquisición. El IVA que la galería ingresa a Hacienda sobre su margen es al **21%** (tipo general).
+- Para **otros productos/eventos** (régimen general): el artista aplica el **21%** estándar en su factura.
 
 ---
 
@@ -145,8 +154,8 @@ stripe_transfers_capability_active INTEGER NOT NULL DEFAULT 0, -- bool
 stripe_connect_requirements_due TEXT,         -- JSON array snapshot del último requirements.summary
 stripe_connect_last_synced_at DATETIME,
 
--- Datos fiscales del artista (necesarios para la autofactura/factura)
-tax_status TEXT CHECK(tax_status IN ('particular','autonomo','sociedad')),
+-- Datos fiscales del artista (necesarios para la factura)
+tax_status TEXT CHECK(tax_status IN ('autonomo','sociedad')),
 tax_id TEXT,                                  -- DNI/NIE/CIF
 fiscal_full_name TEXT,                        -- razón social o nombre completo del titular fiscal
 fiscal_address_line1 TEXT,
@@ -156,7 +165,6 @@ fiscal_address_postal_code TEXT,
 fiscal_address_province TEXT,
 fiscal_address_country TEXT DEFAULT 'ES',
 irpf_retention_rate REAL,                     -- NULLable; out of scope v1 pero campo preparado
-autofactura_agreement_signed_at DATETIME      -- aceptación del acuerdo de autofacturación
 ```
 
 **Campos a añadir en Change #2 (stripe-connect-manual-payouts):**
@@ -205,9 +213,9 @@ CREATE TABLE IF NOT EXISTS withdrawal_items (
   -- Snapshot de los importes en el momento de incluir el item en el payout
   -- (porque el item podría borrarse o el price_at_purchase podría reinterpretarse)
   amount REAL NOT NULL,           -- price_at_purchase - commission_amount
-  taxable_base REAL NOT NULL,     -- base imponible para autofactura/factura
+  taxable_base REAL NOT NULL,     -- base imponible para el informe fiscal
   vat_amount REAL NOT NULL,       -- importe IVA
-  vat_rate REAL NOT NULL,         -- 0.10 para REBU o 0.21 para estándar
+  vat_rate REAL NOT NULL,         -- 0.21 (tipo general, aplica tanto a REBU como a estándar)
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (withdrawal_id) REFERENCES withdrawals(id),
   UNIQUE(withdrawal_id, item_type, item_id)
@@ -440,7 +448,7 @@ const transfer = await stripeClient.transfers.create({
 5. Nuevo `api/controllers/stripeConnectWebhookController.js` con:
    - `POST /api/stripe/connect/webhook` → parseThinEvent, persiste, despacha al handler.
    - Handlers para `v2.core.account[requirements].updated` y `v2.core.account[configuration.recipient].capability_status_updated`.
-6. Endpoint admin para actualizar **datos fiscales** del artista: `PUT /api/admin/sellers/:id/fiscal` (con todos los campos `tax_*`, `fiscal_*`, `irpf_*`, `autofactura_*`).
+6. Endpoint admin para actualizar **datos fiscales** del artista: `PUT /api/admin/sellers/:id/fiscal` (con todos los campos `tax_*`, `fiscal_*`, `irpf_*`).
 7. Validación Zod en `api/validators/stripeConnectSchemas.js` y `api/validators/fiscalSchemas.js`.
 
 **Frontend:**
@@ -450,7 +458,7 @@ const transfer = await stripeClient.transfers.create({
    - Botón "Sincronizar estado" (siempre visible si existe la cuenta).
    - Badge con el estado actual (`not_started`, `pending`, `active`, `restricted`, `rejected`).
    - Lista de `requirements_due` en formato legible.
-2. **Admin → Autores → Detalle del artista**: nueva sección "Datos fiscales" con form para `tax_status`, `tax_id`, `fiscal_full_name`, `fiscal_address_*`, `irpf_retention_rate` (input numérico opcional), checkbox "El artista ha firmado el acuerdo de autofacturación" (con timestamp).
+2. **Admin → Autores → Detalle del artista**: nueva sección "Datos fiscales" con form para `tax_status` (select con `autonomo`/`sociedad`), `tax_id`, `fiscal_full_name`, `fiscal_address_*`, `irpf_retention_rate` (input numérico opcional).
 3. **Seller → Dashboard del artista**: banner persistente "Conecta tu cuenta para recibir pagos" que muestra el estado actual:
    - `not_started`: "Aún no hemos creado tu cuenta de pagos. Contacta con 140d Galería de Arte." (no acción del seller).
    - `pending` con `account_id`: botón "Continuar onboarding" → redirige a la URL hosted de Stripe.
@@ -515,7 +523,7 @@ const transfer = await stripeClient.transfers.create({
    - Datos de la plataforma (140d Galería de Arte, CIF, dirección).
    - Cada item con: descripción, base imponible, tipo IVA, importe IVA, total.
    - Subtotales y totales.
-   - Modo de facturación aplicable (`autofactura` o `factura_recibida`).
+   - Modo de facturación aplicable (el artista siempre emite su propia factura).
    - Tipo de operación (REBU o estándar).
 2. Endpoint `GET /api/admin/payouts/fiscal-export?from=...&to=...&format=csv` para informes mensuales/trimestrales agregados.
 
@@ -530,7 +538,7 @@ const transfer = await stripeClient.transfers.create({
    - Régimen REBU para obras de arte.
    - Régimen estándar 21% para otros y eventos.
    - IVA del transporte (Sendcloud/MBE).
-   - Autofacturación para artistas particulares (art. 5 RF).
+   - Modelo de facturación del artista a la galería (autónomo/sociedad).
    - IRPF retenido (campo preparado, no aplicado en v1).
    - Cómo importar el CSV de export en su ERP.
    - Casos de borde: reembolsos, reversiones, transferencias fallidas.
@@ -553,7 +561,7 @@ const transfer = await stripeClient.transfers.create({
 | 7 | **Hybrid onboarding (admin inicia + artista completa)** | El admin crea la cuenta y envía el link al artista; el artista completa el formulario hosted en Stripe | Round 1 |
 | 8 | **Stripe-hosted onboarding** (NO custom UI) | Las regulaciones KYC cambian frecuentemente; mantener UI custom es costoso | Round 1 |
 | 9 | **Two-bucket wallet** (`available_withdrawal_art_rebu` + `available_withdrawal_standard_vat`) | Un transfer no puede mezclar líneas REBU con líneas de IVA estándar (factura distinta) | Round 2 — usuario aceptó Option A |
-| 10 | **`withdrawal_items` polimórfico** con `taxable_base` + `vat_amount` + `vat_rate` por item | Permite generar autofactura/factura con detalle exacto | Round 2 |
+| 10 | **`withdrawal_items` polimórfico** con `taxable_base` + `vat_amount` + `vat_rate` por item | Permite generar factura con detalle exacto | Round 2 |
 | 11 | **Modal de confirmación de irreversibilidad** antes de ejecutar transfer | Reversal sólo posible si la cuenta destino tiene saldo; los cash-outs son irrecuperables | Round 2 |
 | 12 | **Sin safeguard de 14 días en el panel admin** | Total flexibilidad para el admin (puede pagar antes); el scheduler ya gate-keepea la acreditación del monedero | Round 2 |
 | 13 | **IRPF out of scope v1**, pero se guarda el campo `irpf_retention_rate` | El usuario quiere preparar el campo aunque no se aplique todavía | Round 2 |
@@ -562,7 +570,7 @@ const transfer = await stripeClient.transfers.create({
 | 16 | **Branding público: "140d Galería de Arte"** | "Kuadrat" es el nombre interno del repositorio; nunca debe aparecer en UI/emails/Stripe descriptions | Round 2 — corrección explícita del usuario |
 | 17 | **Statement descriptor: `140D GALERIA ARTE`** (ASCII, sin acentos, ≤22 chars) | Constraint de Stripe sobre statement_descriptor | Round 2 |
 | 18 | **Shipping IVA: 21% en ambos lados** (no es suplido) | Las facturas del transportista van a 140d, no al artista, por tanto no es suplido legalmente válido | Round 2 |
-| 19 | **Autofacturación: Option B (export CSV/JSON)** — sin generar PDFs en v1 | La gestoría emitirá los documentos en su ERP a partir del export | Final |
+| 19 | **Autofacturación descartada** — todos los artistas deben estar dados de alta en Hacienda (036/037) y emitir su propia factura a la galería. El export CSV/JSON proporciona los datos necesarios para la verificación por la gestoría. | La exención del SMI sólo aplica a SS, no a Hacienda. Sin artistas particulares, no hay caso de uso para autofacturación (art. 5 RF). | Corrección 2026-04-11 |
 | 20 | **4 changes OpenSpec independientes** (no un single change masivo) | Permite reviewar e implementar incrementalmente sin bloquear todo | Final |
 
 ---
@@ -579,7 +587,7 @@ const transfer = await stripeClient.transfers.create({
 
 > Estos datos se incorporan al export CSV/JSON del Change #4. **Action item:** asegurarse de que todas las env vars están rellenas antes del go-live; si alguna falta, el endpoint de export devuelve 503 con la lista de campos pendientes.
 >
-> **Documento de handoff con la gestoría:** [`docs/stripe_connect/fiscal_report_for_gestoria.md`](./fiscal_report_for_gestoria.md) — describe el formato del informe, los tres regímenes (REBU / IVA estándar arte-otros / IVA estándar eventos), la autofacturación art. 5 RF, los casos de borde y el glosario de campos.
+> **Documento de handoff con la gestoría:** [`docs/stripe_connect/fiscal_report_for_gestoria.md`](./fiscal_report_for_gestoria.md) — describe el formato del informe, los dos regímenes (REBU / IVA estándar), el modelo de facturación artista→galería, los casos de borde y el glosario de campos.
 
 ---
 
@@ -592,6 +600,7 @@ const transfer = await stripeClient.transfers.create({
 5. **El scheduler de confirmación (`confirmationScheduler.js`) es la ÚNICA fuente de acreditación del monedero.** Cualquier punto que acredite manualmente debe reusar el helper para mantener la consistencia REBU/estándar.
 6. **El artista NO puede iniciar él mismo la creación de la cuenta en v1.** Requiere intervención del admin (decisión #7). En el futuro se podría exponer un botón "Solicitar onboarding" en el seller dashboard.
 7. **No hay límite mínimo ni máximo en el monto de un payout** (no enforced en código). El admin elige. Si Stripe rechaza por debajo del mínimo de la cuenta destino, se devuelve el error tal cual.
+8. **Todos los artistas deben estar dados de alta en el Censo de Empresarios de Hacienda** (modelo 036/037), independientemente de su relación con la Seguridad Social. No se contempla el caso de artistas particulares sin alta en Hacienda. La exención del SMI sólo aplica a la cuota de autónomos (SS), no a las obligaciones tributarias.
 
 ---
 
@@ -614,7 +623,6 @@ const transfer = await stripeClient.transfers.create({
 - Stripe Thin Events: https://docs.stripe.com/webhooks?snapshot-or-thin=thin
 - Stripe Service Agreements: ver `docs/stripe_connect/service-agreement-types.md`
 - AEAT — REBU: https://sede.agenciatributaria.gob.es/Sede/iva/regimenes-iva/regimen-especial-bienes-usados-rebu.html
-- AEAT — Autofacturación (art. 5 RF): https://sede.agenciatributaria.gob.es/Sede/iva/facturacion/expedicion-facturas/expedicion-tercero-empresario.html
 
 ---
 
@@ -626,3 +634,4 @@ const transfer = await stripeClient.transfers.create({
 | 2026-04-09 | Change #2 (`stripe-connect-manual-payouts`) implementado: split del wallet en dos buckets por régimen fiscal (`available_withdrawal_art_rebu` + `available_withdrawal_standard_vat`), nueva tabla `withdrawal_items` con pivot polimórfico, migración de datos legacy al bucket estándar, helper `vatCalculator` (REBU + estándar), servicio `createTransfer`/`retrieveTransfer`/`listTransferReversals`, endpoints admin `GET/POST /api/admin/payouts*` con flujo preview→execute y token single-use TTL 5 min, conversión del endpoint seller `POST /withdrawals` a *nudge* vía email, handlers webhook para `transfer.created`/`reversed`/`failed` con dispatcher V1/V2 unificado, plantillas de email `sendSellerPayoutExecutedEmail`/`sendAdminPayoutFailedEmail`/`sendAdminPayoutReversedEmail`, UI admin en `/admin/payouts` (listado + detalle con dos BucketCard + histórico + `ConfirmPayoutModal`) y UI seller en `/orders` mostrando ambos buckets. Schema, scheduler y controller de órdenes actualizados para enrutar earnings al bucket correcto según tipo de item (`art_order_items` → REBU, `other_order_items` → estándar). | Claude (Opus 4.6) |
 | 2026-04-11 | Change #3 (`stripe-connect-events-wallet`) implementado: los eventos de pago (`access_type='paid'`) ahora acreditan al bucket estándar del host tras un periodo de gracia de 24 h. Schema aditivo en `events` (`finished_at`, `host_credited_at`, `host_credit_excluded`) y `event_attendees` (`commission_amount`, `host_credited_at`) con dos índices parciales. Nuevo scheduler horario `eventCreditScheduler` que recorre eventos elegibles, calcula la comisión con `computeStandardVat` sobre `amount_paid`, incrementa `available_withdrawal_standard_vat` del host en una transacción idempotente guarded por `WHERE host_credited_at IS NULL`, y dispara `sendHostEventCreditedEmail`. `eventService.endEvent` ahora estampa `finished_at` con `COALESCE`. Endpoints admin: `POST /api/admin/events/:id/{mark-finished,exclude-credit,include-credit}` con validadores Zod. Integración con el panel de payouts: `loadPendingItems('standard_vat')` hace UNION con `event_attendees` ya acreditados, `buildPayoutSummary` respeta `item_type` por línea (cabe `event_attendee` con `item_id` UUID conservado gracias al typing flexible de SQLite), y `getSellerPayoutDetail` devuelve una sección `eventsPending` con el estado (upcoming/grace/credited/excluded). Frontend admin: nueva sección "Eventos de pago" en `/admin/payouts/[sellerId]` con botones excluir/reactivar/marcar-finalizado. Frontend seller: sección "Mis eventos de pago" en `/seller/profile` (pestaña de facto del vendedor — no existe `seller/dashboard`) alimentada por el nuevo endpoint `GET /api/seller/paid-events`. Config: `EVENT_CREDIT_GRACE_DAYS` (default 1), `EVENT_CREDIT_SCHEDULER_CRON` (default `0 * * * *`), `EVENT_CREDIT_SCHEDULER_ENABLED`. Limitaciones conocidas: refunds post-acreditación no revierten el bucket automáticamente (requieren operación admin manual); no hay retro-acreditación para eventos previos al despliegue. | Claude (Opus 4.6) |
 | 2026-04-11 | Change #4 (`stripe-connect-fiscal-report`) implementado: endpoints admin read-only para exportar el detalle fiscal de los payouts a la gestoría. Nuevo bloque `config.business.*` en `api/config/env.js` con helper `assertBusinessConfigComplete()` (no bloquea el arranque; el endpoint de export devuelve 503 si faltan env vars `BUSINESS_LEGAL_NAME`, `BUSINESS_TAX_ID`, `BUSINESS_ADDRESS_*`). Nuevos helpers `api/utils/itemDescription.js` (batch-friendly por `item_type` con trazabilidad `order:.../art_order_item:...`, `event:<uuid>/attendee:<uuid>`) y `api/utils/fiscalReportFormatter.js` (`buildPayoutReport`, `buildRangeReport`, `inferInvoicingMode`, `formatAsCsv`, `formatAsJson`, con formato español: UTF-8 BOM, separador `;`, coma decimal, fechas `DD/MM/YYYY` en zona Europe/Madrid vía Intl). Nuevo `api/controllers/stripeConnectFiscalReportController.js` con 3 handlers — `exportSinglePayout`, `exportRange`, `getSummary`. Validadores Zod en `api/validators/stripeConnectFiscalReportSchemas.js` con cap `MAX_RANGE_DAYS=366`. Rutas montadas en `api/routes/admin/stripeConnectFiscalReportRoutes.js` y registradas en `index.js` **antes** del router de manual payouts para que `/payouts/fiscal-export` y `/payouts/summary` tengan precedencia sobre `/payouts/:sellerId`. Tests unitarios de `inferInvoicingMode`, `csvEscape`, `formatMoneyEs`, `formatDateEs` / `formatDateTimeEs` (incluyendo rollover CEST → Europe/Madrid). Frontend: `client/lib/api.js` añade `apiDownloadRequest`, `triggerDownload` y 5 wrappers (`exportPayoutCsv/Json`, `exportRangeCsv/Json`, `getPayoutsSummary`). UI admin extendida: botones "CSV/JSON" por fila en `/admin/payouts/[sellerId]` (deshabilitados en `failed/pending/processing/cancelled`) y barra superior con `Desde`/`Hasta`/`Régimen` + botones "Exportar CSV/JSON/Resumen" + card de totales por régimen y por mes en `/admin/payouts`, con validación cliente `to >= from` y `≤ 366 días`. **Entregable principal**: [`docs/stripe_connect/fiscal_report_for_gestoria.md`](./fiscal_report_for_gestoria.md) — documento de handoff a la gestoría con los tres regímenes (REBU 10% / IVA estándar 21% otros / IVA estándar 21% eventos), modelo MoR, autofacturación art. 5 RF, IVA del transporte (no suplido), IRPF informado pero no aplicado en v1, ejemplos numéricos, estructura del CSV individual y agregado, JSON agregado con `totals_by_regime`/`totals_by_month`, casos de borde y glosario completo. Con esto, la **iniciativa Stripe Connect (Changes #1→#4) queda cerrada**. | Claude (Opus 4.6) |
+| 2026-04-11 | **Corrección del modelo fiscal** (Change `correct-fiscal-documentation`): IVA REBU corregido de 10% a 21% sobre el margen (tipo general, no el reducido del artista). Eliminación completa del estatus `particular` y de la autofacturación (art. 5 RF) — todos los artistas deben estar dados de alta en Hacienda (036/037) y emitir su propia factura a la galería. Modelo de facturación corregido: el artista factura a la galería por su parte de la venta (75%/90%), no por la comisión. Se eliminan campos `autofactura_agreement_signed_at`, `invoicing_mode`. Decisión #19 reescrita. Nueva asunción #8 (alta en Hacienda obligatoria). Cambios alineados con `docs/rebuild_invoicing/master_rebuild.md`. Actualización simultánea de `fiscal_report_for_gestoria.md` con los mismos criterios. | Claude (Opus 4.6) |

@@ -25,5 +25,7 @@ router.use('/', require('./stripeConnectRoutes'));
 router.use('/payouts', require('./stripeConnectFiscalReportRoutes'));
 // Stripe Connect manual payouts panel (Change #2: stripe-connect-manual-payouts)
 router.use('/payouts', require('./stripeConnectPayoutsRoutes'));
+// Invoice PDF generation (Change #5: pdf-invoice-engine)
+router.use('/invoices', require('./invoiceRoutes'));
 
 module.exports = router;

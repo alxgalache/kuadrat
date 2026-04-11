@@ -41,7 +41,7 @@ const statusLabel = (status) => {
 }
 
 const regimeLabel = (regime) => {
-  if (regime === 'art_rebu') return 'Arte (REBU 10%)'
+  if (regime === 'art_rebu') return 'Arte (REBU)'
   if (regime === 'standard_vat') return 'Productos y servicios (21%)'
   return regime || '—'
 }
@@ -133,7 +133,7 @@ function FiscalExportBar({ onCsv, onJson, onSummary, busy }) {
             className="mt-1 block rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
           >
             <option value="">Todos</option>
-            <option value="art_rebu">Arte (REBU 10%)</option>
+            <option value="art_rebu">Arte (REBU)</option>
             <option value="standard_vat">Productos y servicios (21%)</option>
           </select>
         </div>
@@ -380,7 +380,7 @@ function AdminPayoutsListContent() {
                     Artista
                   </th>
                   <th scope="col" className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">
-                    Arte (REBU 10%)
+                    Arte (REBU)
                   </th>
                   <th scope="col" className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600">
                     Productos (21%)

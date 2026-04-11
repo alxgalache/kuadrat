@@ -4,7 +4,7 @@
  *
  * Two VAT regimes are supported:
  *
- *   - `art_rebu`     → REBU 10% (art sales)
+ *   - `art_rebu`     → REBU 21% (art sales)
  *   - `standard_vat` → 21% (other products, events)
  *
  * A payout is always mono-regime: the admin picks one, previews the totals,

@@ -207,7 +207,7 @@ router.get('/:id', async (req, res) => {
             tax_status, tax_id, fiscal_full_name,
             fiscal_address_line1, fiscal_address_line2, fiscal_address_city,
             fiscal_address_postal_code, fiscal_address_province, fiscal_address_country,
-            irpf_retention_rate, autofactura_agreement_signed_at
+            irpf_retention_rate
             FROM users
             WHERE id = ? AND role = 'seller'`,
       args: [req.params.id]

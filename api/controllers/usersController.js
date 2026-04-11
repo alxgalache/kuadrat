@@ -123,8 +123,6 @@ const getAuthorBySlug = async (req, res, next) => {
 // ─── Stripe Connect (Change #1): Update seller fiscal data ──────
 // PUT /api/admin/sellers/:id/fiscal
 // Body validated by sellerFiscalDataSchema (see api/validators/fiscalSchemas.js).
-// On success, updates the seller's fiscal columns in `users`. Toggles the
-// autofactura agreement timestamp based on the boolean in the request body.
 const updateSellerFiscalData = async (req, res, next) => {
   try {
     const sellerId = parseInt(req.params.id, 10);
@@ -134,13 +132,12 @@ const updateSellerFiscalData = async (req, res, next) => {
 
     // Ensure target user exists and is a seller.
     const existing = await db.execute({
-      sql: `SELECT id, autofactura_agreement_signed_at FROM users WHERE id = ? AND role = 'seller'`,
+      sql: `SELECT id FROM users WHERE id = ? AND role = 'seller'`,
       args: [sellerId],
     });
     if (existing.rows.length === 0) {
       throw new ApiError(404, 'Seller not found');
     }
-    const current = existing.rows[0];
 
     const {
       tax_status,
@@ -153,19 +150,7 @@ const updateSellerFiscalData = async (req, res, next) => {
       fiscal_address_province,
       fiscal_address_country,
       irpf_retention_rate,
-      autofactura_agreement_signed,
     } = req.body;
-
-    // Determine the new autofactura timestamp:
-    //   - true  + currently NULL → set to NOW
-    //   - false + currently set  → clear
-    //   - otherwise preserve the current value
-    let newAutofacturaTs = current.autofactura_agreement_signed_at;
-    if (autofactura_agreement_signed === true && !current.autofactura_agreement_signed_at) {
-      newAutofacturaTs = new Date().toISOString();
-    } else if (autofactura_agreement_signed === false && current.autofactura_agreement_signed_at) {
-      newAutofacturaTs = null;
-    }
 
     await db.execute({
       sql: `UPDATE users
@@ -178,8 +163,7 @@ const updateSellerFiscalData = async (req, res, next) => {
                 fiscal_address_postal_code = ?,
                 fiscal_address_province = ?,
                 fiscal_address_country = ?,
-                irpf_retention_rate = ?,
-                autofactura_agreement_signed_at = ?
+                irpf_retention_rate = ?
             WHERE id = ?`,
       args: [
         tax_status,
@@ -192,7 +176,6 @@ const updateSellerFiscalData = async (req, res, next) => {
         fiscal_address_province,
         fiscal_address_country || 'ES',
         irpf_retention_rate ?? null,
-        newAutofacturaTs,
         sellerId,
       ],
     });
@@ -213,7 +196,6 @@ const updateSellerFiscalData = async (req, res, next) => {
       fiscal_address_province,
       fiscal_address_country: fiscal_address_country || 'ES',
       irpf_retention_rate: irpf_retention_rate ?? null,
-      autofactura_agreement_signed_at: newAutofacturaTs,
     });
   } catch (error) {
     next(error);

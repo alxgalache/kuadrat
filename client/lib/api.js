@@ -1254,6 +1254,22 @@ export const adminAPI = {
       return apiRequest(`/admin/payouts/summary?${params.toString()}`);
     },
   },
+
+  // ── Invoice PDF downloads (Change #5: pdf-invoice-engine) ──
+  invoices: {
+    downloadBuyerInvoice: async (orderId, type) => {
+      return apiDownloadRequest(`/admin/invoices/order/${orderId}/buyer?type=${type}`);
+    },
+    downloadEventAttendeeInvoice: async (attendeeId) => {
+      return apiDownloadRequest(`/admin/invoices/event-attendee/${attendeeId}`);
+    },
+    downloadCommissionInvoice: async (withdrawalId) => {
+      return apiDownloadRequest(`/admin/invoices/withdrawal/${withdrawalId}/commission`);
+    },
+    downloadSettlementNote: async (withdrawalId) => {
+      return apiDownloadRequest(`/admin/invoices/withdrawal/${withdrawalId}/settlement`);
+    },
+  },
 };
 
 // Public Auctions API (no auth required)

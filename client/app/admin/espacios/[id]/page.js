@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { adminAPI } from '@/lib/api'
+import { adminAPI, triggerDownload } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { ArrowLeftIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid'
 
@@ -16,6 +16,7 @@ function EventDetailContent({ id }) {
   const [error, setError] = useState('')
   const [editMode, setEditMode] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [downloadingAttendeeInvoice, setDownloadingAttendeeInvoice] = useState(null)
 
   // Edit form state
   const [sellers, setSellers] = useState([])
@@ -181,6 +182,18 @@ function EventDetailContent({ id }) {
       await loadParticipants()
     } catch (err) {
       console.error('Error demoting:', err)
+    }
+  }
+
+  const handleAttendeeInvoice = async (attendee) => {
+    setDownloadingAttendeeInvoice(attendee.id)
+    try {
+      const blob = await adminAPI.invoices.downloadEventAttendeeInvoice(attendee.id)
+      triggerDownload(blob, `factura-evento-${attendee.id}.pdf`)
+    } catch (err) {
+      console.error('Error downloading invoice:', err)
+    } finally {
+      setDownloadingAttendeeInvoice(null)
     }
   }
 
@@ -352,6 +365,9 @@ function EventDetailContent({ id }) {
                           onChange={(e) => setForm({ ...form, price: e.target.value })}
                           className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                         />
+                        <p className="mt-1 text-xs text-gray-500">
+                          El precio introducido incluye un IVA del 21%.
+                        </p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Moneda</label>
@@ -605,6 +621,7 @@ function EventDetailContent({ id }) {
                             <th className="px-3 py-2 text-left font-medium text-gray-500">Email</th>
                             <th className="px-3 py-2 text-left font-medium text-gray-500">Estado</th>
                             <th className="px-3 py-2 text-left font-medium text-gray-500">Pago</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -626,6 +643,17 @@ function EventDetailContent({ id }) {
                               </td>
                               <td className="px-3 py-2 text-gray-500">
                                 {a.amount_paid ? `${a.amount_paid} ${a.currency}` : '-'}
+                              </td>
+                              <td className="px-3 py-2">
+                                {['paid', 'joined'].includes(a.status) && (
+                                  <button
+                                    onClick={() => handleAttendeeInvoice(a)}
+                                    disabled={downloadingAttendeeInvoice === a.id}
+                                    className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                  >
+                                    {downloadingAttendeeInvoice === a.id ? 'Generando...' : 'Factura'}
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))}

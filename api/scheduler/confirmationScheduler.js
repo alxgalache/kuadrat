@@ -61,7 +61,7 @@ module.exports = function startConfirmationScheduler() {
           });
 
           // Credit seller wallet (deducting commission). Change #2 splits the
-          // wallet into two VAT buckets: art → REBU 10%, others → standard 21%.
+          // wallet into two VAT buckets: art → REBU 21%, others → standard 21%.
           // Picking the bucket column based on the source table avoids ever
           // mixing fiscal regimes inside a single payout. The legacy
           // `available_withdrawal` column is no longer written to.

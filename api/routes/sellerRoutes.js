@@ -354,7 +354,7 @@ router.delete('/products/:id', async (req, res) => {
 /**
  * GET /api/seller/wallet
  * Get the seller's available withdrawal balance split into the two VAT-regime
- * buckets introduced in Change #2: `art_rebu` (REBU 10% for art) and
+ * buckets introduced in Change #2: `art_rebu` (REBU 21% for art) and
  * `standard_vat` (21% for everything else). The legacy `balance` field is
  * preserved and equals the sum of both buckets, so older clients keep working.
  */

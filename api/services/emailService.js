@@ -1809,7 +1809,7 @@ const sendDrawWinnerEmail = async ({ email, firstName, drawName, productName, pr
  * @param {number} params.sellerId           - DB id of the seller.
  * @param {string} params.sellerName         - Display name (full_name or email).
  * @param {string} params.sellerEmail        - Seller contact email.
- * @param {number} params.balanceArtRebu     - REBU 10% bucket balance (€).
+ * @param {number} params.balanceArtRebu     - REBU bucket balance (€).
  * @param {number} params.balanceStandardVat - Standard 21% bucket balance (€).
  */
 const sendWithdrawalNotificationEmail = async ({
@@ -1859,7 +1859,7 @@ const sendWithdrawalNotificationEmail = async ({
               <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${sellerEmail}</td>
             </tr>
             <tr>
-              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Saldo obras (REBU 10%)</td>
+              <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Saldo obras (REBU)</td>
               <td style="padding: 8px 0; color: #111827; font-weight: 500; border-bottom: 1px solid #f3f4f6; text-align: right;">${artRebu.toFixed(2)} &euro;</td>
             </tr>
             <tr>
@@ -3114,7 +3114,7 @@ Importante: este enlace caduca al cabo de unas horas por motivos de seguridad. S
  * @private
  */
 const vatRegimeLabel = (regime) => {
-  if (regime === 'art_rebu') return 'Arte (REBU 10%)';
+  if (regime === 'art_rebu') return 'Arte (REBU)';
   if (regime === 'standard_vat') return 'Productos y servicios (21%)';
   return regime || '—';
 };

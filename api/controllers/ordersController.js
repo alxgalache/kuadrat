@@ -1676,7 +1676,7 @@ const updateItemStatus = async (req, res, next) => {
       }
       if (sellerId && sellerEarning > 0) {
         // Change #2 — credit the bucket matching the item's VAT regime:
-        // art → REBU 10%, others → standard 21%. Never mix regimes.
+        // art → REBU 21%, others → standard 21%. Never mix regimes.
         const bucketColumn = product_type === 'art'
           ? 'available_withdrawal_art_rebu'
           : 'available_withdrawal_standard_vat';
@@ -2299,7 +2299,7 @@ const updateOrderStatusPublic = async (req, res, next) => {
 
     if (status === 'confirmed') {
       // Change #2 — credit seller wallets split by VAT regime. Art items feed
-      // the REBU 10% bucket; other items feed the standard 21% bucket. We key
+      // the REBU 21% bucket; other items feed the standard 21% bucket. We key
       // by (sellerId, bucket) to avoid ever mixing regimes inside a single
       // ledger row even if the buyer bought both kinds in one order.
       const artEarningsBySeller = {};

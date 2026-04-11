@@ -17,35 +17,26 @@ const {
 
 describe('fiscalReportFormatter', () => {
   describe('inferInvoicingMode', () => {
-    it('returns autofactura for particular with signed agreement', () => {
+    it('returns error for particular (no longer supported)', () => {
       const result = inferInvoicingMode({
         tax_status: 'particular',
-        autofactura_agreement_signed_at: '2026-02-01T12:34:56Z',
       });
-      expect(result.mode).toBe('autofactura');
-      expect(result.explanation).toMatch(/autofactura/i);
-      expect(result.explanation).toMatch(/art\. 5/);
-    });
-
-    it('returns pending_agreement for particular without signed agreement', () => {
-      const result = inferInvoicingMode({
-        tax_status: 'particular',
-        autofactura_agreement_signed_at: null,
-      });
-      expect(result.mode).toBe('pending_agreement');
-      expect(result.explanation).toMatch(/sin acuerdo/i);
+      expect(result.mode).toBe('error');
+      expect(result.explanation).toMatch(/desconocido/i);
     });
 
     it('returns factura_recibida for autonomo', () => {
       const result = inferInvoicingMode({ tax_status: 'autonomo' });
       expect(result.mode).toBe('factura_recibida');
       expect(result.explanation).toMatch(/autónomo/i);
+      expect(result.explanation).toMatch(/parte de la venta/);
     });
 
     it('returns factura_recibida for sociedad', () => {
       const result = inferInvoicingMode({ tax_status: 'sociedad' });
       expect(result.mode).toBe('factura_recibida');
       expect(result.explanation).toMatch(/sociedad/i);
+      expect(result.explanation).toMatch(/parte de la venta/);
     });
 
     it('returns error when user is null', () => {

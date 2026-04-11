@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { adminAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
+import { adminAPI, getArtImageUrl, getOthersImageUrl, triggerDownload } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { ArrowLeftIcon, EllipsisVerticalIcon } from '@heroicons/react/20/solid'
 import { Popover, PopoverButton, PopoverPanel, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
@@ -100,6 +100,7 @@ function OrderDetailContent() {
   // Order-level status change modal state
   const [orderStatusDialog, setOrderStatusDialog] = useState(false)
   const [changingOrderStatus, setChangingOrderStatus] = useState(false)
+  const [downloadingInvoice, setDownloadingInvoice] = useState(null)
 
   useEffect(() => {
     if (params.id) {
@@ -157,6 +158,19 @@ function OrderDetailContent() {
     }
   }
 
+  // Handle invoice PDF download
+  const handleInvoiceDownload = async (type) => {
+    setDownloadingInvoice(type)
+    try {
+      const blob = await adminAPI.invoices.downloadBuyerInvoice(params.id, type)
+      triggerDownload(blob, `factura-pedido-${params.id}-${type}.pdf`)
+    } catch (err) {
+      showBanner(err.message || 'No se pudo generar la factura')
+    } finally {
+      setDownloadingInvoice(null)
+    }
+  }
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('es-ES', {
       year: 'numeric',
@@ -200,6 +214,9 @@ function OrderDetailContent() {
   const getTotalShipping = () => {
     return order.items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0)
   }
+
+  const hasArtItems = order?.items?.some(item => item.product_type === 'art')
+  const hasOtherItems = order?.items?.some(item => item.product_type === 'other')
 
   if (loading) {
     return (
@@ -389,6 +406,35 @@ function OrderDetailContent() {
                 </dl>
               </div>
             </div>
+
+            {/* Facturas */}
+            {(hasArtItems || hasOtherItems) && (
+              <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden mb-6">
+                <div className="px-4 py-5 sm:p-6">
+                  <h2 className="text-lg font-medium text-gray-900 mb-4">Facturas</h2>
+                  <div className="space-y-3">
+                    {hasArtItems && (
+                      <button
+                        onClick={() => handleInvoiceDownload('rebu')}
+                        disabled={downloadingInvoice === 'rebu'}
+                        className="w-full rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-800 disabled:opacity-60"
+                      >
+                        {downloadingInvoice === 'rebu' ? 'Generando...' : 'Descargar factura REBU'}
+                      </button>
+                    )}
+                    {hasOtherItems && (
+                      <button
+                        onClick={() => handleInvoiceDownload('standard')}
+                        disabled={downloadingInvoice === 'standard'}
+                        className="w-full rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-800 disabled:opacity-60"
+                      >
+                        {downloadingInvoice === 'standard' ? 'Generando...' : 'Descargar factura IVA 21%'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Order summary */}
             <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden">
