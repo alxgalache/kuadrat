@@ -140,8 +140,8 @@ function NewAuctionPageContent() {
       await adminAPI.auctions.create({
         name: name.trim(),
         description: description.trim() || null,
-        start_datetime: startDatetime,
-        end_datetime: endDatetime,
+        start_datetime: new Date(startDatetime).toISOString(),
+        end_datetime: new Date(endDatetime).toISOString(),
         status,
         products,
       })

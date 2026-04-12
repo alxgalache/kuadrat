@@ -219,7 +219,8 @@ async function initializeDatabase() {
         stripe_payment_method_id TEXT,
         stripe_customer_id TEXT,
         reserved_at DATETIME,
-        payment_mismatch INTEGER NOT NULL DEFAULT 0
+        payment_mismatch INTEGER NOT NULL DEFAULT 0,
+        notes TEXT
       )
     `);
 
@@ -689,6 +690,9 @@ async function initializeDatabase() {
     // Unique partial index: a Stripe transfer id can appear at most once.
     await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_withdrawals_stripe_transfer ON withdrawals(stripe_transfer_id) WHERE stripe_transfer_id IS NOT NULL');
     await safeAlter('CREATE INDEX IF NOT EXISTS idx_withdrawals_vat_regime ON withdrawals(vat_regime)');
+
+    // Auction billing — notes column for idempotency marker
+    await safeAlter('ALTER TABLE orders ADD COLUMN notes TEXT');
 
     // Stripe Connect (Change #2) — polymorphic pivot table linking a payout to
     // the concrete items (art/other/event_attendee) it covers, with per-item

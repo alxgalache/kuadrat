@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, use } from 'react'
+import { useState, useEffect, useMemo, useRef, use } from 'react'
 import Image from 'next/image'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/20/solid'
 import { auctionsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
@@ -10,6 +10,7 @@ import AuctionBidFeed from '@/components/AuctionBidFeed'
 import BidModal from '@/components/BidModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import { useNotification } from '@/contexts/NotificationContext'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,7 +89,44 @@ export default function AuctionDetail({ params }) {
 
   // Effective end datetime from socket or auction
   const effectiveEndDatetime = endDatetime || auction?.end_datetime
-  const auctionEnded = isEnded || (auction?.status === 'finished')
+
+  // Client-side expiry detection: ensures the UI disables bidding even if the
+  // server socket broadcast is delayed.
+  const [isTimeExpired, setIsTimeExpired] = useState(false)
+  const expiryTimerRef = useRef(null)
+
+  useEffect(() => {
+    if (expiryTimerRef.current) {
+      clearInterval(expiryTimerRef.current)
+      expiryTimerRef.current = null
+    }
+
+    if (!effectiveEndDatetime || isEnded) return
+
+    const check = () => {
+      if (new Date(effectiveEndDatetime).getTime() <= Date.now()) {
+        setIsTimeExpired(true)
+        if (expiryTimerRef.current) {
+          clearInterval(expiryTimerRef.current)
+          expiryTimerRef.current = null
+        }
+      }
+    }
+
+    check()
+    if (!isTimeExpired) {
+      expiryTimerRef.current = setInterval(check, 1000)
+    }
+
+    return () => {
+      if (expiryTimerRef.current) {
+        clearInterval(expiryTimerRef.current)
+        expiryTimerRef.current = null
+      }
+    }
+  }, [effectiveEndDatetime, isEnded])
+
+  const auctionEnded = isEnded || isTimeExpired || (auction?.status === 'finished')
 
   // Bids filtered for current product
   const productBids = useMemo(() => {
@@ -350,6 +388,7 @@ export default function AuctionDetail({ params }) {
         auction={auction}
         product={productForModal}
         livePriceData={realtimeData}
+        auctionEnded={auctionEnded}
         onBidPlaced={() => {
           setBidModalOpen(false)
           loadAuction()

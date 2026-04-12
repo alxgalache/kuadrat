@@ -28,11 +28,10 @@ const { sendHostEventCreditedEmail } = require('../services/emailService');
  */
 async function loadEligibleEvents() {
   const graceDays = Math.max(0, Number(config.events.creditGraceDays) || 1);
-  // TODO - La hora no coincide con la hora real de españa (una hora menos) No es demasiado problema, pero se anota
-  const cutoffISO = new Date(Date.now() - graceDays * 24 * 3600 * 1000).toISOString();
-  // For debug purposes:
-  // const cutoffISO = new Date(Date.now() + (2 * 24 * 3600 * 1000)).toISOString();
 
+  // Use SQLite's datetime() so the cutoff format matches CURRENT_TIMESTAMP
+  // (both produce "YYYY-MM-DD HH:MM:SS" in UTC), avoiding format mismatches
+  // between JS toISOString() ("…T…Z") and SQLite's space-separated format.
   const result = await db.execute({
     sql: `
       SELECT id, title, host_user_id, finished_at
@@ -41,10 +40,10 @@ async function loadEligibleEvents() {
         AND finished_at IS NOT NULL
         AND host_credited_at IS NULL
         AND host_credit_excluded = 0
-        AND finished_at <= ?
+        AND finished_at <= datetime('now', '-' || ? || ' days')
       ORDER BY finished_at ASC
     `,
-    args: [cutoffISO],
+    args: [graceDays],
   });
   return result.rows;
 }

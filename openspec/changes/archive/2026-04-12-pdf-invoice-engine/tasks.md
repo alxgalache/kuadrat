@@ -45,4 +45,4 @@
 
 - [x] 8.1 Crear test unitario para la función de asignación de números de factura: secuencialidad, idempotencia, separación por series y años
 - [x] 8.2 Crear test unitario para la generación de PDF: verificar que cada tipo de documento genera un buffer PDF válido (magic bytes %PDF), con contenido esperado
-- [ ] 8.3 Verificación manual: generar cada uno de los 4 tipos de documento y comprobar visualmente el resultado en un visor PDF
+- [x] 8.3 Verificación manual: generar cada uno de los 4 tipos de documento y comprobar visualmente el resultado en un visor PDF

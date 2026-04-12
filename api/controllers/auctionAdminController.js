@@ -1,5 +1,7 @@
 const auctionService = require('../services/auctionService');
 const { db } = require('../config/database');
+const logger = require('../config/logger');
+const config = require('../config/env');
 
 /**
  * POST /api/admin/auctions
@@ -333,6 +335,49 @@ const cancelAuction = async (req, res, next) => {
   }
 };
 
+const finishAuction = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const current = await db.execute({
+      sql: 'SELECT id, status FROM auctions WHERE id = ?',
+      args: [id],
+    });
+
+    if (current.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        title: 'No encontrada',
+        message: 'Subasta no encontrada',
+      });
+    }
+
+    const status = current.rows[0].status;
+    if (status !== 'active' && status !== 'scheduled') {
+      return res.status(400).json({
+        success: false,
+        title: 'No se puede finalizar',
+        message: 'Solo se pueden finalizar subastas activas o programadas',
+      });
+    }
+
+    await auctionService.endAuction(id);
+
+    const auctionSocket = req.app.get('auctionSocket');
+    if (auctionSocket) {
+      auctionSocket.broadcastAuctionEnded(id);
+    }
+
+    res.status(200).json({
+      success: true,
+      title: 'Subasta finalizada',
+      message: 'La subasta se ha finalizado correctamente',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * GET /api/admin/postal-codes
  * List all postal codes for multi-select
@@ -545,6 +590,220 @@ const getProductsForAuction = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/admin/auctions/:auctionId/bids
+ * List all bids for an auction with buyer info (admin only).
+ */
+const getAuctionBids = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const bids = await auctionService.getAuctionBidsWithBuyers(id);
+    res.status(200).json({ success: true, bids });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/admin/auctions/:auctionId/bids/:bidId/bill
+ * Create an order + order item from a winning bid, charge the buyer, and mark
+ * the order as paid. This plugs into the existing payout flow.
+ */
+const billBid = async (req, res, next) => {
+  try {
+    const { id, bidId } = req.params;
+    const { shippingCost = 0 } = req.body;
+
+    // 1. Fetch all billing data
+    const data = await auctionService.getBidBillingData(bidId);
+    if (!data) {
+      return res.status(404).json({ success: false, message: 'Puja no encontrada' });
+    }
+    if (data.auction_id !== id) {
+      return res.status(400).json({ success: false, message: 'La puja no pertenece a esta subasta' });
+    }
+
+    // 2. Check not already billed (idempotency via orders.notes)
+    const marker = `auction_bid:${bidId}`;
+    const existing = await db.execute({
+      sql: `SELECT id FROM orders WHERE notes = ?`,
+      args: [marker],
+    });
+    if (existing.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Esta puja ya ha sido facturada',
+        orderId: existing.rows[0].id,
+      });
+    }
+
+    // 3. Create order
+    const token = require('crypto').randomUUID();
+    const bidAmount = Number(data.amount) || 0;
+    const parsedShippingCost = Number(shippingCost) || 0;
+    const commissionRate = data.product_type === 'other'
+      ? (config.dealerCommissionOthers || 0)
+      : (config.dealerCommissionArt || 0);
+    const commissionAmount = Math.round(bidAmount * commissionRate * 100) / 100;
+    const totalPrice = bidAmount + parsedShippingCost;
+
+    const orderResult = await db.execute({
+      sql: `INSERT INTO orders (
+              full_name, email, total_price, status, token,
+              delivery_address_line_1, delivery_address_line_2,
+              delivery_postal_code, delivery_city, delivery_province, delivery_country,
+              delivery_lat, delivery_lng,
+              invoicing_address_line_1, invoicing_address_line_2,
+              invoicing_postal_code, invoicing_city, invoicing_province, invoicing_country,
+              payment_provider, stripe_customer_id, stripe_payment_method_id,
+              notes
+            ) VALUES (?, ?, ?, 'pending', ?,
+              ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?,
+              'stripe', ?, ?,
+              ?)`,
+      args: [
+        `${data.first_name} ${data.last_name}`,
+        data.email,
+        totalPrice,
+        token,
+        data.delivery_address_1 || null,
+        data.delivery_address_2 || null,
+        data.delivery_postal_code || null,
+        data.delivery_city || null,
+        data.delivery_province || null,
+        data.delivery_country || null,
+        data.delivery_lat != null ? Number(data.delivery_lat) : null,
+        data.delivery_long != null ? Number(data.delivery_long) : null,
+        data.invoicing_address_1 || null,
+        data.invoicing_address_2 || null,
+        data.invoicing_postal_code || null,
+        data.invoicing_city || null,
+        data.invoicing_province || null,
+        data.invoicing_country || null,
+        data.stripe_customer_id || null,
+        data.stripe_payment_method_id || null,
+        marker,
+      ],
+    });
+
+    const orderId = Number(orderResult.lastInsertRowid);
+
+    // 4. Create art_order_item (auctions are always art products)
+    await db.execute({
+      sql: `INSERT INTO art_order_items (
+              order_id, art_id, price_at_purchase, shipping_cost, commission_amount, status
+            ) VALUES (?, ?, ?, ?, ?, 'pending')`,
+      args: [orderId, data.product_id, bidAmount, parsedShippingCost, commissionAmount],
+    });
+
+    // 5. Charge off-session via Stripe
+    const stripeService = require('../services/stripeService');
+    const amountInCents = Math.round(totalPrice * 100);
+
+    let chargeResult;
+    try {
+      chargeResult = await stripeService.chargeWinnerOffSession({
+        customerId: data.stripe_customer_id,
+        paymentMethodId: data.stripe_payment_method_id,
+        amount: amountInCents,
+        currency: 'eur',
+        metadata: {
+          auction_id: id,
+          bid_id: bidId,
+          order_id: String(orderId),
+          product_id: String(data.product_id),
+        },
+      });
+    } catch (stripeErr) {
+      logger.error({ err: stripeErr, bidId, orderId }, 'Stripe charge failed for auction billing');
+      // Mark order as failed but still return the order for admin review
+      await db.execute({
+        sql: `UPDATE orders SET status = 'payment_failed' WHERE id = ?`,
+        args: [orderId],
+      });
+      return res.status(200).json({
+        success: false,
+        message: 'Error al realizar el cobro. El pedido se ha creado pero el pago ha fallado.',
+        orderId,
+      });
+    }
+
+    // 6. Update order to paid
+    if (chargeResult && chargeResult.success) {
+      await db.execute({
+        sql: `UPDATE orders SET status = 'paid', stripe_payment_intent_id = ? WHERE id = ?`,
+        args: [chargeResult.paymentIntentId || null, orderId],
+      });
+      await db.execute({
+        sql: `UPDATE art_order_items SET status = 'paid' WHERE order_id = ?`,
+        args: [orderId],
+      });
+    } else if (chargeResult && chargeResult.requiresAction) {
+      await db.execute({
+        sql: `UPDATE orders SET status = 'requires_action', stripe_payment_intent_id = ? WHERE id = ?`,
+        args: [chargeResult.paymentIntentId || null, orderId],
+      });
+      return res.status(200).json({
+        success: true,
+        message: 'El pago requiere autenticación adicional (SCA).',
+        orderId,
+        requiresAction: true,
+      });
+    }
+
+    logger.info({ orderId, bidId, auctionId: id, amount: totalPrice }, 'Auction bid billed successfully');
+
+    // 7. Send purchase confirmation email to buyer (non-blocking)
+    try {
+      const { sendPurchaseConfirmation } = require('../services/emailService');
+
+      const items = [{
+        product_type: data.product_type,
+        art_id: data.product_id,
+        name: data.product_name,
+        basename: data.basename,
+        type: data.art_type || null,
+        seller_id: data.seller_id,
+        price_at_purchase: data.amount,
+        shipping_cost: shippingCost,
+        shipping_method_name: shippingCost > 0 ? 'Envío subasta' : null,
+      }];
+
+      let sellersInfo = [];
+      if (data.seller_id) {
+        const sellerResult = await db.execute({
+          sql: 'SELECT id, email, full_name FROM users WHERE id = ?',
+          args: [data.seller_id],
+        });
+        if (sellerResult.rows.length > 0) {
+          const s = sellerResult.rows[0];
+          sellersInfo = [{ id: s.id, email: s.email, name: s.full_name }];
+        }
+      }
+
+      await sendPurchaseConfirmation({
+        orderId,
+        orderToken: token,
+        items,
+        totalPrice,
+        buyerEmail: data.email,
+        sellers: sellersInfo,
+      });
+    } catch (emailErr) {
+      logger.error({ err: emailErr, orderId }, 'Failed to send auction billing confirmation email');
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Pedido creado y cobro realizado correctamente',
+      orderId,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createAuction,
   listAuctions,
@@ -553,10 +812,13 @@ module.exports = {
   deleteAuction,
   startAuction,
   cancelAuction,
+  finishAuction,
   listPostalCodes,
   searchPostalCodes,
   getPostalCodesByIds,
   getPostalCodesByRefs,
   createPostalCode,
   getProductsForAuction,
+  getAuctionBids,
+  billBid,
 };

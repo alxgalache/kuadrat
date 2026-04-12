@@ -6,6 +6,7 @@ import { XMarkIcon, CheckIcon, ArrowLeftIcon } from '@heroicons/react/24/outline
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { auctionsAPI } from '@/lib/api'
+import { useNotification } from '@/contexts/NotificationContext'
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
 
@@ -32,7 +33,8 @@ const PHASE = {
  *
  * @param {{ isOpen: boolean, onClose: () => void, auction: object, product: object, onBidPlaced: () => void }} props
  */
-export default function BidModal({ isOpen, onClose, auction, product, livePriceData, onBidPlaced }) {
+export default function BidModal({ isOpen, onClose, auction, product, livePriceData, auctionEnded, onBidPlaced }) {
+  const { showError } = useNotification()
   const [phase, setPhase] = useState(PHASE.CHOOSE)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -110,6 +112,14 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     }
   }, [isOpen, auction])
 
+  // ------ Close modal if auction ends while user is bidding ------
+  useEffect(() => {
+    if (isOpen && auctionEnded && phase !== PHASE.SUCCESS) {
+      onClose()
+      showError('Subasta finalizada', 'La subasta acaba de finalizar')
+    }
+  }, [auctionEnded])
+
   // Check if product has postal restrictions
   useEffect(() => {
     if (auction && productId && productType) {
@@ -170,7 +180,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
   const initStripePayment = async (auctionBuyerId) => {
     const paymentData = await auctionsAPI.setupPayment(auction.id, auctionBuyerId)
     setClientSecret(paymentData.clientSecret)
-    setStripeCustomerId(paymentData.stripeCustomerId)
+    setStripeCustomerId(paymentData.customerId)
   }
 
   const handleRegisterAndSetupPayment = async () => {
@@ -178,12 +188,23 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     setLoading(true)
     setError('')
     try {
+      const effectiveInvoicing = copyDelivery ? deliveryAddress : invoicingAddress
       const buyerData = {
         firstName: personalInfo.firstName,
         lastName: personalInfo.lastName,
         email: personalInfo.email,
-        deliveryAddress,
-        invoicingAddress: copyDelivery ? deliveryAddress : invoicingAddress,
+        deliveryAddress1: deliveryAddress.address_1,
+        deliveryAddress2: deliveryAddress.address_2,
+        deliveryPostalCode: deliveryAddress.postal_code,
+        deliveryCity: deliveryAddress.city,
+        deliveryProvince: deliveryAddress.province,
+        deliveryCountry: deliveryAddress.country,
+        invoicingAddress1: effectiveInvoicing.address_1,
+        invoicingAddress2: effectiveInvoicing.address_2,
+        invoicingPostalCode: effectiveInvoicing.postal_code,
+        invoicingCity: effectiveInvoicing.city,
+        invoicingProvince: effectiveInvoicing.province,
+        invoicingCountry: effectiveInvoicing.country,
         stripeCustomerId,
       }
       const data = await auctionsAPI.registerBuyer(auction.id, buyerData)
@@ -291,14 +312,14 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       <button
         type="button"
         onClick={() => setPhase(PHASE.VERIFY)}
-        className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
+        className="w-full rounded-md bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
       >
         Ya he pujado antes
       </button>
       <button
         type="button"
         onClick={() => setPhase(PHASE.TERMS)}
-        className="w-full rounded-md bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+        className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
       >
         Nuevo pujador
       </button>
@@ -588,12 +609,23 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
             // Create a temporary buyer registration to get Stripe setup
             // We'll do an initial call to setupPayment with a placeholder buyer id
             // Actually, we register the buyer first, then set up payment
+            const effectiveInvoicing = copyDelivery ? deliveryAddress : invoicingAddress
             const buyerData = {
               firstName: personalInfo.firstName,
               lastName: personalInfo.lastName,
               email: personalInfo.email,
-              deliveryAddress,
-              invoicingAddress: copyDelivery ? deliveryAddress : invoicingAddress,
+              deliveryAddress1: deliveryAddress.address_1,
+              deliveryAddress2: deliveryAddress.address_2,
+              deliveryPostalCode: deliveryAddress.postal_code,
+              deliveryCity: deliveryAddress.city,
+              deliveryProvince: deliveryAddress.province,
+              deliveryCountry: deliveryAddress.country,
+              invoicingAddress1: effectiveInvoicing.address_1,
+              invoicingAddress2: effectiveInvoicing.address_2,
+              invoicingPostalCode: effectiveInvoicing.postal_code,
+              invoicingCity: effectiveInvoicing.city,
+              invoicingProvince: effectiveInvoicing.province,
+              invoicingCountry: effectiveInvoicing.country,
             }
             const data = await auctionsAPI.registerBuyer(auction.id, buyerData)
             const buyer = data.buyer
@@ -640,6 +672,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
           <StripePaymentStep
             auctionId={auction.id}
             auctionBuyerId={buyerSession?.auctionBuyerId}
+            stripeCustomerId={stripeCustomerId}
             onSuccess={() => {
               // Payment confirmed, save session and go to confirm
               storeSession(auction.id, buyerSession)
@@ -658,6 +691,8 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       <div className="rounded-lg bg-gray-50 p-4">
         <p className="text-sm text-gray-600">Estas a punto de pujar por:</p>
         <p className="mt-1 text-base font-semibold text-gray-900">{product?.name}</p>
+        <p className="text-xs text-justify mt-2 text-gray-600">Se guardarán tus datos de pago y solo se retirará el importe si resultas ganador. Contactaremos contigo antes para acordar la entrega y los gastos de envío.</p>
+        <p className="text-xs text-justify text-gray-600">En caso de resultar ganador y desistir de la compra, se realizará un cargo del 10% del valor de la obra (ver condiciones)</p>
         <p className={`mt-3 text-2xl font-bold transition-all duration-500 ${
           animatePrice ? 'scale-110 text-red-600' : 'text-gray-900'
         }`}>
@@ -807,7 +842,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
 // ---------------------------------------------------------------------------
 // Stripe Payment sub-component (must be rendered inside <Elements>)
 // ---------------------------------------------------------------------------
-function StripePaymentStep({ auctionId, auctionBuyerId, onSuccess, onError }) {
+function StripePaymentStep({ auctionId, auctionBuyerId, stripeCustomerId, onSuccess, onError }) {
   const stripe = useStripe()
   const elements = useElements()
   const [loading, setLoading] = useState(false)
@@ -832,7 +867,7 @@ function StripePaymentStep({ auctionId, auctionBuyerId, onSuccess, onError }) {
 
       if (setupIntent && setupIntent.status === 'succeeded') {
         // Confirm on our backend
-        await auctionsAPI.confirmPayment(auctionId, auctionBuyerId, setupIntent.id)
+        await auctionsAPI.confirmPayment(auctionId, auctionBuyerId, setupIntent.id, stripeCustomerId)
         onSuccess()
       } else {
         onError('La verificacion no se pudo completar. Intentalo de nuevo.')

@@ -44,4 +44,22 @@ router.post('/:id/start', auctionAdminController.startAuction);
  */
 router.post('/:id/cancel', auctionAdminController.cancelAuction);
 
+/**
+ * POST /api/admin/subastas/:id/finish
+ * Manually finish auction
+ */
+router.post('/:id/finish', auctionAdminController.finishAuction);
+
+/**
+ * GET /api/admin/subastas/:id/bids
+ * List all bids for an auction with buyer info
+ */
+router.get('/:id/bids', auctionAdminController.getAuctionBids);
+
+/**
+ * POST /api/admin/subastas/:id/bids/:bidId/bill
+ * Create order + charge buyer for a winning bid
+ */
+router.post('/:id/bids/:bidId/bill', auctionAdminController.billBid);
+
 module.exports = router

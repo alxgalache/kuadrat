@@ -925,9 +925,26 @@ export const adminAPI = {
       });
     },
 
+    finish: async (id) => {
+      return apiRequest(`/admin/auctions/${id}/finish`, {
+        method: 'POST',
+      });
+    },
+
     getProductsForAuction: async (excludeAuctionId = null) => {
       const params = excludeAuctionId ? `?excludeAuctionId=${excludeAuctionId}` : '';
       return apiRequest(`/admin/products/for-auction${params}`);
+    },
+
+    getBids: async (auctionId) => {
+      return apiRequest(`/admin/auctions/${auctionId}/bids`);
+    },
+
+    billBid: async (auctionId, bidId, { shippingCost } = {}) => {
+      return apiRequest(`/admin/auctions/${auctionId}/bids/${bidId}/bill`, {
+        method: 'POST',
+        body: JSON.stringify({ shippingCost: shippingCost || 0 }),
+      });
     },
   },
 
@@ -1307,10 +1324,10 @@ export const auctionsAPI = {
     });
   },
 
-  confirmPayment: async (auctionId, auctionBuyerId, setupIntentId) => {
+  confirmPayment: async (auctionId, auctionBuyerId, setupIntentId, customerId) => {
     return apiRequest(`/auctions/${auctionId}/confirm-payment`, {
       method: 'POST',
-      body: JSON.stringify({ auctionBuyerId, setupIntentId }),
+      body: JSON.stringify({ auctionBuyerId, setupIntentId, customerId }),
     });
   },
 

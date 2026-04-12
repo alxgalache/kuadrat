@@ -979,6 +979,87 @@ async function savePaymentData(auctionBuyerId, {
 }
 
 // ---------------------------------------------------------------------------
+// Admin: bids listing with buyer info
+// ---------------------------------------------------------------------------
+
+async function getAuctionBidsWithBuyers(auctionId) {
+  const result = await db.execute({
+    sql: `SELECT
+            b.id AS bid_id,
+            b.auction_id,
+            b.product_id,
+            b.product_type,
+            b.amount,
+            b.created_at AS bid_created_at,
+            ab.id AS buyer_id,
+            ab.first_name,
+            ab.last_name,
+            ab.email,
+            ab.delivery_address_1,
+            ab.delivery_postal_code,
+            ab.delivery_city,
+            ab.delivery_province,
+            ab.delivery_country,
+            COALESCE(a.name, o.name) AS product_name
+          FROM auction_bids b
+          INNER JOIN auction_buyers ab ON b.auction_buyer_id = ab.id
+          LEFT JOIN art a ON b.product_type = 'art' AND b.product_id = a.id
+          LEFT JOIN others o ON b.product_type = 'other' AND b.product_id = o.id
+          WHERE b.auction_id = ?
+          ORDER BY b.created_at DESC`,
+    args: [auctionId],
+  });
+  return result.rows;
+}
+
+// ---------------------------------------------------------------------------
+// Admin: get full billing data for a single bid
+// ---------------------------------------------------------------------------
+
+async function getBidBillingData(bidId) {
+  const result = await db.execute({
+    sql: `SELECT
+            b.id AS bid_id,
+            b.auction_id,
+            b.product_id,
+            b.product_type,
+            b.amount,
+            ab.id AS buyer_id,
+            ab.first_name,
+            ab.last_name,
+            ab.email,
+            ab.delivery_address_1,
+            ab.delivery_address_2,
+            ab.delivery_postal_code,
+            ab.delivery_city,
+            ab.delivery_province,
+            ab.delivery_country,
+            ab.delivery_lat,
+            ab.delivery_long,
+            ab.invoicing_address_1,
+            ab.invoicing_address_2,
+            ab.invoicing_postal_code,
+            ab.invoicing_city,
+            ab.invoicing_province,
+            ab.invoicing_country,
+            apd.stripe_customer_id,
+            apd.stripe_payment_method_id,
+            COALESCE(a.seller_id, o.seller_id) AS seller_id,
+            COALESCE(a.name, o.name) AS product_name,
+            COALESCE(a.basename, o.basename) AS basename,
+            a.type AS art_type
+          FROM auction_bids b
+          INNER JOIN auction_buyers ab ON b.auction_buyer_id = ab.id
+          LEFT JOIN auction_authorised_payment_data apd ON apd.auction_buyer_id = ab.id
+          LEFT JOIN art a ON b.product_type = 'art' AND b.product_id = a.id
+          LEFT JOIN others o ON b.product_type = 'other' AND b.product_id = o.id
+          WHERE b.id = ?`,
+    args: [bidId],
+  });
+  return result.rows[0] || null;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -1013,4 +1094,6 @@ module.exports = {
   validatePostalCodeForProduct,
   getBuyerPaymentData,
   savePaymentData,
+  getAuctionBidsWithBuyers,
+  getBidBillingData,
 };

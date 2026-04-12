@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import PostalCodeSelect from '@/components/PostalCodeSelect'
-import { ArrowLeftIcon, PlayIcon, XMarkIcon, TrashIcon } from '@heroicons/react/20/solid'
+import { ArrowLeftIcon, PlayIcon, XMarkIcon, TrashIcon, CheckIcon } from '@heroicons/react/20/solid'
 
 function AuctionDetailContent() {
   const params = useParams()
@@ -15,6 +15,16 @@ function AuctionDetailContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+
+  // Bids state (for finished auctions)
+  const [bids, setBids] = useState([])
+  const [bidsLoading, setBidsLoading] = useState(false)
+  const [billingInProgress, setBillingInProgress] = useState({})
+  const [billedBids, setBilledBids] = useState(new Set())
+
+  // Shipping cost modal state
+  const [billingModalBidId, setBillingModalBidId] = useState(null)
+  const [billingModalShippingCost, setBillingModalShippingCost] = useState('')
 
   // Edit mode state
   const [editing, setEditing] = useState(false)
@@ -46,6 +56,53 @@ function AuctionDetailContent() {
       console.error('Error loading auction:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Load bids when auction is finished
+  useEffect(() => {
+    if (auction && auction.status === 'finished') {
+      loadBids()
+    }
+  }, [auction?.id, auction?.status])
+
+  const loadBids = async () => {
+    setBidsLoading(true)
+    try {
+      const data = await adminAPI.auctions.getBids(params.id)
+      setBids(data.bids || [])
+    } catch (err) {
+      console.error('Error loading bids:', err)
+    } finally {
+      setBidsLoading(false)
+    }
+  }
+
+  const handleBillBid = (bidId) => {
+    setBillingModalBidId(bidId)
+    setBillingModalShippingCost('')
+  }
+
+  const handleConfirmBill = async () => {
+    const bidId = billingModalBidId
+    if (!bidId || billingInProgress[bidId]) return
+
+    const shippingCost = parseFloat(billingModalShippingCost) || 0
+    setBillingModalBidId(null)
+    setBillingInProgress(prev => ({ ...prev, [bidId]: true }))
+
+    try {
+      const result = await adminAPI.auctions.billBid(params.id, bidId, { shippingCost })
+      if (result.success) {
+        setBilledBids(prev => new Set([...prev, bidId]))
+        alert(`Pedido #${result.orderId} creado correctamente`)
+      } else {
+        alert(result.message || 'Error al facturar')
+      }
+    } catch (err) {
+      alert(err.message || 'Error al facturar la puja')
+    } finally {
+      setBillingInProgress(prev => ({ ...prev, [bidId]: false }))
     }
   }
 
@@ -165,6 +222,21 @@ function AuctionDetailContent() {
     } catch (err) {
       setError(err.message || 'No se pudo cancelar la subasta')
       console.error('Error cancelling auction:', err)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleFinish = async () => {
+    if (!confirm('¿Estás seguro de que quieres finalizar esta subasta?')) return
+
+    setActionLoading(true)
+    try {
+      await adminAPI.auctions.finish(params.id)
+      await loadAuction()
+    } catch (err) {
+      setError(err.message || 'No se pudo finalizar la subasta')
+      console.error('Error finishing auction:', err)
     } finally {
       setActionLoading(false)
     }
@@ -298,8 +370,8 @@ function AuctionDetailContent() {
       const auctionData = {
         name: editName.trim(),
         description: editDescription.trim(),
-        start_datetime: editStartDatetime,
-        end_datetime: editEndDatetime,
+        start_datetime: new Date(editStartDatetime).toISOString(),
+        end_datetime: new Date(editEndDatetime).toISOString(),
         status: editStatus,
         products: productEntries.map(p => ({
           product_id: p.product_id,
@@ -497,6 +569,17 @@ function AuctionDetailContent() {
                         </button>
                       )}
 
+                      {(auction.status === 'active' || auction.status === 'scheduled') && (
+                        <button
+                          onClick={handleFinish}
+                          disabled={actionLoading}
+                          className="w-full inline-flex items-center justify-center gap-x-2 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
+                        >
+                          <CheckIcon className="h-5 w-5" />
+                          Finalizar subasta
+                        </button>
+                      )}
+
                       {(auction.status === 'draft' || auction.status === 'cancelled') && (
                         <button
                           onClick={handleDelete}
@@ -512,6 +595,114 @@ function AuctionDetailContent() {
                 </div>
               </div>
             </div>
+
+            {/* ==================== BIDS SECTION ==================== */}
+            {auction.status === 'finished' && (
+              <div className="mt-8">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Pujas realizadas</h2>
+
+                {bidsLoading ? (
+                  <p className="text-gray-500 text-sm">Cargando pujas...</p>
+                ) : bids.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No hay pujas registradas</p>
+                ) : (
+                  <div className="overflow-hidden rounded-lg border border-gray-300 shadow-sm">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pujador</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Importe</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {bids.map((bid) => (
+                          <tr key={bid.bid_id}>
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                              {bid.first_name} {bid.last_name}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                              {bid.email}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                              {bid.product_name || `${bid.product_type} #${bid.product_id}`}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right whitespace-nowrap font-medium">
+                              {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(bid.amount)}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                              {new Date(bid.bid_created_at).toLocaleString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
+                              {billedBids.has(bid.bid_id) ? (
+                                <span className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                                  Facturado
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleBillBid(bid.bid_id)}
+                                  disabled={billingInProgress[bid.bid_id]}
+                                  className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {billingInProgress[bid.bid_id] ? 'Facturando...' : 'Facturar'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ==================== SHIPPING COST MODAL ==================== */}
+            {billingModalBidId && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm mx-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Costes de envío</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Introduce el coste de envío para esta puja. Si no hay gastos de envío, deja el campo vacío o en 0.
+                  </p>
+                  <div className="mb-6">
+                    <label htmlFor="shippingCostInput" className="block text-sm font-medium text-gray-700 mb-1">
+                      Coste de envío (€)
+                    </label>
+                    <input
+                      id="shippingCostInput"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={billingModalShippingCost}
+                      onChange={(e) => setBillingModalShippingCost(e.target.value)}
+                      placeholder="0.00"
+                      className="block w-full rounded-md bg-white px-3 py-2 text-sm text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setBillingModalBidId(null)}
+                      className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmBill}
+                      className="rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
+                    >
+                      Facturar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           /* ==================== EDIT MODE ==================== */
