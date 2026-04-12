@@ -26,6 +26,16 @@ function EditDrawContent({ params }) {
     status: 'draft',
   })
 
+  // Participations state (for finished draws)
+  const [participations, setParticipations] = useState([])
+  const [participationsLoading, setParticipationsLoading] = useState(false)
+  const [billingInProgress, setBillingInProgress] = useState({})
+  const [billedParticipations, setBilledParticipations] = useState(new Set())
+
+  // Shipping cost modal state
+  const [billingModalParticipationId, setBillingModalParticipationId] = useState(null)
+  const [billingModalShippingCost, setBillingModalShippingCost] = useState('')
+
   useEffect(() => {
     loadDraw()
   }, [])
@@ -47,10 +57,29 @@ function EditDrawContent({ params }) {
         end_datetime: d.end_datetime ? d.end_datetime.slice(0, 16) : '',
         status: d.status || 'draft',
       })
+
+      if (d.status === 'finished') {
+        loadParticipations()
+      }
     } catch {
       setError('No se pudo cargar el sorteo')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadParticipations = async () => {
+    setParticipationsLoading(true)
+    try {
+      const data = await adminAPI.draws.getParticipations(unwrappedParams.id)
+      const list = data.participations || []
+      setParticipations(list)
+      const alreadyBilled = new Set(list.filter(p => p.billed).map(p => p.participation_id))
+      setBilledParticipations(alreadyBilled)
+    } catch {
+      setError('No se pudieron cargar las participaciones')
+    } finally {
+      setParticipationsLoading(false)
     }
   }
 
@@ -105,6 +134,47 @@ function EditDrawContent({ params }) {
     }
   }
 
+  const handleFinish = async () => {
+    if (!confirm('¿Estás seguro de que quieres finalizar este sorteo? Esta acción no se puede deshacer.')) return
+    setActionLoading(true)
+    try {
+      await adminAPI.draws.finish(unwrappedParams.id)
+      await loadDraw()
+    } catch (err) {
+      setError(err.message || 'No se pudo finalizar el sorteo')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleBillParticipation = (participationId) => {
+    setBillingModalParticipationId(participationId)
+    setBillingModalShippingCost('')
+  }
+
+  const handleConfirmBill = async () => {
+    const participationId = billingModalParticipationId
+    if (!participationId || billingInProgress[participationId]) return
+
+    const shippingCost = parseFloat(billingModalShippingCost) || 0
+    setBillingModalParticipationId(null)
+    setBillingInProgress(prev => ({ ...prev, [participationId]: true }))
+
+    try {
+      const result = await adminAPI.draws.billParticipation(unwrappedParams.id, participationId, shippingCost)
+      if (result.success) {
+        setBilledParticipations(prev => new Set([...prev, participationId]))
+        alert(`Pedido #${result.orderId} creado correctamente`)
+      } else {
+        alert(result.message || 'Error al facturar')
+      }
+    } catch (err) {
+      alert(err.message || 'Error al facturar la participación')
+    } finally {
+      setBillingInProgress(prev => ({ ...prev, [participationId]: false }))
+    }
+  }
+
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
@@ -125,13 +195,18 @@ function EditDrawContent({ params }) {
 
   return (
     <div className="bg-white">
-      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Editar sorteo</h1>
           <div className="flex gap-2">
             {draw.status === 'scheduled' && (
               <button onClick={handleStart} disabled={actionLoading} className="rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50">
                 Iniciar
+              </button>
+            )}
+            {draw.status === 'active' && (
+              <button onClick={handleFinish} disabled={actionLoading} className="rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white hover:bg-yellow-500 disabled:opacity-50">
+                Finalizar
               </button>
             )}
             {['active', 'scheduled', 'draft'].includes(draw.status) && (
@@ -226,6 +301,110 @@ function EditDrawContent({ params }) {
             </button>
           )}
         </form>
+
+        {/* ==================== PARTICIPATIONS SECTION ==================== */}
+        {draw.status === 'finished' && (
+          <div className="mt-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Participaciones</h2>
+
+            {participationsLoading ? (
+              <p className="text-gray-500 text-sm">Cargando participaciones...</p>
+            ) : participations.length === 0 ? (
+              <p className="text-gray-500 text-sm">No hay participaciones registradas</p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-gray-300 shadow-sm">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Participante</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {participations.map((p) => (
+                      <tr key={p.participation_id}>
+                        <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                          {p.first_name} {p.last_name}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                          {p.email}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                          {p.delivery_city}, {p.delivery_province}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                          {new Date(p.participation_created_at).toLocaleString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
+                          {billedParticipations.has(p.participation_id) ? (
+                            <span className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                              Facturado
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleBillParticipation(p.participation_id)}
+                              disabled={billingInProgress[p.participation_id]}
+                              className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {billingInProgress[p.participation_id] ? 'Facturando...' : 'Facturar'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ==================== SHIPPING COST MODAL ==================== */}
+        {billingModalParticipationId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Costes de envío</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Introduce el coste de envío para esta participación. Si no hay gastos de envío, deja el campo vacío o en 0.
+              </p>
+              <div className="mb-6">
+                <label htmlFor="shippingCostInput" className="block text-sm font-medium text-gray-700 mb-1">
+                  Coste de envío (€)
+                </label>
+                <input
+                  id="shippingCostInput"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={billingModalShippingCost}
+                  onChange={(e) => setBillingModalShippingCost(e.target.value)}
+                  placeholder="0.00"
+                  className="block w-full rounded-md bg-white px-3 py-2 text-sm text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600"
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setBillingModalParticipationId(null)}
+                  className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmBill}
+                  className="rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
+                >
+                  Facturar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

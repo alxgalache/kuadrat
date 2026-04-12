@@ -990,6 +990,23 @@ export const adminAPI = {
         method: 'POST',
       });
     },
+
+    finish: async (id) => {
+      return apiRequest(`/admin/draws/${id}/finish`, {
+        method: 'POST',
+      });
+    },
+
+    getParticipations: async (id) => {
+      return apiRequest(`/admin/draws/${id}/participations`);
+    },
+
+    billParticipation: async (drawId, participationId, shippingCost) => {
+      return apiRequest(`/admin/draws/${drawId}/participations/${participationId}/bill`, {
+        method: 'POST',
+        body: JSON.stringify({ shippingCost }),
+      });
+    },
   },
 
   // Postal codes management
@@ -1385,10 +1402,10 @@ export const drawsAPI = {
     });
   },
 
-  confirmPayment: async (drawId, drawBuyerId, setupIntentId) => {
+  confirmPayment: async (drawId, drawBuyerId, setupIntentId, customerId) => {
     return apiRequest(`/draws/${drawId}/confirm-payment`, {
       method: 'POST',
-      body: JSON.stringify({ drawBuyerId, setupIntentId }),
+      body: JSON.stringify({ drawBuyerId, setupIntentId, customerId }),
     });
   },
 

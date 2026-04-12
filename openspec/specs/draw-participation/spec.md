@@ -72,3 +72,22 @@ The system SHALL send a confirmation email to the participant after successful d
 ### Requirement: Returning participant verification
 **Reason:** Draws are one-time entries — there is no use case for a participant to "return" to a draw. The CHOOSE/VERIFY flow and `bid_password` system were inherited from auctions and do not apply.
 **Migration:** Remove `POST /api/draws/:id/verify-buyer` endpoint, remove `verifyBuyer` controller and `verifyDrawBuyerPassword` service function, remove `verifyBuyerSchema` from validators. Frontend removes CHOOSE and VERIFY phases from modal.
+
+---
+
+## MODIFIED Requirements
+
+### Requirement: Confirm payment stores stripe_customer_id
+The draw payment confirmation flow SHALL pass and store the `stripe_customer_id` in `draw_authorised_payment_data` when confirming a SetupIntent.
+
+#### Scenario: Frontend sends customerId during payment confirmation
+- **WHEN** a participant confirms payment in `DrawParticipationModal.js`
+- **THEN** the `handlePaymentSuccess` function calls `drawsAPI.confirmPayment(drawId, drawBuyerId, setupIntentId, stripeCustomerId)` including the `stripeCustomerId` obtained from the `setupStripePayment` step
+
+#### Scenario: API client includes customerId in request body
+- **WHEN** `drawsAPI.confirmPayment` is called with four parameters
+- **THEN** the API client sends `{ setupIntentId, customerId }` in the request body to `POST /api/draws/:drawId/buyers/:buyerId/confirm-payment`
+
+#### Scenario: Backend stores customerId in payment data
+- **WHEN** the backend receives `customerId` in the confirm payment request body
+- **THEN** the value is stored in `draw_authorised_payment_data.stripe_customer_id` for the corresponding draw buyer

@@ -121,6 +121,15 @@ const updateDrawSchema = z.object({
   }).strip(),
 });
 
+/**
+ * POST /api/admin/draws/:id/participations/:participationId/bill
+ */
+const billParticipationSchema = z.object({
+  body: z.object({
+    shippingCost: z.number().min(0, 'El coste de envío debe ser >= 0').default(0),
+  }).strip(),
+});
+
 module.exports = {
   registerBuyerSchema,
   sendVerificationSchema,
@@ -131,4 +140,5 @@ module.exports = {
   validatePostalCodeSchema,
   createDrawSchema,
   updateDrawSchema,
+  billParticipationSchema,
 };

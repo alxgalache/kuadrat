@@ -13,6 +13,7 @@ const logger = require('../config/logger');
  */
 module.exports = function startAuctionScheduler(app) {
   const auctionSocket = app.get('auctionSocket');
+  const drawSocket = app.get('drawSocket');
 
   // Run every 30 seconds
   cron.schedule('*/30 * * * * *', async () => {
@@ -68,6 +69,7 @@ module.exports = function startAuctionScheduler(app) {
         }
       }
 
+      console.log('Scheduler: Tick completed NOW', now)
       // 4. End active draws whose end_datetime has passed
       const endedDraws = await db.execute({
         sql: "SELECT id FROM draws WHERE status = 'active' AND end_datetime <= ?",
@@ -78,6 +80,9 @@ module.exports = function startAuctionScheduler(app) {
         try {
           logger.info({ drawId: draw.id }, 'Scheduler: Ending draw');
           await drawService.endDraw(draw.id);
+          if (drawSocket) {
+            drawSocket.broadcastDrawEnded(draw.id);
+          }
         } catch (err) {
           logger.error({ drawId: draw.id, err }, 'Scheduler: Error ending draw');
         }

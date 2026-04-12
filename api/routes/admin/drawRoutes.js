@@ -2,7 +2,7 @@ const express = require('express')
 const router = express.Router()
 const drawAdminController = require('../../controllers/drawAdminController')
 const { validate } = require('../../middleware/validate')
-const { createDrawSchema, updateDrawSchema } = require('../../validators/drawSchemas')
+const { createDrawSchema, updateDrawSchema, billParticipationSchema } = require('../../validators/drawSchemas')
 
 /**
  * POST /api/admin/draws
@@ -45,5 +45,23 @@ router.post('/:id/start', drawAdminController.startDraw);
  * Cancel draw
  */
 router.post('/:id/cancel', drawAdminController.cancelDraw);
+
+/**
+ * POST /api/admin/draws/:id/finish
+ * Manually finish draw
+ */
+router.post('/:id/finish', drawAdminController.finishDraw);
+
+/**
+ * GET /api/admin/draws/:id/participations
+ * Get draw participations with buyer details
+ */
+router.get('/:id/participations', drawAdminController.getParticipations);
+
+/**
+ * POST /api/admin/draws/:id/participations/:participationId/bill
+ * Bill a draw participation (create order + charge)
+ */
+router.post('/:id/participations/:participationId/bill', validate(billParticipationSchema), drawAdminController.billParticipation);
 
 module.exports = router

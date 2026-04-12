@@ -49,6 +49,7 @@ const drawRoutes = require('./routes/drawRoutes');
 const storiesRoutes = require('./routes/storiesRoutes');
 const setupAuctionSocket = require('./socket/auctionSocket');
 const setupEventSocket = require('./socket/eventSocket');
+const setupDrawSocket = require('./socket/drawSocket');
 const startAuctionScheduler = require('./scheduler/auctionScheduler');
 const startReservationScheduler = require('./scheduler/reservationScheduler');
 const startConfirmationScheduler = require('./scheduler/confirmationScheduler');
@@ -146,6 +147,10 @@ app.set('auctionSocket', auctionSocket);
 // Socket.IO - Event real-time module
 const eventSocket = setupEventSocket(io);
 app.set('eventSocket', eventSocket);
+
+// Socket.IO - Draw real-time module
+const drawSocket = setupDrawSocket(io);
+app.set('drawSocket', drawSocket);
 
 // Health check route
 app.get('/health', (req, res) => {

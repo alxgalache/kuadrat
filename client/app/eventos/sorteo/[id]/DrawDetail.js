@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react'
 import Image from 'next/image'
 import { drawsAPI, authorsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
+import useDrawSocket from '@/hooks/useDrawSocket'
 import DrawParticipationModal from '@/components/DrawParticipationModal'
 import DrawHowWorksModal from '@/components/DrawHowWorksModal'
 import AuthorModal from '@/components/AuthorModal'
@@ -20,6 +21,11 @@ export default function DrawDetail({ params }) {
   const [selectedAuthor, setSelectedAuthor] = useState(null)
   const [authorModalOpen, setAuthorModalOpen] = useState(false)
   const { showBanner } = useBannerNotification()
+
+  const { drawEnded, timeRemaining } = useDrawSocket(
+    draw?.id,
+    draw?.end_datetime
+  )
 
   useEffect(() => {
     loadDraw()
@@ -108,7 +114,7 @@ export default function DrawDetail({ params }) {
   if (isFull) {
     buttonText = 'Sorteo completo'
     buttonDisabled = true
-  } else if (isFinished) {
+  } else if (isFinished || drawEnded) {
     buttonText = 'Sorteo finalizado'
     buttonDisabled = true
   } else if (isCancelled) {
@@ -206,6 +212,16 @@ export default function DrawDetail({ params }) {
                     </span>
                   </p>
                 </div>
+                {timeRemaining && !drawEnded && (
+                  <p className="w-full text-lg font-mono font-semibold text-gray-900">
+                    {String(timeRemaining.hours).padStart(2, '0')}:{String(timeRemaining.minutes).padStart(2, '0')}:{String(timeRemaining.seconds).padStart(2, '0')}
+                  </p>
+                )}
+                {drawEnded && (
+                  <p className="w-full text-sm font-medium text-red-600">
+                    El sorteo ha terminado
+                  </p>
+                )}
                 <p className="w-full text-neutral-400">
                   {draw.units === 1 ? 'Edición única' : `Edición de ${draw.units} unidades`}. Mínimo {draw.min_participants} participantes.
                 </p>
@@ -248,6 +264,7 @@ export default function DrawDetail({ params }) {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         draw={draw}
+        drawEnded={drawEnded}
         onEntryComplete={() => loadDraw()}
       />
     </div>

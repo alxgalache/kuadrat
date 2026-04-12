@@ -8,6 +8,7 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import Image from 'next/image'
 import { drawsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import usePostalCodeValidation from '@/hooks/usePostalCodeValidation'
+import { useNotification } from '@/contexts/NotificationContext'
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
 
@@ -101,7 +102,8 @@ function PaymentForm({ onSuccess, onError, loading, setLoading }) {
 // ---------------------------------------------------------------------------
 // Main DrawParticipationModal
 // ---------------------------------------------------------------------------
-export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryComplete }) {
+export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnded, onEntryComplete }) {
+  const { showError } = useNotification()
   const [phase, setPhase] = useState(PHASE.TERMS)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -145,6 +147,14 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
     hasRestrictions: true,
     validateFn: postalCodeValidateFn,
   })
+
+  // ------ Auto-close if draw ends while modal is open ------
+  useEffect(() => {
+    if (drawEnded && isOpen && phase !== PHASE.SUCCESS) {
+      onClose()
+      showError('Sorteo finalizado', 'El sorteo acaba de finalizar. Ya no es posible participar.')
+    }
+  }, [drawEnded, isOpen, phase, onClose, showError])
 
   // ------ Reset when modal opens ------
   useEffect(() => {
@@ -280,7 +290,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
     setError('')
     setLoading(true)
     try {
-      await drawsAPI.confirmPayment(draw.id, buyerSession.drawBuyerId, setupIntentId)
+      await drawsAPI.confirmPayment(draw.id, buyerSession.drawBuyerId, setupIntentId, stripeCustomerId)
       setPhase(PHASE.CONFIRM)
     } catch (err) {
       setError(err.message || 'Error al confirmar pago')
@@ -677,7 +687,10 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, onEntryC
                 </div>
               </div>
             </div>
-            <p className="text-sm text-gray-600">Al confirmar tu inscripción, participarás en el sorteo. Si resultas ganador, se cargará el importe en tu método de pago autorizado.</p>
+            <p className="text-sm text-justify text-gray-600">Al confirmar tu inscripción, participarás en el sorteo.
+              Solo si resultas ganador, se cargará el importe en tu método de pago autorizado.
+              Si desistes de la compra después de resultar ganador, se podrá aplicar un recargo del 10% del valor de la obra.
+            </p>
             <button
               type="button"
               onClick={handleConfirmEntry}

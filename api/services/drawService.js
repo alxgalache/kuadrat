@@ -376,6 +376,24 @@ async function endDraw(id) {
   return updated.rows[0];
 }
 
+async function finishDraw(id) {
+  const current = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
+  if (current.rows.length === 0) return null;
+  const draw = current.rows[0];
+  if (draw.status !== 'active') return null;
+
+  await db.execute({
+    sql: "UPDATE draws SET status = 'finished' WHERE id = ?",
+    args: [id],
+  });
+
+  const participationCount = await getParticipationCount(id);
+  logger.info({ drawId: id, status: 'finished', participationCount }, 'Draw manually finished by admin');
+
+  const updated = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
+  return updated.rows[0];
+}
+
 async function cancelDraw(id) {
   const current = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
   if (current.rows.length === 0) return null;
@@ -393,6 +411,91 @@ async function cancelDraw(id) {
 
   const updated = await db.execute({ sql: 'SELECT * FROM draws WHERE id = ?', args: [id] });
   return updated.rows[0];
+}
+
+// ---------------------------------------------------------------------------
+// Admin: participations list with buyer + payment + billed status
+// ---------------------------------------------------------------------------
+
+async function getDrawParticipationsWithDetails(drawId) {
+  const result = await db.execute({
+    sql: `SELECT
+            dp.id AS participation_id,
+            dp.draw_id,
+            dp.created_at AS participation_created_at,
+            db2.id AS buyer_id,
+            db2.first_name,
+            db2.last_name,
+            db2.email,
+            db2.delivery_address_1,
+            db2.delivery_postal_code,
+            db2.delivery_city,
+            db2.delivery_province,
+            db2.delivery_country,
+            dapd.stripe_payment_method_id,
+            dapd.stripe_customer_id,
+            dapd.last_four,
+            dapd.name AS card_name,
+            CASE WHEN EXISTS (
+              SELECT 1 FROM orders o
+              WHERE o.notes = 'draw_participation:' || dp.id
+            ) THEN 1 ELSE 0 END AS billed
+          FROM draw_participations dp
+          INNER JOIN draw_buyers db2 ON dp.draw_buyer_id = db2.id
+          LEFT JOIN draw_authorised_payment_data dapd ON dapd.draw_buyer_id = db2.id
+          WHERE dp.draw_id = ?
+          ORDER BY dp.created_at DESC`,
+    args: [drawId],
+  });
+  return result.rows;
+}
+
+// ---------------------------------------------------------------------------
+// Admin: full billing data for a single participation
+// ---------------------------------------------------------------------------
+
+async function getParticipationBillingData(participationId) {
+  const result = await db.execute({
+    sql: `SELECT
+            dp.id AS participation_id,
+            dp.draw_id,
+            d.product_id,
+            d.product_type,
+            d.price,
+            db2.id AS buyer_id,
+            db2.first_name,
+            db2.last_name,
+            db2.email,
+            db2.delivery_address_1,
+            db2.delivery_address_2,
+            db2.delivery_postal_code,
+            db2.delivery_city,
+            db2.delivery_province,
+            db2.delivery_country,
+            db2.delivery_lat,
+            db2.delivery_long,
+            db2.invoicing_address_1,
+            db2.invoicing_address_2,
+            db2.invoicing_postal_code,
+            db2.invoicing_city,
+            db2.invoicing_province,
+            db2.invoicing_country,
+            dapd.stripe_customer_id,
+            dapd.stripe_payment_method_id,
+            COALESCE(a.seller_id, o.seller_id) AS seller_id,
+            COALESCE(a.name, o.name) AS product_name,
+            COALESCE(a.basename, o.basename) AS basename,
+            a.type AS art_type
+          FROM draw_participations dp
+          INNER JOIN draws d ON dp.draw_id = d.id
+          INNER JOIN draw_buyers db2 ON dp.draw_buyer_id = db2.id
+          LEFT JOIN draw_authorised_payment_data dapd ON dapd.draw_buyer_id = db2.id
+          LEFT JOIN art a ON d.product_type = 'art' AND d.product_id = a.id
+          LEFT JOIN others o ON d.product_type = 'other' AND d.product_id = o.id
+          WHERE dp.id = ?`,
+    args: [participationId],
+  });
+  return result.rows[0] || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -654,7 +757,10 @@ module.exports = {
   enterDraw,
   startDraw,
   endDraw,
+  finishDraw,
   cancelDraw,
+  getDrawParticipationsWithDetails,
+  getParticipationBillingData,
   getBuyerPaymentData,
   savePaymentData,
   validateDNI,
