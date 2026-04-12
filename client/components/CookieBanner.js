@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 
 const STORAGE_KEY = 'cookie_consent'
 // Roughly one month in milliseconds
@@ -80,9 +81,14 @@ export default function CookieBanner() {
         <p className="text-sm/6 text-gray-900">
             Usamos cookies propias y de terceros para mejorar tu experiencia de navegación, analizar tu uso del sitio web y mostrarte publicidad relevante.
             Puedes aceptar todas las cookies, rechazarlas o configurar tus preferencias. Más información en nuestra {' '}
-          <a href="#" className="font-semibold text-black hover:text-indigo-800">
+          <Link
+            href="/legal/politica-de-cookies"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-black hover:text-gray-800"
+          >
             Política de Cookies
-          </a>
+          </Link>
           .
         </p>
         <div className="mt-4 flex items-center gap-x-5">

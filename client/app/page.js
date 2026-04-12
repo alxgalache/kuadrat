@@ -1,6 +1,5 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import CookieBanner from '@/components/CookieBanner'
 import StoryVideo from '@/components/StoryVideo'
 
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
@@ -68,8 +67,6 @@ export default async function Home() {
           <StoryVideo videos={storyVideos} />
         </div>
       </div>
-      {/* Cookie banner must only appear on the home page */}
-      <CookieBanner />
     </div>
   )
 }
