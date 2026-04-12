@@ -642,8 +642,8 @@ const billBid = async (req, res, next) => {
     const bidAmount = Number(data.amount) || 0;
     const parsedShippingCost = Number(shippingCost) || 0;
     const commissionRate = data.product_type === 'other'
-      ? (config.dealerCommissionOthers || 0)
-      : (config.dealerCommissionArt || 0);
+      ? (config.payment.dealerCommissionOthers / 100)
+      : (config.payment.dealerCommissionArt / 100);
     const commissionAmount = Math.round(bidAmount * commissionRate * 100) / 100;
     const totalPrice = bidAmount + parsedShippingCost;
 

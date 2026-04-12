@@ -23,7 +23,7 @@ The system SHALL allow the admin to trigger a "Facturar" action on any bid of a 
 - **AND** the buyer has valid saved payment data in `auction_authorised_payment_data`
 - **THEN** the system creates an `orders` record with buyer delivery/invoicing addresses mapped from `auction_buyers`
 - **AND** creates an `art_order_items` record with `art_id` from the bid's `product_id` and `price_at_purchase` from the bid's `amount`
-- **AND** computes `commission_amount` as `amount * DEALER_COMMISSION`
+- **AND** computes `commission_amount` as `amount * (DEALER_COMMISSION_ART / 100)`, reading the value from `config.payment.dealerCommissionArt`
 - **AND** charges the buyer via Stripe using their saved payment method
 - **AND** sets the order status to `paid`
 - **AND** stores the Stripe payment intent ID in the order record
