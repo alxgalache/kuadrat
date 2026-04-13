@@ -2,7 +2,7 @@ const { ApiError } = require('../middleware/errorHandler');
 const logger = require('../config/logger');
 const auctionService = require('../services/auctionService');
 const stripeService = require('../services/stripeService');
-const { sendBidConfirmationEmail } = require('../services/emailService');
+const { sendBidConfirmationEmail, sendAuctionVerificationEmail } = require('../services/emailService');
 
 // ---------------------------------------------------------------------------
 // GET /api/auctions?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -62,15 +62,15 @@ const registerBuyer = async (req, res, next) => {
   try {
     const { id } = req.params;
     const {
-      firstName, lastName, email,
+      firstName, lastName, email, dni,
       deliveryAddress1, deliveryAddress2, deliveryPostalCode,
       deliveryCity, deliveryProvince, deliveryCountry,
       invoicingAddress1, invoicingAddress2, invoicingPostalCode,
       invoicingCity, invoicingProvince, invoicingCountry,
     } = req.body;
 
-    if (!firstName || !lastName || !email) {
-      throw new ApiError(400, 'Nombre, apellido y email son obligatorios', 'Datos incompletos');
+    if (!firstName || !lastName || !email || !dni) {
+      throw new ApiError(400, 'Nombre, apellido, email y DNI/NIE son obligatorios', 'Datos incompletos');
     }
 
     // Verify auction exists and is active
@@ -83,7 +83,7 @@ const registerBuyer = async (req, res, next) => {
     }
 
     const buyer = await auctionService.createOrGetAuctionBuyer(id, {
-      firstName, lastName, email,
+      firstName, lastName, email, dni: dni.toUpperCase().trim(),
       deliveryAddress1, deliveryAddress2, deliveryPostalCode,
       deliveryCity, deliveryProvince, deliveryCountry,
       invoicingAddress1, invoicingAddress2, invoicingPostalCode,
@@ -392,6 +392,79 @@ const validatePostalCode = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auctions/:id/send-verification
+// ---------------------------------------------------------------------------
+const sendVerification = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { email, dni } = req.body;
+
+    const auction = await auctionService.getAuctionById(id);
+    if (!auction) {
+      throw new ApiError(404, 'Subasta no encontrada', 'Subasta no encontrada');
+    }
+    if (auction.status !== 'active') {
+      throw new ApiError(400, 'Esta subasta no está activa', 'Subasta no activa');
+    }
+
+    if (!auctionService.validateDNI(dni)) {
+      throw new ApiError(400, 'DNI/NIE no válido', 'DNI/NIE no válido');
+    }
+
+    const normalizedDni = dni.toUpperCase().trim();
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const completed = await auctionService.hasBuyerCompletedRegistration(id, normalizedEmail, normalizedDni);
+    if (completed) {
+      throw new ApiError(409, 'Ya estás registrado en esta subasta con este email o DNI/NIE', 'Ya registrado');
+    }
+
+    const isEmailUnique = await auctionService.checkEmailUniqueness(id, normalizedEmail);
+    if (!isEmailUnique) {
+      throw new ApiError(409, 'Este email ya está registrado en esta subasta', 'Email duplicado');
+    }
+
+    const isDniUnique = await auctionService.checkDniUniqueness(id, normalizedDni);
+    if (!isDniUnique) {
+      throw new ApiError(409, 'Este DNI/NIE ya está registrado en esta subasta', 'DNI duplicado');
+    }
+
+    const ipAddress = req.ip || req.connection?.remoteAddress || null;
+    const code = await auctionService.createEmailVerification(normalizedEmail, id, ipAddress);
+
+    await sendAuctionVerificationEmail(normalizedEmail, code, auction.name);
+
+    res.status(200).json({ success: true, message: 'Código de verificación enviado' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/auctions/:id/verify-email
+// ---------------------------------------------------------------------------
+const verifyEmail = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { email, code } = req.body;
+
+    const auction = await auctionService.getAuctionById(id);
+    if (!auction) {
+      throw new ApiError(404, 'Subasta no encontrada', 'Subasta no encontrada');
+    }
+
+    const result = await auctionService.verifyEmailCode(email.toLowerCase().trim(), id, code);
+    if (!result.valid) {
+      throw new ApiError(400, result.error, result.error);
+    }
+
+    res.status(200).json({ success: true, message: 'Email verificado correctamente' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAuctions,
   getAuctionDetail,
@@ -403,4 +476,6 @@ module.exports = {
   placeBid,
   getPostalCodes,
   validatePostalCode,
+  sendVerification,
+  verifyEmail,
 };

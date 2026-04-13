@@ -11,6 +11,31 @@ import { useNotification } from '@/contexts/NotificationContext'
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
 
 // ---------------------------------------------------------------------------
+// DNI / NIE validation
+// ---------------------------------------------------------------------------
+const DNI_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE'
+
+function validateDNI(dni) {
+  if (!dni || typeof dni !== 'string') return false
+  const normalized = dni.toUpperCase().trim()
+
+  const nieMatch = normalized.match(/^([XYZ])(\d{7})([A-Z])$/)
+  if (nieMatch) {
+    const niePrefix = { X: '0', Y: '1', Z: '2' }
+    const num = parseInt(niePrefix[nieMatch[1]] + nieMatch[2], 10)
+    return nieMatch[3] === DNI_LETTERS[num % 23]
+  }
+
+  const dniMatch = normalized.match(/^(\d{8})([A-Z])$/)
+  if (dniMatch) {
+    const num = parseInt(dniMatch[1], 10)
+    return dniMatch[2] === DNI_LETTERS[num % 23]
+  }
+
+  return false
+}
+
+// ---------------------------------------------------------------------------
 // Flow phases
 // ---------------------------------------------------------------------------
 const PHASE = {
@@ -42,7 +67,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
   // Buyer data accumulated across steps
   const [buyerSession, setBuyerSession] = useState(null) // { auctionBuyerId, bidPassword }
   const [termsAccepted, setTermsAccepted] = useState([false, false])
-  const [personalInfo, setPersonalInfo] = useState({ firstName: '', lastName: '', email: '' })
+  const [personalInfo, setPersonalInfo] = useState({ firstName: '', lastName: '', email: '', dni: '' })
   const [deliveryAddress, setDeliveryAddress] = useState({
     address_1: '', address_2: '', postal_code: '', city: '', province: '', country: 'ES',
   })
@@ -53,6 +78,16 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
   const [postalCodeValid, setPostalCodeValid] = useState(null) // null = not checked, true/false
   const [hasPostalRestrictions, setHasPostalRestrictions] = useState(false)
   const postalValidationRef = useRef(null)
+
+  // Email verification OTP
+  const [otpSent, setOtpSent] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
+  const [otpVerified, setOtpVerified] = useState(false)
+  const [showResend, setShowResend] = useState(false)
+  const resendTimerRef = useRef(null)
+
+  // DNI validation state
+  const [dniError, setDniError] = useState('')
 
   // Returning bidder fields
   const [verifyEmail, setVerifyEmail] = useState('')
@@ -96,7 +131,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       setError('')
       setLoading(false)
       setTermsAccepted([false, false])
-      setPersonalInfo({ firstName: '', lastName: '', email: '' })
+      setPersonalInfo({ firstName: '', lastName: '', email: '', dni: '' })
       setDeliveryAddress({ address_1: '', address_2: '', postal_code: '', city: '', province: '', country: 'ES' })
       setInvoicingAddress({ address_1: '', address_2: '', postal_code: '', city: '', province: '', country: 'ES' })
       setCopyDelivery(false)
@@ -109,6 +144,12 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       setAnimatePrice(false)
       prevPriceRef.current = null
       setPostalCodeValid(null)
+      setOtpSent(false)
+      setOtpCode('')
+      setOtpVerified(false)
+      setShowResend(false)
+      setDniError('')
+      if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
     }
   }, [isOpen, auction])
 
@@ -193,6 +234,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
         firstName: personalInfo.firstName,
         lastName: personalInfo.lastName,
         email: personalInfo.email,
+        dni: personalInfo.dni.toUpperCase().trim(),
         deliveryAddress1: deliveryAddress.address_1,
         deliveryAddress2: deliveryAddress.address_2,
         deliveryPostalCode: deliveryAddress.postal_code,
@@ -219,6 +261,55 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     } finally {
       setLoading(false)
     }
+  }
+
+  // ------ DNI inline validation ------
+  const handleDniChange = (value) => {
+    setPersonalInfo({ ...personalInfo, dni: value })
+    if (value.length >= 9) {
+      setDniError(validateDNI(value) ? '' : 'El DNI/NIE introducido no es válido')
+    } else {
+      setDniError('')
+    }
+  }
+
+  // ------ Send verification (DNI check + OTP) ------
+  const handleSendVerification = async () => {
+    setError('')
+    setLoading(true)
+    try {
+      await auctionsAPI.sendVerification(auction.id, personalInfo.email, personalInfo.dni.toUpperCase().trim())
+      setOtpSent(true)
+      setShowResend(false)
+      resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
+    } catch (err) {
+      setError(err.message || 'Error al enviar verificación')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ------ Verify OTP code ------
+  const handleVerifyOtp = async () => {
+    setError('')
+    setLoading(true)
+    try {
+      await auctionsAPI.verifyEmail(auction.id, personalInfo.email, otpCode)
+      setOtpVerified(true)
+      setPhase(PHASE.DELIVERY)
+    } catch (err) {
+      setError(err.message || 'Error al verificar código')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ------ Resend OTP ------
+  const handleResendOtp = async () => {
+    setError('')
+    setShowResend(false)
+    setOtpCode('')
+    await handleSendVerification()
   }
 
   const handlePlaceBid = async () => {
@@ -289,7 +380,8 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
 
   // ---- Step validation helpers ----
   const canProceedPersonal =
-    personalInfo.firstName.trim() && personalInfo.lastName.trim() && personalInfo.email.trim()
+    personalInfo.firstName.trim() && personalInfo.lastName.trim() && personalInfo.email.trim() &&
+    personalInfo.dni.trim() && !dniError && validateDNI(personalInfo.dni)
 
   const canProceedDelivery =
     deliveryAddress.address_1.trim() &&
@@ -427,43 +519,100 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       >
         <ArrowLeftIcon className="h-4 w-4" /> Volver
       </button>
-      <div>
-        <label className="block text-sm font-medium text-gray-900">Nombre</label>
-        <input
-          type="text"
-          value={personalInfo.firstName}
-          onChange={(e) => setPersonalInfo({ ...personalInfo, firstName: e.target.value })}
-          className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-900">Apellidos</label>
-        <input
-          type="text"
-          value={personalInfo.lastName}
-          onChange={(e) => setPersonalInfo({ ...personalInfo, lastName: e.target.value })}
-          className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-900">Email</label>
-        <input
-          type="email"
-          value={personalInfo.email}
-          onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
-          className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
-          placeholder="tu@email.com"
-        />
-      </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
-        type="button"
-        disabled={!canProceedPersonal}
-        onClick={() => { setError(''); setPhase(PHASE.DELIVERY) }}
-        className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
-      >
-        Continuar
-      </button>
+      {!otpSent ? (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-900">Nombre</label>
+              <input
+                type="text"
+                value={personalInfo.firstName}
+                onChange={(e) => setPersonalInfo({ ...personalInfo, firstName: e.target.value })}
+                className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-900">Apellidos</label>
+              <input
+                type="text"
+                value={personalInfo.lastName}
+                onChange={(e) => setPersonalInfo({ ...personalInfo, lastName: e.target.value })}
+                className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-900">Email</label>
+            <input
+              type="email"
+              value={personalInfo.email}
+              onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
+              className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm"
+              placeholder="tu@email.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-900">DNI/NIE</label>
+            <input
+              type="text"
+              value={personalInfo.dni}
+              onChange={(e) => handleDniChange(e.target.value)}
+              className={`mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ${dniError ? 'ring-red-300' : 'ring-gray-300'} placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm uppercase`}
+              placeholder="12345678Z"
+              maxLength={9}
+            />
+            {dniError && <p className="mt-1 text-xs text-red-600">{dniError}</p>}
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="button"
+            onClick={handleSendVerification}
+            disabled={loading || !canProceedPersonal}
+            className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
+          >
+            {loading ? 'Enviando código...' : 'Continuar'}
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="rounded-md bg-gray-50 p-3">
+            <p className="text-sm text-gray-700">
+              Hemos enviado un código de verificación a <strong>{personalInfo.email}</strong>. Introdúcelo a continuación.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-900">Código de verificación</label>
+            <input
+              type="text"
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-900 sm:text-sm tracking-widest text-center text-lg"
+              placeholder="000000"
+              maxLength={6}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+            />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="button"
+            onClick={handleVerifyOtp}
+            disabled={loading || otpCode.length !== 6}
+            className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
+          >
+            {loading ? 'Verificando...' : 'Verificar código'}
+          </button>
+          {showResend && (
+            <button
+              type="button"
+              onClick={handleResendOtp}
+              className="w-full text-sm text-gray-600 hover:text-gray-900 underline"
+            >
+              Reenviar código
+            </button>
+          )}
+        </>
+      )}
     </div>
   )
 
@@ -614,6 +763,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
               firstName: personalInfo.firstName,
               lastName: personalInfo.lastName,
               email: personalInfo.email,
+              dni: personalInfo.dni.toUpperCase().trim(),
               deliveryAddress1: deliveryAddress.address_1,
               deliveryAddress2: deliveryAddress.address_2,
               deliveryPostalCode: deliveryAddress.postal_code,
@@ -691,8 +841,9 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       <div className="rounded-lg bg-gray-50 p-4">
         <p className="text-sm text-gray-600">Estas a punto de pujar por:</p>
         <p className="mt-1 text-base font-semibold text-gray-900">{product?.name}</p>
-        <p className="text-xs text-justify mt-2 text-gray-600">Se guardarán tus datos de pago y solo se retirará el importe si resultas ganador. Contactaremos contigo antes para acordar la entrega y los gastos de envío.</p>
-        <p className="text-xs text-justify text-gray-600">En caso de resultar ganador y desistir de la compra, se realizará un cargo del 10% del valor de la obra (ver condiciones)</p>
+        <p className="text-xs text-justify mt-2 text-gray-600">Se guardarán tus datos de pago y solo se retirará el importe si resultas ganador. Contactaremos contigo antes para acordar la entrega y los gastos de envío.
+          En caso de resultar ganador y desistir de la compra, se realizará un cargo del 10% del valor de la obra (ver condiciones)
+        </p>
         <p className={`mt-3 text-2xl font-bold transition-all duration-500 ${
           animatePrice ? 'scale-110 text-red-600' : 'text-gray-900'
         }`}>

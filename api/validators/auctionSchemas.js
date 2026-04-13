@@ -11,6 +11,7 @@ const registerBuyerSchema = z.object({
     firstName: z.string().min(1, 'Nombre es obligatorio'),
     lastName: z.string().min(1, 'Apellido es obligatorio'),
     email: z.string().min(1, 'Email es obligatorio'),
+    dni: z.string().min(1, 'DNI/NIE es obligatorio'),
     deliveryAddress1: z.string().optional(),
     deliveryAddress2: z.string().optional(),
     deliveryPostalCode: z.string().optional(),
@@ -133,6 +134,30 @@ const updateAuctionSchema = z.object({
   }).strip(),
 });
 
+/**
+ * POST /api/auctions/:id/send-verification
+ *
+ * Sends an OTP code to the buyer's email.
+ */
+const sendVerificationSchema = z.object({
+  body: z.object({
+    email: z.string().email('Email inválido'),
+    dni: z.string().min(1, 'DNI/NIE es obligatorio'),
+  }).strip(),
+});
+
+/**
+ * POST /api/auctions/:id/verify-email
+ *
+ * Verifies the OTP code sent to the buyer's email.
+ */
+const verifyEmailSchema = z.object({
+  body: z.object({
+    email: z.string().email('Email inválido'),
+    code: z.string().length(6, 'El código debe tener 6 dígitos'),
+  }).strip(),
+});
+
 module.exports = {
   registerBuyerSchema,
   verifyBuyerSchema,
@@ -141,4 +166,6 @@ module.exports = {
   confirmPaymentSchema,
   createAuctionSchema,
   updateAuctionSchema,
+  sendVerificationSchema,
+  verifyEmailSchema,
 };

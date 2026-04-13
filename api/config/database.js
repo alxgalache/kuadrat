@@ -374,6 +374,7 @@ async function initializeDatabase() {
         first_name TEXT NOT NULL,
         last_name TEXT NOT NULL,
         email TEXT NOT NULL,
+        dni TEXT,
         bid_password TEXT NOT NULL,
         delivery_address_1 TEXT,
         delivery_address_2 TEXT,
@@ -389,6 +390,22 @@ async function initializeDatabase() {
         invoicing_city TEXT,
         invoicing_province TEXT,
         invoicing_country TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // ── Auction email verifications ─────────────────────────
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS auction_email_verifications (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        auction_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at DATETIME NOT NULL,
+        verified INTEGER NOT NULL DEFAULT 0,
+        ip_address TEXT,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE
       )
@@ -693,6 +710,8 @@ async function initializeDatabase() {
 
     // Auction billing — notes column for idempotency marker
     await safeAlter('ALTER TABLE orders ADD COLUMN notes TEXT');
+    // Auction buyers — dni column for existing DBs
+    await safeAlter('ALTER TABLE auction_buyers ADD COLUMN dni TEXT');
 
     // Stripe Connect (Change #2) — polymorphic pivot table linking a payout to
     // the concrete items (art/other/event_attendee) it covers, with per-item
@@ -908,6 +927,7 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_auction_bids_buyer ON auction_bids(auction_buyer_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_auction_buyers_auction ON auction_buyers(auction_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_auctions_status ON auctions(status)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_auction_email_verif_email_auction ON auction_email_verifications(email, auction_id)`);
 
     // Events
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendees_event ON event_attendees(event_id)`);

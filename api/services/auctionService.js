@@ -167,12 +167,15 @@ async function getAuctionById(id) {
 }
 
 async function listAuctions(filters = {}) {
-  let sql = 'SELECT * FROM auctions';
+  let sql = `SELECT a.*,
+    (SELECT COUNT(*) FROM auction_arts WHERE auction_id = a.id) +
+    (SELECT COUNT(*) FROM auction_others WHERE auction_id = a.id) AS product_count
+    FROM auctions a`;
   const args = [];
   const conditions = [];
 
   if (filters.status) {
-    conditions.push('status = ?');
+    conditions.push('a.status = ?');
     args.push(filters.status);
   }
 
@@ -180,7 +183,7 @@ async function listAuctions(filters = {}) {
     sql += ' WHERE ' + conditions.join(' AND ');
   }
 
-  sql += ' ORDER BY start_datetime DESC';
+  sql += ' ORDER BY a.start_datetime DESC';
 
   const result = await db.execute({ sql, args });
   return result.rows;
@@ -403,7 +406,7 @@ async function assignSellersToAuction(auctionId, userIds) {
 // ---------------------------------------------------------------------------
 
 async function createOrGetAuctionBuyer(auctionId, {
-  firstName, lastName, email,
+  firstName, lastName, email, dni,
   deliveryAddress1, deliveryAddress2, deliveryPostalCode,
   deliveryCity, deliveryProvince, deliveryCountry,
   invoicingAddress1, invoicingAddress2, invoicingPostalCode,
@@ -424,14 +427,14 @@ async function createOrGetAuctionBuyer(auctionId, {
 
   await db.execute({
     sql: `INSERT INTO auction_buyers (
-            id, auction_id, first_name, last_name, email, bid_password,
+            id, auction_id, first_name, last_name, email, dni, bid_password,
             delivery_address_1, delivery_address_2, delivery_postal_code,
             delivery_city, delivery_province, delivery_country,
             invoicing_address_1, invoicing_address_2, invoicing_postal_code,
             invoicing_city, invoicing_province, invoicing_country
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
-      id, auctionId, firstName, lastName, email, bidPassword,
+      id, auctionId, firstName, lastName, email, dni || null, bidPassword,
       deliveryAddress1 || null, deliveryAddress2 || null, deliveryPostalCode || null,
       deliveryCity || null, deliveryProvince || null, deliveryCountry || null,
       invoicingAddress1 || null, invoicingAddress2 || null, invoicingPostalCode || null,
@@ -1060,6 +1063,126 @@ async function getBidBillingData(bidId) {
 }
 
 // ---------------------------------------------------------------------------
+// DNI / Email Verification Helpers
+// ---------------------------------------------------------------------------
+
+const DNI_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE';
+
+function validateDNI(dni) {
+  if (!dni || typeof dni !== 'string') return false;
+  const normalized = dni.toUpperCase().trim();
+
+  // NIE format: X/Y/Z + 7 digits + letter
+  const nieMatch = normalized.match(/^([XYZ])(\d{7})([A-Z])$/);
+  if (nieMatch) {
+    const niePrefix = { X: '0', Y: '1', Z: '2' };
+    const num = parseInt(niePrefix[nieMatch[1]] + nieMatch[2], 10);
+    return nieMatch[3] === DNI_LETTERS[num % 23];
+  }
+
+  // DNI format: 8 digits + letter
+  const dniMatch = normalized.match(/^(\d{8})([A-Z])$/);
+  if (dniMatch) {
+    const num = parseInt(dniMatch[1], 10);
+    return dniMatch[2] === DNI_LETTERS[num % 23];
+  }
+
+  return false;
+}
+
+async function checkEmailUniqueness(auctionId, email) {
+  const result = await db.execute({
+    sql: 'SELECT 1 FROM auction_buyers WHERE email = ? AND auction_id = ? LIMIT 1',
+    args: [email.toLowerCase().trim(), auctionId],
+  });
+  return result.rows.length === 0;
+}
+
+async function checkDniUniqueness(auctionId, dni) {
+  const result = await db.execute({
+    sql: 'SELECT 1 FROM auction_buyers WHERE dni = ? AND auction_id = ? LIMIT 1',
+    args: [dni.toUpperCase().trim(), auctionId],
+  });
+  return result.rows.length === 0;
+}
+
+async function hasBuyerCompletedRegistration(auctionId, email, dni) {
+  const result = await db.execute({
+    sql: `SELECT 1 FROM auction_buyers ab
+          INNER JOIN auction_authorised_payment_data apd ON apd.auction_buyer_id = ab.id
+          WHERE ab.auction_id = ? AND (ab.email = ? OR ab.dni = ?)
+          LIMIT 1`,
+    args: [auctionId, email.toLowerCase().trim(), dni.toUpperCase().trim()],
+  });
+  return result.rows.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Email OTP Verification
+// ---------------------------------------------------------------------------
+
+function generateOTPCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function createEmailVerification(email, auctionId, ipAddress = null) {
+  await db.execute({
+    sql: 'DELETE FROM auction_email_verifications WHERE email = ? AND auction_id = ?',
+    args: [email, auctionId],
+  });
+
+  const id = generateUUID();
+  const code = generateOTPCode();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  await db.execute({
+    sql: `INSERT INTO auction_email_verifications (id, email, auction_id, code, expires_at, ip_address)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [id, email, auctionId, code, expiresAt, ipAddress || null],
+  });
+
+  return code;
+}
+
+async function verifyEmailCode(email, auctionId, code) {
+  const result = await db.execute({
+    sql: `SELECT * FROM auction_email_verifications
+          WHERE email = ? AND auction_id = ? AND verified = 0
+          ORDER BY created_at DESC LIMIT 1`,
+    args: [email, auctionId],
+  });
+
+  if (result.rows.length === 0) {
+    return { valid: false, error: 'No se encontró una verificación pendiente' };
+  }
+
+  const verification = result.rows[0];
+
+  if (new Date(verification.expires_at) < new Date()) {
+    return { valid: false, error: 'El código ha expirado. Solicita uno nuevo' };
+  }
+
+  if (verification.attempts >= 5) {
+    return { valid: false, error: 'Demasiados intentos. Solicita un nuevo código' };
+  }
+
+  if (verification.code !== code) {
+    await db.execute({
+      sql: 'UPDATE auction_email_verifications SET attempts = attempts + 1 WHERE id = ?',
+      args: [verification.id],
+    });
+    return { valid: false, error: 'Código incorrecto' };
+  }
+
+  await db.execute({
+    sql: 'UPDATE auction_email_verifications SET verified = 1 WHERE id = ?',
+    args: [verification.id],
+  });
+
+  return { valid: true };
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -1096,4 +1219,10 @@ module.exports = {
   savePaymentData,
   getAuctionBidsWithBuyers,
   getBidBillingData,
+  validateDNI,
+  checkEmailUniqueness,
+  checkDniUniqueness,
+  hasBuyerCompletedRegistration,
+  createEmailVerification,
+  verifyEmailCode,
 };

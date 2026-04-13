@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const auctionController = require('../controllers/auctionController');
 const { cacheControl } = require('../middleware/cache');
+const { sensitiveLimiter } = require('../middleware/rateLimiter');
+const { validate } = require('../middleware/validate');
+const { sendVerificationSchema, verifyEmailSchema } = require('../validators/auctionSchemas');
 
 // All routes are public (no authentication required)
 
@@ -64,5 +67,17 @@ router.get('/:id/postal-codes/:productId/:productType', auctionController.getPos
  * Validate whether a buyer's postal code is allowed for a product
  */
 router.get('/:id/validate-postal-code/:productId/:productType', auctionController.validatePostalCode);
+
+/**
+ * POST /api/auctions/:id/send-verification
+ * Send OTP code to buyer email for identity verification
+ */
+router.post('/:id/send-verification', sensitiveLimiter, validate(sendVerificationSchema), auctionController.sendVerification);
+
+/**
+ * POST /api/auctions/:id/verify-email
+ * Verify OTP code sent to buyer email
+ */
+router.post('/:id/verify-email', sensitiveLimiter, validate(verifyEmailSchema), auctionController.verifyEmail);
 
 module.exports = router;

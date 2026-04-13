@@ -1362,6 +1362,20 @@ export const auctionsAPI = {
   validatePostalCode: async (auctionId, productId, productType, postalCode) => {
     return apiRequest(`/auctions/${auctionId}/validate-postal-code/${productId}/${productType}?postalCode=${encodeURIComponent(postalCode)}`);
   },
+
+  sendVerification: async (auctionId, email, dni) => {
+    return apiRequest(`/auctions/${auctionId}/send-verification`, {
+      method: 'POST',
+      body: JSON.stringify({ email, dni }),
+    });
+  },
+
+  verifyEmail: async (auctionId, email, code) => {
+    return apiRequest(`/auctions/${auctionId}/verify-email`, {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    });
+  },
 };
 
 // Public Draws API (no auth required)
