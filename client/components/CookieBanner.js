@@ -72,6 +72,10 @@ export default function CookieBanner() {
     setVisible(false)
   }
 
+  // Disabled: site only uses technically necessary cookies (Stripe/Sentry).
+  // Remove this line to re-enable if analytics or advertising cookies are added.
+  return null
+
   if (!visible) return null
 
   // Markup and Tailwind classes copied exactly from the provided snippet

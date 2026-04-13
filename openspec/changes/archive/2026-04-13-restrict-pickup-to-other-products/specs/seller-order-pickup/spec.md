@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Pickup endpoint creates pickup in Sendcloud
 
@@ -27,46 +27,6 @@ The system SHALL provide a `POST /api/seller/orders/:orderId/pickup` endpoint th
 #### Scenario: Sendcloud API error
 - **WHEN** Sendcloud returns a validation error (e.g., missing carrier-specific field)
 - **THEN** the system returns the Sendcloud error message to the seller without creating a local record or changing item statuses
-
-### Requirement: Pickup request validation
-
-The pickup endpoint SHALL validate the request body using a Zod schema. Required fields: `address` (name, countryCode, city, addressLine1, postalCode, email, phoneNumber), `timeSlotStart` (ISO 8601 datetime), `timeSlotEnd` (ISO 8601 datetime). Optional fields: `address.companyName`, `address.addressLine2`, `address.houseNumber`, `specialInstructions`.
-
-#### Scenario: Valid request with all fields
-- **WHEN** the request includes a complete address, valid time slots where start < end and interval <= 48 hours, and special instructions
-- **THEN** validation passes
-
-#### Scenario: Missing required address field
-- **WHEN** the request omits `address.city`
-- **THEN** validation returns HTTP 400 with field-specific error
-
-#### Scenario: Time slot start after end
-- **WHEN** `timeSlotStart` is after `timeSlotEnd`
-- **THEN** validation returns HTTP 400 with error "La fecha de inicio debe ser anterior a la fecha de fin"
-
-#### Scenario: Time slot interval exceeds 48 hours
-- **WHEN** the interval between `timeSlotStart` and `timeSlotEnd` exceeds 48 hours
-- **THEN** validation returns HTTP 400 with error "El intervalo maximo de tiempo es de 2 dias"
-
-### Requirement: Carrier code stored on order items
-
-The `art_order_items` and `other_order_items` tables SHALL include a `sendcloud_carrier_code TEXT` column. This column SHALL be populated during shipment creation in `sendcloudProvider.createShipments` by extracting the carrier code from the Sendcloud shipment response.
-
-#### Scenario: Shipment created with carrier code
-- **WHEN** a Sendcloud shipment is created for order items and the response contains carrier information
-- **THEN** the `sendcloud_carrier_code` column is updated on all affected order items
-
-#### Scenario: Carrier code used for pickup
-- **WHEN** a seller creates a pickup for an order
-- **THEN** the system reads `sendcloud_carrier_code` from the order items to use as the `carrier_code` parameter in the Sendcloud pickup API call
-
-### Requirement: Sendcloud pickups table
-
-The database SHALL include a `sendcloud_pickups` table with columns: `id` (PK), `order_id` (FK to orders), `seller_id` (FK to users), `sendcloud_pickup_id` (from Sendcloud response), `carrier_code`, `status` (default 'ANNOUNCING'), `pickup_address` (JSON string), `time_slot_start`, `time_slot_end`, `special_instructions`, `total_weight_kg`, `created_at`.
-
-#### Scenario: Pickup record created
-- **WHEN** a pickup is successfully created in Sendcloud
-- **THEN** a record is inserted into `sendcloud_pickups` with all relevant data including the Sendcloud pickup ID and status
 
 ### Requirement: Weight calculation for pickup
 
@@ -116,32 +76,6 @@ The "Programar recogida" button SHALL be visible on an order card only when ALL 
 - **WHEN** seller has `first_mile='pickup'`, order status is 'sent'
 - **THEN** "Programar recogida" button is NOT visible
 
-### Requirement: Pickup modal form
-
-When the seller clicks "Programar recogida", a modal SHALL open with:
-1. A checkbox labeled "Rellenar con la direccion por defecto" that populates address fields from `sellerConfig.defaultAddress`
-2. Address fields: name, company name, address line 1, address line 2, house number, city, postal code, country code, phone, email
-3. Two datetime inputs for time slot start and end
-4. A text area for special instructions (optional)
-5. A "Programar recogida" submit button
-6. Client-side validation: required fields filled, start < end, interval <= 48 hours
-
-#### Scenario: Fill with default address
-- **WHEN** the seller checks "Rellenar con la direccion por defecto"
-- **THEN** all address fields are populated with values from `sellerConfig.defaultAddress`
-
-#### Scenario: Uncheck default address
-- **WHEN** the seller unchecks "Rellenar con la direccion por defecto"
-- **THEN** address fields are cleared (reset to empty)
-
-#### Scenario: Submit with valid data
-- **WHEN** the seller fills all required fields and clicks "Programar recogida"
-- **THEN** the system calls `POST /api/seller/orders/:orderId/pickup` and on success closes the modal, shows a success notification, and refreshes the orders list
-
-#### Scenario: Submit with Sendcloud error
-- **WHEN** Sendcloud returns an error
-- **THEN** the error message is displayed in the modal without closing it
-
 ### Requirement: Status change to sent on pickup
 
 When a pickup is successfully created, only the 'other' order items belonging to the seller in that order SHALL have their `status` updated to `'sent'` and `status_modified` updated to `CURRENT_TIMESTAMP`. Art order items SHALL remain unchanged.
@@ -173,15 +107,3 @@ The bulk "Programar recogida masiva" button in the "Pagados" tab SHALL only appe
 #### Scenario: Some paid orders have 'other' items
 - **WHEN** at least one paid order contains 'other' items, has a carrier code, and no existing pickup
 - **THEN** the bulk "Programar recogida masiva" button SHALL be displayed
-
-### Requirement: Pickup creation function in sendcloud provider
-
-The `sendcloudProvider` module SHALL export a `createPickup` function that accepts `{ carrierCode, address, timeSlots, items, specialInstructions }` and calls `POST /v3/pickups` via the sendcloud API client. The function SHALL return the Sendcloud response data (id, status, etc.) on success or throw an ApiError on failure.
-
-#### Scenario: Successful API call
-- **WHEN** `createPickup` is called with valid parameters
-- **THEN** it calls `sendcloud.post('pickups', { body })` and returns `{ id, status, carrierCode, createdAt }`
-
-#### Scenario: API failure
-- **WHEN** Sendcloud returns an error
-- **THEN** the error is propagated as-is (the existing sendcloud API client error handling applies)

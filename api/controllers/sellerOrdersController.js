@@ -295,16 +295,7 @@ const schedulePickup = async (req, res, next) => {
       throw new ApiError(400, 'Ya existe una recogida programada para este pedido', 'Recogida duplicada')
     }
 
-    // Load seller's art order items for this order
-    const artItems = await db.execute({
-      sql: `SELECT aoi.id, aoi.status, aoi.sendcloud_carrier_code, a.weight
-            FROM art_order_items aoi
-            JOIN art a ON aoi.art_id = a.id
-            WHERE aoi.order_id = ? AND a.seller_id = ?`,
-      args: [orderId, sellerId],
-    })
-
-    // Load seller's other order items for this order
+    // Load seller's 'other' order items for this order (art items are excluded from pickups)
     const otherItems = await db.execute({
       sql: `SELECT ooi.id, ooi.status, ooi.sendcloud_carrier_code, ot.weight
             FROM other_order_items ooi
@@ -313,10 +304,10 @@ const schedulePickup = async (req, res, next) => {
       args: [orderId, sellerId],
     })
 
-    const allItems = [...artItems.rows, ...otherItems.rows]
+    const allItems = otherItems.rows
 
     if (allItems.length === 0) {
-      throw new ApiError(404, 'No se encontraron artículos tuyos en este pedido', 'No encontrado')
+      throw new ApiError(404, 'No se encontraron productos (tipo "otros") tuyos en este pedido', 'No encontrado')
     }
 
     // Verify all items are in 'paid' status
@@ -376,13 +367,7 @@ const schedulePickup = async (req, res, next) => {
       ],
     })
 
-    // Update all seller's items in this order to status='sent'
-    for (const item of artItems.rows) {
-      await db.execute({
-        sql: `UPDATE art_order_items SET status = 'sent', status_modified = CURRENT_TIMESTAMP WHERE id = ?`,
-        args: [item.id],
-      })
-    }
+    // Update seller's 'other' items in this order to status='sent'
     for (const item of otherItems.rows) {
       await db.execute({
         sql: `UPDATE other_order_items SET status = 'sent', status_modified = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -430,26 +415,19 @@ const scheduleBulkPickup = async (req, res, next) => {
     let commonCarrier = null
 
     for (const orderId of orderIds) {
-      const artItems = await db.execute({
-        sql: `SELECT aoi.id, aoi.status, aoi.sendcloud_carrier_code, a.weight, 'art' as item_type
-              FROM art_order_items aoi
-              JOIN art a ON aoi.art_id = a.id
-              WHERE aoi.order_id = ? AND a.seller_id = ?`,
-        args: [orderId, sellerId],
-      })
-
+      // Only load 'other' order items (art items are excluded from pickups)
       const otherItems = await db.execute({
-        sql: `SELECT ooi.id, ooi.status, ooi.sendcloud_carrier_code, ot.weight, 'others' as item_type
+        sql: `SELECT ooi.id, ooi.status, ooi.sendcloud_carrier_code, ot.weight
               FROM other_order_items ooi
               JOIN others ot ON ooi.other_id = ot.id
               WHERE ooi.order_id = ? AND ot.seller_id = ?`,
         args: [orderId, sellerId],
       })
 
-      const allItems = [...artItems.rows, ...otherItems.rows]
+      const allItems = otherItems.rows
 
       if (allItems.length === 0) {
-        throw new ApiError(404, `No se encontraron artículos tuyos en el pedido #${orderId}`, 'No encontrado')
+        throw new ApiError(404, `No se encontraron productos (tipo "otros") tuyos en el pedido #${orderId}`, 'No encontrado')
       }
 
       // Verify all items are 'paid'
@@ -476,7 +454,6 @@ const scheduleBulkPickup = async (req, res, next) => {
 
       orderItems.push({
         orderId,
-        artRows: artItems.rows,
         otherRows: otherItems.rows,
         totalWeightKg,
       })
@@ -528,13 +505,7 @@ const scheduleBulkPickup = async (req, res, next) => {
         ],
       })
 
-      // Update all seller's items in this order to status='sent'
-      for (const item of oi.artRows) {
-        await db.execute({
-          sql: `UPDATE art_order_items SET status = 'sent', status_modified = CURRENT_TIMESTAMP WHERE id = ?`,
-          args: [item.id],
-        })
-      }
+      // Update seller's 'other' items in this order to status='sent'
       for (const item of oi.otherRows) {
         await db.execute({
           sql: `UPDATE other_order_items SET status = 'sent', status_modified = CURRENT_TIMESTAMP WHERE id = ?`,

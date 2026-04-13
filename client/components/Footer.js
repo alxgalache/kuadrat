@@ -68,13 +68,15 @@ export default function Footer() {
           ))}
         </div>
         <span className="mt-8 text-center text-sm/6 text-gray-600 md:order-1 md:mt-0">
-          &copy; 2026 140d Galería de Arte. Todos los derechos reservados.
+          &copy; 2026 140d Galería de Arte. Todos los derechos reservados
           {' · '}
           <a href="/legal/terminos-y-condiciones" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Términos y condiciones</a>
           {' · '}
           <a href="/legal/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Política de privacidad</a>
           {' · '}
           <a href="/preguntas-frecuentes" className="hover:text-gray-800">FAQ</a>
+          {' · '}
+          <a href="/legal/politica-de-cookies" className="hover:text-gray-800">Política de cookies</a>
         </span>
       </div>
     </footer>

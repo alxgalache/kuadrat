@@ -122,6 +122,7 @@ const config = {
   payment: {
     provider: optional('PAYMENT_PROVIDER', 'stripe'),
     vatEs: optionalFloat('TAX_VAT_ES', 0.21),
+    vatArtEs: optionalFloat('TAX_VAT_ART_ES', 0.10),
     dealerCommissionArt: optionalFloat('DEALER_COMMISSION_ART', 0),
     dealerCommissionOthers: optionalFloat('DEALER_COMMISSION_OTHERS', 0),
   },

@@ -397,6 +397,27 @@ function PublishProductPageContent() {
         setShowDecimalWarning(false)
     }
 
+    // Net earnings preview
+    const priceValue = parseFloat(price)
+    const showNetEarnings = !isNaN(priceValue) && priceValue >= 10
+    let netEarnings = null
+    if (showNetEarnings) {
+        if (productCategory === 'art') {
+            const commissionRate = parseFloat(process.env.NEXT_PUBLIC_DEALER_COMMISSION_ART || '25') / 100
+            const vatRate = parseFloat(process.env.NEXT_PUBLIC_TAX_VAT_ART_ES || '10') / 100
+            const gross = priceValue * (1 - commissionRate)
+            const net = gross / (1 + vatRate)
+            netEarnings = { net, gross, vatPercent: parseInt(process.env.NEXT_PUBLIC_TAX_VAT_ART_ES || '10') }
+        } else {
+            const commissionRate = parseFloat(process.env.NEXT_PUBLIC_DEALER_COMMISSION_OTHERS || '10') / 100
+            const vatRate = parseFloat(process.env.NEXT_PUBLIC_TAX_VAT_ES || '21') / 100
+            const base = priceValue / (1 + vatRate)
+            const artistBase = base * (1 - commissionRate)
+            const gross = artistBase * (1 + vatRate)
+            netEarnings = { net: artistBase, gross, vatPercent: parseInt(process.env.NEXT_PUBLIC_TAX_VAT_ES || '21') }
+        }
+    }
+
     return (
         <div className="bg-white">
             <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
@@ -497,6 +518,11 @@ function PublishProductPageContent() {
                                                     className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                                                 />
                                             </div>
+                                            {netEarnings && (
+                                                <p className="mt-2 text-sm text-gray-500">
+                                                    Recibirás {netEarnings.net.toFixed(2)}€ netos por la venta ({netEarnings.gross.toFixed(2)}€ incluyendo {netEarnings.vatPercent}% IVA)
+                                                </p>
+                                            )}
                                         </div>
 
                                         {/* Type field only for Art */}

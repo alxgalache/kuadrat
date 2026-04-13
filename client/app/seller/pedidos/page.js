@@ -56,11 +56,15 @@ function formatCarrierName(code) {
   return code.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+function hasOtherItems(order) {
+  return order.items?.some(i => i.productType === 'others')
+}
+
 function canShowPickup(sellerConfig, order) {
   if (!sellerConfig) return false
   const firstMile = sellerConfig.firstMile
   const isPickupEligible = !firstMile || firstMile === 'pickup'
-  return isPickupEligible && order.status === 'paid' && !order.pickup
+  return isPickupEligible && order.status === 'paid' && !order.pickup && hasOtherItems(order)
 }
 
 function SellerOrdersContent() {
@@ -133,7 +137,7 @@ function SellerOrdersContent() {
 
   // Orders eligible for bulk pickup: paid, have carrier, no existing pickup
   const pickupEligibleOrders = orders.filter(o =>
-    o.status === 'paid' && !o.pickup && getCarrierCode(o) && canShowPickup(sellerConfig, o)
+    o.status === 'paid' && !o.pickup && getCarrierCode(o) && hasOtherItems(o) && canShowPickup(sellerConfig, o)
   )
   const pickupCarriers = [...new Set(pickupEligibleOrders.map(o => getCarrierCode(o)))]
 
