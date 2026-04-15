@@ -278,7 +278,7 @@ export default function AuctionDetail({ params }) {
                   alt={currentProduct.name}
                   fill
                   priority
-                  className="object-contain"
+                  className={currentProduct.product_type === 'other' ? 'object-cover' : 'object-contain'}
                   sizes="(max-width: 1024px) 100vw, 25vw"
                 />
               ) : (

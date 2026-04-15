@@ -125,7 +125,7 @@ export default function Navbar() {
 
                   <PopoverPanel
                     transition
-                    className="absolute right-0 top-full z-10 mt-2 flex w-screen max-w-min transition data-closed:translate-y-1 data-closed:opacity-0 data-enter:duration-200 data-enter:ease-out data-leave:duration-150 data-leave:ease-in"
+                    className="absolute right-0 top-full z-50 mt-2 flex w-screen max-w-min transition data-closed:translate-y-1 data-closed:opacity-0 data-enter:duration-200 data-enter:ease-out data-leave:duration-150 data-leave:ease-in"
                   >
                     <div className="w-56 shrink rounded-xl bg-white p-4 text-sm/6 font-semibold text-gray-900 shadow-lg ring-1 ring-gray-900/10">
                       {displayName && (
@@ -226,7 +226,7 @@ export default function Navbar() {
 
                   <PopoverPanel
                     transition
-                    className="absolute right-0 top-full z-10 mt-2 flex w-screen max-w-min transition data-closed:translate-y-1 data-closed:opacity-0 data-enter:duration-200 data-enter:ease-out data-leave:duration-150 data-leave:ease-in"
+                    className="absolute right-0 top-full z-50 mt-2 flex w-screen max-w-min transition data-closed:translate-y-1 data-closed:opacity-0 data-enter:duration-200 data-enter:ease-out data-leave:duration-150 data-leave:ease-in"
                   >
                 <div className="w-56 shrink rounded-xl bg-white p-4 text-sm/6 font-semibold text-gray-900 shadow-lg ring-1 ring-gray-900/10">
                   {displayName && (

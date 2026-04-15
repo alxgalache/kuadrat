@@ -144,7 +144,7 @@ export default function DrawDetail({ params }) {
                 alt={draw.product_name || draw.name}
                 fill
                 priority
-                className="object-contain object-center"
+                className="object-cover"
                 sizes="(max-width: 1024px) 100vw, 50vw"
               />
             ) : (
