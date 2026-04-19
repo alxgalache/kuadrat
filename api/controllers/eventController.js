@@ -43,7 +43,12 @@ const getEventBySlug = async (req, res, next) => {
     }
 
     const attendeeCount = await eventService.getAttendeeCount(event.id);
-    res.status(200).json({ success: true, event, attendeeCount });
+    res.status(200).json({
+      success: true,
+      event,
+      attendeeCount,
+      serverNow: new Date().toISOString(),
+    });
   } catch (error) {
     next(error);
   }

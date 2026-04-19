@@ -77,6 +77,7 @@ export default function EventDetail({ params }) {
   const [streamEndedModalOpen, setStreamEndedModalOpen] = useState(false)
   const [videoToken, setVideoToken] = useState(null)
   const [videoTokenFilename, setVideoTokenFilename] = useState(null)
+  const [serverTimeOffset, setServerTimeOffset] = useState(0)
 
   // Real-time event status and chat via Socket.IO
   const { eventStarted, eventEnded, chatMessages, sendChatMessage } = useEventSocket(event?.id)
@@ -109,6 +110,13 @@ export default function EventDetail({ params }) {
   const loadEvent = useCallback(async () => {
     try {
       const data = await eventsAPI.getBySlug(slug)
+      const receivedAt = Date.now()
+      if (data.serverNow) {
+        const serverMs = new Date(data.serverNow).getTime()
+        if (!Number.isNaN(serverMs)) {
+          setServerTimeOffset(serverMs - receivedAt)
+        }
+      }
       setEvent(data.event)
       setAttendeeCount(data.attendeeCount || 0)
     } catch (err) {
@@ -189,10 +197,17 @@ export default function EventDetail({ params }) {
     }, 4000)
   }, [event?.id])
 
-  // Fetch signed video token when user has access to a video-format event
+  // Fetch signed video token when user has access to a video-format event.
+  // Guarded by a ref so StrictMode double-invocation and cascading state
+  // updates don't refetch — each new vtoken would change the <video> src
+  // and restart the entire load/seek cycle.
+  const videoTokenFetchedForRef = useRef(null)
+
   useEffect(() => {
     if (!event || event.format !== 'video' || !event.video_url?.startsWith('uploaded:')) return
     if (!hasAccess && !isHost) return
+    if (videoTokenFetchedForRef.current === event.id) return
+    videoTokenFetchedForRef.current = event.id
     fetchVideoToken()
   }, [event?.id, event?.format, event?.video_url, hasAccess, isHost])
 
@@ -208,6 +223,7 @@ export default function EventDetail({ params }) {
       setVideoTokenFilename(data.filename)
     } catch (err) {
       console.error('Error getting video token:', err)
+      videoTokenFetchedForRef.current = null
     }
   }
 
@@ -316,6 +332,7 @@ export default function EventDetail({ params }) {
                   videoUrl={activeVideoUrl}
                   videoStartedAt={event.video_started_at}
                   eventTitle={event.title}
+                  serverTimeOffset={serverTimeOffset}
                 />
               </div>
 

@@ -4,102 +4,153 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 /**
  * Synchronized video player for video-format events.
- * Calculates the current playback position based on the server's start timestamp,
- * so all viewers see the same moment regardless of when they join.
+ * Calculates playback position from the server's start timestamp plus a
+ * client/server clock offset, so all viewers share the same moment regardless
+ * of when they join. Waits for the browser `seeked` event before starting
+ * playback and revealing the frame — avoids the pre-fix flash of position 0.
  *
  * Controls: volume + fullscreen only. No pause, seek, or progress bar.
  */
-export default function EventVideoPlayer({ videoUrl, videoStartedAt, eventTitle }) {
+export default function EventVideoPlayer({
+  videoUrl,
+  videoStartedAt,
+  eventTitle,
+  serverTimeOffset = 0,
+}) {
   const videoRef = useRef(null)
   const containerRef = useRef(null)
+  const wasWaitingRef = useRef(false)
   const [muted, setMuted] = useState(true)
   const [volume, setVolume] = useState(0.8)
   const [videoReady, setVideoReady] = useState(false)
+  const [seekReady, setSeekReady] = useState(false)
   const [videoError, setVideoError] = useState(false)
   const [videoEnded, setVideoEnded] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const MAX_RETRIES = 3
 
-  // Enforce HTTPS for external URLs (S3 presigned URLs, etc.)
+  // Enforce HTTPS for external URLs (S3 presigned URLs, CDN, etc.)
   const safeVideoUrl = useMemo(() => {
     if (!videoUrl) return null
-    // Only enforce HTTPS for external URLs (not same-origin API calls)
     if (videoUrl.startsWith('http://') && !videoUrl.includes('localhost') && !videoUrl.includes('127.0.0.1')) {
       return videoUrl.replace('http://', 'https://')
     }
     return videoUrl
   }, [videoUrl])
 
-  // Calculate elapsed seconds since the event started
+  // Server-synchronized elapsed seconds since the event started
   const getElapsedSeconds = useCallback(() => {
     if (!videoStartedAt) return 0
-    return (Date.now() - new Date(videoStartedAt).getTime()) / 1000
-  }, [videoStartedAt])
+    const now = Date.now() + serverTimeOffset
+    return (now - new Date(videoStartedAt).getTime()) / 1000
+  }, [videoStartedAt, serverTimeOffset])
 
-  // Seek to the correct position when video is ready
+  // Reset sync state whenever the source URL changes (e.g. token refresh)
+  useEffect(() => {
+    setVideoReady(false)
+    setSeekReady(false)
+    setVideoError(false)
+    setVideoEnded(false)
+    setRetryCount(0)
+  }, [safeVideoUrl])
+
+  // seek → wait `seeked` → play → reveal
   useEffect(() => {
     if (!videoReady || !videoRef.current) return
+    if (seekReady) return
 
-    const elapsed = getElapsedSeconds()
     const video = videoRef.current
+    const elapsed = getElapsedSeconds()
 
-    if (elapsed < 0) return // Not started yet
-
+    if (elapsed < 0) return
     if (video.duration && elapsed >= video.duration) {
       setVideoEnded(true)
       return
     }
 
-    video.currentTime = elapsed
-    video.play().catch(() => {
-      // Autoplay blocked — user will need to interact
-    })
-  }, [videoReady, getElapsedSeconds])
+    const handleSeeked = () => {
+      setSeekReady(true)
+      video.play().catch(() => {
+        // Autoplay blocked — the unmute overlay below is the gate
+      })
+    }
 
-  // Periodic sync check every 30 seconds to correct drift
+    video.addEventListener('seeked', handleSeeked, { once: true })
+    video.currentTime = elapsed
+
+    return () => {
+      video.removeEventListener('seeked', handleSeeked)
+    }
+  }, [videoReady, seekReady, getElapsedSeconds])
+
+  // Cinema-mode drift correction every 10 s while playing
   useEffect(() => {
-    if (!videoReady || videoEnded) return
+    if (!seekReady || videoEnded) return
 
     const interval = setInterval(() => {
-      if (!videoRef.current || videoRef.current.paused) return
+      const video = videoRef.current
+      if (!video || video.paused) return
       const expected = getElapsedSeconds()
-      const actual = videoRef.current.currentTime
-      const drift = Math.abs(expected - actual)
-
-      if (drift > 2) {
-        videoRef.current.currentTime = expected
+      if (video.duration && expected >= video.duration) {
+        setVideoEnded(true)
+        return
       }
-    }, 30000)
+      if (Math.abs(expected - video.currentTime) > 2) {
+        video.currentTime = expected
+      }
+    }, 10000)
 
     return () => clearInterval(interval)
-  }, [videoReady, videoEnded, getElapsedSeconds])
+  }, [seekReady, videoEnded, getElapsedSeconds])
 
-  // Check if video has ended based on elapsed time (for late joiners)
+  // Cinema-mode recovery: after buffering, jump to the server-expected position
   useEffect(() => {
-    const elapsed = getElapsedSeconds()
-    if (videoRef.current?.duration && elapsed >= videoRef.current.duration) {
-      setVideoEnded(true)
+    const video = videoRef.current
+    if (!video) return
+
+    const onWaiting = () => {
+      wasWaitingRef.current = true
     }
-  }, [getElapsedSeconds])
+    const onPlaying = () => {
+      if (!wasWaitingRef.current || !seekReady) return
+      wasWaitingRef.current = false
+      const expected = getElapsedSeconds()
+      if (video.duration && expected >= video.duration) {
+        setVideoEnded(true)
+        return
+      }
+      if (Math.abs(expected - video.currentTime) > 1) {
+        video.currentTime = expected
+      }
+    }
 
-  // Loading timeout — if video hasn't loaded metadata within 15s, retry
+    video.addEventListener('waiting', onWaiting)
+    video.addEventListener('playing', onPlaying)
+    return () => {
+      video.removeEventListener('waiting', onWaiting)
+      video.removeEventListener('playing', onPlaying)
+    }
+  }, [seekReady, getElapsedSeconds])
+
+  // Timeout covers both "metadata never loads" and "seek never completes"
   useEffect(() => {
-    if (videoReady || videoError || videoEnded) return
+    if (seekReady || videoError || videoEnded) return
 
     const timeout = setTimeout(() => {
-      if (!videoReady && retryCount < MAX_RETRIES && videoRef.current) {
-        console.warn(`[VideoPlayer] Load timeout, retrying (${retryCount + 1}/${MAX_RETRIES})`)
-        setRetryCount(prev => prev + 1)
-        // Force reload by resetting the src
-        const video = videoRef.current
-        video.load()
-      } else if (retryCount >= MAX_RETRIES) {
+      if (!videoRef.current) return
+      if (retryCount < MAX_RETRIES) {
+        console.warn(`[VideoPlayer] Load/seek timeout, retrying (${retryCount + 1}/${MAX_RETRIES})`)
+        setRetryCount((prev) => prev + 1)
+        setVideoReady(false)
+        setSeekReady(false)
+        videoRef.current.load()
+      } else {
         setVideoError(true)
       }
     }, 15000)
 
     return () => clearTimeout(timeout)
-  }, [videoReady, videoError, videoEnded, retryCount])
+  }, [seekReady, videoError, videoEnded, retryCount, safeVideoUrl])
 
   const handleLoadedMetadata = useCallback(() => {
     setVideoReady(true)
@@ -110,28 +161,41 @@ export default function EventVideoPlayer({ videoUrl, videoStartedAt, eventTitle 
   }, [])
 
   const handleError = useCallback(() => {
-    // Retry on error before giving up
     if (retryCount < MAX_RETRIES && videoRef.current) {
       console.warn(`[VideoPlayer] Load error, retrying (${retryCount + 1}/${MAX_RETRIES})`)
-      setRetryCount(prev => prev + 1)
+      setRetryCount((prev) => prev + 1)
+      setVideoReady(false)
+      setSeekReady(false)
       setTimeout(() => {
         if (videoRef.current) videoRef.current.load()
-      }, 1000 * (retryCount + 1)) // Exponential-ish backoff
+      }, 1000 * (retryCount + 1))
     } else {
       setVideoError(true)
     }
   }, [retryCount])
 
   const toggleMute = useCallback(() => {
-    if (!videoRef.current) return
-    const newMuted = !muted
-    setMuted(newMuted)
-    videoRef.current.muted = newMuted
-    // If unmuting and video is paused (autoplay was blocked), try playing
-    if (!newMuted && videoRef.current.paused) {
-      videoRef.current.play().catch(() => {})
+    const video = videoRef.current
+    if (!video) return
+    const nextMuted = !muted
+    setMuted(nextMuted)
+    video.muted = nextMuted
+
+    if (!nextMuted) {
+      // Re-sync on unmute — absorbs any drift accumulated while the tab was muted
+      const expected = getElapsedSeconds()
+      if (video.duration && expected >= video.duration) {
+        setVideoEnded(true)
+        return
+      }
+      if (Math.abs(expected - video.currentTime) > 1) {
+        video.currentTime = expected
+      }
+      if (video.paused) {
+        video.play().catch(() => {})
+      }
     }
-  }, [muted])
+  }, [muted, getElapsedSeconds])
 
   const handleVolumeChange = useCallback((e) => {
     const val = parseFloat(e.target.value)
@@ -189,15 +253,16 @@ export default function EventVideoPlayer({ videoUrl, videoStartedAt, eventTitle 
         muted={muted}
         playsInline
         crossOrigin="anonymous"
-        preload="auto"
+        preload="metadata"
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleVideoEnded}
         onError={handleError}
+        style={{ opacity: seekReady ? 1 : 0, transition: 'opacity 150ms ease-in' }}
         className="w-full h-full object-contain"
       />
 
-      {/* Autoplay notice — shown when muted */}
-      {muted && videoReady && (
+      {/* Autoplay notice — shown once playback is ready but still muted */}
+      {muted && seekReady && (
         <button
           type="button"
           onClick={toggleMute}
@@ -211,8 +276,8 @@ export default function EventVideoPlayer({ videoUrl, videoStartedAt, eventTitle 
         </button>
       )}
 
-      {/* Loading state */}
-      {!videoReady && !videoError && (
+      {/* Loading state — shown until seek completes */}
+      {!seekReady && !videoError && (
         <div className="absolute inset-0 flex items-center justify-center">
           <p className="text-white text-sm">Cargando vídeo...</p>
         </div>
