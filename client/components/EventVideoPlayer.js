@@ -252,7 +252,6 @@ export default function EventVideoPlayer({
         src={safeVideoUrl}
         muted={muted}
         playsInline
-        crossOrigin="anonymous"
         preload="metadata"
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleVideoEnded}
