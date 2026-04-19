@@ -893,6 +893,10 @@ async function initializeDatabase() {
       )
     `);
 
+    // ── Column migrations (idempotent) ───────────────────────
+    await db.execute(`ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS product_id INTEGER`);
+    await db.execute(`ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS product_type TEXT CHECK(product_type IN ('art','other'))`);
+
     // ── Indexes ──────────────────────────────────────────────
     // Shipping
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_shipping_zones_method ON shipping_zones(shipping_method_id)`);
