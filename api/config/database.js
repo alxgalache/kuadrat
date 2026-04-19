@@ -893,9 +893,13 @@ async function initializeDatabase() {
       )
     `);
 
-    // ── Column migrations (idempotent) ───────────────────────
-    await db.execute(`ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS product_id INTEGER`);
-    await db.execute(`ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS product_type TEXT CHECK(product_type IN ('art','other'))`);
+    // ── Column migrations (idempotent via try/catch) ─────────
+    for (const sql of [
+      `ALTER TABLE shipping_zones ADD COLUMN product_id INTEGER`,
+      `ALTER TABLE shipping_zones ADD COLUMN product_type TEXT CHECK(product_type IN ('art','other'))`,
+    ]) {
+      try { await db.execute(sql); } catch { /* column already exists */ }
+    }
 
     // ── Indexes ──────────────────────────────────────────────
     // Shipping
