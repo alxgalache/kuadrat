@@ -45,13 +45,21 @@ export default function EventVideoPlayer({
     return (now - new Date(videoStartedAt).getTime()) / 1000
   }, [videoStartedAt, serverTimeOffset])
 
-  // Reset sync state whenever the source URL changes (e.g. token refresh)
+  // Reset sync state whenever the source URL changes (e.g. token refresh).
+  // Also force an explicit `load()` — for some cross-origin videos (notably
+  // CloudFront) the implicit load triggered by React setting the `src`
+  // attribute leaves the media element in a state where `seeked` never
+  // fires after the initial `currentTime` assignment. Calling `load()`
+  // replicates the successful path that our retry takes, but eagerly.
   useEffect(() => {
     setVideoReady(false)
     setSeekReady(false)
     setVideoError(false)
     setVideoEnded(false)
     setRetryCount(0)
+    if (videoRef.current && safeVideoUrl) {
+      videoRef.current.load()
+    }
   }, [safeVideoUrl])
 
   // seek → wait `seeked` → play → reveal

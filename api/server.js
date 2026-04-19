@@ -216,6 +216,13 @@ async function startServer() {
     // Verify email service (optional)
     await verifyTransporter();
 
+    // Allow large uploads (e.g. event videos up to 500 MB) to complete without
+    // Node aborting the request. Defaults in Node 20 are 300s requestTimeout
+    // and 60s headersTimeout, which close the socket mid-upload on slow links.
+    server.requestTimeout = 30 * 60 * 1000; // 30 min
+    server.headersTimeout = 65 * 1000;      // keep small; only for client headers
+    server.keepAliveTimeout = 65 * 1000;
+
     // Start server
     server.listen(config.port, () => {
       logger.info({ port: config.port, env: config.nodeEnv }, 'Server started');
