@@ -62,3 +62,18 @@ export const SPAM_WINDOW_MS = 10000;
 // or visitors should use these constants instead of the repo/project name.
 export const PUBLIC_BRAND_NAME = '140d Galería de Arte';
 export const PUBLIC_BRAND_NAME_SHORT = '140d';
+
+// CoA verification result messages (Spanish) shown to a collector when their
+// tap fails. Keys match the status strings returned by /api/coa/verify.
+export const COA_FAILURE_MESSAGES = {
+  malformed:
+    'El enlace de verificación es inválido. Es posible que la URL se haya copiado o modificado de forma incorrecta.',
+  invalid_cmac:
+    'La firma del certificado no es válida. Esta pegatina podría ser una copia o haber sido manipulada.',
+  unknown_tag:
+    'Este certificado no está registrado en nuestra galería. Si lo has recibido junto con una obra, ponte en contacto con nosotros.',
+  replay:
+    'Esta lectura ya había sido registrada anteriormente. Si crees que es un error, verifica que la pegatina no haya sido copiada.',
+  revoked:
+    'Este certificado ha sido marcado como revocado, perdido o dañado. Ponte en contacto con la galería para más información.',
+};

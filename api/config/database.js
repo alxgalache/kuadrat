@@ -893,6 +893,47 @@ async function initializeDatabase() {
       )
     `);
 
+    // ── NFC tags (NTAG 424 DNA stickers on Certificates of Authenticity) ──
+    // Each row is one physical sticker bound to one artwork. UID is the
+    // chip's factory-assigned ID (7 bytes hex = 14 chars). last_counter
+    // defaults to -1 so the very first tap (counter SDM = 0) is accepted
+    // by `counter > last_counter`. is_permanently_locked tracks the
+    // irreversible NDEF lock applied days after personalization.
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS nfc_tags (
+        uid TEXT PRIMARY KEY,
+        art_id INTEGER NOT NULL,
+        serial_label TEXT,
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK(status IN ('active','revoked','lost','damaged')),
+        last_counter INTEGER NOT NULL DEFAULT -1,
+        is_permanently_locked INTEGER NOT NULL DEFAULT 0,
+        personalized_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        personalized_by TEXT NOT NULL,
+        locked_at DATETIME,
+        notes TEXT,
+        FOREIGN KEY (art_id) REFERENCES art(id) ON DELETE RESTRICT
+      )
+    `);
+
+    // ── Verification events (audit log for every /api/coa/verify call) ──
+    // Stored even for failed attempts (malformed, invalid_cmac, unknown_tag,
+    // revoked, replay) so that abuse patterns can be detected. ip_hash is
+    // HMAC-SHA256(ip, IP_HASH_SALT) truncated to 32 hex chars — never the
+    // raw IP, for GDPR compliance.
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS verification_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT,
+        counter INTEGER,
+        status TEXT NOT NULL
+          CHECK(status IN ('ok','invalid_cmac','replay','unknown_tag','revoked','malformed')),
+        ip_hash TEXT,
+        user_agent TEXT,
+        occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // ── Column migrations (idempotent via try/catch) ─────────
     for (const sql of [
       `ALTER TABLE shipping_zones ADD COLUMN product_id INTEGER`,
@@ -975,6 +1016,13 @@ async function initializeDatabase() {
     // Postal codes
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_code_country ON postal_codes(postal_code, country)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_postal_codes_province_country ON postal_codes(province, country)`);
+
+    // NFC tags / CoA verification
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_nfc_tags_art_id ON nfc_tags(art_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_nfc_tags_status ON nfc_tags(status)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_uid ON verification_events(uid)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_status ON verification_events(status)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_occurred ON verification_events(occurred_at)`);
 
     // ── Initialize orders auto-increment to start from 1000 ──
     try {

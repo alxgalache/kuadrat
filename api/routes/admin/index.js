@@ -27,5 +27,7 @@ router.use('/payouts', require('./stripeConnectFiscalReportRoutes'));
 router.use('/payouts', require('./stripeConnectPayoutsRoutes'));
 // Invoice PDF generation (Change #5: pdf-invoice-engine)
 router.use('/invoices', require('./invoiceRoutes'));
+// Certificates of Authenticity (NTAG 424 DNA stickers)
+router.use('/coa', require('./coaRoutes'));
 
 module.exports = router;

@@ -1,0 +1,26 @@
+{
+  "name": "nfc-personalization",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "NTAG 424 DNA sticker personalization for 140d Galería de Arte CoA. Runs OUTSIDE Docker with USB access to the ACR1552U reader.",
+  "main": "src/personalize.js",
+  "scripts": {
+    "personalize": "node src/personalize.js",
+    "lock": "node src/lock-tag.js",
+    "inspect": "node src/inspect-tag.js",
+    "derive": "node src/derive-keys.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.0",
+    "dotenv": "^17.3.1",
+    "nfc-pcsc": "^0.8.1",
+    "node-aes-cmac": "^0.1.1",
+    "ntag424": "^0.3.9",
+    "prompts": "^2.4.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

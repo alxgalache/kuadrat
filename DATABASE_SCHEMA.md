@@ -94,3 +94,39 @@ Stores a log of all bids placed in an auction.
 | `user_id`     | INTEGER  | NOT NULL, FOREIGN KEY(users.id)      | The user who placed the bid.               |
 | `amount`      | REAL     | NOT NULL                             | The amount of the bid.                     |
 | `created_at`  | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP  | Timestamp when the bid was placed.         |
+
+---
+### **Tables for Certificate-of-Authenticity NFC Verification**
+
+### `nfc_tags` table
+One row per NTAG 424 DNA sticker physically attached to a paper CoA. Created by the personalization script (`scripts/nfc-personalization/`), never via API.
+
+| Column                  | Type     | Constraints                                                              | Description                                                                                       |
+|-------------------------|----------|--------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `uid`                   | TEXT     | PRIMARY KEY                                                              | 7-byte chip UID as 14 hex chars (uppercase).                                                      |
+| `art_id`                | INTEGER  | NOT NULL, FOREIGN KEY(art.id) ON DELETE RESTRICT                         | Bound artwork. RESTRICT prevents accidental deletion of art with active CoAs.                     |
+| `serial_label`          | TEXT     | NULL                                                                     | Human-readable serial, e.g. `GAL-2026-0042`.                                                      |
+| `status`                | TEXT     | NOT NULL, DEFAULT 'active', CHECK('active','revoked','lost','damaged')   | Lifecycle. Anything except `active` causes `/api/coa/verify` to return `revoked`.                 |
+| `last_counter`          | INTEGER  | NOT NULL, DEFAULT -1                                                     | Highest SDM counter seen on a successful verify. `-1` so the very first tap (counter=0) is OK.    |
+| `is_permanently_locked` | INTEGER  | NOT NULL, DEFAULT 0                                                      | 0/1. Set to 1 after `lock-tag.js` writes `Change=F` on File 02 in hardware. IRREVERSIBLE.         |
+| `personalized_at`       | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP                                      | Timestamp of personalization.                                                                     |
+| `personalized_by`       | TEXT     | NOT NULL                                                                 | Operator name (from `OPERATOR` env in the personalization script).                                |
+| `locked_at`             | DATETIME | NULL                                                                     | When the permanent lock was applied (NULL until lock).                                            |
+| `notes`                 | TEXT     | NULL                                                                     | Free-form notes. Admin status changes append `[YYYY-MM-DD HH:MM:SS] motivo` here (never replace). |
+
+Indexes: `idx_nfc_tags_art_id (art_id)`, `idx_nfc_tags_status (status)`.
+
+### `verification_events` table
+Audit log for every call to `/api/coa/verify`, successful or not. Used to detect abuse patterns (enumeration, replay attempts) without storing PII.
+
+| Column        | Type     | Constraints                                                                              | Description                                                                                  |
+|---------------|----------|------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| `id`          | INTEGER  | PRIMARY KEY AUTOINCREMENT                                                                | Unique identifier for the event.                                                             |
+| `uid`         | TEXT     | NULL                                                                                     | UID recovered from the PICC decryption. NULL for `malformed` events that never decrypted.    |
+| `counter`     | INTEGER  | NULL                                                                                     | SDM counter recovered from the PICC. NULL for `malformed` events.                            |
+| `status`      | TEXT     | NOT NULL, CHECK('ok','invalid_cmac','replay','unknown_tag','revoked','malformed')        | Outcome of the verification attempt.                                                         |
+| `ip_hash`     | TEXT     | NULL                                                                                     | `HMAC-SHA256(IP_HASH_SALT, ip)` truncated to 32 hex chars. GDPR-friendly. Rotates with salt. |
+| `user_agent`  | TEXT     | NULL                                                                                     | Truncated to 256 chars.                                                                      |
+| `occurred_at` | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP                                                      | When the verification was attempted.                                                         |
+
+Indexes: `idx_verif_events_uid (uid)`, `idx_verif_events_status (status)`, `idx_verif_events_occurred (occurred_at)`.

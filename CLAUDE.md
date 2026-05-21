@@ -190,5 +190,17 @@ All environment variables are validated at startup via `api/config/env.js`. See 
 * **Email:** SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM
 * **Payments:** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, PAYMENT_PROVIDER
 * **LiveKit:** LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
-* **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, etc.
+* **NTAG 424 DNA (CoA):** NTAG424_SYSTEM_ID, NTAG424_K_PICC, NTAG424_MASTER_KEY, IP_HASH_SALT — critical secrets validated via `requiredHex()`. Custody documented in `scripts/nfc-personalization/README.md §7`.
+* **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, COA_VERIFY_RATE_LIMIT_*, etc. Note: `*_WINDOW_SECONDS` is multiplied by 60 in the limiter — values are effectively in MINUTES (legacy naming).
 * **Business:** TAX_VAT_ES, DEALER_COMMISSION
+
+## Certificates of Authenticity (NTAG 424 DNA)
+
+Each artwork ships with a paper Certificate of Authenticity carrying a NTAG 424 DNA sticker. A tap with any phone resolves to a unique-per-read URL that the backend verifies cryptographically (PICC encrypted + truncated CMAC, SDM mode), proving authenticity and protecting against replay.
+
+* **Public endpoint:** `GET /api/coa/verify?picc=<32hex>&cmac=<16hex>` → `{ status: ok | malformed | invalid_cmac | unknown_tag | revoked | replay }`. No auth, dedicated rate limit (`coaVerifyLimiter`).
+* **Admin endpoints:** `GET /api/admin/coa/tags` (paginated list), `GET /api/admin/coa/tags/:uid` (detail + last N `verification_events`), `PATCH /api/admin/coa/tags/:uid/status` (revoke / lost / damaged with audit notes).
+* **Public page:** `client/app/coa/page.js` (Server Component, `force-dynamic`). Calls the backend via `INTERNAL_API_URL` and renders success or failure with es-ES messages from `client/lib/constants.js`.
+* **Tables:** `nfc_tags` (one row per sticker, FK to `art` with `ON DELETE RESTRICT`) and `verification_events` (audit log of every tap, including failed attempts; IPs stored as HMAC-SHA256).
+* **Personalization scripts:** `scripts/nfc-personalization/` — separate Node.js subproject, ESM, **runs OUTSIDE Docker** (needs USB access to the ACR1552U reader). Uses the `ntag424` library (AGPL, internal use only) for the NTAG protocol; uses the same key derivation as the backend (`AES-CMAC(MASTER_KEY, label||UID||SYSTEM_ID)`).
+* **Reference:** `docs/guia_ntag424_galeria.md` for the deep technical context.

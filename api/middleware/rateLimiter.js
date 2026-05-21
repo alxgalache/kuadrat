@@ -52,9 +52,24 @@ const paymentVerificationLimiter = rateLimit({
     },
 });
 
+// Limiter for the public CoA verification endpoint. Permissive enough to allow
+// a collector to tap the sticker repeatedly (e.g. showing it to friends at an
+// opening), strict enough to slow down enumeration attempts from a single IP.
+const coaVerifyLimiter = rateLimit({
+    windowMs: config.rateLimit.coaVerify.windowSeconds * 60 * 1000,
+    limit: config.rateLimit.coaVerify.maxRequests,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Too many verification requests, please try again later.',
+    },
+});
+
 module.exports = {
     generalLimiter,
     authLimiter,
     sensitiveLimiter,
     paymentVerificationLimiter,
+    coaVerifyLimiter,
 };

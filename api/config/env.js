@@ -38,6 +38,46 @@ function optionalBool(name, defaultValue) {
   return raw === 'true';
 }
 
+// Required env var that must be a hex string of exactly `byteLength` bytes
+// (i.e. `byteLength * 2` hex characters). Used for AES keys and HMAC salts:
+// fail fast and loud at startup rather than silently producing wrong-sized
+// keys at runtime.
+function requiredHex(name, byteLength) {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`[ENV] Missing required environment variable: ${name}`);
+    process.exit(1);
+  }
+  const expectedLength = byteLength * 2;
+  if (!/^[0-9a-fA-F]+$/.test(value) || value.length !== expectedLength) {
+    console.error(
+      `[ENV] Invalid format for ${name}: expected ${expectedLength} hex characters ` +
+      `(${byteLength} bytes), got ${value.length} characters.`
+    );
+    process.exit(1);
+  }
+  return value;
+}
+
+// Like requiredHex but accepts a minimum length instead of an exact one
+// (useful for salts where longer is fine).
+function requiredHexAtLeast(name, minByteLength) {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`[ENV] Missing required environment variable: ${name}`);
+    process.exit(1);
+  }
+  const minLength = minByteLength * 2;
+  if (!/^[0-9a-fA-F]+$/.test(value) || value.length < minLength || value.length % 2 !== 0) {
+    console.error(
+      `[ENV] Invalid format for ${name}: expected at least ${minLength} hex characters ` +
+      `(${minByteLength} bytes), got ${value.length} characters.`
+    );
+    process.exit(1);
+  }
+  return value;
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
 const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 const isTest = process.env.NODE_ENV === 'test';
@@ -168,7 +208,26 @@ const config = {
       windowSeconds: optionalInt('PAYMENT_VERIFICATION_RATE_LIMIT_WINDOW_SECONDS', 15),
       maxRequests: optionalInt('PAYMENT_VERIFICATION_RATE_LIMIT_MAX_REQUESTS', 2000),
     },
+    // Note: despite the *_SECONDS naming, the rateLimiter middleware
+    // multiplies these values by 60 * 1000, so windowSeconds is effectively
+    // expressed in MINUTES. Keep the misleading name for consistency with
+    // the other limiter sections in this file.
+    coaVerify: {
+      windowSeconds: optionalInt('COA_VERIFY_RATE_LIMIT_WINDOW_SECONDS', 1),
+      maxRequests: optionalInt('COA_VERIFY_RATE_LIMIT_MAX_REQUESTS', 60),
+    },
   },
+
+  // --- NTAG 424 DNA (Certificates of Authenticity) ---
+  // Loss of these keys = inability to ever verify a programmed sticker.
+  // Leak of these keys = anyone can forge stickers. Custody is critical.
+  ntag424: {
+    systemId: requiredHex('NTAG424_SYSTEM_ID', 3),
+    kPicc: requiredHex('NTAG424_K_PICC', 16),
+    masterKey: requiredHex('NTAG424_MASTER_KEY', 16),
+  },
+  // Salt for HMAC-SHA256 over IP addresses in verification_events (GDPR).
+  ipHashSalt: requiredHexAtLeast('IP_HASH_SALT', 16),
 
   // --- Sentry ---
   sentry: {

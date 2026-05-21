@@ -56,3 +56,12 @@ data/
 
 # Github Copilot
 .github/
+
+# NFC personalization subproject (scripts/nfc-personalization/)
+# Already covered by global .env and node_modules/ rules above, listed
+# explicitly here because the .env contains the most sensitive secrets
+# of the entire project (NTAG424_K_PICC and NTAG424_MASTER_KEY).
+# DO NOT REMOVE these lines without thinking very hard.
+scripts/**/node_modules/
+scripts/**/.env
+scripts/**/*.log

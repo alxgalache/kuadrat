@@ -47,3 +47,29 @@ All endpoints are prefixed with `/api`.
     - **Description:** Gets the details of a single order. User must be the buyer of the order.
     - **Auth:** Buyer or Seller (owner of the order).
     - **Response:** `200 OK` with `{ order_details_with_items }`
+
+### Certificates of Authenticity (CoA — NTAG 424 DNA)
+- **`GET /coa/verify?picc=<32hex>&cmac=<16hex>`**
+    - **Description:** Verifies a SUN URL emitted by a NTAG 424 DNA sticker. Decrypts the PICC payload (UID + SDM counter), validates the truncated CMAC against the per-UID session key, applies anti-replay via `last_counter`, records every attempt in `verification_events`.
+    - **Auth:** Public.
+    - **Rate limit:** `coaVerifyLimiter` — 60 requests per minute per IP (configurable via `COA_VERIFY_RATE_LIMIT_*`).
+    - **Cache:** `Cache-Control: no-store`.
+    - **Response:** `200 OK` with `{ "success": true, "status": "ok" | "malformed" | "invalid_cmac" | "unknown_tag" | "revoked" | "replay", "counter"?: number, "art"?: { id, name, slug, description, basename, type, dimensions } }`.
+    - **Failure modes:** none return non-2xx for successful crypto verifications; all results — including failures — are surfaced via `status`. Only Zod schema violations (missing/malformed params) return `400`.
+
+- **`GET /admin/coa/tags?page=&limit=&status=&art_id=`**
+    - **Description:** Paginated list of NFC tags joined with the bound artwork. Filters: `status` (`active|revoked|lost|damaged`), `art_id`. Default `limit=20`, capped at 100.
+    - **Auth:** Admin only (JWT + adminAuth).
+    - **Response:** `200 OK` with `{ "success": true, "tags": [...], "pagination": { page, pages, total, limit } }`.
+
+- **`GET /admin/coa/tags/:uid?events_limit=`**
+    - **Description:** Detail of one tag plus the most recent `events_limit` rows from `verification_events` (default 50, max 500).
+    - **Auth:** Admin only.
+    - **Response:** `200 OK` with `{ "success": true, "tag": {...}, "events": [...] }`.
+
+- **`PATCH /admin/coa/tags/:uid/status`**
+    - **Description:** Updates the tag status. Idempotent: setting the same status without notes is a no-op. When `notes` is provided, the value is appended (not replaced) to the existing notes with a UTC timestamp prefix.
+    - **Auth:** Admin only.
+    - **Body:** `{ "status": "active" | "revoked" | "lost" | "damaged", "notes"?: "string (max 500)" }`.
+    - **Response:** `200 OK` with `{ "success": true, "tag": {...updated row} }`.
+    - **Notes:** does NOT allow modifying `uid`, `art_id`, `last_counter`, `is_permanently_locked`, or other cryptographically relevant fields. Status changes are logged with `adminId`, `fromStatus`, `toStatus`, `reason`.
