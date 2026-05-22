@@ -122,18 +122,37 @@ async function processCard(reader) {
 
     await session.selectFile(NTAG424_NDEF_AID, isoSelectFileMode.BY_DF_NAME);
 
-    console.log('🔄 Cambiando claves K1 → K2 → K3 → K4 → K0 ...');
-    await session.authenticate(0, FACTORY_KEY);
-    await session.changeKey(1, FACTORY_KEY, keys.K1, NEW_KEY_VERSION);
-    await session.changeKey(2, FACTORY_KEY, keys.K2, NEW_KEY_VERSION);
-    await session.changeKey(3, FACTORY_KEY, keys.K3, NEW_KEY_VERSION);
-    await session.changeKey(4, FACTORY_KEY, keys.K4, NEW_KEY_VERSION);
-    await session.changeKey(0, FACTORY_KEY, keys.K0, NEW_KEY_VERSION); // K0 last — critical
-    console.log('✓ Claves cambiadas.');
+    // Try factory key first (virgin chip). If it fails, the chip already has
+    // derived keys (e.g. from a previous partially-failed personalization).
+    // In that case, authenticate with the derived K0 and skip key changes.
+    let keysAlreadySet = false;
+    try {
+      await session.authenticate(0, FACTORY_KEY);
+    } catch {
+      console.log('⚠️  La autenticación con clave de fábrica falló.');
+      console.log('   Intentando con la clave derivada (personalización previa incompleta)...');
+      try {
+        await session.authenticate(0, keys.K0);
+        keysAlreadySet = true;
+        console.log('✓ Autenticado con K0 derivada. Se reanudan los pasos pendientes (NDEF + SDM).');
+      } catch {
+        console.error('✗ No se puede autenticar con K0 de fábrica ni con K0 derivada.');
+        console.error('  El tag puede estar corrupto o pertenecer a otro sistema. Descártalo físicamente.');
+        return;
+      }
+    }
 
-    // Changing K0 invalidates the current session. Re-authenticate with K0
-    // (the new one) before writing NDEF and FileSettings.
-    await session.authenticate(0, keys.K0);
+    if (!keysAlreadySet) {
+      console.log('🔄 Cambiando claves K1 → K2 → K3 → K4 → K0 ...');
+      await session.changeKey(1, FACTORY_KEY, keys.K1, NEW_KEY_VERSION);
+      await session.changeKey(2, FACTORY_KEY, keys.K2, NEW_KEY_VERSION);
+      await session.changeKey(3, FACTORY_KEY, keys.K3, NEW_KEY_VERSION);
+      await session.changeKey(4, FACTORY_KEY, keys.K4, NEW_KEY_VERSION);
+      await session.changeKey(0, FACTORY_KEY, keys.K0, NEW_KEY_VERSION); // K0 last — critical
+      console.log('✓ Claves cambiadas.');
+      // Changing K0 invalidates the session — re-authenticate with the new K0.
+      await session.authenticate(0, keys.K0);
+    }
 
     console.log('📝 Escribiendo NDEF...');
     await session.writeData('plain', FILE_NDEF, NDEF_BUFFER, 0);

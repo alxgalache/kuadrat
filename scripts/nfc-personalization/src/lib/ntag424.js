@@ -113,7 +113,14 @@ export function buildNdefBuffer(baseUrl) {
  *  - Read free (so a tap from any phone resolves to the SUN URL).
  *  - Write/ReadWrite/Change locked behind K0 (so only the operator can
  *    update before final lock).
- *  - SDM enabled with PICC mirror + CMAC mirror, no UID or counter mirror.
+ *  - SDM enabled with encrypted PICC mirror + CMAC mirror.
+ *
+ * IMPORTANT — uidOffset and readCounterOffset are set to 0 (non-null).
+ * The library uses them only to set bits 7+6 of the SDMOptions byte,
+ * which tells the chip that UID and counter ARE included in the encrypted
+ * PICC payload. The values themselves are NOT written to the APDU when
+ * metaRead is a key number (encrypted PICC path). Setting them to null
+ * leaves bits 7+6 unset → chip rejects piccDataOffset → error 919e.
  *
  * The shape matches the library's `FileSettings` type
  * (src/serializer/fileSettings.ts).
@@ -127,8 +134,8 @@ export const SDM_FILE_SETTINGS_OPEN = {
     change: 0,        // K0
   },
   sdmOptions: {
-    uidOffset: null,
-    readCounterOffset: null,
+    uidOffset: 0,           // non-null → sets bit 7 (UID in PICC payload)
+    readCounterOffset: 0,   // non-null → sets bit 6 (counter in PICC payload)
     piccDataOffset: PICC_OFFSET_IN_FILE,
     macInputOffset: MAC_INPUT_OFFSET_IN_FILE,
     macOffset: MAC_OFFSET_IN_FILE,
