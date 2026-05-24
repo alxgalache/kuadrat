@@ -412,9 +412,12 @@ function PublishProductPageContent() {
             }
         }
 
-        // Validate global image slots: first slot is required, rest optional.
+        // Validate global image slots. The first slot is required EXCEPT when
+        // the product is 'other' with named variations — in that mode each
+        // variation must carry its own image, and the global is optional.
         const filledGlobalSlots = imageSlots.filter(Boolean)
-        if (filledGlobalSlots.length === 0 || !imageSlots[0]) {
+        const globalImageRequired = !(productCategory === 'other' && hasVariations)
+        if (globalImageRequired && (filledGlobalSlots.length === 0 || !imageSlots[0])) {
             validationErrors.push({ field: 'images', message: 'La primera imagen del producto es obligatoria' })
         }
 
@@ -432,7 +435,10 @@ function PublishProductPageContent() {
                         if (!v.stock || isNaN(stock) || stock < 0) {
                             validationErrors.push({ field: `variations[${index}].stock`, message: `Variación ${index + 1}: El stock debe ser un número válido` })
                         }
-                        // NOTE: variation images are OPTIONAL (fallback to global product images).
+                        if (!v.imageSlots?.[0]) {
+                            const label = v.key?.trim() || String(index + 1)
+                            validationErrors.push({ field: `variations[${index}].images`, message: `La variación ${label} debe tener al menos una imagen` })
+                        }
                     })
                 }
             } else {
@@ -832,7 +838,7 @@ function PublishProductPageContent() {
                                                             </div>
 
                                                             <div className="space-y-2 pt-1">
-                                                                <p className="text-xs/5 text-gray-400">Imágenes (opcional, hasta {MAX_PRODUCT_IMAGES})</p>
+                                                                <p className="text-xs/5 text-gray-400">Imágenes (obligatoria al menos 1, hasta {MAX_PRODUCT_IMAGES})</p>
                                                                 <div className="flex flex-wrap items-start gap-3">
                                                                     {variation.imageSlots.map((slot, slotIdx) => (
                                                                         <div key={slotIdx} className="flex w-[68px] flex-col items-center gap-1">
@@ -957,7 +963,11 @@ function PublishProductPageContent() {
                                         <label className="block text-sm/6 font-medium text-gray-900">
                                             Imagen para el listado de productos
                                         </label>
-                                        <p className="text-xs/5 text-gray-500">Puedes añadir hasta {MAX_PRODUCT_IMAGES} imágenes. La primera es obligatoria.</p>
+                                        <p className="text-xs/5 text-gray-500">
+                                            {productCategory === 'other' && hasVariations
+                                                ? `Opcional cuando el producto tiene variaciones con imagen propia. Hasta ${MAX_PRODUCT_IMAGES} imágenes.`
+                                                : `Puedes añadir hasta ${MAX_PRODUCT_IMAGES} imágenes. La primera es obligatoria.`}
+                                        </p>
                                         <div className="space-y-3">
                                             {imageSlots.map((slot, slotIdx) => (
                                                 <div key={slotIdx}>

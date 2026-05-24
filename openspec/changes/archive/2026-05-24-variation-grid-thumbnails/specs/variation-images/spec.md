@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Variation image upload in publish form
 
 The publish form SHALL display a multi-image upload widget for each variation row when the seller enables "Este producto tiene variaciones". Each variation row SHALL contain: name input (`key`), stock input, and a multi-image uploader supporting 1..3 images. The first image slot of every variation is REQUIRED — submission SHALL be blocked while any active variation lacks an image in slot 0.
@@ -39,18 +41,6 @@ The helper text under each variation's image slots SHALL read `"Imágenes (oblig
 #### Scenario: Seller submits with every variation having at least one image
 - **WHEN** the seller enables variations, every variation has at least one image in slot 0, and the global image section is empty
 - **THEN** the form SHALL accept the submission and `POST /api/others` SHALL be called with zero files under `images` and one or more files under each `variation_<i>_images`
-
-### Requirement: Variation image validation
-
-Each variation image SHALL be validated with the same rules as the main product image: PNG, JPG, or WEBP format; maximum 10MB file size; minimum 600x600 pixel dimensions. Validation SHALL be enforced both client-side at upload time and server-side at submit time. Server-side validation errors SHALL identify the offending field as `variation_<i>_images[<j>]` where `<i>` is the variation index and `<j>` is the image slot index.
-
-#### Scenario: Variation image with invalid format
-- **WHEN** the seller uploads a non-PNG/JPG/WEBP file for a variation
-- **THEN** the system SHALL reject the upload and display an error message identifying the variation and image slot
-
-#### Scenario: Variation image too small
-- **WHEN** the seller uploads an image smaller than 600x600 pixels for a variation
-- **THEN** the system SHALL reject the upload and display an error message identifying the variation and image slot
 
 ### Requirement: Backend variation image storage
 
@@ -101,19 +91,7 @@ The product detail page SHALL display variation images inside the shared `Produc
 - **WHEN** a buyer selects a variation that has no images (legacy pre-rule product)
 - **THEN** the carousel SHALL show only the product's global images, starting at index 0
 
-### Requirement: Image file cleanup on hard delete
-
-When a product is hard-deleted, the system SHALL delete every `product_images` row associated with the product (`product_type='other', product_id=<id>`) and every `product_images` row associated with any of its variations (`product_type='other_var', product_id IN (<var ids>)`), and SHALL delete the corresponding files from `uploads/others/` (or the `others/` prefix in S3).
-
-#### Scenario: Hard delete product with variation images
-- **WHEN** an "others" product with global images and variation images is hard-deleted
-- **THEN** the system SHALL delete all `product_images` rows for that product and its variations
-- **AND** SHALL delete all corresponding files from `uploads/others/`
-- **AND** if a file deletion fails, the system SHALL log the error but not block the database deletion
-
-#### Scenario: Hard delete product without variation images
-- **WHEN** an "others" product with global images but no variation images is hard-deleted
-- **THEN** the system SHALL delete only the global-image `product_images` rows and their files
+## ADDED Requirements
 
 ### Requirement: Product grid surfaces variation thumbnails for others products with 2+ variations
 

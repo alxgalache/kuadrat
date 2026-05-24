@@ -9,7 +9,7 @@ const logger = require('../config/logger');
 const config = require('../config/env');
 const s3Service = require('../services/s3Service');
 const { sendNewProductNotificationEmail } = require('../services/emailService');
-const { attachProductImages } = require('../utils/productImages');
+const { attachProductImages, attachVariationThumbnails } = require('../utils/productImages');
 const { createBatch } = require('../utils/transaction');
 
 // Get all others products (public) with pagination and optional author filtering
@@ -60,6 +60,7 @@ const getAllOthersProducts = async (req, res, next) => {
     }
 
     await attachProductImages(products, 'other');
+    await attachVariationThumbnails(products);
 
     res.status(200).json({
       success: true,
@@ -276,22 +277,36 @@ const createOthersProduct = async (req, res, next) => {
       validationErrors.push({ field: 'variations', message: 'Debe proporcionar variaciones o stock global' });
     }
 
-    // Validate global product images (at least 1, max 3)
+    // Detect whether the seller declared named variations. When any variation
+    // has a non-null key, the product is in "variations mode" → per-variation
+    // image is required, global image is optional. Otherwise the legacy rule
+    // stands: global image required.
+    const hasNamedVariations = parsedVariations.some(
+      (v) => v.key != null && String(v.key).trim() !== '',
+    );
+
+    // Validate global product images (max 3 always; min 1 only when no named variations)
     const globalImageFiles = req.files?.['images'] || [];
-    if (globalImageFiles.length === 0) {
+    if (!hasNamedVariations && globalImageFiles.length === 0) {
       validationErrors.push({ field: 'images', message: 'El archivo de imagen es obligatorio' });
     } else if (globalImageFiles.length > 3) {
       validationErrors.push({ field: 'images', message: 'Se permiten como máximo 3 imágenes globales' });
     }
 
-    // Variation images are optional now: each variation may carry 0..3 images via
-    // `variation_<i>_images`. Cap at 3 per variation.
+    // Per-variation images: cap at 3; require ≥1 for each named variation.
     const variationImageFilesByIndex = parsedVariations.map((_, i) => req.files?.[`variation_${i}_images`] || []);
     variationImageFilesByIndex.forEach((files, i) => {
       if (files.length > 3) {
         validationErrors.push({
           field: `variation_${i}_images`,
           message: `Variación ${i + 1}: se permiten como máximo 3 imágenes`,
+        });
+      }
+      if (hasNamedVariations && parsedVariations[i]?.key != null && files.length === 0) {
+        const label = String(parsedVariations[i].key).trim() || String(i + 1);
+        validationErrors.push({
+          field: `variation_${i}_images[0]`,
+          message: `La variación ${label} debe tener al menos una imagen`,
         });
       }
     });
@@ -588,6 +603,7 @@ const getSellerOthersProducts = async (req, res, next) => {
 
     const products = result.rows;
     await attachProductImages(products, 'other');
+    await attachVariationThumbnails(products);
 
     // For each product, get variations
     for (const product of products) {
@@ -641,6 +657,7 @@ const getOthersProductsByAuthorSlug = async (req, res, next) => {
       args: [author.id],
     });
     await attachProductImages(productsResult.rows, 'other');
+    await attachVariationThumbnails(productsResult.rows);
 
     res.status(200).json({
       success: true,

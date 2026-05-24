@@ -187,20 +187,66 @@ describe('Multi-image product upload', () => {
       expect(getRes.body.product.variations[1].images).toHaveLength(1);
     });
 
-    test('accepts variations with zero images (optional)', async () => {
-      const variations = [{ key: 'Único', stock: 4 }];
+    test('anonymous variation (key=null) with global image succeeds, no variation image required', async () => {
+      const variations = [{ key: null, stock: 4 }];
       const res = await request(app)
         .post('/api/others')
         .set('Authorization', `Bearer ${sellerToken}`)
-        .field('name', `No Variation Image Others ${Date.now()}`)
+        .field('name', `Anonymous Variation Others ${Date.now()}`)
         .field('description', longDescription)
         .field('price', '50')
+        .field('weight', '500')
         .field('variations', JSON.stringify(variations))
         .field('can_copack', '1')
         .attach('images', pngBuf, 'main.png');
       expect(res.statusCode).toBe(201);
       createdOthersIds.push(res.body.product.id);
       expect(res.body.product.variations[0].images).toEqual([]);
+    });
+
+    test('named variation without image is rejected', async () => {
+      const variations = [
+        { key: 'A', stock: 1 },
+        { key: 'B', stock: 1 },
+      ];
+      const res = await request(app)
+        .post('/api/others')
+        .set('Authorization', `Bearer ${sellerToken}`)
+        .field('name', `Named No Image Others ${Date.now()}`)
+        .field('description', longDescription)
+        .field('price', '50')
+        .field('weight', '500')
+        .field('variations', JSON.stringify(variations))
+        .field('can_copack', '1')
+        .attach('images', pngBuf, 'g.png')
+        .attach('variation_0_images', pngBuf, 'v0.png');
+      expect(res.statusCode).toBe(400);
+      const fields = (res.body.errors || res.body.details || []).map((e) => e.field);
+      expect(fields).toContain('variation_1_images[0]');
+    });
+
+    test('named variations with images and zero globals succeeds', async () => {
+      const variations = [
+        { key: 'Rojo', stock: 5 },
+        { key: 'Azul', stock: 3 },
+      ];
+      const res = await request(app)
+        .post('/api/others')
+        .set('Authorization', `Bearer ${sellerToken}`)
+        .field('name', `Variations Only Others ${Date.now()}`)
+        .field('description', longDescription)
+        .field('price', '50')
+        .field('weight', '500')
+        .field('variations', JSON.stringify(variations))
+        .field('can_copack', '1')
+        .attach('variation_0_images', pngBuf, 'r.png')
+        .attach('variation_1_images', pngBuf, 'a.png');
+      expect(res.statusCode).toBe(201);
+      createdOthersIds.push(res.body.product.id);
+      expect(res.body.product.images).toEqual([]);
+      expect(res.body.product.variations).toHaveLength(2);
+      expect(res.body.product.variations[0].images).toHaveLength(1);
+      expect(res.body.product.variations[1].images).toHaveLength(1);
     });
 
     test('DELETE removes global + variation product_images', async () => {

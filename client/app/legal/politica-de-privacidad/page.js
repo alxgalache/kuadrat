@@ -30,7 +30,7 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-lg font-semibold text-gray-900">1. Responsable del Tratamiento</h2>
             <p className="mt-3">
-              El responsable del tratamiento de tus datos personales es 140d Galería de Arte.
+              El responsable del tratamiento de tus datos personales es 140d Galería de Arte S.L.
               Puedes contactarnos en cualquier momento a través de info@140d.art para ejercer
               tus derechos o resolver cualquier duda sobre el tratamiento de tus datos.
             </p>
