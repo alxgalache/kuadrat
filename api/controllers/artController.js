@@ -9,6 +9,7 @@ const logger = require('../config/logger');
 const config = require('../config/env');
 const s3Service = require('../services/s3Service');
 const { sendNewProductNotificationEmail } = require('../services/emailService');
+const { attachProductImages } = require('../utils/productImages');
 
 // Get all art products (public) with pagination and optional author filtering
 const getAllArtProducts = async (req, res, next) => {
@@ -47,6 +48,7 @@ const getAllArtProducts = async (req, res, next) => {
     // Check if there are more products
     const hasMore = result.rows.length > limit;
     const products = hasMore ? result.rows.slice(0, limit) : result.rows;
+    await attachProductImages(products, 'art');
 
     res.status(200).json({
       success: true,
@@ -104,9 +106,12 @@ const getArtProductById = async (req, res, next) => {
       throw new ApiError(404, 'Obra no encontrada', 'Obra no encontrada');
     }
 
+    const product = result.rows[0];
+    await attachProductImages([product], 'art');
+
     res.status(200).json({
       success: true,
-      product: result.rows[0],
+      product,
     });
   } catch (error) {
     next(error);
@@ -191,9 +196,12 @@ const createArtProduct = async (req, res, next) => {
       }
     }
 
-    // Validate image file
-    if (!req.file) {
-      validationErrors.push({ field: 'image', message: 'El archivo de imagen es obligatorio' });
+    // Validate image files (at least 1, max 3)
+    const imageFiles = req.files?.['images'] || [];
+    if (imageFiles.length === 0) {
+      validationErrors.push({ field: 'images', message: 'El archivo de imagen es obligatorio' });
+    } else if (imageFiles.length > 3) {
+      validationErrors.push({ field: 'images', message: 'Se permiten como máximo 3 imágenes' });
     }
 
     // If there are validation errors, throw them all at once
@@ -224,100 +232,131 @@ const createArtProduct = async (req, res, next) => {
       throw new ApiError(400, 'Ya existe una obra con este nombre. Por favor, elige un nombre diferente.', 'Nombre de obra duplicado');
     }
 
-    // File validation (additional checks beyond multer)
+    // Per-file validation (MIME + dimensions)
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
     const imageValidationErrors = [];
 
-    if (req.file) {
-      const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
-      if (!allowedMimeTypes.includes(req.file.mimetype)) {
-        imageValidationErrors.push({ field: 'image', message: 'Solo se permiten imágenes PNG, JPG y WEBP' });
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      const fieldName = `images[${i}]`;
+      if (!allowedMimeTypes.includes(file.mimetype)) {
+        imageValidationErrors.push({ field: fieldName, message: 'Solo se permiten imágenes PNG, JPG y WEBP' });
+        continue;
       }
-
-      // Validate image dimensions (>= 600x600)
-      let dimensions;
       try {
-        dimensions = imageSize(req.file.buffer);
-        if (!dimensions || dimensions.width < 600 || dimensions.height < 600) {
-          imageValidationErrors.push({ field: 'image', message: 'La imagen debe tener al menos 600x600 píxeles' });
+        const dims = imageSize(file.buffer);
+        if (!dims || dims.width < 600 || dims.height < 600) {
+          imageValidationErrors.push({ field: fieldName, message: 'La imagen debe tener al menos 600x600 píxeles' });
         }
       } catch (e) {
-        imageValidationErrors.push({ field: 'image', message: 'Archivo de imagen inválido' });
+        imageValidationErrors.push({ field: fieldName, message: 'Archivo de imagen inválido' });
       }
     }
 
-    // If there are image validation errors, throw them
     if (imageValidationErrors.length > 0) {
       throw new ValidationError(imageValidationErrors);
     }
 
-    // Determine file extension based on mime type
-    let fileExtension;
-    switch (req.file.mimetype) {
-      case 'image/png':
-        fileExtension = 'png';
-        break;
-      case 'image/jpeg':
-        fileExtension = 'jpg';
-        break;
-      case 'image/webp':
-        fileExtension = 'webp';
-        break;
-      default:
+    // Map mime type to file extension
+    const extFromMime = (mt) => {
+      switch (mt) {
+        case 'image/png': return 'png';
+        case 'image/jpeg': return 'jpg';
+        case 'image/webp': return 'webp';
+        default: return null;
+      }
+    };
+
+    // Generate unique basenames for each image
+    const fileEntries = imageFiles.map((file) => {
+      const ext = extFromMime(file.mimetype);
+      if (!ext) {
         throw new ApiError(400, 'Formato de imagen no soportado', 'Imagen inválida');
-    }
+      }
+      return { file, basename: `${randomUUID()}.${ext}` };
+    });
 
-    // Generate unique basename (uuid.ext) and ensure uniqueness in DB
-    let basename;
-    while (true) {
-      basename = `${randomUUID()}.${fileExtension}`;
-      const existing = await db.execute({
-        sql: 'SELECT id FROM art WHERE basename = ?',
-        args: [basename],
+    // Write all files to storage; track written ones for cleanup on later failure
+    const writtenBasenames = [];
+    try {
+      if (config.useS3) {
+        for (const entry of fileEntries) {
+          await s3Service.uploadFile(`art/${entry.basename}`, entry.file.buffer, entry.file.mimetype);
+          writtenBasenames.push(entry.basename);
+        }
+      } else {
+        await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
+        for (const entry of fileEntries) {
+          await fs.promises.writeFile(path.join(UPLOADS_DIR, entry.basename), entry.file.buffer);
+          writtenBasenames.push(entry.basename);
+        }
+      }
+
+      // Prepare values
+      const weightValue = weight ? parseInt(weight, 10) : null;
+      const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
+      const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
+      const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
+
+      // Insert the art row first (we need its id for product_images)
+      const insertResult = await db.execute({
+        sql: `
+          INSERT INTO art (seller_id, name, description, price, type, slug, weight, dimensions, for_auction, ai_generated)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        args: [seller_id, name, description, priceNum, type, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal],
       });
-      if (existing.rows.length === 0) break;
+
+      const artId = insertResult.lastInsertRowid;
+
+      // Insert product_images rows in a batch (atomic with respect to each other)
+      const { createBatch } = require('../utils/transaction');
+      const batch = createBatch();
+      fileEntries.forEach((entry, i) => {
+        batch.add(
+          'INSERT INTO product_images (product_type, product_id, basename, position) VALUES (?, ?, ?, ?)',
+          ['art', artId, entry.basename, i],
+        );
+      });
+      await batch.execute();
+
+      // Fetch the created product and attach images
+      const productResult = await db.execute({
+        sql: 'SELECT * FROM art WHERE id = ?',
+        args: [artId],
+      });
+      const product = productResult.rows[0];
+      await attachProductImages([product], 'art');
+
+      // Notify admin about new product (fire-and-forget)
+      sendNewProductNotificationEmail({
+        sellerName: req.user.full_name,
+        productName: name,
+        productType: 'art',
+        productId: artId,
+      }).catch(err => logger.error({ err }, 'Failed to send new product notification email'));
+
+      res.status(201).json({
+        success: true,
+        product,
+      });
+    } catch (dbError) {
+      // Clean up any files written so far
+      for (const written of writtenBasenames) {
+        if (config.useS3) {
+          await s3Service.deleteFile(`art/${written}`).catch((err) =>
+            logger.error({ err, basename: written }, 'Failed to clean up art image file after DB error'),
+          );
+        } else {
+          try {
+            await fs.promises.unlink(path.join(UPLOADS_DIR, written));
+          } catch (unlinkErr) {
+            logger.error({ err: unlinkErr, basename: written }, 'Failed to clean up art image file after DB error');
+          }
+        }
+      }
+      throw dbError;
     }
-
-    // Store image in S3 or local disk
-    if (config.useS3) {
-      await s3Service.uploadFile(`art/${basename}`, req.file.buffer, req.file.mimetype);
-    } else {
-      await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
-      await fs.promises.writeFile(path.join(UPLOADS_DIR, basename), req.file.buffer);
-    }
-
-    // Prepare weight and dimensions values
-    const weightValue = weight ? parseInt(weight, 10) : null;
-    const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
-
-    // Insert art product
-    const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
-    const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
-    const result = await db.execute({
-      sql: `
-        INSERT INTO art (seller_id, name, description, price, type, basename, slug, weight, dimensions, for_auction, ai_generated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [seller_id, name, description, priceNum, type, basename, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal],
-    });
-
-    // Get the created product
-    const productResult = await db.execute({
-      sql: 'SELECT * FROM art WHERE id = ?',
-      args: [result.lastInsertRowid],
-    });
-
-    // Notify admin about new product (fire-and-forget)
-    sendNewProductNotificationEmail({
-      sellerName: req.user.full_name,
-      productName: name,
-      productType: 'art',
-      productId: result.lastInsertRowid,
-    }).catch(err => logger.error({ err }, 'Failed to send new product notification email'));
-
-    res.status(201).json({
-      success: true,
-      product: productResult.rows[0],
-    });
   } catch (error) {
     next(error);
   }
@@ -366,24 +405,37 @@ const deleteArtProduct = async (req, res, next) => {
       throw new ApiError(400, 'No se puede eliminar una obra vendida', 'No se puede eliminar la obra');
     }
 
-    // Delete image from S3 or disk
-    if (product.basename) {
-      if (config.useS3) {
-        await s3Service.deleteFile(`art/${product.basename}`);
-      } else {
-        try {
-          await fs.promises.unlink(path.join(UPLOADS_DIR, product.basename));
-        } catch (err) {
-          logger.error({ err, basename: product.basename }, 'Failed to delete art image file');
-        }
-      }
-    }
+    // Collect all image basenames associated with this art product
+    const imagesResult = await db.execute({
+      sql: 'SELECT basename FROM product_images WHERE product_type = ? AND product_id = ?',
+      args: ['art', id],
+    });
+    const basenames = imagesResult.rows.map((r) => r.basename);
 
-    // Delete product
+    // Delete product_images rows first, then the art row
+    await db.execute({
+      sql: 'DELETE FROM product_images WHERE product_type = ? AND product_id = ?',
+      args: ['art', id],
+    });
     await db.execute({
       sql: 'DELETE FROM art WHERE id = ?',
       args: [id],
     });
+
+    // Delete image files (best-effort; log failures, do not abort)
+    for (const basename of basenames) {
+      if (config.useS3) {
+        await s3Service.deleteFile(`art/${basename}`).catch((err) =>
+          logger.error({ err, basename }, 'Failed to delete art image file'),
+        );
+      } else {
+        try {
+          await fs.promises.unlink(path.join(UPLOADS_DIR, basename));
+        } catch (err) {
+          logger.error({ err, basename }, 'Failed to delete art image file');
+        }
+      }
+    }
 
     res.status(204).send();
   } catch (error) {
@@ -400,6 +452,7 @@ const getSellerArtProducts = async (req, res, next) => {
       sql: 'SELECT * FROM art WHERE seller_id = ? AND visible = 1 AND removed = 0 ORDER BY created_at DESC',
       args: [seller_id],
     });
+    await attachProductImages(result.rows, 'art');
 
     res.status(200).json({
       success: true,
@@ -442,6 +495,7 @@ const getArtProductsByAuthorSlug = async (req, res, next) => {
       `,
       args: [author.id],
     });
+    await attachProductImages(productsResult.rows, 'art');
 
     res.status(200).json({
       success: true,

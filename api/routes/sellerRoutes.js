@@ -102,7 +102,6 @@ router.get('/products', async (req, res) => {
               name,
               description,
               price,
-              basename,
               slug,
               visible,
               is_sold,
@@ -115,6 +114,8 @@ router.get('/products', async (req, res) => {
             ORDER BY created_at DESC`,
       args: [sellerId]
     });
+    const { attachProductImages } = require('../utils/productImages');
+    await attachProductImages(artResult.rows, 'art');
 
     // Get others products with their variations
     const othersResult = await db.execute({
@@ -123,7 +124,6 @@ router.get('/products', async (req, res) => {
               o.name,
               o.description,
               o.price,
-              o.basename,
               o.slug,
               o.visible,
               o.is_sold,
@@ -136,6 +136,7 @@ router.get('/products', async (req, res) => {
             ORDER BY o.created_at DESC`,
       args: [sellerId]
     });
+    await attachProductImages(othersResult.rows, 'other');
 
     // For each 'others' product, get its variations
     const othersWithVariations = await Promise.all(

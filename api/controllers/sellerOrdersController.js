@@ -27,7 +27,7 @@ const getSellerOrders = async (req, res, next) => {
              aoi.status, aoi.price_at_purchase, aoi.tracking, aoi.sendcloud_shipment_id,
              aoi.sendcloud_tracking_url, aoi.sendcloud_carrier_code,
              NULL as variant_id, NULL as variant_name,
-             a.name as product_name, a.basename as product_basename,
+             a.name as product_name, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS product_basename,
              o.created_at as order_created_at,
              o.delivery_address_line_1, o.delivery_address_line_2,
              o.delivery_city, o.delivery_postal_code, o.delivery_country
@@ -46,7 +46,7 @@ const getSellerOrders = async (req, res, next) => {
              CASE WHEN ov.key IS NOT NULL AND ov.value IS NOT NULL AND ov.value != ''
                   THEN ov.key || ': ' || ov.value
                   ELSE ov.key END as variant_name,
-             ot.name as product_name, ot.basename as product_basename,
+             ot.name as product_name, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = ot.id ORDER BY position ASC, id ASC LIMIT 1) AS product_basename,
              o.created_at as order_created_at,
              o.delivery_address_line_1, o.delivery_address_line_2,
              o.delivery_city, o.delivery_postal_code, o.delivery_country
@@ -560,7 +560,7 @@ const getSellerShipmentsAdmin = async (req, res, next) => {
              aoi.status, aoi.price_at_purchase, aoi.tracking, aoi.sendcloud_shipment_id,
              aoi.sendcloud_tracking_url, aoi.sendcloud_carrier_code,
              NULL as variant_id, NULL as variant_name,
-             a.name as product_name, a.basename as product_basename,
+             a.name as product_name, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS product_basename,
              o.created_at as order_created_at,
              o.delivery_address_line_1, o.delivery_address_line_2,
              o.delivery_city, o.delivery_postal_code, o.delivery_country
@@ -579,7 +579,7 @@ const getSellerShipmentsAdmin = async (req, res, next) => {
              CASE WHEN ov.key IS NOT NULL AND ov.value IS NOT NULL AND ov.value != ''
                   THEN ov.key || ': ' || ov.value
                   ELSE ov.key END as variant_name,
-             ot.name as product_name, ot.basename as product_basename,
+             ot.name as product_name, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = ot.id ORDER BY position ASC, id ASC LIMIT 1) AS product_basename,
              o.created_at as order_created_at,
              o.delivery_address_line_1, o.delivery_address_line_2,
              o.delivery_city, o.delivery_postal_code, o.delivery_country

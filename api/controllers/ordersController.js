@@ -613,7 +613,7 @@ const placeOrder = async (req, res, next) => {
           aoi.*,
           a.name,
           a.type,
-          a.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           a.seller_id,
           'art' as product_type
         FROM art_order_items aoi
@@ -628,7 +628,7 @@ const placeOrder = async (req, res, next) => {
         SELECT
           ooi.*,
           o.name,
-          o.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           o.seller_id,
           ov.key as variant_key,
           'other' as product_type
@@ -720,7 +720,7 @@ const getUserOrders = async (req, res, next) => {
             aoi.*,
             a.name,
             a.type,
-            a.basename,
+            (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
             'art' as product_type
           FROM art_order_items aoi
           LEFT JOIN art a ON aoi.art_id = a.id
@@ -735,7 +735,7 @@ const getUserOrders = async (req, res, next) => {
           SELECT
             ooi.*,
             o.name,
-            o.basename,
+            (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
             ov.key as variant_key,
             'other' as product_type
           FROM other_order_items ooi
@@ -957,7 +957,7 @@ const getOrderByToken = async (req, res, next) => {
           a.name,
           a.description,
           a.type,
-          a.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           a.seller_id,
           u.full_name as seller_name,
           u.email as seller_email,
@@ -983,7 +983,7 @@ const getOrderByToken = async (req, res, next) => {
           ooi.*,
           o.name,
           o.description,
-          o.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           o.seller_id,
           ov.key as variant_key,
           u.full_name as seller_name,
@@ -1041,13 +1041,13 @@ const contactSellerForOrder = async (req, res, next) => {
       sql: `
         SELECT * FROM (
           SELECT aoi.id, aoi.order_id, aoi.art_id as product_id, aoi.price_at_purchase, aoi.shipping_cost, aoi.shipping_method_name, aoi.shipping_method_type,
-                 a.name, a.description, a.type, a.basename, a.seller_id, 'art' as product_type
+                 a.name, a.description, a.type, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, a.seller_id, 'art' as product_type
           FROM art_order_items aoi
           LEFT JOIN art a ON aoi.art_id = a.id
           WHERE aoi.order_id = ?
           UNION ALL
           SELECT ooi.id, ooi.order_id, ooi.other_id as product_id, ooi.price_at_purchase, ooi.shipping_cost, ooi.shipping_method_name, ooi.shipping_method_type,
-                 o.name, o.description, NULL as type, o.basename, o.seller_id, 'other' as product_type
+                 o.name, o.description, NULL as type, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, o.seller_id, 'other' as product_type
           FROM other_order_items ooi
           LEFT JOIN others o ON ooi.other_id = o.id
           WHERE ooi.order_id = ?
@@ -1139,7 +1139,7 @@ const getOrderById = async (req, res, next) => {
           a.name,
           a.description,
           a.type,
-          a.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
@@ -1155,7 +1155,7 @@ const getOrderById = async (req, res, next) => {
           ooi.*,
           o.name,
           o.description,
-          o.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           ov.key as variant_key,
           'other' as product_type
         FROM other_order_items ooi
@@ -1260,7 +1260,7 @@ const getAllOrdersAdmin = async (req, res, next) => {
             aoi.*,
             a.name,
             a.type,
-            a.basename,
+            (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
             a.seller_id,
             u.full_name as seller_name,
             'art' as product_type
@@ -1277,7 +1277,7 @@ const getAllOrdersAdmin = async (req, res, next) => {
           SELECT
             ooi.*,
             o.name,
-            o.basename,
+            (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
             o.seller_id,
             ov.key as variant_key,
             u.full_name as seller_name,
@@ -1337,7 +1337,7 @@ const getOrderByIdAdmin = async (req, res, next) => {
           a.name,
           a.description,
           a.type,
-          a.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           a.seller_id,
           u.full_name as seller_name,
           u.email as seller_email,
@@ -1357,7 +1357,7 @@ const getOrderByIdAdmin = async (req, res, next) => {
           ooi.*,
           o.name,
           o.description,
-          o.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           o.seller_id,
           ov.key as variant_key,
           u.full_name as seller_name,
@@ -1532,7 +1532,7 @@ const updateItemTracking = async (req, res, next) => {
           a.name,
           a.description,
           a.type,
-          a.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
@@ -1548,7 +1548,7 @@ const updateItemTracking = async (req, res, next) => {
           ooi.*,
           o.name,
           o.description,
-          o.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           ov.key as variant_key,
           'other' as product_type
         FROM other_order_items ooi
@@ -1717,7 +1717,7 @@ const updateItemStatus = async (req, res, next) => {
           a.name,
           a.description,
           a.type,
-          a.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
@@ -1733,7 +1733,7 @@ const updateItemStatus = async (req, res, next) => {
           ooi.*,
           o.name,
           o.description,
-          o.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           ov.key as variant_key,
           'other' as product_type
         FROM other_order_items ooi
@@ -1937,7 +1937,7 @@ const updateOrderStatus = async (req, res, next) => {
           a.name,
           a.description,
           a.type,
-          a.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
@@ -1948,7 +1948,7 @@ const updateOrderStatus = async (req, res, next) => {
           a.name,
           a.description,
           a.type,
-          a.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
@@ -1964,7 +1964,7 @@ const updateOrderStatus = async (req, res, next) => {
           ooi.*,
           o.name,
           o.description,
-          o.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           ov.key as variant_key,
           'other' as product_type
         FROM other_order_items ooi
@@ -1976,7 +1976,7 @@ const updateOrderStatus = async (req, res, next) => {
           ooi.*,
           o.name,
           o.description,
-          o.basename,
+          (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
           ov.key as variant_key,
           'other' as product_type
         FROM other_order_items ooi
@@ -2063,7 +2063,7 @@ const getOrderWithAllItems = async (orderId) => {
     sql: `
       SELECT
         aoi.*,
-        a.name, a.description, a.type, a.basename, a.seller_id,
+        a.name, a.description, a.type, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, a.seller_id,
         u.full_name as seller_name, u.email as seller_email,
         u.email_contact as seller_email_contact,
         u.pickup_address as seller_pickup_address,
@@ -2084,7 +2084,7 @@ const getOrderWithAllItems = async (orderId) => {
     sql: `
       SELECT
         ooi.*,
-        o.name, o.description, o.basename, o.seller_id,
+        o.name, o.description, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, o.seller_id,
         ov.key as variant_key,
         u.full_name as seller_name, u.email as seller_email,
         u.email_contact as seller_email_contact,
@@ -2864,7 +2864,7 @@ async function confirmOrderPayment(req, res, next) {
       const artOrderItemsResult = await db.execute({
         sql: `
           SELECT
-            aoi.*, a.name, a.type, a.basename, a.seller_id, 'art' as product_type
+            aoi.*, a.name, a.type, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, a.seller_id, 'art' as product_type
           FROM art_order_items aoi
           LEFT JOIN art a ON aoi.art_id = a.id
           WHERE aoi.order_id = ?
@@ -2874,7 +2874,7 @@ async function confirmOrderPayment(req, res, next) {
       const othersOrderItemsResult = await db.execute({
         sql: `
           SELECT
-            ooi.*, o.name, o.basename, o.seller_id, ov.key as variant_key, 'other' as product_type
+            ooi.*, o.name, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, o.seller_id, ov.key as variant_key, 'other' as product_type
           FROM other_order_items ooi
           LEFT JOIN others o ON ooi.other_id = o.id
           LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id

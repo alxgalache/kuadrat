@@ -191,6 +191,13 @@ export default function Navbar() {
                       >
                         Pagos
                       </Link>
+                      <Link
+                        href="/admin/coa"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        CoA
+                      </Link>
                       <button
                         onClick={() => {
                           close()
@@ -469,6 +476,13 @@ export default function Navbar() {
                       className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                     >
                       Pagos
+                    </Link>
+                    <Link
+                      href="/admin/coa"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      CoA
                     </Link>
                   </>
                 ) : isSeller ? (

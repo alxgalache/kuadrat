@@ -181,6 +181,18 @@ Three pivot tables use a **polymorphic reference pattern**:
 * `postal_code_id` — set only when `ref_type = 'postal_code'`
 * `ref_value` — province name or country code otherwise
 
+## Product Images (Polymorphic, up to 3 per entity)
+
+Product images live in a single polymorphic table `product_images`:
+* `product_type` — `'art'` | `'other'` | `'other_var'`
+* `product_id` — the FK into `art`, `others`, or `other_vars` respectively
+* `basename` — globally unique UUID-based filename; the file lives under `art/` for `'art'` and under `others/` for both `'other'` and `'other_var'`
+* `position` — 0..2 ordering within each `(product_type, product_id)` group
+
+Read path: API controllers select product rows WITHOUT `basename` and then call `attachProductImages(rows, productType)` from `api/utils/productImages.js` to hydrate each row with `images: [...]` and a derived `thumbnail_basename`. For SQL paths that snapshot a single basename (orders, payments, emails), use the inline subquery `(SELECT basename FROM product_images WHERE product_type = ? AND product_id = X.id ORDER BY position ASC, id ASC LIMIT 1) AS basename`.
+
+The cap of 3 images per `(product_type, product_id)` is enforced at the upload layer (multer maxCount + controller validation), not at the DB level. The `art`, `others`, and `other_vars` tables no longer carry a `basename` column.
+
 ## Environment Variables
 
 All environment variables are validated at startup via `api/config/env.js`. See `api/.env.example` for full documentation. Key groups:

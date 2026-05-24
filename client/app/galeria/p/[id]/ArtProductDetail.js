@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
-import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { artAPI, ordersAPI, authAPI, authorsAPI, getArtImageUrl } from '@/lib/api'
+import { artAPI, ordersAPI, authAPI, authorsAPI } from '@/lib/api'
 import { useCart } from '@/contexts/CartContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
@@ -12,6 +11,7 @@ import AuthorModal from '@/components/AuthorModal'
 import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import ProductImageCarousel from '@/components/ProductImageCarousel'
 import { SENDCLOUD_ENABLED_ART } from '@/lib/constants'
 
 export default function ArtProductDetail({ params }) {
@@ -91,7 +91,7 @@ export default function ArtProductDetail({ params }) {
         productType: 'art',
         name: product.name,
         price: product.price,
-        basename: product.basename,
+        basename: product.images?.[0]?.basename || product.thumbnail_basename || null,
         slug: product.slug,
         sellerId: product.seller_id,
         sellerName: product.seller_full_name,
@@ -117,7 +117,7 @@ export default function ArtProductDetail({ params }) {
         productType: 'art',
         name: product.name,
         price: product.price,
-        basename: product.basename,
+        basename: product.images?.[0]?.basename || product.thumbnail_basename || null,
         slug: product.slug,
         sellerId: product.seller_id,
         sellerName: product.seller_full_name,
@@ -199,17 +199,13 @@ export default function ArtProductDetail({ params }) {
 
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:max-w-7xl lg:px-8">
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
-          {/* Image */}
-          <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
-            <Image
-              alt={product.name}
-              src={getArtImageUrl(product.basename)}
-              fill
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              className="object-cover"
-              priority
-            />
-          </div>
+          {/* Image carousel */}
+          <ProductImageCarousel
+            images={product.images || []}
+            imageType="art"
+            name={product.name}
+            priority
+          />
 
           {/* Product info */}
           <div className="mt-10 px-4 sm:mt-16 sm:px-0 lg:mt-0">

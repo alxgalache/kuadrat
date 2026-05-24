@@ -81,7 +81,7 @@ const verifyCoa = async (req, res, next) => {
               a.name              AS art_name,
               a.slug              AS art_slug,
               a.description       AS art_description,
-              a.basename          AS art_basename,
+              (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS art_basename,
               a.type              AS art_type,
               a.dimensions        AS art_dimensions,
               u.full_name         AS artist_name

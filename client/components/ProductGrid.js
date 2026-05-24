@@ -12,17 +12,21 @@ export default function ProductGrid({ products, isFading, getImageUrl, baseRoute
           role="list"
           className="px-6 grid grid-cols-2 gap-4 sm:px-6 sm:gap-8 lg:px-0 lg:grid-cols-4"
         >
-          {products.map((product) => (
+          {products.map((product) => {
+            const thumb = product.thumbnail_basename || product.images?.[0]?.basename
+            return (
             <li key={product.id} className="inline-flex w-full flex-col text-center">
               <div className="group relative">
                 <div className="aspect-square w-full rounded-md bg-gray-200 relative overflow-hidden">
-                  <Image
-                    alt={product.name}
-                    src={getImageUrl(product.basename)}
-                    fill
-                    className="object-cover group-hover:opacity-75"
-                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                  />
+                  {thumb && (
+                    <Image
+                      alt={product.name}
+                      src={getImageUrl(thumb)}
+                      fill
+                      className="object-cover group-hover:opacity-75"
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                    />
+                  )}
                 </div>
                 <div className="mt-6">
                   <p className="text-sm text-gray-500">{product.seller_full_name}</p>
@@ -36,7 +40,8 @@ export default function ProductGrid({ products, isFading, getImageUrl, baseRoute
                 </div>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       </div>
     </div>

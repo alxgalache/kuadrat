@@ -777,6 +777,34 @@ export const adminAPI = {
     },
   },
 
+  // CoA / NFC tag management
+  coa: {
+    list: async ({ page = 1, limit = 20, status, art_id } = {}) => {
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('limit', String(limit));
+      if (status) params.set('status', status);
+      if (art_id !== undefined && art_id !== null && art_id !== '') {
+        params.set('art_id', String(art_id));
+      }
+      return apiRequest(`/admin/coa/tags?${params.toString()}`);
+    },
+
+    getByUid: async (uid, { events_limit = 50 } = {}) => {
+      const params = new URLSearchParams({ events_limit: String(events_limit) });
+      return apiRequest(`/admin/coa/tags/${encodeURIComponent(uid)}?${params.toString()}`);
+    },
+
+    updateStatus: async (uid, { status, notes } = {}) => {
+      const body = { status };
+      if (notes !== undefined && notes !== null && notes !== '') body.notes = notes;
+      return apiRequest(`/admin/coa/tags/${encodeURIComponent(uid)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+    },
+  },
+
   // Orders management
   orders: {
     getAll: async (params = {}) => {

@@ -42,10 +42,12 @@ function formatDateTimeRange(startStr, endStr) {
 }
 
 function getImageUrl(product) {
+  const basename = product.thumbnail_basename || product.images?.[0]?.basename || product.basename
+  if (!basename) return null
   if (product.product_type === 'art') {
-    return getArtImageUrl(product.basename)
+    return getArtImageUrl(basename)
   }
-  return getOthersImageUrl(product.basename)
+  return getOthersImageUrl(basename)
 }
 
 function stripHtmlTags(html) {
@@ -272,20 +274,23 @@ export default function AuctionDetail({ params }) {
           {/* Column 1: Product image */}
           <div className="lg:col-span-3">
             <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-100 relative">
-              {currentProduct?.basename ? (
-                <Image
-                  src={getImageUrl(currentProduct)}
-                  alt={currentProduct.name}
-                  fill
-                  priority
-                  className={currentProduct.product_type === 'other' ? 'object-cover' : 'object-contain'}
-                  sizes="(max-width: 1024px) 100vw, 25vw"
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-gray-400 text-sm">
-                  Sin imagen
-                </div>
-              )}
+              {(() => {
+                const url = currentProduct ? getImageUrl(currentProduct) : null
+                return url ? (
+                  <Image
+                    src={url}
+                    alt={currentProduct.name}
+                    fill
+                    priority
+                    className={currentProduct.product_type === 'other' ? 'object-cover' : 'object-contain'}
+                    sizes="(max-width: 1024px) 100vw, 25vw"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-gray-400 text-sm">
+                    Sin imagen
+                  </div>
+                )
+              })()}
             </div>
           </div>
 

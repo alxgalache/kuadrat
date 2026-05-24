@@ -9,6 +9,8 @@ const logger = require('../config/logger');
 const config = require('../config/env');
 const s3Service = require('../services/s3Service');
 const { sendNewProductNotificationEmail } = require('../services/emailService');
+const { attachProductImages } = require('../utils/productImages');
+const { createBatch } = require('../utils/transaction');
 
 // Get all others products (public) with pagination and optional author filtering
 const getAllOthersProducts = async (req, res, next) => {
@@ -56,6 +58,8 @@ const getAllOthersProducts = async (req, res, next) => {
       });
       product.stock = stockResult.rows[0]?.total_stock || 0;
     }
+
+    await attachProductImages(products, 'other');
 
     res.status(200).json({
       success: true,
@@ -114,12 +118,14 @@ const getOthersProductById = async (req, res, next) => {
     }
 
     const product = result.rows[0];
+    await attachProductImages([product], 'other');
 
     // Get all variations for this product
     const variationsResult = await db.execute({
       sql: 'SELECT * FROM other_vars WHERE other_id = ? ORDER BY id ASC',
       args: [product.id],
     });
+    await attachProductImages(variationsResult.rows, 'other_var');
 
     product.variations = variationsResult.rows;
 
@@ -270,23 +276,25 @@ const createOthersProduct = async (req, res, next) => {
       validationErrors.push({ field: 'variations', message: 'Debe proporcionar variaciones o stock global' });
     }
 
-    // Validate main image file (always required)
-    const mainImageFile = req.files?.['image']?.[0];
-    if (!mainImageFile) {
-      validationErrors.push({ field: 'image', message: 'El archivo de imagen es obligatorio' });
+    // Validate global product images (at least 1, max 3)
+    const globalImageFiles = req.files?.['images'] || [];
+    if (globalImageFiles.length === 0) {
+      validationErrors.push({ field: 'images', message: 'El archivo de imagen es obligatorio' });
+    } else if (globalImageFiles.length > 3) {
+      validationErrors.push({ field: 'images', message: 'Se permiten como máximo 3 imágenes globales' });
     }
 
-    // Check if variations have named keys (i.e. real variations, not global stock)
-    const hasNamedVariations = parsedVariations.some(v => v.key !== null);
-    const variationImageFiles = req.files?.['variation_images'] || [];
-
-    // Validate variation images: required when variations have named keys
-    if (hasNamedVariations && variationImageFiles.length !== parsedVariations.length) {
-      validationErrors.push({
-        field: 'variation_images',
-        message: `Se requiere una imagen por cada variación (${parsedVariations.length} variaciones, ${variationImageFiles.length} imágenes proporcionadas)`,
-      });
-    }
+    // Variation images are optional now: each variation may carry 0..3 images via
+    // `variation_<i>_images`. Cap at 3 per variation.
+    const variationImageFilesByIndex = parsedVariations.map((_, i) => req.files?.[`variation_${i}_images`] || []);
+    variationImageFilesByIndex.forEach((files, i) => {
+      if (files.length > 3) {
+        validationErrors.push({
+          field: `variation_${i}_images`,
+          message: `Variación ${i + 1}: se permiten como máximo 3 imágenes`,
+        });
+      }
+    });
 
     // If there are validation errors, throw them all at once
     if (validationErrors.length > 0) {
@@ -316,93 +324,109 @@ const createOthersProduct = async (req, res, next) => {
       throw new ApiError(400, 'Ya existe un producto con este nombre. Por favor, elige un nombre diferente.', 'Nombre de producto duplicado');
     }
 
-    // Validate main image file content (type + dimensions)
-    const imageValidationErrors = validateImageFile(mainImageFile, 'image');
-
-    // Validate each variation image file
-    for (let i = 0; i < variationImageFiles.length; i++) {
-      const varErrors = validateImageFile(variationImageFiles[i], `variation_images[${i}]`);
-      imageValidationErrors.push(...varErrors);
-    }
+    // Per-file validation (MIME + dimensions) for global and variation images
+    const imageValidationErrors = [];
+    globalImageFiles.forEach((file, i) => {
+      imageValidationErrors.push(...validateImageFile(file, `images[${i}]`));
+    });
+    variationImageFilesByIndex.forEach((files, varIdx) => {
+      files.forEach((file, slotIdx) => {
+        imageValidationErrors.push(...validateImageFile(file, `variation_${varIdx}_images[${slotIdx}]`));
+      });
+    });
 
     if (imageValidationErrors.length > 0) {
       throw new ValidationError(imageValidationErrors);
     }
 
-    // Generate basenames and write all image files
+    // Pre-generate basenames so we can roll back files cleanly on error
+    const globalEntries = globalImageFiles.map((file) => ({
+      file,
+      basename: generateUniqueBasename(file.mimetype),
+    }));
+    const variationEntriesByIndex = variationImageFilesByIndex.map((files) =>
+      files.map((file) => ({ file, basename: generateUniqueBasename(file.mimetype) })),
+    );
+
+    // Write all files to storage; track for cleanup on later failure
     const writtenFiles = [];
     try {
-      // Main product image
-      const mainBasename = generateUniqueBasename(mainImageFile.mimetype);
-      if (config.useS3) {
-        await s3Service.uploadFile(`others/${mainBasename}`, mainImageFile.buffer, mainImageFile.mimetype);
-      } else {
+      if (!config.useS3) {
         await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
-        await fs.promises.writeFile(path.join(UPLOADS_DIR, mainBasename), mainImageFile.buffer);
       }
-      writtenFiles.push(mainBasename);
-
-      // Variation images
-      const variationBasenames = [];
-      for (const varFile of variationImageFiles) {
-        const varBasename = generateUniqueBasename(varFile.mimetype);
+      const writeOne = async ({ file, basename }) => {
         if (config.useS3) {
-          await s3Service.uploadFile(`others/${varBasename}`, varFile.buffer, varFile.mimetype);
+          await s3Service.uploadFile(`others/${basename}`, file.buffer, file.mimetype);
         } else {
-          await fs.promises.writeFile(path.join(UPLOADS_DIR, varBasename), varFile.buffer);
+          await fs.promises.writeFile(path.join(UPLOADS_DIR, basename), file.buffer);
         }
-        writtenFiles.push(varBasename);
-        variationBasenames.push(varBasename);
+        writtenFiles.push(basename);
+      };
+      for (const entry of globalEntries) await writeOne(entry);
+      for (const list of variationEntriesByIndex) {
+        for (const entry of list) await writeOne(entry);
       }
 
-      // Prepare weight and dimensions values
+      // Prepare values
       const weightValue = weight ? parseInt(weight, 10) : null;
       const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
-
-      // Insert others product
       const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
       const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
       const canCopackVal = can_copack === '0' || can_copack === 0 || can_copack === false ? 0 : 1;
-      const result = await db.execute({
+
+      // Insert the others row to get its id
+      const insertResult = await db.execute({
         sql: `
-          INSERT INTO others (seller_id, name, description, price, basename, slug, weight, dimensions, for_auction, ai_generated, can_copack)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO others (seller_id, name, description, price, slug, weight, dimensions, for_auction, ai_generated, can_copack)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
-        args: [seller_id, name, description, priceNum, mainBasename, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal, canCopackVal],
+        args: [seller_id, name, description, priceNum, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal, canCopackVal],
       });
+      const productId = insertResult.lastInsertRowid;
 
-      const productId = result.lastInsertRowid;
-
-      // Insert variations with their basenames
+      // Insert variations one-by-one to capture each id, then batch insert their images
+      const variationIds = [];
       for (let i = 0; i < parsedVariations.length; i++) {
         const variation = parsedVariations[i];
-        const varBasename = variationBasenames[i] || null;
-        await db.execute({
-          sql: `
-            INSERT INTO other_vars (other_id, key, stock, basename)
-            VALUES (?, ?, ?, ?)
-          `,
-          args: [
-            productId,
-            variation.key || null,
-            parseInt(variation.stock, 10),
-            varBasename,
-          ],
+        const varInsert = await db.execute({
+          sql: `INSERT INTO other_vars (other_id, key, stock) VALUES (?, ?, ?)`,
+          args: [productId, variation.key || null, parseInt(variation.stock, 10)],
         });
+        variationIds.push(varInsert.lastInsertRowid);
       }
 
-      // Get the created product with variations
+      // Batch insert all product_images rows: globals + per-variation images
+      const batch = createBatch();
+      globalEntries.forEach((entry, i) => {
+        batch.add(
+          'INSERT INTO product_images (product_type, product_id, basename, position) VALUES (?, ?, ?, ?)',
+          ['other', productId, entry.basename, i],
+        );
+      });
+      variationEntriesByIndex.forEach((list, varIdx) => {
+        const varId = variationIds[varIdx];
+        list.forEach((entry, slotIdx) => {
+          batch.add(
+            'INSERT INTO product_images (product_type, product_id, basename, position) VALUES (?, ?, ?, ?)',
+            ['other_var', varId, entry.basename, slotIdx],
+          );
+        });
+      });
+      if (batch.size() > 0) await batch.execute();
+
+      // Fetch the created product and its variations, attaching images to both
       const productResult = await db.execute({
         sql: 'SELECT * FROM others WHERE id = ?',
         args: [productId],
       });
+      const product = productResult.rows[0];
+      await attachProductImages([product], 'other');
 
       const variationsResult = await db.execute({
-        sql: 'SELECT * FROM other_vars WHERE other_id = ?',
+        sql: 'SELECT * FROM other_vars WHERE other_id = ? ORDER BY id ASC',
         args: [productId],
       });
-
-      const product = productResult.rows[0];
+      await attachProductImages(variationsResult.rows, 'other_var');
       product.variations = variationsResult.rows;
 
       // Notify admin about new product (fire-and-forget)
@@ -415,13 +439,15 @@ const createOthersProduct = async (req, res, next) => {
 
       res.status(201).json({
         success: true,
-        product: product,
+        product,
       });
     } catch (dbError) {
-      // Clean up written files if DB operations fail
+      // Clean up any files written so far
       for (const writtenBasename of writtenFiles) {
         if (config.useS3) {
-          await s3Service.deleteFile(`others/${writtenBasename}`);
+          await s3Service.deleteFile(`others/${writtenBasename}`).catch((err) =>
+            logger.error({ err, basename: writtenBasename }, 'Failed to clean up image file after DB error'),
+          );
         } else {
           try {
             await fs.promises.unlink(path.join(UPLOADS_DIR, writtenBasename));
@@ -480,19 +506,41 @@ const deleteOthersProduct = async (req, res, next) => {
       throw new ApiError(400, 'No se puede eliminar un producto vendido', 'No se puede eliminar el producto');
     }
 
-    // Collect all image basenames to delete from disk
-    const basenames = [];
-    if (product.basename) {
-      basenames.push(product.basename);
-    }
-    const varsResult = await db.execute({
-      sql: 'SELECT basename FROM other_vars WHERE other_id = ?',
+    // Collect basenames for the global product images and its variations' images
+    const variationIdsResult = await db.execute({
+      sql: 'SELECT id FROM other_vars WHERE other_id = ?',
       args: [id],
     });
-    for (const row of varsResult.rows) {
-      if (row.basename) {
-        basenames.push(row.basename);
-      }
+    const variationIds = variationIdsResult.rows.map((r) => r.id);
+
+    const basenames = [];
+
+    const globalImagesResult = await db.execute({
+      sql: 'SELECT basename FROM product_images WHERE product_type = ? AND product_id = ?',
+      args: ['other', id],
+    });
+    for (const row of globalImagesResult.rows) basenames.push(row.basename);
+
+    if (variationIds.length > 0) {
+      const placeholders = variationIds.map(() => '?').join(',');
+      const varImagesResult = await db.execute({
+        sql: `SELECT basename FROM product_images WHERE product_type = 'other_var' AND product_id IN (${placeholders})`,
+        args: variationIds,
+      });
+      for (const row of varImagesResult.rows) basenames.push(row.basename);
+    }
+
+    // Delete product_images rows first, then variations, then the product
+    await db.execute({
+      sql: 'DELETE FROM product_images WHERE product_type = ? AND product_id = ?',
+      args: ['other', id],
+    });
+    if (variationIds.length > 0) {
+      const placeholders = variationIds.map(() => '?').join(',');
+      await db.execute({
+        sql: `DELETE FROM product_images WHERE product_type = 'other_var' AND product_id IN (${placeholders})`,
+        args: variationIds,
+      });
     }
 
     // Delete variations (CASCADE should handle this, but being explicit)
@@ -510,7 +558,9 @@ const deleteOthersProduct = async (req, res, next) => {
     // Clean up image files from S3 or disk (log errors, don't block)
     for (const basename of basenames) {
       if (config.useS3) {
-        await s3Service.deleteFile(`others/${basename}`);
+        await s3Service.deleteFile(`others/${basename}`).catch((err) =>
+          logger.error({ err, basename }, 'Failed to delete image file during product deletion'),
+        );
       } else {
         try {
           await fs.promises.unlink(path.join(UPLOADS_DIR, basename));
@@ -536,15 +586,17 @@ const getSellerOthersProducts = async (req, res, next) => {
       args: [seller_id],
     });
 
+    const products = result.rows;
+    await attachProductImages(products, 'other');
+
     // For each product, get variations
-    const products = [];
-    for (const product of result.rows) {
+    for (const product of products) {
       const variationsResult = await db.execute({
         sql: 'SELECT * FROM other_vars WHERE other_id = ?',
         args: [product.id],
       });
+      await attachProductImages(variationsResult.rows, 'other_var');
       product.variations = variationsResult.rows;
-      products.push(product);
     }
 
     res.status(200).json({
@@ -588,6 +640,7 @@ const getOthersProductsByAuthorSlug = async (req, res, next) => {
       `,
       args: [author.id],
     });
+    await attachProductImages(productsResult.rows, 'other');
 
     res.status(200).json({
       success: true,

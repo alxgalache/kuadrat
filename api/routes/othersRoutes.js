@@ -29,9 +29,21 @@ router.get('/', cacheControl({ maxAge: 60 }), getAllOthersProducts);
 router.get('/images/:basename', cacheControl({ maxAge: 86400 }), getOthersProductImage);
 router.get('/author/:slug', cacheControl({ maxAge: 120 }), getOthersProductsByAuthorSlug);
 
+// Multer fields: 3 global product images + up to 20 variations × 3 images each.
+// Indexed field names let multer partition files by variation without depending on
+// body-parsing order.
+const MAX_VARIATIONS = 20;
+const MAX_IMAGES_PER_GROUP = 3;
+const othersUploadFields = [
+  { name: 'images', maxCount: MAX_IMAGES_PER_GROUP },
+];
+for (let i = 0; i < MAX_VARIATIONS; i++) {
+  othersUploadFields.push({ name: `variation_${i}_images`, maxCount: MAX_IMAGES_PER_GROUP });
+}
+
 // Protected routes - Seller only
 router.get('/seller/me', authenticate, requireSeller, getSellerOthersProducts);
-router.post('/', authenticate, requireSeller, upload.fields([{ name: 'image', maxCount: 1 }, { name: 'variation_images', maxCount: 10 }]), createOthersProduct);
+router.post('/', authenticate, requireSeller, upload.fields(othersUploadFields), createOthersProduct);
 router.delete('/:id', authenticate, requireSeller, deleteOthersProduct);
 
 // Public route - must be after more specific routes to avoid conflict

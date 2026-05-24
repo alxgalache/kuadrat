@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
-import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { othersAPI, ordersAPI, authAPI, authorsAPI, getOthersImageUrl } from '@/lib/api'
+import { othersAPI, ordersAPI, authAPI, authorsAPI } from '@/lib/api'
 import { useCart } from '@/contexts/CartContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useBannerNotification } from '@/contexts/BannerNotificationContext'
@@ -12,6 +11,7 @@ import AuthorModal from '@/components/AuthorModal'
 import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import ProductImageCarousel from '@/components/ProductImageCarousel'
 import { SENDCLOUD_ENABLED_OTHERS } from '@/lib/constants'
 
 export default function OthersProductDetail({ params }) {
@@ -104,7 +104,7 @@ export default function OthersProductDetail({ params }) {
         productType: 'other',
         name: product.name,
         price: product.price,
-        basename: product.basename,
+        basename: selectedVariant?.images?.[0]?.basename || product.images?.[0]?.basename || product.thumbnail_basename || null,
         slug: product.slug,
         sellerId: product.seller_id,
         sellerName: product.seller_full_name,
@@ -131,7 +131,7 @@ export default function OthersProductDetail({ params }) {
         productType: 'other',
         name: product.name,
         price: product.price,
-        basename: product.basename,
+        basename: selectedVariant?.images?.[0]?.basename || product.images?.[0]?.basename || product.thumbnail_basename || null,
         slug: product.slug,
         sellerId: product.seller_id,
         sellerName: product.seller_full_name,
@@ -225,18 +225,18 @@ export default function OthersProductDetail({ params }) {
 
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:max-w-7xl lg:px-8">
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
-          {/* Image — show variation image if selected variant has one, otherwise main product image */}
-          <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
-            <Image
-              alt={product.name}
-              src={getOthersImageUrl(selectedVariant?.basename || product.basename)}
-              fill
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              className="object-cover"
-              priority
-              key={selectedVariant?.basename || product.basename}
-            />
-          </div>
+          {/* Image carousel — variation images first (if any), then global product images */}
+          <ProductImageCarousel
+            images={
+              selectedVariant?.images?.length > 0
+                ? [...selectedVariant.images, ...(product.images || [])]
+                : (product.images || [])
+            }
+            imageType="others"
+            name={product.name}
+            priority
+            key={selectedVariant?.id ?? 'no-variant'}
+          />
 
           {/* Product info */}
           <div className="mt-10 px-4 sm:mt-16 sm:px-0 lg:mt-0">

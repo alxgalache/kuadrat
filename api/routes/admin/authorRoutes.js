@@ -455,25 +455,29 @@ router.get('/:id/products', async (req, res) => {
   try {
     const sellerId = req.params.id;
 
+    const { attachProductImages } = require('../../utils/productImages');
+
     // Get art products
     const artResult = await db.execute({
-      sql: `SELECT id, name, description, price, basename, slug, visible, is_sold, status, removed, created_at,
+      sql: `SELECT id, name, description, price, slug, visible, is_sold, status, removed, created_at,
             'art' as product_type
             FROM art
             WHERE seller_id = ? AND removed = 0
             ORDER BY created_at DESC`,
       args: [sellerId]
     });
+    await attachProductImages(artResult.rows, 'art');
 
     // Get others products
     const othersResult = await db.execute({
-      sql: `SELECT id, name, description, price, basename, slug, visible, is_sold, status, removed, created_at,
+      sql: `SELECT id, name, description, price, slug, visible, is_sold, status, removed, created_at,
             'others' as product_type
             FROM others
             WHERE seller_id = ? AND removed = 0
             ORDER BY created_at DESC`,
       args: [sellerId]
     });
+    await attachProductImages(othersResult.rows, 'other');
 
     // For each 'others' product, get its variations
     const othersWithVariations = await Promise.all(

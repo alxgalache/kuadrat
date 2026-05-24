@@ -88,7 +88,10 @@ async function loadProductsDetails(compactItems) {
   if (artIds.length) {
     const placeholders = artIds.map(() => '?').join(',');
     const res = await db.execute({
-      sql: `SELECT id, name, price, slug, basename, description, is_sold FROM art WHERE id IN (${placeholders})`,
+      sql: `SELECT a.id, a.name, a.price, a.slug,
+                   (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
+                   a.description, a.is_sold
+            FROM art a WHERE a.id IN (${placeholders})`,
       args: artIds,
     });
     for (const row of res.rows) {
@@ -104,7 +107,10 @@ async function loadProductsDetails(compactItems) {
   if (otherIds.length) {
     const placeholders = otherIds.map(() => '?').join(',');
     const res = await db.execute({
-      sql: `SELECT id, name, price, slug, basename, description, is_sold FROM others WHERE id IN (${placeholders})`,
+      sql: `SELECT o.id, o.name, o.price, o.slug,
+                   (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
+                   o.description, o.is_sold
+            FROM others o WHERE o.id IN (${placeholders})`,
       args: otherIds,
     });
     for (const row of res.rows) {
@@ -646,7 +652,7 @@ async function processOrderConfirmation(orderId, paymentId) {
 
     const artOrderItemsResult = await db.execute({
       sql: `
-        SELECT aoi.*, a.name, a.type, a.basename, a.seller_id, 'art' as product_type
+        SELECT aoi.*, a.name, a.type, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, a.seller_id, 'art' as product_type
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
         WHERE aoi.order_id = ?
@@ -655,7 +661,7 @@ async function processOrderConfirmation(orderId, paymentId) {
     });
     const othersOrderItemsResult = await db.execute({
       sql: `
-        SELECT ooi.*, o.name, o.basename, o.seller_id, ov.key as variant_key, 'other' as product_type
+        SELECT ooi.*, o.name, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, o.seller_id, ov.key as variant_key, 'other' as product_type
         FROM other_order_items ooi
         LEFT JOIN others o ON ooi.other_id = o.id
         LEFT JOIN other_vars ov ON ooi.other_var_id = ov.id

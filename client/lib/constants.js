@@ -36,6 +36,9 @@ export const SENDCLOUD_ENABLED_ART = process.env.NEXT_PUBLIC_SENDCLOUD_ENABLED_A
 export const SENDCLOUD_ENABLED_OTHERS = process.env.NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS === 'true';
 export const SENDCLOUD_ENABLED = SENDCLOUD_ENABLED_ART || SENDCLOUD_ENABLED_OTHERS;
 
+// Maximum number of images per product (global) and per variation (others)
+export const MAX_PRODUCT_IMAGES = 3;
+
 // Bid modal phases
 export const BID_PHASES = {
   CHOOSE: 'choose',
@@ -62,6 +65,26 @@ export const SPAM_WINDOW_MS = 10000;
 // or visitors should use these constants instead of the repo/project name.
 export const PUBLIC_BRAND_NAME = '140d Galería de Arte';
 export const PUBLIC_BRAND_NAME_SHORT = '140d';
+
+// CoA tag statuses (admin-side). Used by the badge in /admin/coa.
+// Keys match `nfc_tags.status` in the DB.
+export const COA_TAG_STATUSES = {
+  active:  { label: 'Activa',   className: 'bg-green-100 text-green-800' },
+  revoked: { label: 'Revocada', className: 'bg-red-100 text-red-800' },
+  lost:    { label: 'Perdida',  className: 'bg-amber-100 text-amber-800' },
+  damaged: { label: 'Dañada',   className: 'bg-orange-100 text-orange-800' },
+};
+
+// CoA verification event statuses (admin-side audit log).
+// Keys match `verification_events.status` in the DB.
+export const COA_EVENT_STATUSES = {
+  ok:           { label: 'OK',              className: 'bg-green-100 text-green-800' },
+  invalid_cmac: { label: 'CMAC inválido',   className: 'bg-red-100 text-red-800' },
+  replay:       { label: 'Replay',          className: 'bg-amber-100 text-amber-800' },
+  unknown_tag:  { label: 'Tag desconocido', className: 'bg-gray-200 text-gray-800' },
+  revoked:      { label: 'Revocada',        className: 'bg-red-100 text-red-800' },
+  malformed:    { label: 'Mal formada',     className: 'bg-gray-100 text-gray-700' },
+};
 
 // CoA verification result messages (Spanish) shown to a collector when their
 // tap fails. Keys match the status strings returned by /api/coa/verify.

@@ -2,9 +2,11 @@ import Image from 'next/image'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 
 function getImageUrl(product) {
+  const basename = product.thumbnail_basename || product.images?.[0]?.basename || product.basename
+  if (!basename) return null
   return product.product_type === 'art'
-    ? getArtImageUrl(product.basename)
-    : getOthersImageUrl(product.basename)
+    ? getArtImageUrl(basename)
+    : getOthersImageUrl(basename)
 }
 
 export default function AuctionImageMosaic({ products, productCount, priority = false }) {
@@ -13,44 +15,53 @@ export default function AuctionImageMosaic({ products, productCount, priority = 
   }
 
   if (products.length === 1) {
+    const url = getImageUrl(products[0])
     return (
       <div className="aspect-square w-full rounded-md bg-gray-200 relative overflow-hidden">
-        <Image
-          alt={products[0].name}
-          src={getImageUrl(products[0])}
-          fill
-          className="object-cover"
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-          priority={priority}
-        />
+        {url && (
+          <Image
+            alt={products[0].name}
+            src={url}
+            fill
+            className="object-cover"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            priority={priority}
+          />
+        )}
       </div>
     )
   }
 
   if (products.length === 2) {
+    const url0 = getImageUrl(products[0])
+    const url1 = getImageUrl(products[1])
     return (
       <div className="aspect-square w-full rounded-md overflow-hidden relative bg-gray-200">
         <div className="absolute top-0 left-0 w-[75%] h-[75%]">
           <div className="relative w-full h-full">
-            <Image
-              alt={products[0].name}
-              src={getImageUrl(products[0])}
-              fill
-              className="object-cover rounded-md shadow-sm bg-gray-200"
-              sizes="(max-width: 640px) 37vw, 18vw"
-              priority={priority}
-            />
+            {url0 && (
+              <Image
+                alt={products[0].name}
+                src={url0}
+                fill
+                className="object-cover rounded-md shadow-sm bg-gray-200"
+                sizes="(max-width: 640px) 37vw, 18vw"
+                priority={priority}
+              />
+            )}
           </div>
         </div>
         <div className="absolute bottom-0 right-0 w-[75%] h-[75%]">
           <div className="relative w-full h-full">
-            <Image
-              alt={products[1].name}
-              src={getImageUrl(products[1])}
-              fill
-              className="object-cover rounded-md shadow-sm ring-2 ring-white bg-gray-200"
-              sizes="(max-width: 640px) 37vw, 18vw"
-            />
+            {url1 && (
+              <Image
+                alt={products[1].name}
+                src={url1}
+                fill
+                className="object-cover rounded-md shadow-sm ring-2 ring-white bg-gray-200"
+                sizes="(max-width: 640px) 37vw, 18vw"
+              />
+            )}
           </div>
         </div>
       </div>
@@ -64,16 +75,19 @@ export default function AuctionImageMosaic({ products, productCount, priority = 
     <div className="aspect-square w-full rounded-md overflow-hidden grid grid-cols-2 grid-rows-2 gap-0.5">
       {cells.map((i) => {
         if (i < products.length && !(productCount > 4 && i === 3)) {
+          const url = getImageUrl(products[i])
           return (
-            <div key={i} className="relative w-full h-full">
-              <Image
-                alt={products[i].name}
-                src={getImageUrl(products[i])}
-                fill
-                className="object-cover bg-gray-200"
-                sizes="(max-width: 640px) 25vw, (max-width: 1024px) 16vw, 12vw"
-                priority={priority && i === 0}
-              />
+            <div key={i} className="relative w-full h-full bg-gray-200">
+              {url && (
+                <Image
+                  alt={products[i].name}
+                  src={url}
+                  fill
+                  className="object-cover bg-gray-200"
+                  sizes="(max-width: 640px) 25vw, (max-width: 1024px) 16vw, 12vw"
+                  priority={priority && i === 0}
+                />
+              )}
             </div>
           )
         }

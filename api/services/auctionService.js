@@ -110,7 +110,7 @@ async function getAuctionById(id) {
 
   // Get art products
   const artsResult = await db.execute({
-    sql: `SELECT aa.*, a.name, a.basename, a.description, a.slug, a.seller_id,
+    sql: `SELECT aa.*, a.name, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, a.description, a.slug, a.seller_id,
                  u.full_name AS seller_name, u.slug AS seller_slug,
                  aa.shipping_observations
           FROM auction_arts aa
@@ -123,7 +123,7 @@ async function getAuctionById(id) {
 
   // Get other products
   const othersResult = await db.execute({
-    sql: `SELECT ao.*, o.name, o.basename, o.description, o.slug, o.seller_id,
+    sql: `SELECT ao.*, o.name, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, o.description, o.slug, o.seller_id,
                  u.full_name AS seller_name, u.slug AS seller_slug,
                  ao.shipping_observations
           FROM auction_others ao
@@ -252,14 +252,14 @@ async function getAuctionsByDateRange(from, to) {
       sql: `SELECT * FROM (
               SELECT combined.*, ROW_NUMBER() OVER (PARTITION BY combined.auction_id ORDER BY combined.position ASC) AS rn
               FROM (
-                SELECT aa.auction_id, a.basename, a.name, 'art' AS product_type,
+                SELECT aa.auction_id, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, a.name, 'art' AS product_type,
                        u.full_name AS seller_name, aa.start_price, aa.current_price, aa.position
                 FROM auction_arts aa
                 JOIN art a ON aa.art_id = a.id
                 LEFT JOIN users u ON a.seller_id = u.id
                 WHERE aa.auction_id IN (${placeholders})
                 UNION ALL
-                SELECT ao.auction_id, o.basename, o.name, 'other' AS product_type,
+                SELECT ao.auction_id, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, o.name, 'other' AS product_type,
                        u.full_name AS seller_name, ao.start_price, ao.current_price, ao.position
                 FROM auction_others ao
                 JOIN others o ON ao.other_id = o.id
@@ -1049,7 +1049,10 @@ async function getBidBillingData(bidId) {
             apd.stripe_payment_method_id,
             COALESCE(a.seller_id, o.seller_id) AS seller_id,
             COALESCE(a.name, o.name) AS product_name,
-            COALESCE(a.basename, o.basename) AS basename,
+            COALESCE(
+              (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1),
+              (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1)
+            ) AS basename,
             a.type AS art_type
           FROM auction_bids b
           INNER JOIN auction_buyers ab ON b.auction_buyer_id = ab.id

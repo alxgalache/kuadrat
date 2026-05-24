@@ -64,7 +64,10 @@ async function loadProductsDetails(compactItems) {
   if (artIds.length) {
     const placeholders = artIds.map(() => '?').join(',');
     const res = await db.execute({
-      sql: `SELECT id, name, price, slug, basename, description, is_sold, seller_id FROM art WHERE id IN (${placeholders})`,
+      sql: `SELECT a.id, a.name, a.price, a.slug,
+                   (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
+                   a.description, a.is_sold, a.seller_id
+            FROM art a WHERE a.id IN (${placeholders})`,
       args: artIds,
     });
     for (const row of res.rows) {
@@ -80,7 +83,10 @@ async function loadProductsDetails(compactItems) {
   if (otherIds.length) {
     const placeholders = otherIds.map(() => '?').join(',');
     const res = await db.execute({
-      sql: `SELECT id, name, price, slug, basename, description, is_sold, seller_id FROM others WHERE id IN (${placeholders})`,
+      sql: `SELECT o.id, o.name, o.price, o.slug,
+                   (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
+                   o.description, o.is_sold, o.seller_id
+            FROM others o WHERE o.id IN (${placeholders})`,
       args: otherIds,
     });
     for (const row of res.rows) {

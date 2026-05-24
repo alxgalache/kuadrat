@@ -7,11 +7,84 @@ import {artAPI, othersAPI} from '@/lib/api'
 import {PhotoIcon, PlusIcon, XMarkIcon} from '@heroicons/react/24/solid'
 import {ChevronDownIcon} from '@heroicons/react/16/solid'
 import AuthGuard from '@/components/AuthGuard'
-import {SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS} from '@/lib/constants'
+import {SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, MAX_PRODUCT_IMAGES} from '@/lib/constants'
 import {useDropzone} from 'react-dropzone'
 import {useNotification} from '@/contexts/NotificationContext'
 import QuillEditor from '@/components/QuillEditor'
 import 'quill/dist/quill.snow.css'
+
+// Async file validation: MIME + size + minimum dimensions. Returns the file on
+// success, throws an Error with a Spanish message on failure.
+async function validateImageFile(file) {
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
+    if (!allowedTypes.includes(file.type)) {
+        throw new Error('Solo se permiten imágenes PNG, JPG y WEBP')
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        throw new Error('La imagen debe ser de 10MB o menos')
+    }
+    const objectUrl = URL.createObjectURL(file)
+    try {
+        const img = new Image()
+        await new Promise((resolve, reject) => {
+            img.onload = resolve
+            img.onerror = reject
+            img.src = objectUrl
+        })
+        if (img.naturalWidth < 600 || img.naturalHeight < 600) {
+            URL.revokeObjectURL(objectUrl)
+            throw new Error('La imagen debe tener una resolución de al menos 600x600 píxeles')
+        }
+        return { file, previewUrl: objectUrl }
+    } catch (err) {
+        URL.revokeObjectURL(objectUrl)
+        if (err instanceof Error) throw err
+        throw new Error('No se pudo procesar el archivo de imagen')
+    }
+}
+
+// Single image dropzone slot. Owns its own react-dropzone hook so multiple
+// slots can coexist on the same form.
+function ImageDropzoneSlot({ previewUrl, onDrop, isFirst }) {
+    const {getRootProps, getInputProps, isDragActive} = useDropzone({
+        onDrop: (files) => { if (files?.[0]) onDrop(files[0]) },
+        accept: {
+            'image/png': ['.png'],
+            'image/jpeg': ['.jpg', '.jpeg'],
+            'image/webp': ['.webp']
+        },
+        maxFiles: 1,
+        multiple: false,
+    })
+
+    return (
+        <div
+            {...getRootProps()}
+            className={`mt-2 flex justify-center rounded-lg border-2 border-dashed px-6 py-10 cursor-pointer transition-colors ${
+                isDragActive
+                    ? 'border-black bg-gray-50'
+                    : 'border-gray-900/25 hover:border-gray-900/50'
+            }`}
+        >
+            <div className="text-center">
+                <PhotoIcon aria-hidden="true" className="mx-auto size-12 text-gray-300"/>
+                <div className="mt-4 flex text-sm/6 text-gray-600">
+                    <input {...getInputProps()} />
+                    <p className="font-semibold text-black">
+                        {isDragActive
+                            ? 'Suelta la imagen aquí'
+                            : previewUrl
+                                ? 'Haz clic o arrastra para reemplazar'
+                                : isFirst
+                                    ? 'Haz clic para subir o arrastra y suelta'
+                                    : 'Sube otra imagen'}
+                    </p>
+                </div>
+                <p className="text-xs/5 text-gray-600">PNG, JPG o WEBP hasta 10MB, mínimo 600x600</p>
+            </div>
+        </div>
+    )
+}
 
 function PublishProductPageContent() {
     const [productCategory, setProductCategory] = useState('art')
@@ -24,16 +97,19 @@ function PublishProductPageContent() {
     const [canCopack, setCanCopack] = useState(true)
     const [forAuction, setForAuction] = useState(false)
     const [aiGenerated, setAiGenerated] = useState(false)
-    const [imageFile, setImageFile] = useState(null)
-    const [previewUrl, setPreviewUrl] = useState('')
+    // Global product image slots (1..MAX_PRODUCT_IMAGES). Each slot is either
+    // null (empty) or { file: File, previewUrl: string }. The first slot is
+    // required; additional slots are optional and individually removable.
+    const [imageSlots, setImageSlots] = useState([null])
     const [loading, setLoading] = useState(false)
     const [showDecimalWarning, setShowDecimalWarning] = useState(false)
 
-    // For "others" products - variations
+    // For "others" products - variations. Each variation has its own array of
+    // image slots (0..MAX_PRODUCT_IMAGES). Variation images are optional.
     const [hasVariations, setHasVariations] = useState(false)
     const [globalStock, setGlobalStock] = useState('')
     const [variations, setVariations] = useState([
-        { key: '', stock: '', imageFile: null, previewUrl: '' }
+        { key: '', stock: '', imageSlots: [null] }
     ])
 
     const router = useRouter()
@@ -57,156 +133,133 @@ function PublishProductPageContent() {
         'link'
     ]
 
-    const validateAndSetImage = async (file) => {
-        // Reset previous state
-        if (previewUrl) {
-            try {
-                URL.revokeObjectURL(previewUrl)
-            } catch {
-            }
-        }
-        setPreviewUrl('')
-        setImageFile(null)
-
-        if (!file) return
-
-        const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
-        if (!allowedTypes.includes(file.type)) {
-            showError('Formato de imagen inválido', 'Solo se permiten imágenes PNG, JPG y WEBP')
-            return
-        }
-
-        if (file.size > 10 * 1024 * 1024) {
-            showError('Archivo demasiado grande', 'La imagen debe ser de 10MB o menos')
-            return
-        }
-
-        const objectUrl = URL.createObjectURL(file)
+    // Global image handlers
+    const handleGlobalSlotDrop = async (slotIndex, file) => {
         try {
-            const img = new Image()
-            const loaded = new Promise((resolve, reject) => {
-                img.onload = resolve
-                img.onerror = reject
-            })
-            img.src = objectUrl
-            await loaded
-
-            if (img.naturalWidth < 600 || img.naturalHeight < 600) {
-                showError('Imagen demasiado pequeña', 'La imagen debe tener una resolucion de al menos 600x600 pixeles')
-                URL.revokeObjectURL(objectUrl)
-                return
-            }
-
-            setImageFile(file)
-            setPreviewUrl(objectUrl)
-        } catch (err) {
-            showError('Imagen inválida', 'No se pudo procesar el archivo de imagen')
-            try {
-                URL.revokeObjectURL(objectUrl)
-            } catch {
-            }
-        }
-    }
-
-    const onDrop = async (acceptedFiles) => {
-        if (acceptedFiles.length > 0) {
-            await validateAndSetImage(acceptedFiles[0])
-        }
-    }
-
-    const {getRootProps, getInputProps, isDragActive} = useDropzone({
-        onDrop,
-        accept: {
-            'image/png': ['.png'],
-            'image/jpeg': ['.jpg', '.jpeg'],
-            'image/webp': ['.webp']
-        },
-        maxFiles: 1,
-        multiple: false
-    })
-
-    useEffect(() => {
-        return () => {
-            if (previewUrl) {
-                try { URL.revokeObjectURL(previewUrl) } catch {}
-            }
-            // Clean up variation preview URLs
-            variations.forEach(v => {
-                if (v.previewUrl) {
-                    try { URL.revokeObjectURL(v.previewUrl) } catch {}
+            const entry = await validateImageFile(file)
+            setImageSlots((prev) => {
+                const next = [...prev]
+                if (next[slotIndex]?.previewUrl) {
+                    try { URL.revokeObjectURL(next[slotIndex].previewUrl) } catch {}
                 }
+                next[slotIndex] = entry
+                return next
             })
+        } catch (err) {
+            showError('Imagen inválida', err.message)
         }
-    }, [previewUrl])
-
-    // Add variation row
-    const handleAddVariation = () => {
-        setVariations([...variations, { key: '', stock: '', imageFile: null, previewUrl: '' }])
     }
 
-    // Remove variation row
-    const handleRemoveVariation = (index) => {
-        if (variations.length > 1) {
-            // Revoke preview URL for removed variation
-            const removed = variations[index]
-            if (removed.previewUrl) {
+    const handleAddGlobalSlot = () => {
+        setImageSlots((prev) => (prev.length < MAX_PRODUCT_IMAGES ? [...prev, null] : prev))
+    }
+
+    const handleRemoveGlobalSlot = (slotIndex) => {
+        setImageSlots((prev) => {
+            if (prev.length <= 1 || slotIndex === 0) return prev
+            const removed = prev[slotIndex]
+            if (removed?.previewUrl) {
                 try { URL.revokeObjectURL(removed.previewUrl) } catch {}
             }
-            setVariations(variations.filter((_, i) => i !== index))
-        }
+            return prev.filter((_, i) => i !== slotIndex)
+        })
     }
 
-    // Update variation field
+    // Variation handlers
+    const handleAddVariation = () => {
+        setVariations((prev) => [...prev, { key: '', stock: '', imageSlots: [null] }])
+    }
+
+    const handleRemoveVariation = (index) => {
+        setVariations((prev) => {
+            if (prev.length <= 1) return prev
+            const removed = prev[index]
+            if (removed?.imageSlots) {
+                for (const slot of removed.imageSlots) {
+                    if (slot?.previewUrl) {
+                        try { URL.revokeObjectURL(slot.previewUrl) } catch {}
+                    }
+                }
+            }
+            return prev.filter((_, i) => i !== index)
+        })
+    }
+
     const handleVariationChange = (index, field, value) => {
-        const newVariations = [...variations]
-        newVariations[index][field] = value
-        setVariations(newVariations)
+        setVariations((prev) => {
+            const next = [...prev]
+            next[index] = { ...next[index], [field]: value }
+            return next
+        })
     }
 
-    // Validate and set image for a specific variation
-    const validateAndSetVariationImage = async (index, file) => {
-        if (!file) return
-
-        const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
-        if (!allowedTypes.includes(file.type)) {
-            showError('Formato de imagen inválido', `Variación ${index + 1}: Solo se permiten imágenes PNG, JPG y WEBP`)
-            return
-        }
-
-        if (file.size > 10 * 1024 * 1024) {
-            showError('Archivo demasiado grande', `Variación ${index + 1}: La imagen debe ser de 10MB o menos`)
-            return
-        }
-
-        const objectUrl = URL.createObjectURL(file)
+    const handleVariationSlotDrop = async (varIndex, slotIndex, file) => {
         try {
-            const img = new Image()
-            const loaded = new Promise((resolve, reject) => {
-                img.onload = resolve
-                img.onerror = reject
+            const entry = await validateImageFile(file)
+            setVariations((prev) => {
+                const next = [...prev]
+                const slots = [...next[varIndex].imageSlots]
+                if (slots[slotIndex]?.previewUrl) {
+                    try { URL.revokeObjectURL(slots[slotIndex].previewUrl) } catch {}
+                }
+                slots[slotIndex] = entry
+                next[varIndex] = { ...next[varIndex], imageSlots: slots }
+                return next
             })
-            img.src = objectUrl
-            await loaded
-
-            if (img.naturalWidth < 600 || img.naturalHeight < 600) {
-                showError('Imagen demasiado pequeña', `Variación ${index + 1}: La imagen debe tener al menos 600x600 píxeles`)
-                URL.revokeObjectURL(objectUrl)
-                return
-            }
-
-            // Revoke previous preview URL
-            const newVariations = [...variations]
-            if (newVariations[index].previewUrl) {
-                try { URL.revokeObjectURL(newVariations[index].previewUrl) } catch {}
-            }
-            newVariations[index].imageFile = file
-            newVariations[index].previewUrl = objectUrl
-            setVariations(newVariations)
         } catch (err) {
-            showError('Imagen inválida', `Variación ${index + 1}: No se pudo procesar el archivo de imagen`)
-            try { URL.revokeObjectURL(objectUrl) } catch {}
+            showError('Imagen inválida', `Variación ${varIndex + 1}: ${err.message}`)
         }
     }
+
+    const handleAddVariationSlot = (varIndex) => {
+        setVariations((prev) => {
+            const next = [...prev]
+            if (next[varIndex].imageSlots.length >= MAX_PRODUCT_IMAGES) return prev
+            next[varIndex] = {
+                ...next[varIndex],
+                imageSlots: [...next[varIndex].imageSlots, null],
+            }
+            return next
+        })
+    }
+
+    const handleRemoveVariationSlot = (varIndex, slotIndex) => {
+        setVariations((prev) => {
+            const next = [...prev]
+            const slots = [...next[varIndex].imageSlots]
+            if (slots.length <= 1 || slotIndex === 0) return prev
+            const removed = slots[slotIndex]
+            if (removed?.previewUrl) {
+                try { URL.revokeObjectURL(removed.previewUrl) } catch {}
+            }
+            next[varIndex] = {
+                ...next[varIndex],
+                imageSlots: slots.filter((_, i) => i !== slotIndex),
+            }
+            return next
+        })
+    }
+
+    // Cleanup all object URLs on unmount
+    useEffect(() => {
+        return () => {
+            for (const slot of imageSlots) {
+                if (slot?.previewUrl) {
+                    try { URL.revokeObjectURL(slot.previewUrl) } catch {}
+                }
+            }
+            for (const v of variations) {
+                for (const slot of v.imageSlots || []) {
+                    if (slot?.previewUrl) {
+                        try { URL.revokeObjectURL(slot.previewUrl) } catch {}
+                    }
+                }
+            }
+        }
+        // We intentionally run cleanup only on unmount, not on every slot
+        // change — individual slot drops/removals revoke their own URLs above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     const handleSubmit = async (e) => {
         e.preventDefault()
@@ -271,15 +324,15 @@ function PublishProductPageContent() {
             }
         }
 
-        // Validate image
-        if (!imageFile) {
-            validationErrors.push({ field: 'image', message: 'El archivo de imagen es obligatorio' })
+        // Validate global image slots: first slot is required, rest optional.
+        const filledGlobalSlots = imageSlots.filter(Boolean)
+        if (filledGlobalSlots.length === 0 || !imageSlots[0]) {
+            validationErrors.push({ field: 'images', message: 'La primera imagen del producto es obligatoria' })
         }
 
         // Validate stock/variations for "others"
         if (productCategory === 'other') {
             if (hasVariations) {
-                // Validate variations
                 if (variations.length === 0) {
                     validationErrors.push({ field: 'variations', message: 'Debe agregar al menos una variación' })
                 } else {
@@ -291,13 +344,10 @@ function PublishProductPageContent() {
                         if (!v.stock || isNaN(stock) || stock < 0) {
                             validationErrors.push({ field: `variations[${index}].stock`, message: `Variación ${index + 1}: El stock debe ser un número válido` })
                         }
-                        if (!v.imageFile) {
-                            validationErrors.push({ field: `variations[${index}].image`, message: `Variación ${index + 1}: La imagen es obligatoria` })
-                        }
+                        // NOTE: variation images are OPTIONAL (fallback to global product images).
                     })
                 }
             } else {
-                // Validate global stock
                 const stockNum = parseInt(globalStock, 10)
                 if (!globalStock || isNaN(stockNum)) {
                     validationErrors.push({ field: 'globalStock', message: 'El stock es obligatorio' })
@@ -309,7 +359,6 @@ function PublishProductPageContent() {
             }
         }
 
-        // If there are validation errors, show them
         if (validationErrors.length > 0) {
             showError('Error al enviar', 'Se produjeron los siguientes errores:', validationErrors)
             return
@@ -322,44 +371,44 @@ function PublishProductPageContent() {
             formData.append('name', name.trim())
             formData.append('description', description)
             formData.append('price', priceNum.toString())
-            formData.append('image', imageFile)
 
-            // Add weight and dimensions if provided
+            // Append each global image under the `images` multipart field
+            for (const slot of filledGlobalSlots) {
+                formData.append('images', slot.file)
+            }
+
             if (weight && weight.trim()) {
                 formData.append('weight', parseInt(weight, 10).toString())
             }
             if (dimensions && dimensions.trim()) {
                 formData.append('dimensions', dimensions.trim())
             }
-
-            if (forAuction) {
-                formData.append('for_auction', '1')
-            }
-            if (aiGenerated) {
-                formData.append('ai_generated', '1')
-            }
+            if (forAuction) formData.append('for_auction', '1')
+            if (aiGenerated) formData.append('ai_generated', '1')
 
             if (productCategory === 'art') {
-                // Submit to art API
                 formData.append('type', type.trim())
                 await artAPI.create(formData)
             } else {
-                // Submit to others API with variations
                 const variationsData = hasVariations
-                    ? variations.map(v => ({
+                    ? variations.map((v) => ({
                         key: v.key.trim(),
-                        stock: parseInt(v.stock, 10)
+                        stock: parseInt(v.stock, 10),
                       }))
                     : [{ key: null, stock: parseInt(globalStock, 10) }]
 
                 formData.append('variations', JSON.stringify(variationsData))
                 formData.append('can_copack', canCopack ? '1' : '0')
 
-                // Append variation images in order matching variations array
+                // Append each variation's images under its indexed field name.
+                // Order matters: the backend pairs variation index to its files.
                 if (hasVariations) {
-                    for (const v of variations) {
-                        formData.append('variation_images', v.imageFile)
-                    }
+                    variations.forEach((v, varIdx) => {
+                        const files = (v.imageSlots || []).filter(Boolean)
+                        for (const slot of files) {
+                            formData.append(`variation_${varIdx}_images`, slot.file)
+                        }
+                    })
                 }
 
                 await othersAPI.create(formData)
@@ -417,6 +466,8 @@ function PublishProductPageContent() {
             netEarnings = { net: artistBase, gross, vatPercent: parseInt(process.env.NEXT_PUBLIC_TAX_VAT_ES || '21') }
         }
     }
+
+    const previewUrls = imageSlots.filter(Boolean).map((s) => s.previewUrl)
 
     return (
         <div className="bg-white">
@@ -525,7 +576,6 @@ function PublishProductPageContent() {
                                             )}
                                         </div>
 
-                                        {/* Type field only for Art */}
                                         {productCategory === 'art' && (
                                             <div>
                                                 <label htmlFor="type" className="block text-sm/6 font-medium text-gray-900">
@@ -550,7 +600,6 @@ function PublishProductPageContent() {
                                         )}
                                     </div>
 
-                                    {/* Weight and Dimensions - for both art and others */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-8">
                                         <div>
                                             <label htmlFor="weight" className="block text-sm/6 font-medium text-gray-900">
@@ -596,7 +645,6 @@ function PublishProductPageContent() {
                                         </div>
                                     </div>
 
-                                    {/* Co-pack Toggle - only for 'others' products when Sendcloud enabled */}
                                     {productCategory === 'others' && SENDCLOUD_ENABLED_OTHERS && (
                                         <div className="flex items-center">
                                             <input
@@ -613,7 +661,6 @@ function PublishProductPageContent() {
                                         </div>
                                     )}
 
-                                    {/* For Auction Toggle */}
                                     <div className="flex items-center">
                                         <input
                                             id="forAuction"
@@ -628,7 +675,6 @@ function PublishProductPageContent() {
                                         </label>
                                     </div>
 
-                                    {/* AI Generated Toggle */}
                                     <div className="flex items-center">
                                         <input
                                             id="aiGenerated"
@@ -665,15 +711,15 @@ function PublishProductPageContent() {
                                                     <label className="block text-sm/6 font-medium text-gray-900">
                                                         Variaciones del producto
                                                     </label>
-                                                    {variations.map((variation, index) => (
-                                                        <div key={index} className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 space-y-3">
+                                                    {variations.map((variation, varIndex) => (
+                                                        <div key={varIndex} className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 space-y-3">
                                                             <div className="flex gap-2 items-start">
                                                                 <div className="flex-1 grid grid-cols-2 gap-2">
                                                                     <input
                                                                         type="text"
                                                                         placeholder="Ej: Verde XL"
                                                                         value={variation.key}
-                                                                        onChange={(e) => handleVariationChange(index, 'key', e.target.value)}
+                                                                        onChange={(e) => handleVariationChange(varIndex, 'key', e.target.value)}
                                                                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                                                                     />
                                                                     <input
@@ -681,49 +727,74 @@ function PublishProductPageContent() {
                                                                         placeholder="Stock"
                                                                         min="0"
                                                                         value={variation.stock}
-                                                                        onChange={(e) => handleVariationChange(index, 'stock', e.target.value)}
+                                                                        onChange={(e) => handleVariationChange(varIndex, 'stock', e.target.value)}
                                                                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                                                                     />
                                                                 </div>
                                                                 {variations.length > 1 && (
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => handleRemoveVariation(index)}
+                                                                        onClick={() => handleRemoveVariation(varIndex)}
                                                                         className="mt-1 p-2 text-red-600 hover:text-red-800"
+                                                                        aria-label="Eliminar variación"
                                                                     >
                                                                         <XMarkIcon className="size-5" />
                                                                     </button>
                                                                 )}
                                                             </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <label className="flex-shrink-0 cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                                                                    <input
-                                                                        type="file"
-                                                                        accept="image/png,image/jpeg,image/webp"
-                                                                        className="hidden"
-                                                                        onChange={(e) => {
-                                                                            if (e.target.files?.[0]) {
-                                                                                validateAndSetVariationImage(index, e.target.files[0])
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                    Imagen de variación
-                                                                </label>
-                                                                {variation.previewUrl ? (
-                                                                    <div className="flex items-center gap-2">
-                                                                        <NextImage
-                                                                            src={variation.previewUrl}
-                                                                            alt={`Preview variación ${index + 1}`}
-                                                                            width={48}
-                                                                            height={48}
-                                                                            unoptimized
-                                                                            className="rounded-md object-cover size-12"
-                                                                        />
-                                                                        <span className="text-xs text-green-600">Imagen cargada</span>
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="text-xs text-gray-400">Sin imagen</span>
-                                                                )}
+
+                                                            <div className="space-y-2">
+                                                                <p className="text-xs/5 text-gray-500">Imágenes de la variación (opcional, hasta {MAX_PRODUCT_IMAGES})</p>
+                                                                <div className="flex flex-wrap items-start gap-3">
+                                                                    {variation.imageSlots.map((slot, slotIdx) => (
+                                                                        <div key={slotIdx} className="flex flex-col items-start gap-1">
+                                                                            <label className="flex-shrink-0 cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                                                                <input
+                                                                                    type="file"
+                                                                                    accept="image/png,image/jpeg,image/webp"
+                                                                                    className="hidden"
+                                                                                    onChange={(e) => {
+                                                                                        if (e.target.files?.[0]) {
+                                                                                            handleVariationSlotDrop(varIndex, slotIdx, e.target.files[0])
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                                {slot ? 'Reemplazar' : 'Subir imagen'}
+                                                                            </label>
+                                                                            {slot?.previewUrl ? (
+                                                                                <NextImage
+                                                                                    src={slot.previewUrl}
+                                                                                    alt={`Preview variación ${varIndex + 1} imagen ${slotIdx + 1}`}
+                                                                                    width={48}
+                                                                                    height={48}
+                                                                                    unoptimized
+                                                                                    className="rounded-md object-cover size-12"
+                                                                                />
+                                                                            ) : (
+                                                                                <span className="text-xs text-gray-400">Sin imagen</span>
+                                                                            )}
+                                                                            {slotIdx > 0 && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleRemoveVariationSlot(varIndex, slotIdx)}
+                                                                                    className="text-xs text-red-600 hover:text-red-800"
+                                                                                >
+                                                                                    Eliminar
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    ))}
+                                                                    {variation.imageSlots.length < MAX_PRODUCT_IMAGES && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleAddVariationSlot(varIndex)}
+                                                                            className="flex items-center gap-1 self-center text-xs font-medium text-black hover:text-gray-700"
+                                                                        >
+                                                                            <PlusIcon className="size-3" />
+                                                                            Añadir imagen a esta variación
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -759,48 +830,63 @@ function PublishProductPageContent() {
                                         </div>
                                     )}
 
-                                    {/* Image Upload */}
+                                    {/* Global product image slots (1..3) */}
                                     <div>
                                         <label className="block text-sm/6 font-medium text-gray-900">
                                             Imagen para el listado de productos
                                         </label>
-                                        <div
-                                            {...getRootProps()}
-                                            className={`mt-2 flex justify-center rounded-lg border-2 border-dashed px-6 py-10 cursor-pointer transition-colors ${
-                                                isDragActive
-                                                    ? 'border-black bg-gray-50'
-                                                    : 'border-gray-900/25 hover:border-gray-900/50'
-                                            }`}
-                                        >
-                                            <div className="text-center">
-                                                <PhotoIcon aria-hidden="true" className="mx-auto size-12 text-gray-300"/>
-                                                <div className="mt-4 flex text-sm/6 text-gray-600">
-                                                    <input {...getInputProps()} />
-                                                    <p className="font-semibold text-black">
-                                                        {isDragActive ? 'Suelta la imagen aquí' : 'Haz clic para subir o arrastra y suelta'}
-                                                    </p>
+                                        <p className="text-xs/5 text-gray-500">Puedes añadir hasta {MAX_PRODUCT_IMAGES} imágenes. La primera es obligatoria.</p>
+                                        <div className="space-y-3">
+                                            {imageSlots.map((slot, slotIdx) => (
+                                                <div key={slotIdx}>
+                                                    <ImageDropzoneSlot
+                                                        previewUrl={slot?.previewUrl}
+                                                        onDrop={(file) => handleGlobalSlotDrop(slotIdx, file)}
+                                                        isFirst={slotIdx === 0}
+                                                    />
+                                                    {slotIdx > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveGlobalSlot(slotIdx)}
+                                                            className="mt-1 text-xs font-medium text-red-600 hover:text-red-800"
+                                                        >
+                                                            Eliminar imagen
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                <p className="text-xs/5 text-gray-600">PNG, JPG o WEBP hasta 10MB, mínimo 600x600</p>
-                                            </div>
+                                            ))}
+                                            {imageSlots.length < MAX_PRODUCT_IMAGES && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleAddGlobalSlot}
+                                                    className="flex items-center gap-2 text-sm font-medium text-black hover:text-gray-700"
+                                                >
+                                                    <PlusIcon className="size-4" />
+                                                    Añadir otra imagen
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Right Column - Image Preview Only (40%) */}
+                                {/* Right Column - Image Previews (40%) */}
                                 <div className="lg:col-span-2 space-y-4">
-                                    {previewUrl && (
+                                    {previewUrls.length > 0 && (
                                         <div>
                                             <label className="block text-sm/6 font-medium text-gray-900">Vista previa</label>
-                                            <div className="mt-2">
-                                                <NextImage
-                                                    src={previewUrl}
-                                                    alt="Preview"
-                                                    width={0}
-                                                    height={0}
-                                                    unoptimized
-                                                    style={{ width: '100%', height: 'auto' }}
-                                                    className="rounded-md"
-                                                />
+                                            <div className="mt-2 space-y-4">
+                                                {previewUrls.map((url, i) => (
+                                                    <NextImage
+                                                        key={`${url}-${i}`}
+                                                        src={url}
+                                                        alt={`Preview ${i + 1}`}
+                                                        width={0}
+                                                        height={0}
+                                                        unoptimized
+                                                        style={{ width: '100%', height: 'auto' }}
+                                                        className="rounded-md"
+                                                    />
+                                                ))}
                                             </div>
                                         </div>
                                     )}

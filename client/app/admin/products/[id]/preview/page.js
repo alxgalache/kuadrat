@@ -1,15 +1,15 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { adminAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
+import { adminAPI } from '@/lib/api'
 import { InformationCircleIcon } from '@heroicons/react/20/solid'
 import AuthGuard from '@/components/AuthGuard'
 import { useNotification } from '@/contexts/NotificationContext'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import ProductImageCarousel from '@/components/ProductImageCarousel'
 
 function ArtPreview({ product, onApprove, approving }) {
   return (
@@ -46,17 +46,13 @@ function ArtPreview({ product, onApprove, approving }) {
         </div>
 
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
-          {/* Image */}
-          <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
-            <Image
-              alt={product.name}
-              src={getArtImageUrl(product.basename)}
-              fill
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              className="object-cover"
-              priority
-            />
-          </div>
+          {/* Image carousel */}
+          <ProductImageCarousel
+            images={product.images || []}
+            imageType="art"
+            name={product.name}
+            priority
+          />
 
           {/* Product info */}
           <div className="mt-10 px-4 sm:mt-16 sm:px-0 lg:mt-0">
@@ -164,17 +160,13 @@ function OthersPreview({ product, onApprove, approving }) {
         </div>
 
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
-          {/* Image */}
-          <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
-            <Image
-              alt={product.name}
-              src={getOthersImageUrl(product.basename)}
-              fill
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              className="object-cover"
-              priority
-            />
-          </div>
+          {/* Image carousel */}
+          <ProductImageCarousel
+            images={product.images || []}
+            imageType="others"
+            name={product.name}
+            priority
+          />
 
           {/* Product info */}
           <div className="mt-10 px-4 sm:mt-16 sm:px-0 lg:mt-0">

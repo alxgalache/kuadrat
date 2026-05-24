@@ -103,7 +103,7 @@ async function getDrawById(id) {
   // Hydrate with product data
   if (draw.product_type === 'art') {
     const productResult = await db.execute({
-      sql: `SELECT a.name AS product_name, a.basename, a.description AS product_description,
+      sql: `SELECT a.name AS product_name, (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, a.description AS product_description,
                    a.slug AS product_slug, a.seller_id,
                    u.full_name AS seller_name, u.slug AS seller_slug
             FROM art a
@@ -116,7 +116,7 @@ async function getDrawById(id) {
     }
   } else if (draw.product_type === 'other') {
     const productResult = await db.execute({
-      sql: `SELECT o.name AS product_name, o.basename, o.description AS product_description,
+      sql: `SELECT o.name AS product_name, (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, o.description AS product_description,
                    o.slug AS product_slug, o.seller_id,
                    u.full_name AS seller_name, u.slug AS seller_slug
             FROM others o
@@ -176,7 +176,7 @@ async function getDrawsByDateRange(from, to) {
   for (const draw of draws) {
     if (draw.product_type === 'art') {
       const productResult = await db.execute({
-        sql: `SELECT a.basename, a.name, u.full_name AS seller_name
+        sql: `SELECT (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, a.name, u.full_name AS seller_name
               FROM art a
               LEFT JOIN users u ON a.seller_id = u.id
               WHERE a.id = ?`,
@@ -193,7 +193,7 @@ async function getDrawsByDateRange(from, to) {
       }
     } else if (draw.product_type === 'other') {
       const productResult = await db.execute({
-        sql: `SELECT o.basename, o.name, u.full_name AS seller_name
+        sql: `SELECT (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename, o.name, u.full_name AS seller_name
               FROM others o
               LEFT JOIN users u ON o.seller_id = u.id
               WHERE o.id = ?`,
@@ -484,7 +484,10 @@ async function getParticipationBillingData(participationId) {
             dapd.stripe_payment_method_id,
             COALESCE(a.seller_id, o.seller_id) AS seller_id,
             COALESCE(a.name, o.name) AS product_name,
-            COALESCE(a.basename, o.basename) AS basename,
+            COALESCE(
+              (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1),
+              (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1)
+            ) AS basename,
             a.type AS art_type
           FROM draw_participations dp
           INNER JOIN draws d ON dp.draw_id = d.id

@@ -37,9 +37,11 @@ function SellerProductsPageContent() {
   }
 
   const getImageUrl = (product) => {
+    const basename = product.thumbnail_basename || product.images?.[0]?.basename
+    if (!basename) return null
     return product.product_type === 'art'
-      ? getArtImageUrl(product.basename)
-      : getOthersImageUrl(product.basename)
+      ? getArtImageUrl(basename)
+      : getOthersImageUrl(basename)
   }
 
   const getStatusBadge = (status) => {
@@ -212,13 +214,15 @@ function SellerProductsPageContent() {
                         <td className="py-4 pl-4 pr-3 sm:pl-0">
                           <div className="flex items-center">
                             <div className="size-16 shrink-0 relative">
-                              <Image
-                                alt={product.name}
-                                src={getImageUrl(product)}
-                                fill
-                                className="rounded-md object-cover"
-                                sizes="64px"
-                              />
+                              {getImageUrl(product) && (
+                                <Image
+                                  alt={product.name}
+                                  src={getImageUrl(product)}
+                                  fill
+                                  className="rounded-md object-cover"
+                                  sizes="64px"
+                                />
+                              )}
                             </div>
                             <div className="ml-4">
                               <div className="font-medium text-gray-900">{product.name}</div>
@@ -302,13 +306,15 @@ function SellerProductsPageContent() {
                       {/* Content row: image + main fields */}
                       <div className="mt-4 flex items-center gap-4">
                         <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-md bg-gray-100 relative">
-                          <Image
-                            alt={product.name}
-                            src={getImageUrl(product)}
-                            fill
-                            className="object-cover"
-                            sizes="64px"
-                          />
+                          {getImageUrl(product) && (
+                            <Image
+                              alt={product.name}
+                              src={getImageUrl(product)}
+                              fill
+                              className="object-cover"
+                              sizes="64px"
+                            />
+                          )}
                         </div>
 
                         <div className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-2 text-sm">

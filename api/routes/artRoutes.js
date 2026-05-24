@@ -31,7 +31,7 @@ router.get('/author/:slug', cacheControl({ maxAge: 120 }), getArtProductsByAutho
 
 // Protected routes - Seller only
 router.get('/seller/me', authenticate, requireSeller, getSellerArtProducts);
-router.post('/', authenticate, requireSeller, upload.single('image'), createArtProduct);
+router.post('/', authenticate, requireSeller, upload.fields([{ name: 'images', maxCount: 3 }]), createArtProduct);
 router.delete('/:id', authenticate, requireSeller, deleteArtProduct);
 
 // Public route - must be after more specific routes to avoid conflict

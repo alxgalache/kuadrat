@@ -94,7 +94,6 @@ async function initializeDatabase() {
         name TEXT NOT NULL,
         description TEXT NOT NULL,
         price REAL NOT NULL,
-        basename TEXT NOT NULL,
         slug TEXT NOT NULL UNIQUE,
         visible INTEGER NOT NULL DEFAULT 1,
         is_sold INTEGER NOT NULL DEFAULT 0,
@@ -119,7 +118,6 @@ async function initializeDatabase() {
         name TEXT NOT NULL,
         description TEXT NOT NULL,
         price REAL NOT NULL,
-        basename TEXT NOT NULL,
         slug TEXT NOT NULL UNIQUE,
         visible INTEGER NOT NULL DEFAULT 1,
         is_sold INTEGER NOT NULL DEFAULT 0,
@@ -144,8 +142,19 @@ async function initializeDatabase() {
         key TEXT,
         value TEXT,
         stock INTEGER NOT NULL DEFAULT 0,
-        basename TEXT,
         FOREIGN KEY (other_id) REFERENCES others(id) ON DELETE CASCADE
+      )
+    `);
+
+    // ── Product images (polymorphic: art / other / other_var) ─
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS product_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_type TEXT NOT NULL CHECK(product_type IN ('art','other','other_var')),
+        product_id INTEGER NOT NULL,
+        basename TEXT NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -966,6 +975,8 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_others_seller ON others(seller_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_others_status ON others(status, visible, removed)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_other_vars_other ON other_vars(other_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_type, product_id, position)`);
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_images_basename ON product_images(basename)`);
 
     // Users
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_users_password_setup_token ON users(password_setup_token)`);

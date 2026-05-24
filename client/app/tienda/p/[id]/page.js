@@ -15,7 +15,8 @@ export async function generateMetadata({ params }) {
     `${product.name} por ${product.seller_full_name || 'artista'}. ${plainDescription}`,
     160,
   )
-  const imageUrl = getOthersImageUrl(product.basename)
+  const thumbBasename = product.thumbnail_basename || product.images?.[0]?.basename || null
+  const imageUrl = thumbBasename ? getOthersImageUrl(thumbBasename) : null
   const canonical = `/tienda/p/${product.slug || product.id}`
 
   return {
@@ -28,14 +29,14 @@ export async function generateMetadata({ params }) {
       title: `${product.name} | 140d`,
       description: metaDescription,
       type: 'website',
-      images: [{ url: imageUrl, alt: product.name }],
+      ...(imageUrl ? { images: [{ url: imageUrl, alt: product.name }] } : {}),
       url: `${SITE_URL}${canonical}`,
     },
     twitter: {
       card: 'summary_large_image',
       title: `${product.name} | 140d`,
       description: metaDescription,
-      images: [imageUrl],
+      ...(imageUrl ? { images: [imageUrl] } : {}),
     },
   }
 }
@@ -43,13 +44,15 @@ export async function generateMetadata({ params }) {
 export default async function OthersProductDetailPage({ params }) {
   const { id } = await params
   const product = await fetchOthersProduct(id)
+  const thumbBasename = product?.thumbnail_basename || product?.images?.[0]?.basename || null
+  const schemaImageUrl = thumbBasename ? getOthersImageUrl(thumbBasename) : null
 
   const productSchema = product ? {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
     description: stripHtml(product.description),
-    image: getOthersImageUrl(product.basename),
+    ...(schemaImageUrl ? { image: schemaImageUrl } : {}),
     brand: {
       '@type': 'Person',
       name: product.seller_full_name || '140d',

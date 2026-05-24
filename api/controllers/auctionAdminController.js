@@ -539,7 +539,9 @@ const getProductsForAuction = async (req, res, next) => {
     // - not removed
     // - NOT already assigned to another auction (unless it's the auction being edited)
     let artSql = `
-      SELECT a.id, a.name, a.price, a.basename, a.seller_id, u.full_name as seller_name, 'art' as product_type
+      SELECT a.id, a.name, a.price,
+             (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
+             a.seller_id, u.full_name as seller_name, 'art' as product_type
       FROM art a
       LEFT JOIN users u ON a.seller_id = u.id
       WHERE a.for_auction = 1 AND a.is_sold = 0 AND a.status = 'approved' AND a.removed = 0
@@ -560,7 +562,9 @@ const getProductsForAuction = async (req, res, next) => {
 
     // Get others products with the same logic
     let othersSql = `
-      SELECT o.id, o.name, o.price, o.basename, o.seller_id, u.full_name as seller_name, 'other' as product_type
+      SELECT o.id, o.name, o.price,
+             (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
+             o.seller_id, u.full_name as seller_name, 'other' as product_type
       FROM others o
       LEFT JOIN users u ON o.seller_id = u.id
       WHERE o.for_auction = 1 AND o.is_sold = 0 AND o.status = 'approved' AND o.removed = 0

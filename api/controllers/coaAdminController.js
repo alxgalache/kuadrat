@@ -89,7 +89,7 @@ const getTagDetail = async (req, res, next) => {
               t.art_id,
               a.name AS art_name,
               a.slug AS art_slug,
-              a.basename AS art_basename,
+              (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS art_basename,
               t.status,
               t.last_counter,
               t.is_permanently_locked,
