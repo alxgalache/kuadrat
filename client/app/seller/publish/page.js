@@ -44,9 +44,10 @@ async function validateImageFile(file) {
 }
 
 // Single image dropzone slot. Owns its own react-dropzone hook so multiple
-// slots can coexist on the same form.
-function ImageDropzoneSlot({ previewUrl, onDrop, isFirst }) {
-    const {getRootProps, getInputProps, isDragActive} = useDropzone({
+// slots can coexist on the same form. When an image is selected, shows a
+// compact thumbnail + action buttons instead of the dashed upload area.
+function ImageDropzoneSlot({ previewUrl, onDrop, onClear, isFirst }) {
+    const {getRootProps, getInputProps, isDragActive, open} = useDropzone({
         onDrop: (files) => { if (files?.[0]) onDrop(files[0]) },
         accept: {
             'image/png': ['.png'],
@@ -55,7 +56,54 @@ function ImageDropzoneSlot({ previewUrl, onDrop, isFirst }) {
         },
         maxFiles: 1,
         multiple: false,
+        noClick: !!previewUrl,
     })
+
+    if (previewUrl) {
+        return (
+            <div
+                {...getRootProps()}
+                className={`mt-2 flex items-center gap-4 rounded-lg border px-4 py-4 transition-colors cursor-default ${
+                    isDragActive ? 'border-black bg-gray-100' : 'border-gray-200 bg-gray-50'
+                }`}
+            >
+                <input {...getInputProps()} />
+                <NextImage
+                    src={previewUrl}
+                    alt="Preview"
+                    width={80}
+                    height={80}
+                    unoptimized
+                    className="size-20 flex-shrink-0 rounded-md object-cover"
+                />
+                <div className="min-w-0 flex-1">
+                    {isDragActive ? (
+                        <p className="text-sm font-semibold text-black">Suelta para reemplazar</p>
+                    ) : (
+                        <>
+                            <p className="text-sm font-medium text-gray-600">Imagen subida</p>
+                            <div className="mt-2 flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); open() }}
+                                    className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50"
+                                >
+                                    Reemplazar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); onClear() }}
+                                    className="rounded-md px-3 py-1.5 text-sm font-medium text-red-600 hover:text-red-800"
+                                >
+                                    Limpiar
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div
@@ -73,11 +121,9 @@ function ImageDropzoneSlot({ previewUrl, onDrop, isFirst }) {
                     <p className="font-semibold text-black">
                         {isDragActive
                             ? 'Suelta la imagen aquí'
-                            : previewUrl
-                                ? 'Haz clic o arrastra para reemplazar'
-                                : isFirst
-                                    ? 'Haz clic para subir o arrastra y suelta'
-                                    : 'Sube otra imagen'}
+                            : isFirst
+                                ? 'Haz clic para subir o arrastra y suelta'
+                                : 'Sube otra imagen'}
                     </p>
                 </div>
                 <p className="text-xs/5 text-gray-600">PNG, JPG o WEBP hasta 10MB, mínimo 600x600</p>
@@ -148,6 +194,18 @@ function PublishProductPageContent() {
         } catch (err) {
             showError('Imagen inválida', err.message)
         }
+    }
+
+    const handleClearGlobalSlot = (slotIndex) => {
+        setImageSlots((prev) => {
+            const next = [...prev]
+            const removed = next[slotIndex]
+            if (removed?.previewUrl) {
+                try { URL.revokeObjectURL(removed.previewUrl) } catch {}
+            }
+            next[slotIndex] = null
+            return next
+        })
     }
 
     const handleAddGlobalSlot = () => {
@@ -238,6 +296,36 @@ function PublishProductPageContent() {
             }
             return next
         })
+    }
+
+    const handleClearVariationSlot = (varIndex, slotIndex) => {
+        setVariations((prev) => {
+            const next = [...prev]
+            const slots = [...next[varIndex].imageSlots]
+            if (slots[slotIndex]?.previewUrl) {
+                try { URL.revokeObjectURL(slots[slotIndex].previewUrl) } catch {}
+            }
+            slots[slotIndex] = null
+            next[varIndex] = { ...next[varIndex], imageSlots: slots }
+            return next
+        })
+    }
+
+    const handleAddVariationSlotWithFile = async (varIndex, file) => {
+        try {
+            const entry = await validateImageFile(file)
+            setVariations((prev) => {
+                const next = [...prev]
+                if (next[varIndex].imageSlots.length >= MAX_PRODUCT_IMAGES) return prev
+                next[varIndex] = {
+                    ...next[varIndex],
+                    imageSlots: [...next[varIndex].imageSlots, entry],
+                }
+                return next
+            })
+        } catch (err) {
+            showError('Imagen inválida', `Variación ${varIndex + 1}: ${err.message}`)
+        }
     }
 
     // Cleanup all object URLs on unmount
@@ -743,56 +831,90 @@ function PublishProductPageContent() {
                                                                 )}
                                                             </div>
 
-                                                            <div className="space-y-2">
-                                                                <p className="text-xs/5 text-gray-500">Imágenes de la variación (opcional, hasta {MAX_PRODUCT_IMAGES})</p>
+                                                            <div className="space-y-2 pt-1">
+                                                                <p className="text-xs/5 text-gray-400">Imágenes (opcional, hasta {MAX_PRODUCT_IMAGES})</p>
                                                                 <div className="flex flex-wrap items-start gap-3">
                                                                     {variation.imageSlots.map((slot, slotIdx) => (
-                                                                        <div key={slotIdx} className="flex flex-col items-start gap-1">
-                                                                            <label className="flex-shrink-0 cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                                                        <div key={slotIdx} className="flex w-[68px] flex-col items-center gap-1">
+                                                                            <label className={`relative flex size-[68px] cursor-pointer items-center justify-center overflow-hidden rounded-lg border-2 transition-colors ${
+                                                                                slot?.previewUrl
+                                                                                    ? 'border-transparent ring-1 ring-gray-200'
+                                                                                    : 'border-dashed border-gray-200 bg-white hover:border-gray-400'
+                                                                            }`}>
                                                                                 <input
                                                                                     type="file"
                                                                                     accept="image/png,image/jpeg,image/webp"
                                                                                     className="hidden"
                                                                                     onChange={(e) => {
-                                                                                        if (e.target.files?.[0]) {
-                                                                                            handleVariationSlotDrop(varIndex, slotIdx, e.target.files[0])
-                                                                                        }
+                                                                                        if (e.target.files?.[0]) handleVariationSlotDrop(varIndex, slotIdx, e.target.files[0])
                                                                                     }}
                                                                                 />
-                                                                                {slot ? 'Reemplazar' : 'Subir imagen'}
+                                                                                {slot?.previewUrl ? (
+                                                                                    <NextImage
+                                                                                        src={slot.previewUrl}
+                                                                                        alt={`Variación ${varIndex + 1}, imagen ${slotIdx + 1}`}
+                                                                                        fill
+                                                                                        unoptimized
+                                                                                        className="object-cover"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <PlusIcon className="size-5 text-gray-300" />
+                                                                                )}
                                                                             </label>
-                                                                            {slot?.previewUrl ? (
-                                                                                <NextImage
-                                                                                    src={slot.previewUrl}
-                                                                                    alt={`Preview variación ${varIndex + 1} imagen ${slotIdx + 1}`}
-                                                                                    width={48}
-                                                                                    height={48}
-                                                                                    unoptimized
-                                                                                    className="rounded-md object-cover size-12"
-                                                                                />
-                                                                            ) : (
-                                                                                <span className="text-xs text-gray-400">Sin imagen</span>
-                                                                            )}
-                                                                            {slotIdx > 0 && (
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleRemoveVariationSlot(varIndex, slotIdx)}
-                                                                                    className="text-xs text-red-600 hover:text-red-800"
-                                                                                >
-                                                                                    Eliminar
-                                                                                </button>
-                                                                            )}
+                                                                            <div className="flex flex-col items-center text-[11px] leading-tight">
+                                                                                {slot?.previewUrl && (
+                                                                                    <>
+                                                                                        <label className="cursor-pointer text-gray-400 hover:text-gray-700">
+                                                                                            <input
+                                                                                                type="file"
+                                                                                                accept="image/png,image/jpeg,image/webp"
+                                                                                                className="hidden"
+                                                                                                onChange={(e) => {
+                                                                                                    if (e.target.files?.[0]) handleVariationSlotDrop(varIndex, slotIdx, e.target.files[0])
+                                                                                                }}
+                                                                                            />
+                                                                                            Cambiar
+                                                                                        </label>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => slotIdx === 0
+                                                                                                ? handleClearVariationSlot(varIndex, slotIdx)
+                                                                                                : handleRemoveVariationSlot(varIndex, slotIdx)
+                                                                                            }
+                                                                                            className="text-red-400 hover:text-red-600"
+                                                                                        >
+                                                                                            Quitar
+                                                                                        </button>
+                                                                                    </>
+                                                                                )}
+                                                                                {!slot?.previewUrl && slotIdx > 0 && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleRemoveVariationSlot(varIndex, slotIdx)}
+                                                                                        className="text-red-400 hover:text-red-600"
+                                                                                    >
+                                                                                        Quitar
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
                                                                         </div>
                                                                     ))}
-                                                                    {variation.imageSlots.length < MAX_PRODUCT_IMAGES && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleAddVariationSlot(varIndex)}
-                                                                            className="flex items-center gap-1 self-center text-xs font-medium text-black hover:text-gray-700"
-                                                                        >
-                                                                            <PlusIcon className="size-3" />
-                                                                            Añadir imagen a esta variación
-                                                                        </button>
+                                                                    {variation.imageSlots[0] !== null && variation.imageSlots.length < MAX_PRODUCT_IMAGES && (
+                                                                        <div className="flex w-[68px] flex-col items-center gap-1">
+                                                                            <label className="flex size-[68px] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-200 text-gray-300 transition-colors hover:border-gray-400 hover:text-gray-400">
+                                                                                <input
+                                                                                    type="file"
+                                                                                    accept="image/png,image/jpeg,image/webp"
+                                                                                    className="hidden"
+                                                                                    onChange={(e) => {
+                                                                                        if (e.target.files?.[0]) handleAddVariationSlotWithFile(varIndex, e.target.files[0])
+                                                                                    }}
+                                                                                />
+                                                                                <PlusIcon className="size-4" />
+                                                                                <span className="text-[11px] leading-none">Añadir</span>
+                                                                            </label>
+                                                                            <div className="h-[14px]" />
+                                                                        </div>
                                                                     )}
                                                                 </div>
                                                             </div>
@@ -842,9 +964,12 @@ function PublishProductPageContent() {
                                                     <ImageDropzoneSlot
                                                         previewUrl={slot?.previewUrl}
                                                         onDrop={(file) => handleGlobalSlotDrop(slotIdx, file)}
+                                                        onClear={slotIdx === 0
+                                                            ? () => handleClearGlobalSlot(slotIdx)
+                                                            : () => handleRemoveGlobalSlot(slotIdx)}
                                                         isFirst={slotIdx === 0}
                                                     />
-                                                    {slotIdx > 0 && (
+                                                    {slotIdx > 0 && !slot && (
                                                         <button
                                                             type="button"
                                                             onClick={() => handleRemoveGlobalSlot(slotIdx)}

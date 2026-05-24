@@ -53,6 +53,16 @@ export default function QuillEditor({ value, onChange, placeholder, modules, for
                 }
             })
 
+            // Remove toolbar buttons and pickers from the tab order so that
+            // pressing Tab from a preceding field lands directly on the editor
+            // area instead of cycling through every toolbar control.
+            const toolbarModule = quillInstance.getModule('toolbar')
+            if (toolbarModule?.container) {
+                toolbarModule.container
+                    .querySelectorAll('button, select, .ql-picker-label')
+                    .forEach((el) => el.setAttribute('tabindex', '-1'))
+            }
+
             quillRef.current = quillInstance
         })
 
