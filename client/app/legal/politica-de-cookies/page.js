@@ -23,7 +23,7 @@ export default function CookiePolicyPage() {
           Política de Cookies
         </h1>
         <p className="mt-2 text-sm text-gray-500">
-          Última actualización: abril 2025
+          Última actualización: Mayo 2026
         </p>
 
         <div className="mt-10 space-y-8 text-sm leading-7 text-gray-700">

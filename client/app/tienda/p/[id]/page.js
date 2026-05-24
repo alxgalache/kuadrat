@@ -77,9 +77,8 @@ export default async function OthersProductDetailPage({ params }) {
     '@type': 'BreadcrumbList',
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Inicio', item: SITE_URL },
-      { '@type': 'ListItem', position: 2, name: 'Galería', item: `${SITE_URL}/galeria` },
-      { '@type': 'ListItem', position: 3, name: 'Tienda', item: `${SITE_URL}/tienda` },
-      { '@type': 'ListItem', position: 4, name: product.name },
+      { '@type': 'ListItem', position: 2, name: 'Tienda', item: `${SITE_URL}/tienda` },
+      { '@type': 'ListItem', position: 3, name: product.name },
     ],
   } : null
 

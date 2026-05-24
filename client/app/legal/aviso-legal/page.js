@@ -2,10 +2,10 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Términos y Condiciones - 140d',
+  title: 'Aviso Legal - 140d',
 }
 
-export default function TermsPage() {
+export default function LegalNoticePage() {
   return (
     <div className="bg-white min-h-screen">
       <div className="mx-auto max-w-3xl px-6 py-16 sm:px-8 lg:px-10">
@@ -20,92 +20,151 @@ export default function TermsPage() {
         </Link>
 
         <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-          Términos y Condiciones
+          Aviso Legal
         </h1>
         <p className="mt-2 text-sm text-gray-500">
-          Última actualización: febrero 2025
+          Última actualización: Mayo 2026
         </p>
 
         <div className="mt-10 space-y-8 text-sm leading-7 text-gray-700">
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">1. Introducción</h2>
+            <h2 className="text-lg font-semibold text-gray-900">1. Identificación del Titular</h2>
             <p className="mt-3">
-              Bienvenido a 140d Galería de Arte. Estos Términos y Condiciones regulan el uso de nuestra plataforma web,
-              incluyendo la participación en subastas en línea. Al acceder a nuestro sitio web o participar en una subasta,
-              aceptas cumplir con estos términos en su totalidad. Si no estás de acuerdo con alguno de estos términos,
-              te rogamos que no utilices nuestros servicios.
+              En cumplimiento de lo establecido en el artículo 10 de la Ley 34/2002, de 11 de julio, de Servicios
+              de la Sociedad de la Información y del Comercio Electrónico (LSSICE), se ponen a disposición del
+              usuario los siguientes datos identificativos del titular del sitio web:
+            </p>
+            <ul className="mt-3 space-y-1 list-none">
+              <li><span className="font-medium">Denominación social:</span> 140D Servicios Digitales S.L.</li>
+              <li><span className="font-medium">Nombre comercial:</span> 140d Galería de Arte</li>
+              <li><span className="font-medium">CIF:</span> B88732599</li>
+              <li><span className="font-medium">Domicilio social:</span> Paseo del Rector Esperabé 18 2ºB, 37008, Salamanca</li>
+              <li><span className="font-medium">Correo electrónico de contacto:</span> info@140d.art</li>
+              <li><span className="font-medium">Sitio web:</span> https://140d.art</li>
+              <li><span className="font-medium">Datos de inscripción en el Registro Mercantil:</span> [TOMO, FOLIO, SECCIÓN, HOJA]</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-gray-900">2. Objeto y Ámbito de Aplicación</h2>
+            <p className="mt-3">
+              El presente Aviso Legal regula el acceso y uso del sitio web https://140d.art (en adelante, el
+              &ldquo;Sitio Web&rdquo;) y de los contenidos y servicios puestos a disposición del usuario a través
+              del mismo.
+            </p>
+            <p className="mt-3">
+              El mero acceso al Sitio Web implica la aceptación plena y sin reservas del presente Aviso Legal,
+              así como de los demás textos legales publicados: Política de Privacidad, Política de Cookies y
+              Términos y Condiciones.
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">2. Participación en Subastas</h2>
+            <h2 className="text-lg font-semibold text-gray-900">3. Condiciones de Acceso y Uso</h2>
             <p className="mt-3">
-              Cada puja realizada en nuestra plataforma es vinculante e irrevocable. Al realizar una puja, el usuario se compromete
-              a adquirir el artículo subastado en caso de resultar el pujador ganador, al precio de su puja final.
+              El acceso general al Sitio Web es libre y gratuito. El acceso a determinadas funcionalidades
+              (registro de usuario, participación en subastas, adquisición de obras o eventos en directo) requiere
+              el registro previo conforme a las condiciones específicas de cada servicio.
             </p>
             <p className="mt-3">
-              El participante debe ser mayor de 18 años y tener capacidad legal para celebrar contratos.
-              140d se reserva el derecho de solicitar verificación de identidad en cualquier momento.
+              El usuario se compromete a hacer un uso lícito, diligente y conforme a la buena fe del Sitio Web,
+              respetando en todo momento la normativa vigente y absteniéndose de cualquier actuación que pudiera
+              causar daños o perjuicios al titular o a terceros.
+            </p>
+            <p className="mt-3">Queda expresamente prohibido:</p>
+            <ul className="mt-2 space-y-1 list-disc list-inside">
+              <li>Utilizar el Sitio Web con fines ilícitos, fraudulentos o contrarios al orden público.</li>
+              <li>Introducir, difundir o publicar contenidos de carácter racista, xenófobo, obsceno, discriminatorio o que vulneren los derechos fundamentales de las personas.</li>
+              <li>Alterar, bloquear o deteriorar el normal funcionamiento técnico del Sitio Web.</li>
+              <li>Llevar a cabo acciones de scraping, extracción masiva de datos o cualquier otro proceso automatizado no autorizado.</li>
+              <li>Hacerse pasar por otra persona o entidad de forma fraudulenta.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-gray-900">4. Propiedad Intelectual e Industrial</h2>
+            <p className="mt-3">
+              Todos los contenidos del Sitio Web —incluyendo, a título enunciativo y no limitativo, textos,
+              fotografías, imágenes, ilustraciones, logotipos, marcas, diseños gráficos, código fuente e
+              interfaces de usuario— son titularidad de 140d Galería de Arte o de sus respectivos autores o
+              cedentes, y se encuentran protegidos por la legislación española e internacional en materia de
+              propiedad intelectual e industrial.
+            </p>
+            <p className="mt-3">
+              Queda expresamente prohibida la reproducción, distribución, comunicación pública, transformación o
+              cualquier otra forma de explotación de los contenidos del Sitio Web sin la autorización previa y
+              por escrito del titular o, en su caso, del autor o cedente que ostente los derechos correspondientes.
+            </p>
+            <p className="mt-3">
+              Las obras de arte publicadas en el Sitio Web son propiedad de sus respectivos artistas o de quienes
+              ostenten los derechos sobre ellas. Su reproducción, distribución o comunicación pública sin
+              autorización expresa del titular de los derechos constituye una infracción del Texto Refundido de
+              la Ley de Propiedad Intelectual (Real Decreto Legislativo 1/1996, de 12 de abril).
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">3. Proceso de Puja</h2>
+            <h2 className="text-lg font-semibold text-gray-900">5. Limitación de Responsabilidad</h2>
             <p className="mt-3">
-              Para participar en una subasta, el usuario deberá registrarse proporcionando sus datos personales,
-              dirección de entrega y un método de pago válido. Se realizará un cargo de validación de 1 EUR que será
-              reembolsado automáticamente.
+              140d Galería de Arte no garantiza la disponibilidad continua e ininterrumpida del Sitio Web ni la
+              ausencia de errores en sus contenidos. El titular se reserva el derecho de suspender, modificar o
+              interrumpir el acceso al Sitio Web o a cualquiera de sus secciones en cualquier momento y sin
+              previo aviso.
+            </p>
+            <p className="mt-3">140d Galería de Arte no asume responsabilidad por los daños o perjuicios que pudieran derivarse de:</p>
+            <ul className="mt-2 space-y-1 list-disc list-inside">
+              <li>Interrupciones o fallos en el acceso al Sitio Web causados por circunstancias ajenas a su control, incluyendo fallos de red, cortes en el suministro eléctrico o casos de fuerza mayor.</li>
+              <li>El uso ilícito, negligente o contrario a las presentes condiciones que realicen los usuarios.</li>
+              <li>La presencia de virus u otros elementos tecnológicos dañinos introducidos por terceros en los contenidos del Sitio Web.</li>
+              <li>Los contenidos, servicios o productos accesibles a través de sitios web de terceros enlazados desde el Sitio Web.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-gray-900">6. Privacidad y Cookies</h2>
+            <p className="mt-3">
+              El tratamiento de los datos personales de los usuarios se rige por la Política de Privacidad de
+              140d Galería de Arte, accesible en{' '}
+              <Link href="/legal/politica-de-privacidad" className="underline">
+                https://140d.art/legal/politica-de-privacidad
+              </Link>.
             </p>
             <p className="mt-3">
-              Las pujas deben respetar el incremento mínimo establecido para cada artículo. El sistema anti-sniping
-              puede extender la duración de la subasta si se recibe una puja en los últimos minutos.
+              El uso de cookies en el Sitio Web se encuentra regulado en la Política de Cookies, accesible en{' '}
+              <Link href="/legal/politica-de-cookies" className="underline">
+                https://140d.art/legal/politica-de-cookies
+              </Link>.
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">4. Pago y Entrega</h2>
+            <h2 className="text-lg font-semibold text-gray-900">7. Legislación Aplicable y Jurisdicción</h2>
             <p className="mt-3">
-              El ganador de la subasta deberá completar el pago del importe total en un plazo máximo de 5 días hábiles
-              desde la finalización de la subasta. El envío se realizará a la dirección indicada durante el registro.
-            </p>
-            <p className="mt-3">
-              Los gastos de envío, si los hubiera, serán comunicados al participante antes de la subasta y se añadirán
-              al precio final de adjudicación.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900">5. Cancelaciones y Devoluciones</h2>
-            <p className="mt-3">
-              Dado el carácter vinculante de las pujas, no se admiten cancelaciones una vez realizada la puja.
-              El derecho de desistimiento no es aplicable a los bienes adquiridos en subastas públicas,
-              de conformidad con la legislación vigente.
+              El presente Aviso Legal se rige íntegramente por la legislación española. Para la resolución de
+              cualquier controversia derivada del acceso o uso del Sitio Web, cuando una de las partes ostente
+              la condición de consumidor o usuario, serán competentes los Juzgados y Tribunales del domicilio
+              del consumidor, de conformidad con lo establecido en la normativa de protección de consumidores y
+              usuarios. En las relaciones entre profesionales o empresarios, las partes se someten expresamente
+              a los Juzgados y Tribunales de la ciudad de Salamanca, con renuncia a cualquier otro fuero que
+              pudiera corresponderles.
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">6. Responsabilidad</h2>
+            <h2 className="text-lg font-semibold text-gray-900">8. Actualización del Aviso Legal</h2>
             <p className="mt-3">
-              140d actúa como intermediario entre vendedores y compradores. Aunque realizamos esfuerzos razonables
-              para verificar la autenticidad y el estado de los artículos, no podemos garantizar la exactitud de
-              todas las descripciones proporcionadas por los vendedores.
+              140d Galería de Arte se reserva el derecho de modificar el presente Aviso Legal en cualquier
+              momento, publicando la versión actualizada en el Sitio Web con indicación de la fecha de la
+              última modificación. El acceso o uso continuado del Sitio Web tras la publicación de cualquier
+              modificación implica la aceptación de la versión vigente en ese momento.
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">7. Modificaciones</h2>
+            <h2 className="text-lg font-semibold text-gray-900">9. Contacto</h2>
             <p className="mt-3">
-              Nos reservamos el derecho de modificar estos términos en cualquier momento. Las modificaciones
-              entrarán en vigor desde su publicación en el sitio web. El uso continuado de la plataforma
-              tras la publicación de cambios constituye la aceptación de los mismos.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900">8. Contacto</h2>
-            <p className="mt-3">
-              Para cualquier consulta relacionada con estos términos, puedes contactarnos a través de
-              nuestro correo electrónico: info@140d.art
+              Para cualquier consulta relacionada con el presente Aviso Legal, puedes dirigirte a:{' '}
+              <a href="mailto:info@140d.art" className="underline">info@140d.art</a>
             </p>
           </section>
         </div>
