@@ -55,11 +55,13 @@ const nextConfig = {
       // LiveKit Cloud (events/streaming)
       'https://*.livekit.cloud',
       'wss://*.livekit.cloud',
+      // Plausible Analytics
+      'https://analytics.140d.art',
     ].join(' ');
 
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com https://analytics.140d.art",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `img-src 'self' data: https: http: blob: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
       "font-src 'self' https://fonts.gstatic.com",
