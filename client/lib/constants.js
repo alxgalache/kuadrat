@@ -86,6 +86,44 @@ export const COA_EVENT_STATUSES = {
   malformed:    { label: 'Mal formada',     className: 'bg-gray-100 text-gray-700' },
 };
 
+// Art product inquiry form (in the gallery product detail page).
+// All es-ES copy lives here so the modal component stays pure markup.
+export const INQUIRY_FIELD_LIMITS = {
+  name: 120,
+  email: 200,
+  phone: 40,
+  message: 2000,
+};
+
+export const INQUIRY_COPY = {
+  prompt: 'Si deseas utilizar otro método de pago, cambiar el método de envío, o solicitar información específica sobre esta obra,',
+  promptLink: 'haz click aquí',
+  modalTitle: 'Consulta sobre esta obra',
+  modalSubtitle: 'Cuéntanos qué necesitas y te responderemos por email.',
+  labelName: 'Nombre completo',
+  labelEmail: 'Email de contacto',
+  labelPhone: 'Teléfono de contacto (opcional)',
+  labelMessage: 'Mensaje',
+  placeholderName: 'Tu nombre',
+  placeholderEmail: 'tucorreo@ejemplo.com',
+  placeholderPhone: '+34 600 000 000',
+  placeholderMessage: 'Escribe aquí tu consulta…',
+  submit: 'Enviar',
+  submitting: 'Enviando…',
+  cancel: 'Cancelar',
+  gdpr: 'Al enviar este formulario usaremos tus datos únicamente para responder a tu consulta. Consulta nuestra',
+  gdprLink: 'política de privacidad',
+  gdprHref: '/legal/politica-de-privacidad',
+  captchaLoading: 'Cargando verificación de seguridad…',
+  bannerSuccess: 'Consulta enviada. Te responderemos en breve.',
+  bannerErrorCaptchaFailed: 'Verificación de seguridad fallida. Inténtalo de nuevo.',
+  bannerErrorCaptchaUnavailable: 'No se puede enviar la consulta en este momento. Inténtalo más tarde.',
+  bannerErrorRateLimit: 'Has alcanzado el número máximo de consultas. Inténtalo de nuevo más tarde.',
+  bannerErrorEmailDelivery: 'No se pudo enviar el email. Inténtalo más tarde.',
+  bannerErrorProductNotFound: 'No se pudo enviar la consulta: obra no encontrada.',
+  bannerErrorGeneric: 'No se pudo enviar la consulta. Inténtalo más tarde.',
+};
+
 // CoA verification result messages (Spanish) shown to a collector when their
 // tap fails. Keys match the status strings returned by /api/coa/verify.
 export const COA_FAILURE_MESSAGES = {

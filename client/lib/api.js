@@ -1704,3 +1704,13 @@ export const sellerAPI = {
     },
   },
 };
+
+// Inquiries API — public inquiry form on the art product detail page
+export const inquiriesAPI = {
+  createArtInquiry: async ({ productId, name, email, phone, message, turnstileToken }) => {
+    return apiRequest('/inquiries/art', {
+      method: 'POST',
+      body: JSON.stringify({ productId, name, email, phone, message, turnstileToken }),
+    });
+  },
+};

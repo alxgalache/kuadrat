@@ -216,6 +216,19 @@ const config = {
       windowSeconds: optionalInt('COA_VERIFY_RATE_LIMIT_WINDOW_SECONDS', 1),
       maxRequests: optionalInt('COA_VERIFY_RATE_LIMIT_MAX_REQUESTS', 60),
     },
+    // Art inquiry form rate limiter. windowSeconds is actually MINUTES due to
+    // the legacy convention shared with the other limiters (the middleware
+    // multiplies by 60 * 1000). Defaults: 3 requests per 60 minutes per IP.
+    inquiry: {
+      windowSeconds: optionalInt('INQUIRY_RATE_LIMIT_WINDOW_SECONDS', 60),
+      maxRequests: optionalInt('INQUIRY_RATE_LIMIT_MAX_REQUESTS', 3),
+    },
+  },
+
+  // --- Cloudflare Turnstile (captcha for the art product inquiry form) ---
+  // If empty, the inquiry endpoint responds 503 CAPTCHA_UNAVAILABLE.
+  turnstile: {
+    secret: optional('TURNSTILE_SECRET', ''),
   },
 
   // --- NTAG 424 DNA (Certificates of Authenticity) ---

@@ -199,12 +199,22 @@ All environment variables are validated at startup via `api/config/env.js`. See 
 * **Application:** PORT, NODE_ENV, LOG_LEVEL, CLIENT_URL
 * **Database:** TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
 * **Auth:** JWT_SECRET, JWT_EXPIRES_IN
-* **Email:** SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM
+* **Email:** SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM, BUSINESS_EMAIL (optional; falls back to EMAIL_FROM — used by the art product inquiry form as the commercial inbox)
 * **Payments:** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, PAYMENT_PROVIDER
 * **LiveKit:** LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 * **NTAG 424 DNA (CoA):** NTAG424_SYSTEM_ID, NTAG424_K_PICC, NTAG424_MASTER_KEY, IP_HASH_SALT — critical secrets validated via `requiredHex()`. Custody documented in `scripts/nfc-personalization/README.md §7`.
-* **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, COA_VERIFY_RATE_LIMIT_*, etc. Note: `*_WINDOW_SECONDS` is multiplied by 60 in the limiter — values are effectively in MINUTES (legacy naming).
+* **Captcha (Cloudflare Turnstile):** TURNSTILE_SECRET (api, optional — when empty the inquiry endpoint refuses with 503 CAPTCHA_UNAVAILABLE), NEXT_PUBLIC_TURNSTILE_SITE_KEY (client, optional — when empty the inquiry CTA on the art product page is hidden). Used by the art product inquiry form. Test keys ("always passes") are documented in `.env.example`.
+* **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, COA_VERIFY_RATE_LIMIT_*, INQUIRY_RATE_LIMIT_*, etc. Note: `*_WINDOW_SECONDS` is multiplied by 60 in the limiter — values are effectively in MINUTES (legacy naming).
 * **Business:** TAX_VAT_ES, DEALER_COMMISSION
+
+### Adding a new `NEXT_PUBLIC_*` variable
+
+`NEXT_PUBLIC_*` vars are embedded into the JS bundle at build time, so they must be present as ENV variables *during* `npm run build`. To add one, touch all FOUR places — missing any of them silently ships an empty value to production:
+
+1. `/.env.example` (repo root) — the source list read by docker-compose; also add it to local `/.env`.
+2. `client/.env.example` — the per-app reference for devs running Next.js outside Docker.
+3. `client/Dockerfile.staging` AND `client/Dockerfile.prod` — add an `ARG` line in the build-args block AND a matching `ENV NAME=$NAME` line before `RUN npm run build`. The local `client/Dockerfile` does NOT need it (dev mode reads env vars at runtime).
+4. `docker-compose.prod.yml` AND `docker-compose.pre2.yml` (staging) — add `- NEXT_PUBLIC_FOO=${NEXT_PUBLIC_FOO}` inside the client service's `build.args:` block.
 
 ## Certificates of Authenticity (NTAG 424 DNA)
 

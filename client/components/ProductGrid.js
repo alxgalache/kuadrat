@@ -22,7 +22,7 @@ function ProductGridItem({ product, getImageUrl, baseRoute }) {
                 alt={product.name}
                 src={getImageUrl(mainBasename)}
                 fill
-                className="object-cover group-hover:opacity-75"
+                className="object-cover [@media(hover:hover)]:group-hover:opacity-75"
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
               />
             )}

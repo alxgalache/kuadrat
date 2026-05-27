@@ -66,10 +66,25 @@ const coaVerifyLimiter = rateLimit({
     },
 });
 
+// Limiter for the public art-product inquiry form. Tight defaults (3/hour/IP)
+// because each successful request triggers an outbound email to the commercial
+// inbox — abuse would flood that mailbox.
+const inquiryLimiter = rateLimit({
+    windowMs: config.rateLimit.inquiry.windowSeconds * 60 * 1000,
+    limit: config.rateLimit.inquiry.maxRequests,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Has alcanzado el número máximo de consultas. Inténtalo de nuevo más tarde.',
+    },
+});
+
 module.exports = {
     generalLimiter,
     authLimiter,
     sensitiveLimiter,
     paymentVerificationLimiter,
     coaVerifyLimiter,
+    inquiryLimiter,
 };

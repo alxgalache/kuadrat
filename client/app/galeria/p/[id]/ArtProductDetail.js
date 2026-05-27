@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { artAPI, ordersAPI, authAPI, authorsAPI } from '@/lib/api'
 import { useCart } from '@/contexts/CartContext'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -12,7 +13,14 @@ import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
-import { SENDCLOUD_ENABLED_ART } from '@/lib/constants'
+import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY } from '@/lib/constants'
+
+const ArtProductInquiryModal = dynamic(
+  () => import('@/components/ArtProductInquiryModal'),
+  { ssr: false }
+)
+
+const TURNSTILE_ENABLED = !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
 
 export default function ArtProductDetail({ params }) {
   const unwrappedParams = use(params)
@@ -24,6 +32,7 @@ export default function ArtProductDetail({ params }) {
   const [selectedAuthor, setSelectedAuthor] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [shippingModalOpen, setShippingModalOpen] = useState(false)
+  const [inquiryModalOpen, setInquiryModalOpen] = useState(false)
   const [isHoveringCart, setIsHoveringCart] = useState(false)
   const [supportsHover, setSupportsHover] = useState(true)
   const { isInCart, addToCart, removeFromCart, isSellerInCart, getSellerArtShipping } = useCart()
@@ -241,6 +250,20 @@ export default function ArtProductDetail({ params }) {
                   </button>
                 </p>
               )}
+
+              {TURNSTILE_ENABLED && (
+                <p className="mt-4 text-sm text-gray-600">
+                  {INQUIRY_COPY.prompt}{' '}
+                  <button
+                    type="button"
+                    onClick={() => setInquiryModalOpen(true)}
+                    className="underline text-gray-700 hover:text-gray-500"
+                  >
+                    {INQUIRY_COPY.promptLink}
+                  </button>
+                  .
+                </p>
+              )}
             </div>
 
             {product.ai_generated === 1 && (
@@ -309,6 +332,20 @@ export default function ArtProductDetail({ params }) {
             type: 'art',
             seller_id: product.seller_id,
             seller_name: product.seller_full_name,
+          }}
+        />
+      )}
+
+      {/* Inquiry modal — request info / different payment / different shipping */}
+      {TURNSTILE_ENABLED && product && (
+        <ArtProductInquiryModal
+          open={inquiryModalOpen}
+          onClose={() => setInquiryModalOpen(false)}
+          product={{
+            id: product.id,
+            name: product.name,
+            seller_full_name: product.seller_full_name,
+            price: product.price,
           }}
         />
       )}

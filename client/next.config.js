@@ -59,12 +59,12 @@ const nextConfig = {
 
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com https://js.stripe.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `img-src 'self' data: https: http: blob: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
       "font-src 'self' https://fonts.gstatic.com",
       `connect-src ${cspConnectSrc}`,
-      "frame-src 'self' https://*.revolut.com https://js.stripe.com",
+      "frame-src 'self' https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com",
       `media-src 'self' blob: https: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
       "worker-src 'self' blob:",
     ].join('; ');

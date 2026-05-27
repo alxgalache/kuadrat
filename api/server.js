@@ -48,6 +48,7 @@ const eventRoutes = require('./routes/eventRoutes');
 const drawRoutes = require('./routes/drawRoutes');
 const storiesRoutes = require('./routes/storiesRoutes');
 const coaRoutes = require('./routes/coaRoutes');
+const inquiriesRoutes = require('./routes/inquiriesRoutes');
 const setupAuctionSocket = require('./socket/auctionSocket');
 const setupEventSocket = require('./socket/eventSocket');
 const setupDrawSocket = require('./socket/drawSocket');
@@ -194,6 +195,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/draws', drawRoutes);
 app.use('/api/stories', storiesRoutes);
 app.use('/api/coa', coaRoutes);
+app.use('/api/inquiries', inquiriesRoutes);
 
 // 404 handler
 app.use(notFound);
