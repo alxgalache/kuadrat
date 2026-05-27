@@ -1,5 +1,6 @@
 import './globals.css'
 // import ShippingBanner from '@/components/ShippingBanner'
+import Script from 'next/script'
 import JsonLd from '@/components/JsonLd'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { CartProvider } from '@/contexts/CartContext'
@@ -146,6 +147,23 @@ export default function RootLayout({ children }) {
             </AuthProvider>
           </BannerNotificationProvider>
         </NotificationProvider>
+        {/* Plausible Analytics — solo en producción */}
+        {process.env.NODE_ENV === 'production' && (
+          <>
+            {/* Stub de cola asíncrona: permite llamar a window.plausible() antes de que el script externo cargue */}
+            <Script
+              id="plausible-init"
+              strategy="beforeInteractive"
+              dangerouslySetInnerHTML={{
+                __html: `window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()`,
+              }}
+            />
+            <Script
+              strategy="afterInteractive"
+              src="https://analytics.140d.art/js/pa-wBK9e93pedt0sh-_3hOYT.js"
+            />
+          </>
+        )}
       </body>
     </html>
   )
