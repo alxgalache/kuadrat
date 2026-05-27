@@ -68,6 +68,7 @@ services:
         - NEXT_PUBLIC_TAX_VAT_ART_ES=${NEXT_PUBLIC_TAX_VAT_ART_ES}
         - NEXT_PUBLIC_SENDCLOUD_ENABLED_ART=${NEXT_PUBLIC_SENDCLOUD_ENABLED_ART}
         - NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS=${NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS}
+        - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
     image: kuadrat-client-staging
     container_name: kuadrat-client-staging
     # Bind to localhost only - nginx will handle external traffic
