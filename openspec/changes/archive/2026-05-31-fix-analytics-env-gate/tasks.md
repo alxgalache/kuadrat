@@ -19,4 +19,4 @@
 ## 4. Verification
 
 - [x] 4.1 Confirm `grep -rn "NODE_ENV === 'production'" client/app/layout.js` returns nothing (gate fully migrated)
-- [ ] 4.2 Run `npm run build` in `client/` (or a docker build) with `NEXT_PUBLIC_APP_ENV=preprod` and confirm the output contains no `analytics.140d.art` reference; repeat with `production`/unset and confirm it is present
+- [x] 4.2 Run `npm run build` in `client/` (or a docker build) with `NEXT_PUBLIC_APP_ENV=preprod` and confirm the output contains no `analytics.140d.art` reference; repeat with `production`/unset and confirm it is present

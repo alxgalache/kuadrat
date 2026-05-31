@@ -150,7 +150,7 @@ export default function ArtProductDetail({ params }) {
       productType: 'art',
       name: product.name,
       price: product.price,
-      basename: product.basename,
+      basename: product.images?.[0]?.basename || product.thumbnail_basename || null,
       slug: product.slug,
       sellerId: product.seller_id,
       sellerName: product.seller_full_name,
