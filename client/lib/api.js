@@ -1627,6 +1627,12 @@ export const sellerAPI = {
     return apiRequest('/seller/wallet');
   },
 
+  // Per-seller gallery commission rates (whole percentages). Used by the
+  // publish form's net-earnings preview instead of build-time env vars.
+  getCommissionRates: async () => {
+    return apiRequest('/seller/commission-rates');
+  },
+
   // Change #3: stripe-connect-events-wallet — paid events hosted by the seller
   getPaidEvents: async () => {
     return apiRequest('/seller/paid-events');

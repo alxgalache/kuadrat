@@ -3,7 +3,7 @@
 import {useState, useEffect, useMemo} from 'react'
 import NextImage from 'next/image'
 import {useRouter} from 'next/navigation'
-import {artAPI, othersAPI} from '@/lib/api'
+import {artAPI, othersAPI, sellerAPI} from '@/lib/api'
 import {PhotoIcon, PlusIcon, XMarkIcon} from '@heroicons/react/24/solid'
 import {ChevronDownIcon} from '@heroicons/react/16/solid'
 import AuthGuard from '@/components/AuthGuard'
@@ -149,6 +149,9 @@ function PublishProductPageContent() {
     const [imageSlots, setImageSlots] = useState([null])
     const [loading, setLoading] = useState(false)
     const [showDecimalWarning, setShowDecimalWarning] = useState(false)
+    // Per-seller gallery commission rates (whole percentages), fetched from the
+    // API. Replaces the former NEXT_PUBLIC_DEALER_COMMISSION_* env vars.
+    const [commissionRates, setCommissionRates] = useState({art: null, other: null})
 
     // For "others" products - variations. Each variation has its own array of
     // image slots (0..MAX_PRODUCT_IMAGES). Variation images are optional.
@@ -327,6 +330,24 @@ function PublishProductPageContent() {
             showError('Imagen inválida', `Variación ${varIndex + 1}: ${err.message}`)
         }
     }
+
+    // Fetch the authenticated seller's commission rates for the net-earnings
+    // preview. Failures leave the rates null and the preview simply hides.
+    useEffect(() => {
+        let active = true
+        sellerAPI.getCommissionRates()
+            .then((data) => {
+                if (!active) return
+                setCommissionRates({
+                    art: Number(data.commissionRateArt),
+                    other: Number(data.commissionRateOther),
+                })
+            })
+            .catch((err) => {
+                console.error('Error loading commission rates:', err)
+            })
+        return () => { active = false }
+    }, [])
 
     // Cleanup all object URLs on unmount
     useEffect(() => {
@@ -540,19 +561,23 @@ function PublishProductPageContent() {
         setShowDecimalWarning(false)
     }
 
-    // Net earnings preview
+    // Net earnings preview. Commission rate comes from the seller's own
+    // configured rate (fetched from the API); VAT still comes from env. The
+    // preview only renders once the rate for the active category is available.
     const priceValue = parseFloat(price)
-    const showNetEarnings = !isNaN(priceValue) && priceValue >= 10
+    const activeCommissionRate = productCategory === 'art' ? commissionRates.art : commissionRates.other
+    const showNetEarnings = !isNaN(priceValue) && priceValue >= 10 &&
+        activeCommissionRate != null && !isNaN(activeCommissionRate)
     let netEarnings = null
     if (showNetEarnings) {
         if (productCategory === 'art') {
-            const commissionRate = parseFloat(process.env.NEXT_PUBLIC_DEALER_COMMISSION_ART || '25') / 100
+            const commissionRate = activeCommissionRate / 100
             const vatRate = parseFloat(process.env.NEXT_PUBLIC_TAX_VAT_ART_ES || '10') / 100
             const gross = priceValue * (1 - commissionRate)
             const net = gross / (1 + vatRate)
             netEarnings = { net, gross, vatPercent: parseInt(process.env.NEXT_PUBLIC_TAX_VAT_ART_ES || '10') }
         } else {
-            const commissionRate = parseFloat(process.env.NEXT_PUBLIC_DEALER_COMMISSION_OTHERS || '10') / 100
+            const commissionRate = activeCommissionRate / 100
             const vatRate = parseFloat(process.env.NEXT_PUBLIC_TAX_VAT_ES || '21') / 100
             const base = priceValue / (1 + vatRate)
             const artistBase = base * (1 - commissionRate)

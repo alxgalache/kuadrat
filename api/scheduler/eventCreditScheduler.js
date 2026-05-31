@@ -80,11 +80,15 @@ async function loadUncreditedAttendees(eventId) {
 async function creditEvent(event) {
   const attendees = await loadUncreditedAttendees(event.id);
 
-  // Commission rate is the same one the fiscal flow uses for "others":
-  // standard 21% VAT comes from there. Stored in env as a whole percentage
-  // (e.g. "10" → 10%), divided by 100 to get the multiplier — matches the
-  // convention used in ordersController.js.
-  const commissionRate = (Number(config.payment.dealerCommissionOthers) || 0) / 100;
+  // Commission rate is the event host's per-seller "other" commission
+  // (`users.dealer_commission_other`), stored as a whole percentage (e.g. 10 →
+  // 10%) and divided by 100 to get the multiplier — same convention as
+  // ordersController.js. Paid events follow the standard 21% VAT regime.
+  const hostResult = await db.execute({
+    sql: 'SELECT dealer_commission_other FROM users WHERE id = ?',
+    args: [event.host_user_id],
+  });
+  const commissionRate = (Number(hostResult.rows[0]?.dealer_commission_other) || 0) / 100;
 
   const lines = [];
   let totalCredit = 0;

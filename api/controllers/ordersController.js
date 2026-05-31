@@ -1,7 +1,6 @@
 const { db } = require('../config/database');
 const { createBatch } = require('../utils/transaction');
 const logger = require('../config/logger');
-const config = require('../config/env');
 const { ApiError } = require('../middleware/errorHandler');
 const { sendPurchaseConfirmation, sendPaymentConfirmation, sendTrackingUpdateEmail, sendItemsSentEmail } = require('../services/emailService');
 const { sendBuyerToSellerContactEmail } = require('../services/emailService');
@@ -442,12 +441,35 @@ const placeOrder = async (req, res, next) => {
     }
 
     // 3) Create order item rows (art and others) — inventory already reserved above
-    const dealerCommissionRateArt = config.payment.dealerCommissionArt / 100;
-    const dealerCommissionRateOthers = config.payment.dealerCommissionOthers / 100;
+    // Commission is per-seller: resolve each product owner's configured rate.
+    // A cart may span multiple sellers, so fetch all involved sellers in one query.
+    const sellerIds = [
+      ...new Set(
+        [...artProducts, ...othersProducts]
+          .map((p) => p.seller_id)
+          .filter((id) => id != null)
+      ),
+    ];
+    const sellerCommissionMap = new Map();
+    if (sellerIds.length > 0) {
+      const sellerPlaceholders = sellerIds.map(() => '?').join(',');
+      const sellerResult = await db.execute({
+        sql: `SELECT id, dealer_commission_art, dealer_commission_other
+              FROM users WHERE id IN (${sellerPlaceholders})`,
+        args: sellerIds,
+      });
+      for (const row of sellerResult.rows) {
+        sellerCommissionMap.set(row.id, {
+          art: Number(row.dealer_commission_art) || 0,
+          other: Number(row.dealer_commission_other) || 0,
+        });
+      }
+    }
 
     for (const item of artItems) {
       const product = artProducts.find((p) => p.id === item.id);
-      const commissionAmount = product.price * dealerCommissionRateArt;
+      const sellerRate = (sellerCommissionMap.get(product.seller_id)?.art || 0) / 100;
+      const commissionAmount = product.price * sellerRate;
       await db.execute({
         sql: `INSERT INTO art_order_items (
           order_id,
@@ -481,7 +503,8 @@ const placeOrder = async (req, res, next) => {
     for (const item of othersItems) {
       const product = othersProducts.find((p) => p.id === item.id);
       const variant = othersVariations.find((v) => v.id === item.variantId);
-      const commissionAmount = product.price * dealerCommissionRateOthers;
+      const sellerRate = (sellerCommissionMap.get(product.seller_id)?.other || 0) / 100;
+      const commissionAmount = product.price * sellerRate;
       await db.execute({
         sql: `INSERT INTO other_order_items (
           order_id,

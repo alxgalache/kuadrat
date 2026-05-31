@@ -163,8 +163,8 @@ const config = {
     provider: optional('PAYMENT_PROVIDER', 'stripe'),
     vatEs: optionalFloat('TAX_VAT_ES', 0.21),
     vatArtEs: optionalFloat('TAX_VAT_ART_ES', 0.10),
-    dealerCommissionArt: optionalFloat('DEALER_COMMISSION_ART', 0),
-    dealerCommissionOthers: optionalFloat('DEALER_COMMISSION_OTHERS', 0),
+    // Gallery commission is now per-seller (users.dealer_commission_art /
+    // users.dealer_commission_other); the former global env vars are gone.
   },
 
   // --- Business fiscal identity (Change #4: stripe-connect-fiscal-report) ---

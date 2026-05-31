@@ -61,7 +61,11 @@ async function initializeDatabase() {
         fiscal_address_postal_code TEXT,
         fiscal_address_province TEXT,
         fiscal_address_country TEXT NOT NULL DEFAULT 'ES',
-        irpf_retention_rate REAL
+        irpf_retention_rate REAL,
+        -- Per-seller gallery commission (whole percentage, e.g. 25 = 25%).
+        -- Replaces the former global DEALER_COMMISSION_* env vars.
+        dealer_commission_art REAL NOT NULL DEFAULT 25,
+        dealer_commission_other REAL NOT NULL DEFAULT 10
       )
     `);
 
@@ -681,6 +685,10 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE users ADD COLUMN fiscal_address_country TEXT NOT NULL DEFAULT \'ES\'');
     await safeAlter('ALTER TABLE users ADD COLUMN irpf_retention_rate REAL');
     await safeAlter('ALTER TABLE users DROP COLUMN autofactura_agreement_signed_at');
+    // Per-seller gallery commission (whole percentage). Replaces the former
+    // global DEALER_COMMISSION_ART / DEALER_COMMISSION_OTHERS env vars.
+    await safeAlter('ALTER TABLE users ADD COLUMN dealer_commission_art REAL NOT NULL DEFAULT 25');
+    await safeAlter('ALTER TABLE users ADD COLUMN dealer_commission_other REAL NOT NULL DEFAULT 10');
     // Unique partial index on stripe_connect_account_id (ALTER TABLE can't add UNIQUE in SQLite)
     await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stripe_connect_account_id ON users(stripe_connect_account_id) WHERE stripe_connect_account_id IS NOT NULL');
 

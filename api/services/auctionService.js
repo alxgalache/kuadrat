@@ -1048,6 +1048,8 @@ async function getBidBillingData(bidId) {
             apd.stripe_customer_id,
             apd.stripe_payment_method_id,
             COALESCE(a.seller_id, o.seller_id) AS seller_id,
+            su.dealer_commission_art AS dealer_commission_art,
+            su.dealer_commission_other AS dealer_commission_other,
             COALESCE(a.name, o.name) AS product_name,
             COALESCE(
               (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1),
@@ -1059,6 +1061,7 @@ async function getBidBillingData(bidId) {
           LEFT JOIN auction_authorised_payment_data apd ON apd.auction_buyer_id = ab.id
           LEFT JOIN art a ON b.product_type = 'art' AND b.product_id = a.id
           LEFT JOIN others o ON b.product_type = 'other' AND b.product_id = o.id
+          LEFT JOIN users su ON su.id = COALESCE(a.seller_id, o.seller_id)
           WHERE b.id = ?`,
     args: [bidId],
   });

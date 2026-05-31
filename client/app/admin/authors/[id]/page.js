@@ -229,6 +229,18 @@ function AuthorProfilePageContent({ params }) {
             <dt className="text-sm font-medium text-gray-500">Visible</dt>
             <dd className="mt-1 text-sm text-gray-900">{author.visible ? 'Sí' : 'No'}</dd>
           </div>
+          {author.dealer_commission_art != null && (
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Comisión arte</dt>
+              <dd className="mt-1 text-sm text-gray-900">{author.dealer_commission_art}%</dd>
+            </div>
+          )}
+          {author.dealer_commission_other != null && (
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Comisión otros productos</dt>
+              <dd className="mt-1 text-sm text-gray-900">{author.dealer_commission_other}%</dd>
+            </div>
+          )}
         </div>
 
         {/* Products Table */}

@@ -4,7 +4,6 @@ const bcrypt = require('bcrypt');
 const { authenticate, requireSeller } = require('../middleware/authorization');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
-const config = require('../config/env');
 const { ApiError } = require('../middleware/errorHandler');
 const { sendSuccess } = require('../utils/response');
 const { sendWithdrawalNotificationEmail } = require('../services/emailService');
@@ -367,7 +366,9 @@ router.get('/wallet', async (req, res, next) => {
       sql: `SELECT available_withdrawal_art_rebu,
                    available_withdrawal_standard_vat,
                    withdrawal_recipient,
-                   withdrawal_iban
+                   withdrawal_iban,
+                   dealer_commission_art,
+                   dealer_commission_other
             FROM users
             WHERE id = ?`,
       args: [userId],
@@ -385,10 +386,41 @@ router.get('/wallet', async (req, res, next) => {
       balance: balanceArtRebu + balanceStandardVat,
       balanceArtRebu,
       balanceStandardVat,
-      commissionRateArt: config.payment.dealerCommissionArt,
-      commissionRateOthers: config.payment.dealerCommissionOthers,
+      commissionRateArt: Number(row.dealer_commission_art) || 0,
+      commissionRateOthers: Number(row.dealer_commission_other) || 0,
       recipientName: row.withdrawal_recipient || '',
       iban: row.withdrawal_iban || '',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/seller/commission-rates
+ * Returns the authenticated seller's per-type gallery commission rates (whole
+ * percentages). Used by the publish form's net-earnings preview so it never
+ * relies on build-time NEXT_PUBLIC_DEALER_COMMISSION_* env vars.
+ */
+router.get('/commission-rates', async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await db.execute({
+      sql: `SELECT dealer_commission_art, dealer_commission_other
+            FROM users
+            WHERE id = ?`,
+      args: [userId],
+    });
+
+    if (result.rows.length === 0) {
+      throw new ApiError(404, 'Usuario no encontrado', 'Usuario no encontrado');
+    }
+
+    const row = result.rows[0];
+    sendSuccess(res, {
+      commissionRateArt: Number(row.dealer_commission_art) || 0,
+      commissionRateOther: Number(row.dealer_commission_other) || 0,
     });
   } catch (error) {
     next(error);

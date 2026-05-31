@@ -1,7 +1,6 @@
 const drawService = require('../services/drawService');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
-const config = require('../config/env');
 
 /**
  * POST /api/admin/draws
@@ -300,8 +299,8 @@ const billParticipation = async (req, res, next) => {
     const drawPrice = Number(data.price) || 0;
     const parsedShippingCost = Number(shippingCost) || 0;
     const commissionRate = data.product_type === 'other'
-      ? (config.payment.dealerCommissionOthers / 100)
-      : (config.payment.dealerCommissionArt / 100);
+      ? ((Number(data.dealer_commission_other) || 0) / 100)
+      : ((Number(data.dealer_commission_art) || 0) / 100);
     const commissionAmount = Math.round(drawPrice * commissionRate * 100) / 100;
     const totalPrice = drawPrice + parsedShippingCost;
 

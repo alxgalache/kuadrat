@@ -483,6 +483,8 @@ async function getParticipationBillingData(participationId) {
             dapd.stripe_customer_id,
             dapd.stripe_payment_method_id,
             COALESCE(a.seller_id, o.seller_id) AS seller_id,
+            su.dealer_commission_art AS dealer_commission_art,
+            su.dealer_commission_other AS dealer_commission_other,
             COALESCE(a.name, o.name) AS product_name,
             COALESCE(
               (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1),
@@ -495,6 +497,7 @@ async function getParticipationBillingData(participationId) {
           LEFT JOIN draw_authorised_payment_data dapd ON dapd.draw_buyer_id = db2.id
           LEFT JOIN art a ON d.product_type = 'art' AND d.product_id = a.id
           LEFT JOIN others o ON d.product_type = 'other' AND d.product_id = o.id
+          LEFT JOIN users su ON su.id = COALESCE(a.seller_id, o.seller_id)
           WHERE dp.id = ?`,
     args: [participationId],
   });

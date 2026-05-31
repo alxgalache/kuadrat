@@ -28,6 +28,8 @@ function AuthorEditPageContent({ params }) {
   const [pickupPostalCode, setPickupPostalCode] = useState('')
   const [pickupCountry, setPickupCountry] = useState('')
   const [pickupInstructions, setPickupInstructions] = useState('')
+  const [dealerCommissionArt, setDealerCommissionArt] = useState('')
+  const [dealerCommissionOther, setDealerCommissionOther] = useState('')
   const [avatarFile, setAvatarFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [loading, setLoading] = useState(true)
@@ -75,6 +77,8 @@ function AuthorEditPageContent({ params }) {
       setPickupPostalCode(author.pickup_postal_code || '')
       setPickupCountry(author.pickup_country || '')
       setPickupInstructions(author.pickup_instructions || '')
+      setDealerCommissionArt(author.dealer_commission_art != null ? String(author.dealer_commission_art) : '')
+      setDealerCommissionOther(author.dealer_commission_other != null ? String(author.dealer_commission_other) : '')
       if (author.profile_img) {
         setPreviewUrl(getAuthorImageUrl(author.profile_img))
       }
@@ -181,6 +185,18 @@ function AuthorEditPageContent({ params }) {
       return
     }
 
+    // Validate commission percentages (0–100)
+    const commissionArtNum = parseFloat(dealerCommissionArt)
+    const commissionOtherNum = parseFloat(dealerCommissionOther)
+    if (dealerCommissionArt === '' || isNaN(commissionArtNum) || commissionArtNum < 0 || commissionArtNum > 100) {
+      showError('Error de validación', 'La comisión de arte debe ser un número entre 0 y 100')
+      return
+    }
+    if (dealerCommissionOther === '' || isNaN(commissionOtherNum) || commissionOtherNum < 0 || commissionOtherNum > 100) {
+      showError('Error de validación', 'La comisión de otros productos debe ser un número entre 0 y 100')
+      return
+    }
+
     setSaving(true)
 
     try {
@@ -202,7 +218,9 @@ function AuthorEditPageContent({ params }) {
         pickup_city: pickupCity.trim(),
         pickup_postal_code: pickupPostalCode.trim(),
         pickup_country: pickupCountry.trim(),
-        pickup_instructions: pickupInstructions.trim()
+        pickup_instructions: pickupInstructions.trim(),
+        dealer_commission_art: commissionArtNum,
+        dealer_commission_other: commissionOtherNum
       })
 
       // Save Sendcloud config if there is data
@@ -437,6 +455,53 @@ function AuthorEditPageContent({ params }) {
                             value={pickupInstructions}
                             onChange={(e) => setPickupInstructions(e.target.value)}
                             placeholder="Ej: Llamar al timbre, horario de recogida, etc."
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm/6 font-semibold text-gray-900">Comisión de la galería</h3>
+                    <p className="text-sm/6 text-gray-500">
+                      Porcentaje que retiene la galería sobre cada venta de este vendedor.
+                    </p>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                      <div>
+                        <label htmlFor="dealerCommissionArt" className="block text-sm/6 font-medium text-gray-900">
+                          Comisión arte (%)
+                        </label>
+                        <div className="mt-2">
+                          <input
+                            id="dealerCommissionArt"
+                            name="dealerCommissionArt"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={dealerCommissionArt}
+                            onChange={(e) => setDealerCommissionArt(e.target.value)}
+                            placeholder="Ej: 25"
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="dealerCommissionOther" className="block text-sm/6 font-medium text-gray-900">
+                          Comisión otros productos (%)
+                        </label>
+                        <div className="mt-2">
+                          <input
+                            id="dealerCommissionOther"
+                            name="dealerCommissionOther"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={dealerCommissionOther}
+                            onChange={(e) => setDealerCommissionOther(e.target.value)}
+                            placeholder="Ej: 10"
                             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                           />
                         </div>
