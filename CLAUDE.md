@@ -197,6 +197,7 @@ The cap of 3 images per `(product_type, product_id)` is enforced at the upload l
 
 All environment variables are validated at startup via `api/config/env.js`. See `api/.env.example` for full documentation. Key groups:
 * **Application:** PORT, NODE_ENV, LOG_LEVEL, CLIENT_URL
+* **Frontend environment identity:** NEXT_PUBLIC_APP_ENV (`preprod` | `production`) — build-time `NEXT_PUBLIC_*` var that distinguishes preprod from prod on the client. Required because Next.js forces `NODE_ENV=production` during `next build` and inlines it, so `NODE_ENV` cannot separate the two. Read via `client/lib/env.js` (`IS_PROD`); gates Plausible Analytics (and future prod-only concerns). Unset defaults to `production` (fail-safe).
 * **Database:** TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
 * **Auth:** JWT_SECRET, JWT_EXPIRES_IN
 * **Email:** SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM, BUSINESS_EMAIL (optional; falls back to EMAIL_FROM — used by the art product inquiry form as the commercial inbox)

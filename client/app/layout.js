@@ -12,6 +12,7 @@ import CookieBanner from '@/components/CookieBanner'
 import RateLimitHandler from '@/components/RateLimitHandler'
 import TestAccessGate from '@/components/TestAccessGate'
 import LayoutWrapper from '@/components/LayoutWrapper'
+import { IS_PROD } from '@/lib/env'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
@@ -148,7 +149,7 @@ export default function RootLayout({ children }) {
           </BannerNotificationProvider>
         </NotificationProvider>
         {/* Plausible Analytics — solo en producción */}
-        {process.env.NODE_ENV === 'production' && (
+        {IS_PROD && (
           <>
             {/* Stub de cola asíncrona: permite llamar a window.plausible() antes de que el script externo cargue */}
             <Script
