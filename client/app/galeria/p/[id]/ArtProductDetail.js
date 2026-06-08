@@ -13,14 +13,31 @@ import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
-import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY } from '@/lib/constants'
+import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY, PAYMENT_ENABLED, ART_BUY_AVAILABLE } from '@/lib/constants'
 
 const ArtProductInquiryModal = dynamic(
   () => import('@/components/ArtProductInquiryModal'),
   { ssr: false }
 )
 
+const ArtProductQuoteModal = dynamic(
+  () => import('@/components/ArtProductQuoteModal'),
+  { ssr: false }
+)
+
 const TURNSTILE_ENABLED = !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+
+// CTA resolution for the art product detail page based on the storefront
+// toggles. Returns 'none' | 'cart' | 'quote'. "Vendido" is handled separately
+// and always takes precedence over this.
+//   both false  -> none
+//   both true   -> cart ("Añadir a la cesta")
+//   otherwise   -> quote ("Solicitar cotización")
+function getArtCta() {
+  if (!PAYMENT_ENABLED && !ART_BUY_AVAILABLE) return 'none'
+  if (PAYMENT_ENABLED && ART_BUY_AVAILABLE) return 'cart'
+  return 'quote'
+}
 
 export default function ArtProductDetail({ params }) {
   const unwrappedParams = use(params)
@@ -33,6 +50,7 @@ export default function ArtProductDetail({ params }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [shippingModalOpen, setShippingModalOpen] = useState(false)
   const [inquiryModalOpen, setInquiryModalOpen] = useState(false)
+  const [quoteModalOpen, setQuoteModalOpen] = useState(false)
   const [isHoveringCart, setIsHoveringCart] = useState(false)
   const [supportsHover, setSupportsHover] = useState(true)
   const { isInCart, addToCart, removeFromCart, isSellerInCart, getSellerArtShipping } = useCart()
@@ -198,6 +216,7 @@ export default function ArtProductDetail({ params }) {
   }
 
   const isSoldOut = product.is_sold === 1
+  const cta = getArtCta()
 
   return (
     <div className="bg-white">
@@ -251,7 +270,7 @@ export default function ArtProductDetail({ params }) {
                 </p>
               )}
 
-              {TURNSTILE_ENABLED && (
+              {TURNSTILE_ENABLED && cta !== 'quote' && (
                 <p className="mt-4 text-sm text-gray-600">
                   {INQUIRY_COPY.prompt}{' '}
                   <button
@@ -289,7 +308,7 @@ export default function ArtProductDetail({ params }) {
                 >
                   Vendido
                 </button>
-              ) : (
+              ) : cta === 'cart' ? (
                 <button
                   onClick={handleCartButtonClick}
                   onMouseEnter={() => setIsHoveringCart(true)}
@@ -308,7 +327,14 @@ export default function ArtProductDetail({ params }) {
                       : 'En la cesta'
                     : 'Añadir a la cesta'}
                 </button>
-              )}
+              ) : cta === 'quote' ? (
+                <button
+                  onClick={() => setQuoteModalOpen(true)}
+                  className="flex max-w-xs flex-1 items-center justify-center rounded-md border border-transparent bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-50 focus:outline-hidden sm:w-full transition-colors"
+                >
+                  Solicitar cotización
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -341,6 +367,20 @@ export default function ArtProductDetail({ params }) {
         <ArtProductInquiryModal
           open={inquiryModalOpen}
           onClose={() => setInquiryModalOpen(false)}
+          product={{
+            id: product.id,
+            name: product.name,
+            seller_full_name: product.seller_full_name,
+            price: product.price,
+          }}
+        />
+      )}
+
+      {/* Quote request modal — shown when the "Solicitar cotización" CTA is active */}
+      {cta === 'quote' && product && (
+        <ArtProductQuoteModal
+          open={quoteModalOpen}
+          onClose={() => setQuoteModalOpen(false)}
           product={{
             id: product.id,
             name: product.name,

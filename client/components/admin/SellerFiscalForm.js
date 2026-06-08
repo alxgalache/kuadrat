@@ -238,7 +238,7 @@ export default function SellerFiscalForm({ seller, onUpdate }) {
             maxLength={5}
             value={form.fiscal_address_postal_code}
             onChange={(e) => handleChange('fiscal_address_postal_code', e.target.value.replace(/\D/g, ''))}
-            placeholder="28001"
+            placeholder="Código postal"
             className="mt-1 block w-full rounded-md border-0 py-2 px-3 text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-black text-sm"
           />
           {errors.fiscal_address_postal_code && (

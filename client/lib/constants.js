@@ -36,6 +36,12 @@ export const SENDCLOUD_ENABLED_ART = process.env.NEXT_PUBLIC_SENDCLOUD_ENABLED_A
 export const SENDCLOUD_ENABLED_OTHERS = process.env.NEXT_PUBLIC_SENDCLOUD_ENABLED_OTHERS === 'true';
 export const SENDCLOUD_ENABLED = SENDCLOUD_ENABLED_ART || SENDCLOUD_ENABLED_OTHERS;
 
+// Storefront buy/quote toggles (build-time).
+// Fail-safe: undefined behaves as enabled (preserves the current "Añadir a la
+// cesta" behavior). Only the literal string 'false' disables the flag.
+export const PAYMENT_ENABLED = process.env.NEXT_PUBLIC_PAYMENT_ENABLED !== 'false';
+export const ART_BUY_AVAILABLE = process.env.NEXT_PUBLIC_ART_BUY_AVAILABLE !== 'false';
+
 // Maximum number of images per product (global) and per variation (others)
 export const MAX_PRODUCT_IMAGES = 3;
 
@@ -122,6 +128,45 @@ export const INQUIRY_COPY = {
   bannerErrorEmailDelivery: 'No se pudo enviar el email. Inténtalo más tarde.',
   bannerErrorProductNotFound: 'No se pudo enviar la consulta: obra no encontrada.',
   bannerErrorGeneric: 'No se pudo enviar la consulta. Inténtalo más tarde.',
+};
+
+// Quote request form (ArtProductQuoteModal). Independent from the inquiry form
+// copy/limits above. The postal code length is fixed by a 5-digit regex, so it
+// has no maxLength entry here.
+export const QUOTE_FIELD_LIMITS = {
+  name: 120,
+  email: 200,
+  phone: 40,
+  message: 2000,
+};
+
+export const QUOTE_COPY = {
+  modalTitle: 'Solicitar cotización',
+  modalSubtitle: 'Completa el formulario con el código postal donde quieras recibir la obra y nos pondremos en contacto contigo para su tramitación.',
+  labelName: 'Nombre completo',
+  labelEmail: 'Email de contacto',
+  labelPhone: 'Teléfono de contacto (opcional)',
+  labelPostalCode: 'Código postal para el envío',
+  labelMessage: 'Más información',
+  placeholderName: 'Tu nombre',
+  placeholderEmail: 'tucorreo@ejemplo.com',
+  placeholderPhone: '+34 600 000 000',
+  placeholderPostalCode: '28001',
+  placeholderMessage: 'Escribe aquí los detalles que quieras compartir…',
+  submit: 'Enviar',
+  submitting: 'Enviando…',
+  cancel: 'Cancelar',
+  gdpr: 'Al enviar este formulario usaremos tus datos únicamente para tramitar tu solicitud de cotización. Consulta nuestra',
+  gdprLink: 'política de privacidad',
+  gdprHref: '/legal/politica-de-privacidad',
+  captchaLoading: 'Cargando verificación de seguridad…',
+  bannerSuccess: 'Solicitud enviada. Nos pondremos en contacto contigo en breve.',
+  bannerErrorCaptchaFailed: 'Verificación de seguridad fallida. Inténtalo de nuevo.',
+  bannerErrorCaptchaUnavailable: 'No se puede enviar la solicitud en este momento. Inténtalo más tarde.',
+  bannerErrorRateLimit: 'Has alcanzado el número máximo de solicitudes. Inténtalo de nuevo más tarde.',
+  bannerErrorEmailDelivery: 'No se pudo enviar el email. Inténtalo más tarde.',
+  bannerErrorProductNotFound: 'No se pudo enviar la solicitud: obra no encontrada.',
+  bannerErrorGeneric: 'No se pudo enviar la solicitud. Inténtalo más tarde.',
 };
 
 // CoA verification result messages (Spanish) shown to a collector when their

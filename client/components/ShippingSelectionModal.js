@@ -358,7 +358,7 @@ export default function ShippingSelectionModal({
                                 autoComplete="postal-code"
                                 value={postalCode}
                                 onChange={handlePostalCodeChange}
-                                placeholder="28001"
+                                placeholder="Código postal"
                                 className="block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-base text-gray-900 placeholder:text-gray-400 sm:text-sm/6 outline-none"
                                 onClick={(e) => e.stopPropagation()}
                               />

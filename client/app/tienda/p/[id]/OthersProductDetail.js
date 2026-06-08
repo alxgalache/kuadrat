@@ -12,7 +12,7 @@ import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
-import { SENDCLOUD_ENABLED_OTHERS } from '@/lib/constants'
+import { SENDCLOUD_ENABLED_OTHERS, PAYMENT_ENABLED } from '@/lib/constants'
 
 export default function OthersProductDetail({ params }) {
   const unwrappedParams = use(params)
@@ -317,7 +317,7 @@ export default function OthersProductDetail({ params }) {
                 >
                   Vendido
                 </button>
-              ) : (
+              ) : PAYMENT_ENABLED ? (
                 <>
                   {selectedVariant && selectedVariant.stock > 0 && (
                     <div>
@@ -357,7 +357,7 @@ export default function OthersProductDetail({ params }) {
                       : 'Añadir a la cesta'}
                   </button>
                 </>
-              )}
+              ) : null}
             </div>
           </div>
         </div>

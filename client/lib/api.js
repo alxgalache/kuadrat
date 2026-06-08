@@ -1719,4 +1719,10 @@ export const inquiriesAPI = {
       body: JSON.stringify({ productId, name, email, phone, message, turnstileToken }),
     });
   },
+  createQuoteRequest: async ({ productId, name, email, phone, postalCode, message, turnstileToken }) => {
+    return apiRequest('/inquiries/quote', {
+      method: 'POST',
+      body: JSON.stringify({ productId, name, email, phone, postalCode, message, turnstileToken }),
+    });
+  },
 };

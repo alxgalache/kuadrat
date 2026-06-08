@@ -257,7 +257,7 @@ export default function AddressManualInput({
             id="postal-code"
             value={value.postalCode || ''}
             onChange={(e) => handleFieldChange('postalCode', e.target.value)}
-            placeholder="28001"
+            placeholder="Código postal"
             className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900 sm:text-sm"
           />
         </div>
@@ -271,7 +271,7 @@ export default function AddressManualInput({
             id="city"
             value={value.city || ''}
             onChange={(e) => handleFieldChange('city', e.target.value)}
-            placeholder="Madrid"
+            placeholder="Municipio"
             className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900 sm:text-sm"
           />
         </div>
@@ -285,7 +285,7 @@ export default function AddressManualInput({
             id="province"
             value={value.province || ''}
             onChange={(e) => handleFieldChange('province', e.target.value)}
-            placeholder="Madrid"
+            placeholder="Provincia"
             className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900 sm:text-sm"
           />
         </div>
