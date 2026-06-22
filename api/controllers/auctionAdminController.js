@@ -1,4 +1,5 @@
 const auctionService = require('../services/auctionService');
+const marketingEmailService = require('../services/marketingEmailService');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
 
@@ -77,6 +78,9 @@ const createAuction = async (req, res, next) => {
 
     // Fetch full auction details
     const fullAuction = await auctionService.getAuctionById(auction.id);
+
+    // Marketing announcement (non-blocking; never throws; guarded send-once)
+    marketingEmailService.announceAuctionIfEligible(auction.id);
 
     res.status(201).json({
       success: true,
@@ -203,6 +207,9 @@ const updateAuction = async (req, res, next) => {
 
     const fullAuction = await auctionService.getAuctionById(id);
 
+    // Marketing announcement on transition into a qualifying status (guarded)
+    marketingEmailService.announceAuctionIfEligible(id);
+
     res.status(200).json({
       success: true,
       title: 'Subasta actualizada',
@@ -261,6 +268,9 @@ const startAuction = async (req, res, next) => {
     if (auctionSocket) {
       auctionSocket.broadcastAuctionStarted(auction.id);
     }
+
+    // Marketing announcement on activation (guarded send-once)
+    marketingEmailService.announceAuctionIfEligible(auction.id);
 
     res.status(200).json({
       success: true,

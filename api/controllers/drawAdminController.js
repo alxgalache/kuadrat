@@ -1,4 +1,5 @@
 const drawService = require('../services/drawService');
+const marketingEmailService = require('../services/marketingEmailService');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
 
@@ -40,6 +41,9 @@ const createDraw = async (req, res, next) => {
     });
 
     const fullDraw = await drawService.getDrawById(draw.id);
+
+    // Marketing announcement (non-blocking; never throws; guarded send-once)
+    marketingEmailService.announceDrawIfEligible(draw.id);
 
     res.status(201).json({
       success: true,
@@ -128,6 +132,9 @@ const updateDraw = async (req, res, next) => {
     }
 
     const fullDraw = await drawService.getDrawById(id);
+
+    // Marketing announcement on transition into 'scheduled' (guarded send-once)
+    marketingEmailService.announceDrawIfEligible(id);
 
     res.status(200).json({
       success: true,

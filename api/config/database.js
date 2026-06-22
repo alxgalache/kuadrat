@@ -951,6 +951,29 @@ async function initializeDatabase() {
       )
     `);
 
+    // ── Marketing sends (audit log + send-once guard for marketing emails) ──
+    // One row per marketing broadcast attempt (Resend Broadcasts API). Doubles
+    // as the idempotency guard for AUTO announcements: a successful row for
+    // (kind, entity_id) prevents a second send when the entity is edited or
+    // transitions through several qualifying states. `kind='new_author'` is a
+    // manual action and may be re-sent, so it is NOT covered by the unique index.
+    // entity_id is TEXT to fit both INTEGER user ids and TEXT auction/draw/event
+    // ids. Only 'sent' and 'failed' are recorded (skips live in the log only).
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS marketing_sends (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK(kind IN ('new_author','auction','draw','event')),
+        entity_id TEXT NOT NULL,
+        topic_id TEXT,
+        segment_id TEXT,
+        resend_broadcast_id TEXT,
+        status TEXT NOT NULL CHECK(status IN ('sent','failed')),
+        subject TEXT,
+        error TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // ── Column migrations (idempotent via try/catch) ─────────
     for (const sql of [
       `ALTER TABLE shipping_zones ADD COLUMN product_id INTEGER`,
@@ -1042,6 +1065,12 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_uid ON verification_events(uid)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_status ON verification_events(status)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_occurred ON verification_events(occurred_at)`);
+
+    // Marketing sends: send-once guard (partial unique on successful AUTO sends)
+    // + lookup/history indexes.
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_marketing_sends_once ON marketing_sends(kind, entity_id) WHERE status = 'sent' AND kind IN ('auction','draw','event')`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_marketing_sends_entity ON marketing_sends(kind, entity_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_marketing_sends_created ON marketing_sends(created_at)`);
 
     // ── Initialize orders auto-increment to start from 1000 ──
     try {

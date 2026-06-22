@@ -7,7 +7,13 @@
 html {
   font-family: 'Inter', sans-serif;
   height: 100%;
-   scrollbar-gutter: stable;
+  /* Always show the vertical scrollbar so layout never shifts between pages that
+     do/don't scroll. Preferred over `scrollbar-gutter: stable` here because that
+     reserves an EMPTY gutter on non-scrolling pages — a white strip a full-width
+     element (e.g. the newsletter banner) cannot paint into. With `overflow-y:
+     scroll` the strip is always the scrollbar track itself, so full-width bars
+     reach it with no white gap, in both the scrolling and non-scrolling cases. */
+  overflow-y: scroll;
 }
 
 body {

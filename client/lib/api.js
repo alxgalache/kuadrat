@@ -1037,6 +1037,28 @@ export const adminAPI = {
     },
   },
 
+  // Marketing email broadcasts
+  marketing: {
+    // Visible authors for the "new author" announcement picker.
+    getAnnounceAuthors: async () => {
+      return apiRequest('/admin/marketing/authors');
+    },
+
+    // Trigger the "new author" marketing broadcast.
+    announceAuthor: async (authorId) => {
+      return apiRequest('/admin/marketing/announce-author', {
+        method: 'POST',
+        body: JSON.stringify({ authorId }),
+      });
+    },
+
+    // Paginated audit history of marketing broadcasts.
+    getSends: async ({ page = 1, limit = 20 } = {}) => {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      return apiRequest(`/admin/marketing/sends?${params.toString()}`);
+    },
+  },
+
   // Postal codes management
   postalCodes: {
     getAll: async (country) => {
@@ -1723,6 +1745,17 @@ export const inquiriesAPI = {
     return apiRequest('/inquiries/quote', {
       method: 'POST',
       body: JSON.stringify({ productId, name, email, phone, postalCode, message, turnstileToken }),
+    });
+  },
+};
+
+export const newsletterAPI = {
+  // `topics` is an array of stable topic keys (live_events, auctions_draws,
+  // new_authors, newsletter); the backend maps them to Resend topic IDs.
+  subscribe: async ({ firstName, lastName, email, topics, turnstileToken }) => {
+    return apiRequest('/newsletter/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ firstName, lastName, email, topics, turnstileToken }),
     });
   },
 };

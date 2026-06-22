@@ -42,6 +42,11 @@ export const SENDCLOUD_ENABLED = SENDCLOUD_ENABLED_ART || SENDCLOUD_ENABLED_OTHE
 export const PAYMENT_ENABLED = process.env.NEXT_PUBLIC_PAYMENT_ENABLED !== 'false';
 export const ART_BUY_AVAILABLE = process.env.NEXT_PUBLIC_ART_BUY_AVAILABLE !== 'false';
 
+// Newsletter signup chip (navbar, non-logged users). Fail-safe: unset = enabled,
+// only the literal 'false' hides it. Backend signup is gated separately by
+// MARKETING_EMAILS_ENABLED.
+export const NEWSLETTER_ENABLED = process.env.NEXT_PUBLIC_NEWSLETTER_ENABLED !== 'false';
+
 // Maximum number of images per product (global) and per variation (others)
 export const MAX_PRODUCT_IMAGES = 3;
 
@@ -167,6 +172,74 @@ export const QUOTE_COPY = {
   bannerErrorEmailDelivery: 'No se pudo enviar el email. Inténtalo más tarde.',
   bannerErrorProductNotFound: 'No se pudo enviar la solicitud: obra no encontrada.',
   bannerErrorGeneric: 'No se pudo enviar la solicitud. Inténtalo más tarde.',
+};
+
+// Newsletter signup (NewsletterSubscribeModal). The `key` of each topic is sent
+// to the backend, which maps it to the Resend topic ID. All pre-checked by
+// default; at least one must remain selected to submit.
+export const NEWSLETTER_FIELD_LIMITS = {
+  firstName: 120,
+  lastName: 120,
+  email: 200,
+};
+
+export const NEWSLETTER_TOPICS = [
+  {
+    key: 'newsletter',
+    label: 'Newsletter',
+    description: 'Newsletter mensual con las novedades de la Galería.',
+  },
+  {
+    key: 'live_events',
+    label: 'Programación de eventos en directo',
+    description: 'Notificación de creación de eventos en directo, para añadir al calendario.',
+  },
+  {
+    key: 'auctions_draws',
+    label: 'Subastas y sorteos',
+    description: 'Notificaciones sobre nuevos eventos de subastas y sorteos, justo cuando se abra el plazo.',
+  },
+  {
+    key: 'new_authors',
+    label: 'Nuevos autores',
+    description: 'Notificación de nuevos autores o colaboradores añadidos a la Galería.',
+  },
+];
+
+// localStorage key: once the first-visit newsletter banner is dismissed it
+// never shows again.
+export const NEWSLETTER_BANNER_DISMISSED_KEY = 'newsletter_banner_dismissed';
+
+export const NEWSLETTER_COPY = {
+  footerIconLabel: 'Suscríbete a la newsletter',
+  bannerText: 'Suscríbete a la newsletter de la Galería y no te pierdas ninguna novedad: nuevos autores, programación de eventos en directo, subastas, sorteos, etc.',
+  bannerCta: 'Suscríbete',
+  modalTitle: 'Suscríbete a la newsletter',
+  modalSubtitle: 'Suscríbete y recibe todas las novedades e informaciones de la Galería.',
+  intro: 'Te informaremos sobre nuevos artistas, eventos, noticias, directos, etc. Elige qué novedades quieres recibir y te escribiremos solo cuando haya algo que merezca la pena.',
+  labelFirstName: 'Nombre',
+  labelLastName: 'Apellidos',
+  labelEmail: 'Email',
+  labelTopics: '¿Qué quieres recibir?',
+  placeholderFirstName: 'Tu nombre',
+  placeholderLastName: 'Tus apellidos',
+  placeholderEmail: 'tucorreo@ejemplo.com',
+  consentPrefix: 'He leído y acepto los',
+  consentTermsLink: 'términos y condiciones',
+  consentTermsHref: '/legal/terminos-y-condiciones',
+  consentAnd: 'y la',
+  consentPrivacyLink: 'política de privacidad',
+  consentPrivacyHref: '/legal/politica-de-privacidad',
+  submit: 'Suscribirse',
+  submitting: 'Suscribiendo…',
+  cancel: 'Cancelar',
+  captchaLoading: 'Cargando verificación de seguridad…',
+  bannerSuccess: '¡Listo! Te has suscrito correctamente.',
+  bannerErrorCaptchaFailed: 'Verificación de seguridad fallida. Inténtalo de nuevo.',
+  bannerErrorCaptchaUnavailable: 'No se puede completar la suscripción en este momento. Inténtalo más tarde.',
+  bannerErrorRateLimit: 'Has realizado demasiados intentos. Inténtalo de nuevo más tarde.',
+  bannerErrorDisabled: 'La suscripción no está disponible en este momento.',
+  bannerErrorGeneric: 'No se pudo completar la suscripción. Inténtalo más tarde.',
 };
 
 // CoA verification result messages (Spanish) shown to a collector when their

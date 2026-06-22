@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<!--
+  140d Galería de Arte — Plantilla de Newsletter para Resend
+  ----------------------------------------------------------
+  Diseño alineado con los emails transaccionales de api/services/emailService.js:
+    · Tarjeta de 600px sobre fondo blanco, border-radius 8px, sombra suave + borde #e5e7eb
+    · Stack de fuente del sistema, títulos #111827, cuerpo #374151, texto secundario #6b7280
+    · Imágenes con object-fit:cover, border-radius, borde #e5e7eb
+    · Botón oscuro #111827, texto blanco, border-radius 6px
+    · Modo claro forzado (sin dark mode), igual que el resto de correos
+
+  El mes/año y el resto de textos son literales: se editan a mano en Resend cada
+  envío. La única variable dinámica es:
+    · {{{RESEND_UNSUBSCRIBE_URL}}} → enlace de baja (lo inyecta Resend en Broadcasts)
+
+  El ASUNTO se configura aparte (campo "Subject" de Resend), no en este HTML.
+  Las imágenes y textos de noticias son de ejemplo (placeholder picsum.photos);
+  sustitúyelos por las URLs reales (idealmente https://cdn.140d.art/...).
+-->
+<html lang="es" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Newsletter 140d</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+    /* Pila vertical en móvil para el bloque "destacado" de dos columnas */
+    @media only screen and (max-width: 600px) {
+      .stack-col { display: block !important; width: 100% !important; padding: 0 !important; }
+      .stack-img { margin-bottom: 16px !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+
+  <!-- Preheader (texto de vista previa oculto en la bandeja) -->
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #ffffff;">
+    Lo nuevo en 140d este mes: exposiciones, artistas y piezas seleccionadas.
+  </div>
+
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+
+        <table width="600" align="center" cellpadding="0" cellspacing="0" role="presentation" bgcolor="#ffffff" style="width: 600px; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+
+          <!-- ============ CABECERA / LOGO ============ -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="https://cdn.140d.art/140d.png" alt="140d Galería de Arte" width="180" style="width: 180px; max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <!-- ============ INTRO ============ -->
+          <tr>
+            <td style="padding: 12px 40px 8px;">
+              <p style="margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: #92400e;">Boletín mensual</p>
+              <h1 style="margin: 0 0 16px; font-size: 26px; font-weight: 700; color: #111827;">Newsletter Junio 2026</h1>
+              <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #374151;">
+                Una selección de lo que pasa en la galería este mes: nuevas exposiciones,
+                artistas que se incorporan y piezas que merece la pena mirar dos veces.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Separador -->
+          <tr><td style="padding: 28px 40px 0;"><div style="height: 1px; line-height: 1px; font-size: 0; background-color: #e5e7eb;">&nbsp;</div></td></tr>
+
+          <!-- ============ ARTÍCULO DESTACADO ============ -->
+          <tr>
+            <td style="padding: 32px 40px 0;">
+              <a href="https://140d.art/espacios" style="text-decoration: none; color: inherit;">
+                <img src="https://picsum.photos/seed/140d-feature/1040/560" alt="Exposición destacada" width="520" style="width: 100%; max-width: 520px; height: auto; display: block; border-radius: 8px; border: 1px solid #e5e7eb;">
+              </a>
+              <p style="margin: 18px 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #6b7280;">Exposición · 5 jun 2026</p>
+              <h2 style="margin: 0 0 10px; font-size: 22px; font-weight: 700; color: #111827;">
+                <a href="https://140d.art/espacios" style="color: #111827; text-decoration: none;">«Geometrías del silencio» — sala principal</a>
+              </h2>
+              <p style="margin: 0 0 14px; font-size: 15px; line-height: 1.6; color: #6b7280;">
+                Diez piezas que exploran el vacío y la repetición. Una muestra que invita a
+                detenerse, abierta hasta final de mes en nuestro espacio físico y disponible online.
+              </p>
+              <a href="https://140d.art/espacios" style="font-size: 15px; font-weight: 600; color: #111827; text-decoration: none;">Leer más &rarr;</a>
+            </td>
+          </tr>
+
+          <!-- Separador -->
+          <tr><td style="padding: 32px 40px 0;"><div style="height: 1px; line-height: 1px; font-size: 0; background-color: #e5e7eb;">&nbsp;</div></td></tr>
+
+          <!-- ============ NOTICIA 2 ============ -->
+          <tr>
+            <td style="padding: 32px 40px 0;">
+              <a href="https://140d.art/galeria" style="text-decoration: none; color: inherit;">
+                <img src="https://picsum.photos/seed/140d-2/1040/560" alt="Nuevo artista" width="520" style="width: 100%; max-width: 520px; height: auto; display: block; border-radius: 8px; border: 1px solid #e5e7eb;">
+              </a>
+              <p style="margin: 18px 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #6b7280;">Artistas · 12 jun 2026</p>
+              <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #111827;">
+                <a href="https://140d.art/galeria" style="color: #111827; text-decoration: none;">Damos la bienvenida a tres nuevos autores</a>
+              </h2>
+              <p style="margin: 0 0 14px; font-size: 15px; line-height: 1.6; color: #6b7280;">
+                Fotografía, collage y obra sobre papel. Tres miradas distintas que amplían el
+                catálogo de la galería con piezas a precios accesibles.
+              </p>
+              <a href="https://140d.art/galeria" style="font-size: 15px; font-weight: 600; color: #111827; text-decoration: none;">Leer más &rarr;</a>
+            </td>
+          </tr>
+
+          <!-- Separador -->
+          <tr><td style="padding: 32px 40px 0;"><div style="height: 1px; line-height: 1px; font-size: 0; background-color: #e5e7eb;">&nbsp;</div></td></tr>
+
+          <!-- ============ NOTICIA 3 ============ -->
+          <tr>
+            <td style="padding: 32px 40px 0;">
+              <a href="https://140d.art/subastas" style="text-decoration: none; color: inherit;">
+                <img src="https://picsum.photos/seed/140d-3/1040/560" alt="Subasta del mes" width="520" style="width: 100%; max-width: 520px; height: auto; display: block; border-radius: 8px; border: 1px solid #e5e7eb;">
+              </a>
+              <p style="margin: 18px 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #6b7280;">Subastas · 20 jun 2026</p>
+              <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #111827;">
+                <a href="https://140d.art/subastas" style="color: #111827; text-decoration: none;">Subasta en directo: pieza única el último viernes</a>
+              </h2>
+              <p style="margin: 0 0 14px; font-size: 15px; line-height: 1.6; color: #6b7280;">
+                Vuelve nuestra puja en directo con una obra seleccionada. Regístrate para recibir
+                el aviso cuando abra la sala.
+              </p>
+              <a href="https://140d.art/subastas" style="font-size: 15px; font-weight: 600; color: #111827; text-decoration: none;">Leer más &rarr;</a>
+            </td>
+          </tr>
+
+          <!-- ============ CTA ============ -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 36px;">
+              <a href="https://140d.art/galeria" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff !important; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 6px;">Explorar la galería</a>
+            </td>
+          </tr>
+
+          <!-- ============ PIE ============ -->
+          <tr>
+            <td style="padding: 32px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: #6b7280;">
+                Recibes este correo porque te suscribiste a la newsletter de 140d Galería de Arte.
+                ¿Alguna duda? Escríbenos a
+                <a href="mailto:info@140d.art" style="color: #111827; text-decoration: underline;">info@140d.art</a>.
+              </p>
+              <p style="margin: 0 0 12px; font-size: 14px; color: #6b7280;">
+                <a href="https://140d.art" style="color: #6b7280; text-decoration: underline;">140d.art</a>
+                &nbsp;·&nbsp;
+                <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #6b7280; text-decoration: underline;">Darse de baja</a>
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+                &copy; 2026 140d Galería de Arte. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>

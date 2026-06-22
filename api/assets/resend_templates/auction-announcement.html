@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<!--
+  140d — Anuncio de subasta (Resend Broadcast, topic "Subastas y sorteos")
+  Render server-side: {{TOKEN}} se sustituye en el backend (marketingEmailService).
+  {{IMAGES}} es HTML ya construido (mosaico de hasta 4 piezas, fiel a AuctionGridItem).
+  {{{RESEND_UNSUBSCRIBE_URL}}} lo resuelve Resend al enviar.
+-->
+<html lang="es" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Nueva subasta en 140d</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #ffffff;">{{PREHEADER}}</div>
+
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" role="presentation" bgcolor="#ffffff" style="width: 600px; max-width: 600px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="{{LOGO_URL}}" alt="140d Galería de Arte" width="180" style="width: 180px; max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 12px 40px 8px;">
+              <p style="margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: #92400e;">Nueva subasta</p>
+              <h1 style="margin: 0 0 16px; font-size: 26px; font-weight: 700; color: #111827;">{{TITLE}}</h1>
+              <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #374151;">Acaba de abrirse una nueva subasta en 140d. Échale un vistazo y prepárate para pujar.</p>
+            </td>
+          </tr>
+
+          <!-- Imágenes (mosaico de piezas) -->
+          <tr>
+            <td style="padding: 28px 40px 0;">{{IMAGES}}</td>
+          </tr>
+
+          <!-- Fechas / precio -->
+          <tr>
+            <td style="padding: 20px 40px 0;">
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">
+                <tr><td style="padding: 16px 20px;">
+                  <p style="margin: 0 0 6px; font-size: 14px; color: #374151;"><strong style="color: #111827;">Inicio:</strong> {{START_DATE}}</p>
+                  <p style="margin: 0 0 6px; font-size: 14px; color: #374151;"><strong style="color: #111827;">Fin:</strong> {{END_DATE}}</p>
+                  {{PRICE}}
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding: 32px 40px 36px;">
+              <a href="{{CTA_URL}}" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff !important; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 6px;">Ver la subasta</a>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 32px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: #6b7280;">Recibes este correo porque te suscribiste a las novedades de 140d Galería de Arte.</p>
+              <p style="margin: 0 0 12px; font-size: 14px; color: #6b7280;">
+                <a href="https://140d.art" style="color: #6b7280; text-decoration: underline;">140d.art</a>
+                &nbsp;·&nbsp;
+                <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #6b7280; text-decoration: underline;">Darse de baja</a>
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #9ca3af;">&copy; {{YEAR}} 140d Galería de Arte. Todos los derechos reservados.</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

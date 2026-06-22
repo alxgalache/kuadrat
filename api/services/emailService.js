@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 require('dotenv').config();
 const logger = require('../config/logger');
 const config = require('../config/env');
@@ -28,6 +29,49 @@ const verifyTransporter = async () => {
   } catch (error) {
     logger.warn('Email service not configured - no emails will be sent. Configure SMTP settings in .env to enable email notifications');
   }
+};
+
+// ---------------------------------------------------------------------------
+// Provider abstraction: sendMail(options)
+// ---------------------------------------------------------------------------
+// Single point that knows which email provider is active (config.emailProvider).
+// All call sites use this wrapper with the Nodemailer-style option object
+// ({ from, to, subject, html, attachments?, replyTo? }) and read `messageId`
+// from the normalized return value, exactly as they read `info.messageId`
+// before the migration.
+
+// Resend client is created once at module load, only when Resend is the active
+// provider (RESEND_API_KEY is validated as required in that case by env.js).
+const resendClient = config.emailProvider === 'resend'
+  ? new Resend(config.resendApiKey)
+  : null;
+
+// Send an email through the active provider. Returns { messageId }.
+// Throws on provider error so the existing per-call-site try/catch keeps
+// working unchanged.
+const sendMail = async (options) => {
+  if (config.emailProvider === 'resend') {
+    const { from, to, subject, html, attachments, replyTo } = options;
+    const payload = { from, to, subject, html };
+    if (replyTo) payload.replyTo = replyTo;
+    if (attachments && attachments.length) {
+      // Resend attachments take { filename, content } (Buffer or base64).
+      // Inline CID logos are intentionally avoided in favour of LOGO_URL, so
+      // attachments are normally absent when Resend is active.
+      payload.attachments = attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+      }));
+    }
+    const { data, error } = await resendClient.emails.send(payload);
+    if (error) {
+      throw new Error(error.message || 'Resend email send failed');
+    }
+    return { messageId: data.id };
+  }
+
+  // SMTP / Nodemailer path. Nodemailer already returns { messageId, ... }.
+  return transporter.sendMail(options);
 };
 
 // ---------------------------------------------------------------------------
@@ -85,7 +129,7 @@ const LOGO_ATTACHMENT = parseDataUrlToAttachment(LOGO_PNG_DATA_URL);
 // Returns null if using external URL (no attachment needed).
 const getLogoAttachment = () => {
   // If external URL is configured, don't attach the logo (use URL instead)
-  if (process.env.LOGO_URL) return null;
+  if (config.logoUrl) return null;
   if (!LOGO_ATTACHMENT) return null;
   return { ...LOGO_ATTACHMENT };
 };
@@ -94,7 +138,7 @@ const getLogoAttachment = () => {
 // Priority: 1) External URL (best for Gmail), 2) CID attachment, 3) data URL fallback
 const getLogoSrc = () => {
   // External URL is the most reliable for Gmail - no attachment shown
-  if (process.env.LOGO_URL) return process.env.LOGO_URL;
+  if (config.logoUrl) return config.logoUrl;
   // CID attachment fallback
   if (LOGO_ATTACHMENT) return `cid:${LOGO_CID}`;
   // Data URL as last resort
@@ -617,7 +661,7 @@ const sendPurchaseConfirmation = async (orderDetails) => {
     };
 
     try {
-      const info = await transporter.sendMail(buyerMailOptions);
+      const info = await sendMail(buyerMailOptions);
       logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Confirmation email sent to buyer');
       results.push({ recipient: 'buyer', success: true, messageId: info.messageId });
     } catch (error) {
@@ -641,7 +685,7 @@ const sendPurchaseConfirmation = async (orderDetails) => {
     };
 
     try {
-      const info = await transporter.sendMail(sellerMailOptions);
+      const info = await sendMail(sellerMailOptions);
       logger.info({ recipient: seller.email, messageId: info.messageId }, 'Email sent to seller');
       results.push({ recipient: `seller:${seller.email}`, success: true, messageId: info.messageId });
     } catch (error) {
@@ -663,7 +707,7 @@ const sendPurchaseConfirmation = async (orderDetails) => {
     };
 
     try {
-      const info = await transporter.sendMail(adminMailOptions);
+      const info = await sendMail(adminMailOptions);
       logger.info({ recipient: adminEmail, messageId: info.messageId }, 'Email sent to admin');
       results.push({ recipient: 'admin', success: true, messageId: info.messageId });
     } catch (error) {
@@ -749,7 +793,7 @@ Saludos,
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendMail(mailOptions);
     logger.info({ messageId: info.messageId }, 'Registration request email sent');
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -785,7 +829,7 @@ const sendPaymentConfirmation = async ({ orderId, buyerEmail, totalPrice }) => {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendMail(mailOptions);
     logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Payment received email sent to buyer');
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -866,7 +910,7 @@ const sendBuyerToSellerContactEmail = async ({
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendMail(mailOptions);
     logger.info({ recipient: sellerEmail, messageId: info.messageId }, 'Buyer message sent to seller');
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -997,7 +1041,7 @@ const sendTrackingUpdateEmail = async (order, products) => {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendMail(mailOptions);
     logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Tracking email sent to buyer');
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -1132,7 +1176,7 @@ const sendItemsSentEmail = async (order, products) => {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendMail(mailOptions);
     logger.info({ recipient: buyerEmail, messageId: info.messageId }, 'Items sent email sent to buyer');
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -1239,7 +1283,7 @@ Si no has solicitado esta cuenta, puedes ignorar este correo.
 © ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: 'Configura tu cuenta en 140d',
@@ -1323,7 +1367,7 @@ Una vez dentro, podrás empezar a subir tus artículos y gestionar tu catálogo 
 © ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: 'Cuenta activada. ¡Bienvenido a 140d!',
@@ -1417,7 +1461,7 @@ const sendBidConfirmationEmail = async ({ email, firstName, bidPassword, auction
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: `Puja registrada - ${auctionName}`,
@@ -1455,7 +1499,7 @@ const sendOutbidNotificationEmail = async ({ email, firstName, auctionName, prod
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: `Te han superado en ${productName} - ${auctionName}`,
@@ -1487,7 +1531,7 @@ const sendAuctionWonEmail = async ({ email, firstName, auctionName, productName,
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: `¡Has ganado! - ${productName}`,
@@ -1519,7 +1563,7 @@ const sendAuctionEndedNoBidsEmail = async ({ sellerEmail, sellerName, auctionNam
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: sellerEmail,
       subject: `Subasta finalizada sin pujas - ${productName}`,
@@ -1552,7 +1596,7 @@ const sendSCARequiredEmail = async ({ email, firstName, auctionName, productName
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: `Acción requerida - Pago de ${productName}`,
@@ -1637,7 +1681,7 @@ const sendDrawEntryConfirmationEmail = async ({ email, firstName, drawName, prod
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: `Inscripción confirmada - Sorteo ${drawName}`,
@@ -1698,7 +1742,7 @@ const sendDrawVerificationEmail = async ({ email, code }) => {
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: 'Código de verificación - 140d Galería de Arte',
@@ -1759,7 +1803,7 @@ const sendAuctionVerificationEmail = async (email, code, auctionName) => {
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: 'Código de verificación - Subasta - 140d Galería de Arte',
@@ -1841,7 +1885,7 @@ const sendDrawWinnerEmail = async ({ email, firstName, drawName, productName, pr
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: `¡Has ganado el sorteo ${drawName}!`,
@@ -1956,7 +2000,7 @@ const sendWithdrawalNotificationEmail = async ({
   };
 
   try {
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendMail(mailOptions);
     logger.info({ recipient: adminEmail, sellerId, messageId: result.messageId }, 'Withdrawal nudge email sent to admin');
     return { success: true, messageId: result.messageId };
   } catch (error) {
@@ -2047,7 +2091,7 @@ const sendItemReceivedEmail = async (order, products) => {
     };
 
     try {
-      const info = await transporter.sendMail(mailOptions);
+      const info = await sendMail(mailOptions);
       logger.info({ recipient: sellerEmail, messageId: info.messageId }, 'Item received email sent to seller');
       results.push({ success: true, messageId: info.messageId });
     } catch (error) {
@@ -2150,7 +2194,7 @@ const sendItemConfirmedEmail = async (order, products) => {
     };
 
     try {
-      const info = await transporter.sendMail(mailOptions);
+      const info = await sendMail(mailOptions);
       logger.info({ recipient: sellerEmail, messageId: info.messageId }, 'Item confirmed email sent to seller');
       results.push({ success: true, messageId: info.messageId });
     } catch (error) {
@@ -2249,7 +2293,7 @@ const sendStaleArrivedAlertEmail = async (items) => {
     ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
   };
 
-  const info = await transporter.sendMail(mailOptions);
+  const info = await sendMail(mailOptions);
   logger.info({ recipient: adminEmail, messageId: info.messageId, count: items.length }, 'Stale arrived items alert email sent');
   return { success: true, messageId: info.messageId };
 };
@@ -2341,7 +2385,7 @@ const sendStaleSentAlertEmail = async (items) => {
     ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
   };
 
-  const info = await transporter.sendMail(mailOptions);
+  const info = await sendMail(mailOptions);
   logger.info({ recipient: adminEmail, messageId: info.messageId, count: items.length }, 'Stale sent items alert email sent');
   return { success: true, messageId: info.messageId };
 };
@@ -2435,7 +2479,7 @@ const sendNewProductNotificationEmail = async ({ sellerName, productName, produc
     ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
   };
 
-  const info = await transporter.sendMail(mailOptions);
+  const info = await sendMail(mailOptions);
   logger.info({ recipient: adminEmail, messageId: info.messageId, productName, sellerName }, 'New product notification email sent to admin');
   return { success: true, messageId: info.messageId };
 };
@@ -2494,7 +2538,7 @@ const sendEventConfirmationEmail = async ({ email, firstName, eventTitle, access
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: `Registro confirmado - ${eventTitle}`,
@@ -2555,7 +2599,7 @@ const sendEventVerificationEmail = async ({ email, code }) => {
 </html>`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: email,
       subject: 'Código de verificación - 140d Galería de Arte',
@@ -2656,7 +2700,7 @@ const sendShipmentSentEmail = async ({ buyerEmail, orderId, trackingNumber, trac
 
   const logoAttachment = getLogoAttachment();
   try {
-    const info = await transporter.sendMail({
+    const info = await sendMail({
       from: getFormattedSender(),
       to: buyerEmail,
       subject: `Tu pedido #${orderId} ha sido enviado`,
@@ -2746,7 +2790,7 @@ const sendShipmentDeliveredEmail = async ({ buyerEmail, orderId }) => {
 
   const logoAttachment = getLogoAttachment();
   try {
-    const info = await transporter.sendMail({
+    const info = await sendMail({
       from: getFormattedSender(),
       to: buyerEmail,
       subject: `Tu pedido #${orderId} ha sido entregado`,
@@ -2848,7 +2892,7 @@ const sendSellerNewOrderEmail = async ({ sellerEmail, sellerName, orderId }) => 
 
   const logoAttachment = getLogoAttachment();
   try {
-    const info = await transporter.sendMail({
+    const info = await sendMail({
       from: getFormattedSender(),
       to: sellerEmail,
       subject: `Nuevo pedido #${orderId} - Etiquetas de envío disponibles`,
@@ -2969,7 +3013,7 @@ const sendLabelReadyEmail = async ({ sellerEmail, sellerName, orderId, orderItem
   }
 
   try {
-    const info = await transporter.sendMail({
+    const info = await sendMail({
       from: getFormattedSender(),
       to: sellerEmail,
       subject: `Etiqueta de envío lista — Pedido #${orderId}`,
@@ -3034,7 +3078,7 @@ const sendShipmentFailedAdminEmail = async ({ orderId, orderItemId, productName,
 </html>`.trim();
 
   try {
-    const info = await transporter.sendMail({
+    const info = await sendMail({
       from: getFormattedSender(),
       to: adminEmail,
       subject: `[ALERTA] Fallo en envío Sendcloud — Pedido #${orderId}`,
@@ -3148,7 +3192,7 @@ Importante: este enlace caduca al cabo de unas horas por motivos de seguridad. S
 © ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.`;
 
   try {
-    const result = await transporter.sendMail({
+    const result = await sendMail({
       from: getFormattedSender(),
       to: sellerEmail,
       subject: '140d Galería de Arte — Completa tu cuenta de pagos',
@@ -3279,7 +3323,7 @@ const sendSellerPayoutExecutedEmail = async ({ seller, withdrawal, items }) => {
   };
 
   try {
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendMail(mailOptions);
     logger.info(
       { sellerEmail: seller.email, withdrawalId: withdrawal.id, messageId: result.messageId },
       '[emailService] payoutExecuted email sent to seller'
@@ -3372,7 +3416,7 @@ const sendAdminPayoutFailedEmail = async ({ withdrawal, failureReason }) => {
   };
 
   try {
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendMail(mailOptions);
     logger.info(
       { recipient: adminEmail, withdrawalId: withdrawal.id, messageId: result.messageId },
       '[emailService] adminPayoutFailed email sent'
@@ -3461,7 +3505,7 @@ const sendAdminPayoutReversedEmail = async ({ withdrawal, reversalAmount }) => {
   };
 
   try {
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendMail(mailOptions);
     logger.info(
       { recipient: adminEmail, withdrawalId: withdrawal.id, messageId: result.messageId },
       '[emailService] adminPayoutReversed email sent'
@@ -3566,7 +3610,7 @@ const sendHostEventCreditedEmail = async ({ host, event, totalCredit, attendeeCo
   };
 
   try {
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendMail(mailOptions);
     logger.info(
       { hostEmail: host.email, eventId: event?.id, messageId: result.messageId },
       '[emailService] hostEventCredited email sent'
@@ -3691,7 +3735,7 @@ const sendArtInquiryEmail = async ({ inquiry, product }) => {
     ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
   };
 
-  const info = await transporter.sendMail(mailOptions);
+  const info = await sendMail(mailOptions);
   logger.info(
     { productId: product.id, to: recipient, replyTo: inquiry.email, messageId: info.messageId },
     'Art inquiry email sent'
@@ -3814,7 +3858,7 @@ const sendQuoteRequestEmail = async ({ inquiry, product }) => {
     ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
   };
 
-  const info = await transporter.sendMail(mailOptions);
+  const info = await sendMail(mailOptions);
   logger.info(
     { productId: product.id, to: recipient, replyTo: inquiry.email, messageId: info.messageId },
     'Quote request email sent'

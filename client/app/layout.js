@@ -9,6 +9,7 @@ import { BannerNotificationProvider } from '@/contexts/BannerNotificationContext
 import NotificationContainer from '@/components/Notification'
 import BannerNotification from '@/components/BannerNotification'
 import CookieBanner from '@/components/CookieBanner'
+import NewsletterBanner from '@/components/NewsletterBanner'
 import RateLimitHandler from '@/components/RateLimitHandler'
 import TestAccessGate from '@/components/TestAccessGate'
 import LayoutWrapper from '@/components/LayoutWrapper'
@@ -143,6 +144,7 @@ export default function RootLayout({ children }) {
                   <NotificationContainer />
                   <BannerNotification />
                   <CookieBanner />
+                  <NewsletterBanner />
                 </TestAccessGate>
               </CartProvider>
             </AuthProvider>

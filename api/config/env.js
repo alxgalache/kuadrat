@@ -18,6 +18,13 @@ function optional(name, defaultValue) {
   return process.env[name] || defaultValue;
 }
 
+// Required only when `condition` is true; otherwise behaves like optional().
+// Used for provider-specific credentials (e.g. RESEND_API_KEY is only required
+// when EMAIL_PROVIDER=resend, SMTP_* only when EMAIL_PROVIDER=smtp).
+function requiredIf(condition, name, defaultValue = '') {
+  return condition ? required(name) : optional(name, defaultValue);
+}
+
 function optionalInt(name, defaultValue) {
   const raw = process.env[name];
   if (!raw) return defaultValue;
@@ -78,6 +85,23 @@ function requiredHexAtLeast(name, minByteLength) {
   return value;
 }
 
+// --- Email provider selection ---
+// EMAIL_PROVIDER selects the transactional email transport: 'resend' (default,
+// Resend HTTP API) or 'smtp' (legacy Nodemailer/SMTP, kept as a switchable
+// rollback). An unknown value fails startup. Provider-specific credentials are
+// validated conditionally below (RESEND_API_KEY for resend, SMTP_* for smtp).
+const emailProvider = optional('EMAIL_PROVIDER', 'resend');
+if (!['resend', 'smtp'].includes(emailProvider)) {
+  console.error(`[ENV] Invalid EMAIL_PROVIDER: "${emailProvider}". Must be "resend" or "smtp".`);
+  process.exit(1);
+}
+
+// --- Marketing email circuit breaker ---
+// MARKETING_EMAILS_ENABLED is a global on/off for marketing broadcasts (Resend).
+// Default OFF (fail-safe): a brand-new environment never emails subscribers until
+// explicitly enabled. When true, the marketing credentials/IDs below are required.
+const marketingEnabled = optionalBool('MARKETING_EMAILS_ENABLED', false);
+
 const isProduction = process.env.NODE_ENV === 'production';
 const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 const isTest = process.env.NODE_ENV === 'test';
@@ -108,17 +132,47 @@ const config = {
     expiresIn: optional('JWT_EXPIRES_IN', '7d'),
   },
 
-  // --- Email (SMTP) ---
+  // --- Email ---
+  // Provider switch (default 'resend'). See the emailProvider validation above.
+  emailProvider,
+  // Resend HTTP API key. Required only when EMAIL_PROVIDER=resend.
+  resendApiKey: requiredIf(emailProvider === 'resend', 'RESEND_API_KEY'),
+  // Legacy SMTP (Nodemailer). Host/user/pass required only when
+  // EMAIL_PROVIDER=smtp; port/secure keep their defaults regardless.
   smtp: {
-    host: optional('SMTP_HOST', ''),
+    host: requiredIf(emailProvider === 'smtp', 'SMTP_HOST'),
     port: optionalInt('SMTP_PORT', 587),
     secure: optionalBool('SMTP_SECURE', false),
-    user: optional('SMTP_USER', ''),
-    pass: optional('SMTP_PASS', ''),
+    user: requiredIf(emailProvider === 'smtp', 'SMTP_USER'),
+    pass: requiredIf(emailProvider === 'smtp', 'SMTP_PASS'),
   },
   emailFrom: optional('EMAIL_FROM', 'info@140d.art'),
   registrationEmail: optional('REGISTRATION_EMAIL', ''),
   logoUrl: optional('LOGO_URL', ''),
+
+  // --- Marketing email (Resend Broadcasts) ---
+  // Distinct channel from the transactional email above. Uses a dedicated
+  // FULL-ACCESS Resend key and the Broadcasts API to send to a segment scoped by
+  // topic. Credentials and IDs are required ONLY when marketing is enabled.
+  // RESEND_NEWSLETTER_SEGMENT_ID differs per environment: a TEST segment outside
+  // production and the REAL segment in production (same var, value per env — no
+  // code branching). The monthly Newsletter broadcast itself is still sent
+  // manually from the Resend UI, but its topic ID (RESEND_TOPIC_NEWSLETTER) is
+  // referenced here so the public signup form can offer it as an opt-in option.
+  marketing: {
+    enabled: marketingEnabled,
+    apiKey: requiredIf(marketingEnabled, 'RESEND_MARKETING_API_KEY'),
+    newsletterSegmentId: requiredIf(marketingEnabled, 'RESEND_NEWSLETTER_SEGMENT_ID'),
+    topicNewAuthors: requiredIf(marketingEnabled, 'RESEND_TOPIC_NEW_AUTHORS'),
+    topicAuctionsDraws: requiredIf(marketingEnabled, 'RESEND_TOPIC_AUCTIONS_DRAWS'),
+    topicLiveEvents: requiredIf(marketingEnabled, 'RESEND_TOPIC_LIVE_EVENTS'),
+    // Monthly "Newsletter" topic. Offered as an opt-in option in the public
+    // newsletter signup form (see newsletter-subscription change), so it now
+    // needs to be in config like the other three.
+    topicNewsletter: requiredIf(marketingEnabled, 'RESEND_TOPIC_NEWSLETTER'),
+    // Bare from-address; the "140d Galería de Arte" display name is added in code.
+    from: optional('MARKETING_FROM', '') || optional('EMAIL_FROM', 'info@140d.art'),
+  },
 
   // --- Stripe ---
   stripe: {

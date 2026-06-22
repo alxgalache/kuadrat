@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
+const marketingEmailService = require('../services/marketingEmailService');
 const logger = require('../config/logger');
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,9 @@ const createEvent = async (req, res, next) => {
       cover_image_url, access_type, price, currency, format, content_type,
       category, video_url, max_attendees, status,
     });
+
+    // Marketing announcement (non-blocking; never throws; guarded send-once)
+    marketingEmailService.announceEventIfEligible(event.id);
 
     res.status(201).json({
       success: true,
@@ -117,6 +121,9 @@ const updateEvent = async (req, res, next) => {
     }
 
     const event = await eventService.updateEvent(req.params.id, req.body);
+
+    // Marketing announcement on transition into 'scheduled' (guarded send-once)
+    marketingEmailService.announceEventIfEligible(req.params.id);
 
     res.status(200).json({
       success: true,
