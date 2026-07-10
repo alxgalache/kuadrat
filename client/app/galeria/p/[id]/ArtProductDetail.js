@@ -257,6 +257,10 @@ export default function ArtProductDetail({ params }) {
                   <span className="font-medium">Soporte:</span>{' '}
                   {product.type}
               </p>
+              <p className="text-lg text-gray-700 mt-1">
+                <span className="font-medium">Medidas:</span>{' '}
+                {product.dimensions && `${product.dimensions.split('x').slice(0, -1).join(' x ')} cm`}
+              </p>
               {product.seller_full_name && (
                 <p className="text-lg text-gray-700 mt-1">
                   <span className="font-medium">Autor:</span>{' '}

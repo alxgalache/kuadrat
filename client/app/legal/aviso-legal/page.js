@@ -41,7 +41,7 @@ export default function LegalNoticePage() {
               <li><span className="font-medium">Domicilio social:</span> Paseo del Rector Esperabé 18 2ºB, 37008, Salamanca</li>
               <li><span className="font-medium">Correo electrónico de contacto:</span> info@140d.art</li>
               <li><span className="font-medium">Sitio web:</span> https://140d.art</li>
-              <li><span className="font-medium">Datos de inscripción en el Registro Mercantil:</span> [TOMO, FOLIO, SECCIÓN, HOJA]</li>
+              <li><span className="font-medium">Datos de inscripción en el Registro Mercantil:</span> S 8 H SA 20650, I/A 1</li>
             </ul>
           </section>
 

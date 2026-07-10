@@ -65,3 +65,12 @@ data/
 scripts/**/node_modules/
 scripts/**/.env
 scripts/**/*.log
+
+# design-sync (claude.ai/design) — staged scripts, build output, and generated
+# caches. Durable sync inputs live in .design-sync/ (committed); only its
+# generated/installed subtrees are ignored (see .design-sync/.gitignore).
+.ds-sync/
+ds-bundle/
+client/.ds-cache/
+.design-sync/.cache/
+.design-sync/node_modules/

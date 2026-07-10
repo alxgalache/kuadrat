@@ -1,0 +1,18 @@
+{
+  "_comment": "Dedicated tsconfig consumed by design-sync's esbuild path-resolution plugin (compilerOptions.paths only). Targets are ABSOLUTE so they resolve regardless of the bundler's PKG_DIR base. Order matters: exact keys and more specific prefixes precede @/* so component/context/api imports route to the .jsx mirror, stubs and Next.js stubs, not the raw .js sources. @/lib/api is pinned to a stub because both lib/api.js and lib/api/ (a dir) exist and the plugin would mis-grab the directory.",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/lib/api": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/lib-api.js"],
+      "@/components/ShoppingCartDrawer": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/components/ShoppingCartDrawer.jsx"],
+      "@/components/NewsletterSubscribeModal": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/components/NewsletterSubscribeModal.jsx"],
+      "@/components/*": ["/home/axgalache/projects/kuadrat/.design-sync/.cache/src/*"],
+      "@/contexts/*": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/contexts/*"],
+      "next/link": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/next-link.jsx"],
+      "next/image": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/next-image.jsx"],
+      "next/navigation": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/next-navigation.js"],
+      "next/script": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/next-script.jsx"],
+      "@/*": ["/home/axgalache/projects/kuadrat/client/*"]
+    }
+  }
+}

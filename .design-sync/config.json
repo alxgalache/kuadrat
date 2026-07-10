@@ -1,0 +1,21 @@
+{
+  "pkg": "kuadrat-client",
+  "globalName": "Kuadrat",
+  "projectId": "d316ba5a-13c9-4f2d-a1a8-4a39aff0fe8e",
+  "shape": "package",
+  "extraEntries": ["/home/axgalache/projects/kuadrat/.design-sync/stubs/process-shim.js"],
+  "componentSrcMap": { "NotificationContainer": null },
+  "srcDir": "/home/axgalache/projects/kuadrat/.design-sync/.cache/src",
+  "tsconfig": "/home/axgalache/projects/kuadrat/.design-sync/tsconfig.bundle.json",
+  "cssEntry": "/home/axgalache/projects/kuadrat/client/.ds-cache/tailwind.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "ConfirmDialog": { "cardMode": "single", "viewport": "820x560", "primaryStory": "Eliminar" },
+    "CoaSuccess": { "cardMode": "single", "viewport": "1000x780" },
+    "ProductGrid": { "cardMode": "column" },
+    "BannerNotification": { "cardMode": "column" },
+    "Notification": { "cardMode": "column" },
+    "AuctionImageMosaic": { "cardMode": "column" },
+    "ProductImageCarousel": { "cardMode": "single", "viewport": "480x480" }
+  }
+}
