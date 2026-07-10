@@ -1,7 +1,38 @@
 const express = require('express')
+const multer = require('multer')
 const router = express.Router()
 const { db } = require('../../config/database')
 const logger = require('../../config/logger')
+const { updateOthersProduct } = require('../../controllers/adminProductEditController')
+
+// Multer configuration matching the public others create route: 3 global
+// product images + up to 20 variations × 3 images each (memory storage,
+// PNG/JPG/WEBP up to 10MB).
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (allowedMimeTypes.includes(file.mimetype)) return cb(null, true);
+    cb(new Error('Only PNG, JPG, and WEBP images are allowed'));
+  },
+});
+
+const MAX_VARIATIONS = 20;
+const MAX_IMAGES_PER_GROUP = 3;
+const othersUploadFields = [
+  { name: 'images', maxCount: MAX_IMAGES_PER_GROUP },
+];
+for (let i = 0; i < MAX_VARIATIONS; i++) {
+  othersUploadFields.push({ name: `variation_${i}_images`, maxCount: MAX_IMAGES_PER_GROUP });
+}
+
+/**
+ * PUT /api/admin/others/:id
+ * Full update of an others product (fields + global/variation image manifests
+ * + variation reconciliation by id)
+ */
+router.put('/:id', upload.fields(othersUploadFields), updateOthersProduct);
 
 /**
  * PUT /api/admin/others/:id/variations

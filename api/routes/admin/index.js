@@ -9,6 +9,7 @@ router.use(authenticate, adminAuth);
 // Mount sub-route modules
 router.use('/authors', require('./authorRoutes'));
 router.use('/products', require('./productRoutes'));
+router.use('/art', require('./artRoutes'));
 router.use('/others', require('./othersRoutes'));
 router.use('/orders', require('./orderRoutes'));
 router.use('/shipping', require('./shippingRoutes'));

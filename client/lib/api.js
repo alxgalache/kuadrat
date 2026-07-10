@@ -775,6 +775,24 @@ export const adminAPI = {
     getPreview: async (id, type) => {
       return apiRequest(`/admin/products/${id}/preview?type=${type}`);
     },
+
+    getEditData: async (id, type) => {
+      return apiRequest(`/admin/products/${id}/edit-data?type=${type}`);
+    },
+
+    updateArt: async (id, formData) => {
+      return apiRequest(`/admin/art/${id}`, {
+        method: 'PUT',
+        body: formData,
+      });
+    },
+
+    updateOthers: async (id, formData) => {
+      return apiRequest(`/admin/others/${id}`, {
+        method: 'PUT',
+        body: formData,
+      });
+    },
   },
 
   // CoA / NFC tag management

@@ -43,5 +43,5 @@
 ## 7. Verificación
 
 - [x] 7.1 Validar el arranque del backend con `MARKETING_EMAILS_ENABLED=true` exigiendo `RESEND_TOPIC_NEWSLETTER`, y con marketing OFF sin exigirlo (verificado estáticamente: `requiredIf(marketingEnabled, 'RESEND_TOPIC_NEWSLETTER')`, igual que los topics hermanos; `node --check` OK en todo el backend)
-- [ ] 7.2 Probar en staging (segmento de pruebas): alta de email nuevo (verificar contacto + topics + segmento en Resend), email existente y email dado de baja (re-suscripción), captcha fallido, rate limit y marketing OFF (503)
-- [ ] 7.3 Verificar el frontend: icono del footer abre el modal, banner de primera visita (aparece, CTA abre modal, cerrar persiste y no reaparece), modal completo, enlaces legales en `_blank`, validación de ≥1 topic y consentimiento, y feedback de éxito/error
+- [x] 7.2 Probar en staging (segmento de pruebas): alta de email nuevo (verificar contacto + topics + segmento en Resend), email existente y email dado de baja (re-suscripción), captcha fallido, rate limit y marketing OFF (503)
+- [x] 7.3 Verificar el frontend: icono del footer abre el modal, banner de primera visita (aparece, CTA abre modal, cerrar persiste y no reaparece), modal completo, enlaces legales en `_blank`, validación de ≥1 topic y consentimiento, y feedback de éxito/error

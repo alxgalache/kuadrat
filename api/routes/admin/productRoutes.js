@@ -3,6 +3,7 @@ const router = express.Router()
 const { db } = require('../../config/database')
 const logger = require('../../config/logger')
 const auctionAdminController = require('../../controllers/auctionAdminController')
+const { getProductEditData } = require('../../controllers/adminProductEditController')
 
 /**
  * GET /api/admin/products/for-auction
@@ -10,6 +11,13 @@ const auctionAdminController = require('../../controllers/auctionAdminController
  * NOTE: Must be registered BEFORE the parameterized :id route
  */
 router.get('/for-auction', auctionAdminController.getProductsForAuction);
+
+/**
+ * GET /api/admin/products/:id/edit-data?type=art|others
+ * Full product data (fields, images, variations, seller commission rates)
+ * for the admin edit form
+ */
+router.get('/:id/edit-data', getProductEditData);
 
 /**
  * GET /api/admin/products/:id

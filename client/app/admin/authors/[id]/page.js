@@ -11,7 +11,7 @@ import VariationEditModal from '@/components/VariationEditModal'
 import StripeConnectSection from '@/components/admin/StripeConnectSection'
 import SellerFiscalForm from '@/components/admin/SellerFiscalForm'
 import { useNotification } from '@/contexts/NotificationContext'
-import { PencilIcon, EyeIcon, EyeSlashIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { PencilIcon, EyeIcon, EyeSlashIcon, TrashIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline'
 
 function AuthorProfilePageContent({ params }) {
   const unwrappedParams = use(params)
@@ -333,13 +333,20 @@ function AuthorProfilePageContent({ params }) {
                               >
                                 <EyeIcon className="size-5" />
                               </Link>
+                              <Link
+                                href={`/admin/products/${product.id}/edit?type=${product.product_type}`}
+                                className="text-indigo-600 hover:text-indigo-900"
+                                title="Editar producto"
+                              >
+                                <PencilIcon className="size-5" />
+                              </Link>
                               {product.product_type === 'others' && (
                                 <button
                                   onClick={() => handleEditVariations(product)}
                                   className="text-indigo-600 hover:text-indigo-900"
-                                  title="Editar variaciones"
+                                  title="Editar stock y variaciones"
                                 >
-                                  <PencilIcon className="size-5" />
+                                  <AdjustmentsHorizontalIcon className="size-5" />
                                 </button>
                               )}
                               <button

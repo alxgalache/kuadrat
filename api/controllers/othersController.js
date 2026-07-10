@@ -2,8 +2,6 @@ const { db } = require('../config/database');
 const { ApiError, ValidationError } = require('../middleware/errorHandler');
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
-const { imageSize } = require('image-size');
 const slugify = require('slugify');
 const logger = require('../config/logger');
 const config = require('../config/env');
@@ -11,6 +9,11 @@ const s3Service = require('../services/s3Service');
 const { sendNewProductNotificationEmail } = require('../services/emailService');
 const { attachProductImages, attachVariationThumbnails } = require('../utils/productImages');
 const { createBatch } = require('../utils/transaction');
+const {
+  validateCommonProductFields,
+  validateImageFile,
+  generateUniqueBasename,
+} = require('../utils/productValidation');
 
 // Get all others products (public) with pagination and optional author filtering
 const getAllOthersProducts = async (req, res, next) => {
@@ -146,109 +149,16 @@ const getOthersProductById = async (req, res, next) => {
 // Create new others product (seller only)
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'others');
 
-// Helper: get file extension from mime type
-const getFileExtension = (mimetype) => {
-  switch (mimetype) {
-    case 'image/png': return 'png';
-    case 'image/jpeg': return 'jpg';
-    case 'image/webp': return 'webp';
-    default: return null;
-  }
-};
-
-// Helper: validate a single image file (type + dimensions)
-const validateImageFile = (file, fieldName) => {
-  const errors = [];
-  const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
-
-  if (!allowedMimeTypes.includes(file.mimetype)) {
-    errors.push({ field: fieldName, message: 'Solo se permiten imágenes PNG, JPG y WEBP' });
-  }
-
-  try {
-    const dims = imageSize(file.buffer);
-    if (!dims || dims.width < 600 || dims.height < 600) {
-      errors.push({ field: fieldName, message: 'La imagen debe tener al menos 600x600 píxeles' });
-    }
-  } catch (e) {
-    errors.push({ field: fieldName, message: 'Archivo de imagen inválido' });
-  }
-
-  return errors;
-};
-
-// Helper: generate unique basename for an image file
-const generateUniqueBasename = (mimetype) => {
-  const ext = getFileExtension(mimetype);
-  if (!ext) throw new ApiError(400, 'Formato de imagen no soportado', 'Imagen inválida');
-  return `${randomUUID()}.${ext}`;
-};
-
 const createOthersProduct = async (req, res, next) => {
   try {
     const { name, description, price, variations, weight, dimensions, for_auction, ai_generated, can_copack } = req.body;
     const seller_id = req.user.id;
 
-    // Collect all validation errors
-    const validationErrors = [];
-
-    // Validate name
-    if (!name || typeof name !== 'string') {
-      validationErrors.push({ field: 'name', message: 'El nombre es obligatorio' });
-    } else if (name.trim().length < 5) {
-      validationErrors.push({ field: 'name', message: 'El nombre debe tener al menos 5 caracteres' });
-    } else if (name.trim().length > 200) {
-      validationErrors.push({ field: 'name', message: 'El nombre no debe exceder 200 caracteres' });
-    }
-
-    // Validate description
-    if (!description || typeof description !== 'string') {
-      validationErrors.push({ field: 'description', message: 'La descripción es obligatoria' });
-    } else if (description.trim().length < 100) {
-      validationErrors.push({ field: 'description', message: 'La descripción debe tener al menos 100 caracteres' });
-    } else if (description.trim().length > 1000) {
-      validationErrors.push({ field: 'description', message: 'La descripción no debe exceder 1000 caracteres' });
-    }
-
-    // Validate price
-    if (!price) {
-      validationErrors.push({ field: 'price', message: 'El precio es obligatorio' });
-    } else {
-      const priceNum = parseFloat(price);
-      if (!Number.isFinite(priceNum)) {
-        validationErrors.push({ field: 'price', message: 'El precio debe ser un número válido' });
-      } else if (priceNum < 10) {
-        validationErrors.push({ field: 'price', message: 'El precio debe ser al menos €10' });
-      } else if (priceNum > 10000) {
-        validationErrors.push({ field: 'price', message: 'El precio no debe exceder €10,000' });
-      }
-    }
-
-    // Validate weight (mandatory when Sendcloud is enabled, otherwise optional)
-    const { isSendcloudEnabled } = require('../services/shipping/shippingProviderFactory');
-    if (isSendcloudEnabled('other')) {
-      if (!weight || !weight.toString().trim()) {
-        validationErrors.push({ field: 'weight', message: 'El peso es obligatorio para poder calcular el envío' });
-      } else {
-        const weightNum = parseInt(weight, 10);
-        if (!Number.isInteger(weightNum) || weightNum <= 0) {
-          validationErrors.push({ field: 'weight', message: 'El peso debe ser un número entero mayor que 0' });
-        }
-      }
-    } else if (weight) {
-      const weightNum = parseInt(weight, 10);
-      if (!Number.isInteger(weightNum) || weightNum <= 0) {
-        validationErrors.push({ field: 'weight', message: 'El peso debe ser un número entero mayor que 0' });
-      }
-    }
-
-    // Validate dimensions (optional, but if provided must follow format WxLxH)
-    if (dimensions && typeof dimensions === 'string') {
-      const dimensionsRegex = /^\d+x\d+x\d+$/;
-      if (!dimensionsRegex.test(dimensions.trim())) {
-        validationErrors.push({ field: 'dimensions', message: 'Las dimensiones deben estar en formato "LxWxH" (ej: 30x20x10)' });
-      }
-    }
+    // Collect all validation errors (shared rules with the admin edit endpoint)
+    const validationErrors = validateCommonProductFields(
+      { name, description, price, weight, dimensions },
+      'other',
+    );
 
     // Validate variations
     let parsedVariations = [];
