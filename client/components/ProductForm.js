@@ -147,6 +147,7 @@ function ImageDropzoneSlot({ previewUrl, onDrop, onClear, isFirst }) {
 //   `images` and (others) `variations` (each with `images`)
 // - initialProductType (edit): 'art' | 'other' — category is locked in edit mode
 // - initialCommissionRates (edit): { art, other } for the net-earnings preview
+// - initialTaxRates (edit): { art, other } per-seller VAT rates for the preview
 // - onSubmit(formData, productCategory): performs the API call; errors it
 //   throws are shown via showApiError
 export default function ProductForm({
@@ -154,6 +155,7 @@ export default function ProductForm({
     initialProduct = null,
     initialProductType = 'art',
     initialCommissionRates = null,
+    initialTaxRates = null,
     onSubmit,
 }) {
     const isEdit = mode === 'edit'
@@ -205,6 +207,17 @@ export default function ProductForm({
             ? {
                 art: initialCommissionRates?.art != null ? Number(initialCommissionRates.art) : null,
                 other: initialCommissionRates?.other != null ? Number(initialCommissionRates.other) : null,
+              }
+            : {art: null, other: null}
+    )
+    // Per-seller VAT rates (whole percentages). In create mode they are fetched
+    // from the seller API alongside the commissions; in edit mode the caller
+    // supplies the product owner's rates. Replaces the former per-type VAT env vars.
+    const [taxRates, setTaxRates] = useState(
+        isEdit
+            ? {
+                art: initialTaxRates?.art != null ? Number(initialTaxRates.art) : null,
+                other: initialTaxRates?.other != null ? Number(initialTaxRates.other) : null,
               }
             : {art: null, other: null}
     )
@@ -396,9 +409,9 @@ export default function ProductForm({
         }
     }
 
-    // Fetch the authenticated seller's commission rates for the net-earnings
-    // preview (create mode only). Failures leave the rates null and the
-    // preview simply hides.
+    // Fetch the authenticated seller's commission and VAT rates for the
+    // net-earnings preview (create mode only). Failures leave the rates null and
+    // the preview simply hides.
     useEffect(() => {
         if (isEdit) return
         let active = true
@@ -408,6 +421,10 @@ export default function ProductForm({
                 setCommissionRates({
                     art: Number(data.commissionRateArt),
                     other: Number(data.commissionRateOther),
+                })
+                setTaxRates({
+                    art: data.taxVatArt != null ? Number(data.taxVatArt) : null,
+                    other: data.taxVatOther != null ? Number(data.taxVatOther) : null,
                 })
             })
             .catch((err) => {
@@ -645,28 +662,28 @@ export default function ProductForm({
         setShowDecimalWarning(false)
     }
 
-    // Net earnings preview. Commission rate comes from the seller's own
-    // configured rate; VAT still comes from env. The preview only renders once
-    // the rate for the active category is available.
+    // Net earnings preview. Commission and VAT rates both come from the
+    // seller's own configured values (per-seller). The preview only renders once
+    // the commission AND VAT rate for the active category are available.
     const priceValue = parseFloat(price)
     const activeCommissionRate = productCategory === 'art' ? commissionRates.art : commissionRates.other
+    const activeVatRate = productCategory === 'art' ? taxRates.art : taxRates.other
     const showNetEarnings = !isNaN(priceValue) && priceValue >= 10 &&
-        activeCommissionRate != null && !isNaN(activeCommissionRate)
+        activeCommissionRate != null && !isNaN(activeCommissionRate) &&
+        activeVatRate != null && !isNaN(activeVatRate)
     let netEarnings = null
     if (showNetEarnings) {
+        const commissionRate = activeCommissionRate / 100
+        const vatRate = activeVatRate / 100
         if (productCategory === 'art') {
-            const commissionRate = activeCommissionRate / 100
-            const vatRate = parseFloat(process.env.NEXT_PUBLIC_TAX_VAT_ART_ES || '10') / 100
             const gross = priceValue * (1 - commissionRate)
             const net = gross / (1 + vatRate)
-            netEarnings = { net, gross, vatPercent: parseInt(process.env.NEXT_PUBLIC_TAX_VAT_ART_ES || '10') }
+            netEarnings = { net, gross, vatPercent: activeVatRate }
         } else {
-            const commissionRate = activeCommissionRate / 100
-            const vatRate = parseFloat(process.env.NEXT_PUBLIC_TAX_VAT_ES || '21') / 100
             const base = priceValue / (1 + vatRate)
             const artistBase = base * (1 - commissionRate)
             const gross = artistBase * (1 + vatRate)
-            netEarnings = { net: artistBase, gross, vatPercent: parseInt(process.env.NEXT_PUBLIC_TAX_VAT_ES || '21') }
+            netEarnings = { net: artistBase, gross, vatPercent: activeVatRate }
         }
     }
 

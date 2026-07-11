@@ -65,7 +65,12 @@ async function initializeDatabase() {
         -- Per-seller gallery commission (whole percentage, e.g. 25 = 25%).
         -- Replaces the former global DEALER_COMMISSION_* env vars.
         dealer_commission_art REAL NOT NULL DEFAULT 25,
-        dealer_commission_other REAL NOT NULL DEFAULT 10
+        dealer_commission_other REAL NOT NULL DEFAULT 10,
+        -- Per-seller VAT rates the artist invoices at (whole percentage).
+        -- Replaces the former global TAX_VAT_* env vars. art = 10 → REBU regime,
+        -- any other value (e.g. 21 = cooperativa) → standard_vat regime.
+        tax_vat_art REAL NOT NULL DEFAULT 10,
+        tax_vat_other REAL NOT NULL DEFAULT 21
       )
     `);
 
@@ -272,6 +277,9 @@ async function initializeDatabase() {
         sendcloud_announcement_retries INTEGER DEFAULT 0,
         sendcloud_announcement_failed_at DATETIME,
         sendcloud_carrier_code TEXT,
+        -- Fiscal regime frozen at sale time ('art_rebu' | 'standard_vat'),
+        -- derived from the seller's tax_vat_art. See api/utils/vatRegime.js.
+        vat_regime TEXT,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (art_id) REFERENCES art(id)
       )
@@ -689,6 +697,24 @@ async function initializeDatabase() {
     // global DEALER_COMMISSION_ART / DEALER_COMMISSION_OTHERS env vars.
     await safeAlter('ALTER TABLE users ADD COLUMN dealer_commission_art REAL NOT NULL DEFAULT 25');
     await safeAlter('ALTER TABLE users ADD COLUMN dealer_commission_other REAL NOT NULL DEFAULT 10');
+    // Per-seller VAT rates (whole percentage). Replace the former global
+    // TAX_VAT_ES / TAX_VAT_ART_ES env vars. art = 10 → REBU, otherwise standard.
+    await safeAlter('ALTER TABLE users ADD COLUMN tax_vat_art REAL NOT NULL DEFAULT 10');
+    await safeAlter('ALTER TABLE users ADD COLUMN tax_vat_other REAL NOT NULL DEFAULT 21');
+    // Per-item fiscal regime snapshot, frozen at sale time (see utils/vatRegime.js).
+    await safeAlter('ALTER TABLE art_order_items ADD COLUMN vat_regime TEXT');
+    // Backfill existing art order items: all historical sales were REBU (the only
+    // regime possible before per-seller VAT rates). Idempotent — no-op on reruns.
+    {
+      const backfill = await db.execute(
+        "UPDATE art_order_items SET vat_regime = 'art_rebu' WHERE vat_regime IS NULL"
+      );
+      if (backfill.rowsAffected > 0) {
+        logger.info(
+          `[database] Backfilled vat_regime='art_rebu' on ${backfill.rowsAffected} art_order_items`
+        );
+      }
+    }
     // Unique partial index on stripe_connect_account_id (ALTER TABLE can't add UNIQUE in SQLite)
     await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stripe_connect_account_id ON users(stripe_connect_account_id) WHERE stripe_connect_account_id IS NOT NULL');
 

@@ -183,7 +183,9 @@ const getProductEditData = async (req, res, next) => {
     }
 
     const sellerResult = await db.execute({
-      sql: 'SELECT dealer_commission_art, dealer_commission_other FROM users WHERE id = ?',
+      sql: `SELECT dealer_commission_art, dealer_commission_other,
+                   tax_vat_art, tax_vat_other
+            FROM users WHERE id = ?`,
       args: [product.seller_id],
     });
     const sellerRow = sellerResult.rows[0] || {};
@@ -194,6 +196,10 @@ const getProductEditData = async (req, res, next) => {
       commissionRates: {
         art: Number(sellerRow.dealer_commission_art) || 0,
         other: Number(sellerRow.dealer_commission_other) || 0,
+      },
+      tax_rates: {
+        art: Number(sellerRow.tax_vat_art) || 0,
+        other: Number(sellerRow.tax_vat_other) || 0,
       },
     });
   } catch (error) {

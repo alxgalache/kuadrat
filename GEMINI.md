@@ -191,4 +191,4 @@ All environment variables are validated at startup via `api/config/env.js`. See 
 * **Payments:** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, PAYMENT_PROVIDER
 * **LiveKit:** LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 * **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, etc.
-* **Business:** TAX_VAT_ES, DEALER_COMMISSION
+* **Business / VAT (per-seller):** VAT rates are per-seller columns on `users`: `tax_vat_art` (default 10) and `tax_vat_other` (default 21), whole percentages, editable by the admin. The art-sale fiscal regime is derived from `tax_vat_art` via `api/utils/vatRegime.js` (`10 → 'art_rebu'`, otherwise `'standard_vat'`) and snapshotted per item in `art_order_items.vat_regime` at sale time (reads use `COALESCE(vat_regime, 'art_rebu')`). Wallet buckets, payouts, buyer invoices and the fiscal export key off the snapshot, not the table. `TAX_VAT_ES` (env) is legacy-only (Revolut line item metadata); `TAX_VAT_ART_ES` and `NEXT_PUBLIC_TAX_VAT_*` have been removed.

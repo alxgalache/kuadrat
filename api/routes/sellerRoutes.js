@@ -13,6 +13,7 @@ const { validatePassword } = require('../controllers/authController');
 const { getSellerOrders, downloadOrderLabel, schedulePickup, scheduleBulkPickup } = require('../controllers/sellerOrdersController');
 const { pickupSchema, bulkPickupSchema } = require('../validators/pickupSchemas');
 const stripeConnectCtrl = require('../controllers/stripeConnectController');
+const { artVatRegimeForRate } = require('../utils/vatRegime');
 
 // Apply authentication and seller authorization to all routes
 router.use(authenticate, requireSeller);
@@ -368,7 +369,9 @@ router.get('/wallet', async (req, res, next) => {
                    withdrawal_recipient,
                    withdrawal_iban,
                    dealer_commission_art,
-                   dealer_commission_other
+                   dealer_commission_other,
+                   tax_vat_art,
+                   tax_vat_other
             FROM users
             WHERE id = ?`,
       args: [userId],
@@ -388,6 +391,9 @@ router.get('/wallet', async (req, res, next) => {
       balanceStandardVat,
       commissionRateArt: Number(row.dealer_commission_art) || 0,
       commissionRateOthers: Number(row.dealer_commission_other) || 0,
+      taxVatArt: Number(row.tax_vat_art) || 0,
+      taxVatOther: Number(row.tax_vat_other) || 0,
+      artVatRegime: artVatRegimeForRate(row.tax_vat_art),
       recipientName: row.withdrawal_recipient || '',
       iban: row.withdrawal_iban || '',
     });
@@ -407,7 +413,8 @@ router.get('/commission-rates', async (req, res, next) => {
     const userId = req.user.id;
 
     const result = await db.execute({
-      sql: `SELECT dealer_commission_art, dealer_commission_other
+      sql: `SELECT dealer_commission_art, dealer_commission_other,
+                   tax_vat_art, tax_vat_other
             FROM users
             WHERE id = ?`,
       args: [userId],
@@ -421,6 +428,8 @@ router.get('/commission-rates', async (req, res, next) => {
     sendSuccess(res, {
       commissionRateArt: Number(row.dealer_commission_art) || 0,
       commissionRateOther: Number(row.dealer_commission_other) || 0,
+      taxVatArt: Number(row.tax_vat_art) || 0,
+      taxVatOther: Number(row.tax_vat_other) || 0,
     });
   } catch (error) {
     next(error);

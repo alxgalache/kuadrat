@@ -209,7 +209,8 @@ router.get('/:id', async (req, res) => {
             fiscal_address_line1, fiscal_address_line2, fiscal_address_city,
             fiscal_address_postal_code, fiscal_address_province, fiscal_address_country,
             irpf_retention_rate,
-            dealer_commission_art, dealer_commission_other
+            dealer_commission_art, dealer_commission_other,
+            tax_vat_art, tax_vat_other
             FROM users
             WHERE id = ? AND role = 'seller'`,
       args: [req.params.id]
@@ -320,13 +321,16 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
     const {
       full_name, bio, location, email, email_contact, visible,
       pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
-      dealer_commission_art, dealer_commission_other
+      dealer_commission_art, dealer_commission_other,
+      tax_vat_art, tax_vat_other
     } = req.body
     const authorId = req.params.id
 
     // Verify author exists and is a seller
     const checkResult = await db.execute({
-      sql: 'SELECT id, dealer_commission_art, dealer_commission_other FROM users WHERE id = ? AND role = ?',
+      sql: `SELECT id, dealer_commission_art, dealer_commission_other,
+                   tax_vat_art, tax_vat_other
+            FROM users WHERE id = ? AND role = ?`,
       args: [authorId, 'seller']
     })
 
@@ -337,8 +341,8 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
       })
     }
 
-    // Commission fields are optional on the payload: keep the existing value
-    // when the field is omitted. Zod already guarantees the range [0, 100].
+    // Commission and VAT fields are optional on the payload: keep the existing
+    // value when the field is omitted. Zod already guarantees the range [0, 100].
     const existing = checkResult.rows[0]
     const commissionArt = dealer_commission_art !== undefined
       ? Number(dealer_commission_art)
@@ -346,18 +350,26 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
     const commissionOther = dealer_commission_other !== undefined
       ? Number(dealer_commission_other)
       : Number(existing.dealer_commission_other)
+    const taxVatArt = tax_vat_art !== undefined
+      ? Number(tax_vat_art)
+      : Number(existing.tax_vat_art)
+    const taxVatOther = tax_vat_other !== undefined
+      ? Number(tax_vat_other)
+      : Number(existing.tax_vat_other)
 
     // Update author
     await db.execute({
       sql: `UPDATE users
             SET full_name = ?, bio = ?, location = ?, email = ?, email_contact = ?, visible = ?,
             pickup_address = ?, pickup_city = ?, pickup_postal_code = ?, pickup_country = ?, pickup_instructions = ?,
-            dealer_commission_art = ?, dealer_commission_other = ?
+            dealer_commission_art = ?, dealer_commission_other = ?,
+            tax_vat_art = ?, tax_vat_other = ?
             WHERE id = ?`,
       args: [
         full_name, bio, location, email, email_contact, visible ? 1 : 0,
         pickup_address || '', pickup_city || '', pickup_postal_code || '', pickup_country || '', pickup_instructions || '',
         commissionArt, commissionOther,
+        taxVatArt, taxVatOther,
         authorId
       ]
     })
@@ -366,7 +378,8 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
     const updatedResult = await db.execute({
       sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
-            dealer_commission_art, dealer_commission_other
+            dealer_commission_art, dealer_commission_other,
+            tax_vat_art, tax_vat_other
             FROM users
             WHERE id = ?`,
       args: [authorId]

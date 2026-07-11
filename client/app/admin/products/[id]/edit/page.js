@@ -19,6 +19,7 @@ function AdminProductEditPageContent({ params }) {
 
   const [product, setProduct] = useState(null)
   const [commissionRates, setCommissionRates] = useState(null)
+  const [taxRates, setTaxRates] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -29,6 +30,7 @@ function AdminProductEditPageContent({ params }) {
         if (!active) return
         setProduct(data.product)
         setCommissionRates(data.commissionRates)
+        setTaxRates(data.tax_rates)
       })
       .catch((err) => {
         console.error('Error loading product edit data:', err)
@@ -72,6 +74,7 @@ function AdminProductEditPageContent({ params }) {
       initialProduct={product}
       initialProductType={formProductType}
       initialCommissionRates={commissionRates}
+      initialTaxRates={taxRates}
       onSubmit={handleUpdate}
     />
   )

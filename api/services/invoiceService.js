@@ -110,7 +110,12 @@ function getGalleryIssuer() {
  */
 async function generateBuyerRebuInvoice(orderId) {
   const order = await loadOrder(orderId);
-  const artItems = await loadArtOrderItems(orderId);
+  const allArtItems = await loadArtOrderItems(orderId);
+  // Only art sold under the REBU regime belongs on the Series A invoice.
+  // Standard-regime art (cooperativa artists at 21%) goes on Series P instead.
+  const artItems = allArtItems.filter(
+    (i) => (i.vat_regime || 'art_rebu') === 'art_rebu'
+  );
 
   if (artItems.length === 0) {
     const err = new Error('Este pedido no contiene productos de arte (REBU)');
@@ -172,8 +177,14 @@ async function generateBuyerRebuInvoice(orderId) {
 async function generateBuyerStandardInvoice(orderId) {
   const order = await loadOrder(orderId);
   const otherItems = await loadOtherOrderItems(orderId);
+  // Standard-regime art (cooperativa artists at 21%) is invoiced under the
+  // general regime, exactly like other products — include it on Series P.
+  const allArtItems = await loadArtOrderItems(orderId);
+  const standardArtItems = allArtItems.filter(
+    (i) => (i.vat_regime || 'art_rebu') === 'standard_vat'
+  );
 
-  if (otherItems.length === 0) {
+  if (otherItems.length === 0 && standardArtItems.length === 0) {
     const err = new Error('Este pedido no contiene productos estándar (IVA 21%)');
     err.statusCode = 400;
     throw err;
@@ -202,19 +213,30 @@ async function generateBuyerStandardInvoice(orderId) {
     },
   };
 
-  // Prices include 21% IVA — extract base
-  const items = otherItems.map((item) => {
-    const total = Number(item.price_at_purchase);
-    const base = round2(total / 1.21);
-    const vatAmount = round2(total - base);
-    const name = item.variant_key
-      ? `${item.other_name} — ${item.variant_key}`
-      : item.other_name || `Producto #${item.other_id}`;
-    return { description: name, base, vatAmount, total };
-  });
+  // Prices include 21% IVA — extract base. Other products and standard-regime
+  // art lines share the identical breakdown.
+  const items = [
+    ...otherItems.map((item) => {
+      const total = Number(item.price_at_purchase);
+      const base = round2(total / 1.21);
+      const vatAmount = round2(total - base);
+      const name = item.variant_key
+        ? `${item.other_name} — ${item.variant_key}`
+        : item.other_name || `Producto #${item.other_id}`;
+      return { description: name, base, vatAmount, total };
+    }),
+    ...standardArtItems.map((item) => {
+      const total = Number(item.price_at_purchase);
+      const base = round2(total / 1.21);
+      const vatAmount = round2(total - base);
+      const name = item.art_name || `Obra #${item.art_id}`;
+      return { description: name, base, vatAmount, total };
+    }),
+  ];
 
-  // Shipping with IVA breakdown
-  const totalShipping = otherItems.reduce((sum, i) => sum + (Number(i.shipping_cost) || 0), 0);
+  // Shipping with IVA breakdown (both other and standard-art lines)
+  const totalShipping = [...otherItems, ...standardArtItems].reduce(
+    (sum, i) => sum + (Number(i.shipping_cost) || 0), 0);
   let shipping = null;
   if (totalShipping > 0) {
     const shippingBase = round2(totalShipping / 1.21);
@@ -358,23 +380,31 @@ async function generateCommissionInvoice(withdrawalId) {
   // Load withdrawal items with product names
   const wiResult = await db.execute({
     sql: `
-      SELECT wi.*, 
-             CASE 
+      SELECT wi.*,
+             CASE
                WHEN wi.item_type = 'other_order_item' THEN (
-                 SELECT o.name FROM other_order_items ooi 
-                 JOIN others o ON ooi.other_id = o.id 
+                 SELECT o.name FROM other_order_items ooi
+                 JOIN others o ON ooi.other_id = o.id
                  WHERE ooi.id = wi.item_id
                )
+               WHEN wi.item_type = 'art_order_item' THEN (
+                 SELECT a.name FROM art_order_items aoi
+                 JOIN art a ON aoi.art_id = a.id
+                 WHERE aoi.id = wi.item_id
+               )
                WHEN wi.item_type = 'event_attendee' THEN (
-                 SELECT e.title FROM event_attendees ea 
-                 JOIN events e ON ea.event_id = e.id 
+                 SELECT e.title FROM event_attendees ea
+                 JOIN events e ON ea.event_id = e.id
                  WHERE ea.id = wi.item_id
                )
                ELSE NULL
              END AS product_name,
-             CASE 
-               WHEN wi.item_type IN ('other_order_item') THEN (
+             CASE
+               WHEN wi.item_type = 'other_order_item' THEN (
                  SELECT ooi.order_id FROM other_order_items ooi WHERE ooi.id = wi.item_id
+               )
+               WHEN wi.item_type = 'art_order_item' THEN (
+                 SELECT aoi.order_id FROM art_order_items aoi WHERE aoi.id = wi.item_id
                )
                ELSE NULL
              END AS order_id
@@ -517,7 +547,7 @@ async function loadOrder(orderId) {
 async function loadArtOrderItems(orderId) {
   const result = await db.execute({
     sql: `
-      SELECT aoi.*, a.name AS art_name
+      SELECT aoi.*, COALESCE(aoi.vat_regime, 'art_rebu') AS vat_regime, a.name AS art_name
       FROM art_order_items aoi
       JOIN art a ON aoi.art_id = a.id
       WHERE aoi.order_id = ?

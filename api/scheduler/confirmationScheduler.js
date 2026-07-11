@@ -22,7 +22,8 @@ module.exports = function startConfirmationScheduler() {
       // Find art order items eligible for auto-confirm
       const artItems = await db.execute({
         sql: `SELECT aoi.id, aoi.order_id, aoi.art_id as product_id,
-              aoi.price_at_purchase, aoi.commission_amount, a.seller_id
+              aoi.price_at_purchase, aoi.commission_amount, a.seller_id,
+              COALESCE(aoi.vat_regime, 'art_rebu') AS vat_regime
               FROM art_order_items aoi
               JOIN art a ON aoi.art_id = a.id
               WHERE aoi.status = 'arrived'
@@ -45,7 +46,7 @@ module.exports = function startConfirmationScheduler() {
 
       const allItems = [
         ...artItems.rows.map(r => ({ ...r, table: 'art_order_items' })),
-        ...otherItems.rows.map(r => ({ ...r, table: 'other_order_items' })),
+        ...otherItems.rows.map(r => ({ ...r, table: 'other_order_items', vat_regime: 'standard_vat' })),
       ];
 
       if (allItems.length === 0) return;
@@ -60,14 +61,15 @@ module.exports = function startConfirmationScheduler() {
             args: [item.id],
           });
 
-          // Credit seller wallet (deducting commission). Change #2 splits the
-          // wallet into two VAT buckets: art → REBU 21%, others → standard 21%.
-          // Picking the bucket column based on the source table avoids ever
-          // mixing fiscal regimes inside a single payout. The legacy
-          // `available_withdrawal` column is no longer written to.
+          // Credit seller wallet (deducting commission). The wallet is split
+          // into two VAT buckets: REBU 21% and standard 21%. The bucket is
+          // chosen by the item's frozen VAT regime (art carries a per-item
+          // snapshot; others are always standard), never by the source table,
+          // so a seller's standard-regime art credits the standard bucket. The
+          // legacy `available_withdrawal` column is no longer written to.
           if (item.price_at_purchase && item.seller_id) {
             const sellerEarning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
-            const bucketColumn = item.table === 'art_order_items'
+            const bucketColumn = item.vat_regime === 'art_rebu'
               ? 'available_withdrawal_art_rebu'
               : 'available_withdrawal_standard_vat';
             await db.execute({

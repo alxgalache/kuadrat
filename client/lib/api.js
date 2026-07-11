@@ -4,23 +4,35 @@ const CDN_URL = process.env.NEXT_PUBLIC_CDN_URL || '';
 // Helper to build product image URL by basename (legacy, kept for compatibility)
 export const getProductImageUrl = (basename) => `${API_URL}/products/images/${encodeURIComponent(basename)}`;
 
+// In development the Next image optimizer fetches sources from the Next server, where
+// the browser-facing API URL (localhost) does not resolve inside Docker. Product images
+// are served through a same-origin /img-proxy/ path that next.config.js rewrites to
+// INTERNAL_API_URL, so the optimizer can fetch them. Production/staging are unaffected.
+const DEV_IMAGE_PROXY = process.env.NODE_ENV === 'development' && !CDN_URL;
+
 // Helper to build art product image URL by basename
 export const getArtImageUrl = (basename) =>
-  CDN_URL
-    ? `${CDN_URL}/art/${encodeURIComponent(basename)}`
-    : `${API_URL}/art/images/${encodeURIComponent(basename)}`;
+  DEV_IMAGE_PROXY
+    ? `/img-proxy/art/images/${encodeURIComponent(basename)}`
+    : CDN_URL
+      ? `${CDN_URL}/art/${encodeURIComponent(basename)}`
+      : `${API_URL}/art/images/${encodeURIComponent(basename)}`;
 
 // Helper to build others product image URL by basename
 export const getOthersImageUrl = (basename) =>
-  CDN_URL
-    ? `${CDN_URL}/others/${encodeURIComponent(basename)}`
-    : `${API_URL}/others/images/${encodeURIComponent(basename)}`;
+  DEV_IMAGE_PROXY
+    ? `/img-proxy/others/images/${encodeURIComponent(basename)}`
+    : CDN_URL
+      ? `${CDN_URL}/others/${encodeURIComponent(basename)}`
+      : `${API_URL}/others/images/${encodeURIComponent(basename)}`;
 
 // Helper to build author profile image URL by filename
 export const getAuthorImageUrl = (filename) =>
-  CDN_URL
-    ? `${CDN_URL}/authors/${encodeURIComponent(filename)}`
-    : `${API_URL}/users/authors/images/${encodeURIComponent(filename)}`;
+  DEV_IMAGE_PROXY
+    ? `/img-proxy/users/authors/images/${encodeURIComponent(filename)}`
+    : CDN_URL
+      ? `${CDN_URL}/authors/${encodeURIComponent(filename)}`
+      : `${API_URL}/users/authors/images/${encodeURIComponent(filename)}`;
 
 // Build a protected event video URL (requires short-lived vtoken from getVideoToken)
 export const getProtectedEventVideoUrl = (eventId, filename, vtoken) =>

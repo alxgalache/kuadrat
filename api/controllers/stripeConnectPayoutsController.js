@@ -88,19 +88,6 @@ function itemTypeFor(vatRegime) {
   throw new ApiError(400, 'vat_regime inválido');
 }
 
-function itemTableFor(vatRegime) {
-  if (vatRegime === 'art_rebu') return 'art_order_items';
-  if (vatRegime === 'standard_vat') return 'other_order_items';
-  throw new ApiError(400, 'vat_regime inválido');
-}
-
-function productJoinFor(vatRegime) {
-  if (vatRegime === 'art_rebu') {
-    return { productTable: 'art', idColumn: 'art_id' };
-  }
-  return { productTable: 'others', idColumn: 'other_id' };
-}
-
 function vatComputeFor(vatRegime) {
   return vatRegime === 'art_rebu' ? computeRebuVat : computeStandardVat;
 }
@@ -152,20 +139,18 @@ async function findItemsAlreadyInActiveWithdrawal(itemRefs) {
 }
 
 /**
- * Fetch the list of "pending" order items for a seller in a given VAT regime.
+ * Fetch "pending" art order items for a seller restricted to one VAT regime.
  * Pending = confirmed (credited to the wallet) AND not yet in any active
- * withdrawal. If `restrictIds` is provided, only those are considered.
+ * withdrawal. The regime is read from each item's frozen `vat_regime` snapshot
+ * (defaulting to 'art_rebu' for legacy rows), NOT from the table — a seller's
+ * standard-regime art lives in the same table as their REBU art.
  *
  * @param {number} sellerId
- * @param {'art_rebu'|'standard_vat'} vatRegime
+ * @param {'art_rebu'|'standard_vat'} regime
  * @param {number[]} [restrictIds]
  * @returns {Promise<Array>} rows with {id, order_id, price_at_purchase, commission_amount, item_type}
  */
-async function loadPendingOrderItems(sellerId, vatRegime, restrictIds) {
-  const table = itemTableFor(vatRegime);
-  const { productTable, idColumn } = productJoinFor(vatRegime);
-  const itemType = itemTypeFor(vatRegime);
-
+async function loadPendingArtItems(sellerId, regime, restrictIds) {
   const args = [sellerId];
   let whereIds = '';
   if (Array.isArray(restrictIds) && restrictIds.length > 0) {
@@ -173,13 +158,51 @@ async function loadPendingOrderItems(sellerId, vatRegime, restrictIds) {
     args.push(...restrictIds);
   }
 
-  // Confirmed items only. Exclude items that are already in an active
-  // withdrawal (status not in failed/cancelled).
   const sql = `
     SELECT i.id, i.order_id, i.price_at_purchase, i.commission_amount,
-           '${itemType}' AS item_type
-    FROM ${table} i
-    JOIN ${productTable} p ON i.${idColumn} = p.id
+           'art_order_item' AS item_type
+    FROM art_order_items i
+    JOIN art p ON i.art_id = p.id
+    WHERE p.seller_id = ?
+      AND i.status = 'confirmed'
+      AND COALESCE(i.vat_regime, 'art_rebu') = '${regime}'
+      ${whereIds}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM withdrawal_items wi
+        JOIN withdrawals w ON wi.withdrawal_id = w.id
+        WHERE wi.item_type = 'art_order_item'
+          AND wi.item_id = i.id
+          AND w.status NOT IN ('failed', 'cancelled')
+      )
+    ORDER BY i.id ASC
+  `;
+
+  const result = await db.execute({ sql, args });
+  return result.rows;
+}
+
+/**
+ * Fetch "pending" other order items for a seller. Other products are always
+ * standard_vat, so there is no regime filter.
+ *
+ * @param {number} sellerId
+ * @param {number[]} [restrictIds]
+ * @returns {Promise<Array>} rows with {id, order_id, price_at_purchase, commission_amount, item_type}
+ */
+async function loadPendingOtherItems(sellerId, restrictIds) {
+  const args = [sellerId];
+  let whereIds = '';
+  if (Array.isArray(restrictIds) && restrictIds.length > 0) {
+    whereIds = `AND i.id IN (${restrictIds.map(() => '?').join(', ')}) `;
+    args.push(...restrictIds);
+  }
+
+  const sql = `
+    SELECT i.id, i.order_id, i.price_at_purchase, i.commission_amount,
+           'other_order_item' AS item_type
+    FROM other_order_items i
+    JOIN others p ON i.other_id = p.id
     WHERE p.seller_id = ?
       AND i.status = 'confirmed'
       ${whereIds}
@@ -187,7 +210,7 @@ async function loadPendingOrderItems(sellerId, vatRegime, restrictIds) {
         SELECT 1
         FROM withdrawal_items wi
         JOIN withdrawals w ON wi.withdrawal_id = w.id
-        WHERE wi.item_type = '${itemType}'
+        WHERE wi.item_type = 'other_order_item'
           AND wi.item_id = i.id
           AND w.status NOT IN ('failed', 'cancelled')
       )
@@ -251,41 +274,52 @@ async function loadPendingEventAttendees(hostUserId, restrictIds) {
 /**
  * Fetch the unified list of "pending" items for a seller in a given VAT regime.
  *
- * - For `art_rebu`: returns art_order_items (REBU regime) only.
- * - For `standard_vat`: returns both other_order_items AND event_attendees.
+ * - For `art_rebu`: returns art_order_items whose frozen regime is REBU only.
+ * - For `standard_vat`: returns other_order_items + standard-regime
+ *   art_order_items + event_attendees.
  *
  * @param {number} sellerId
  * @param {'art_rebu'|'standard_vat'} vatRegime
  * @param {Object} [options]
- * @param {number[]} [options.restrictOrderItemIds]  — restrict order items to these integer ids
+ * @param {number[]} [options.restrictOrderItemIds]  — restrict the regime's "native" order items (art for REBU, other for standard) to these integer ids
+ * @param {number[]} [options.restrictArtItemIds] — (standard only) restrict standard-regime art items to these integer ids
  * @param {string[]} [options.restrictEventAttendeeIds] — restrict event attendees to these UUIDs
  * @returns {Promise<Array>} unified pending-item rows, each tagged with `item_type`
  */
 async function loadPendingItems(sellerId, vatRegime, options = {}) {
-  const { restrictOrderItemIds, restrictEventAttendeeIds } = options;
+  const { restrictOrderItemIds, restrictArtItemIds, restrictEventAttendeeIds } = options;
 
   if (vatRegime === 'art_rebu') {
-    return loadPendingOrderItems(sellerId, vatRegime, restrictOrderItemIds);
+    // `item_ids` restricts art items (the native table for the REBU regime).
+    return loadPendingArtItems(sellerId, 'art_rebu', restrictOrderItemIds);
   }
 
   if (vatRegime === 'standard_vat') {
-    // When neither restriction is supplied, load all pending of both kinds.
-    // When either restriction is supplied, only load the matching kind(s).
-    const bothUnset =
-      !Array.isArray(restrictOrderItemIds) && !Array.isArray(restrictEventAttendeeIds);
-    const loadOrders = bothUnset || Array.isArray(restrictOrderItemIds);
-    const loadEvents = bothUnset || Array.isArray(restrictEventAttendeeIds);
+    // When no restriction is supplied, load all pending of every kind. When any
+    // restriction is supplied, only load the matching kind(s). `item_ids`
+    // restricts other items (the native table); `art_item_ids` restricts
+    // standard-regime art; `event_attendee_ids` restricts events.
+    const anySet =
+      Array.isArray(restrictOrderItemIds) ||
+      Array.isArray(restrictArtItemIds) ||
+      Array.isArray(restrictEventAttendeeIds);
+    const loadOthers = !anySet || Array.isArray(restrictOrderItemIds);
+    const loadArt = !anySet || Array.isArray(restrictArtItemIds);
+    const loadEvents = !anySet || Array.isArray(restrictEventAttendeeIds);
 
-    const [orderItems, eventAttendees] = await Promise.all([
-      loadOrders
-        ? loadPendingOrderItems(sellerId, 'standard_vat', restrictOrderItemIds)
+    const [otherItems, artItems, eventAttendees] = await Promise.all([
+      loadOthers
+        ? loadPendingOtherItems(sellerId, restrictOrderItemIds)
+        : Promise.resolve([]),
+      loadArt
+        ? loadPendingArtItems(sellerId, 'standard_vat', restrictArtItemIds)
         : Promise.resolve([]),
       loadEvents
         ? loadPendingEventAttendees(sellerId, restrictEventAttendeeIds)
         : Promise.resolve([]),
     ]);
 
-    return [...orderItems, ...eventAttendees];
+    return [...otherItems, ...artItems, ...eventAttendees];
   }
 
   throw new ApiError(400, 'vat_regime inválido');
@@ -530,11 +564,16 @@ async function getSellerPayoutDetail(req, res, next) {
  * expected by `loadPendingItems` / `buildPayoutSummary`.
  *
  * Accepted body shapes:
- *   - Legacy: `{ item_ids: [1, 2, 3] }` (integer ids of order items)
- *   - New:    `{ item_ids: [1, 2, 3], event_attendee_ids: ['uuid-1', 'uuid-2'] }`
+ *   - Legacy: `{ item_ids: [1, 2, 3] }` (integer ids of the regime's native order items)
+ *   - New:    `{ item_ids: [...], art_item_ids: [...], event_attendee_ids: ['uuid-1'] }`
  *
- * Returns `{ restrictOrderItemIds, restrictEventAttendeeIds }` where either
- * can be undefined to signal "no restriction for that kind".
+ * `art_item_ids` is only meaningful for `standard_vat` payouts, where art and
+ * other order items share the id space (both are integer ids of different
+ * tables) and must be disambiguated. `item_ids` keeps its meaning: the native
+ * table of the regime (art for REBU, other for standard).
+ *
+ * Returns `{ restrictOrderItemIds, restrictArtItemIds, restrictEventAttendeeIds }`
+ * where any can be undefined to signal "no restriction for that kind".
  */
 function parseItemRestrictions(body) {
   const restrictOrderItemIds =
@@ -542,12 +581,17 @@ function parseItemRestrictions(body) {
       ? body.item_ids.map((id) => Number(id)).filter((n) => Number.isInteger(n))
       : undefined;
 
+  const restrictArtItemIds =
+    Array.isArray(body?.art_item_ids) && body.art_item_ids.length > 0
+      ? body.art_item_ids.map((id) => Number(id)).filter((n) => Number.isInteger(n))
+      : undefined;
+
   const restrictEventAttendeeIds =
     Array.isArray(body?.event_attendee_ids) && body.event_attendee_ids.length > 0
       ? body.event_attendee_ids.map((id) => String(id))
       : undefined;
 
-  return { restrictOrderItemIds, restrictEventAttendeeIds };
+  return { restrictOrderItemIds, restrictArtItemIds, restrictEventAttendeeIds };
 }
 
 /**

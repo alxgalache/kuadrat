@@ -215,8 +215,11 @@ const config = {
   // --- Business ---
   payment: {
     provider: optional('PAYMENT_PROVIDER', 'stripe'),
+    // TAX_VAT_ES: legacy-only. VAT is now per-seller (users.tax_vat_art /
+    // users.tax_vat_other); this flat rate survives solely for the Revolut line
+    // item metadata (ordersController.placeOrder). TAX_VAT_ART_ES was removed
+    // (had no consumers).
     vatEs: optionalFloat('TAX_VAT_ES', 0.21),
-    vatArtEs: optionalFloat('TAX_VAT_ART_ES', 0.10),
     // Gallery commission is now per-seller (users.dealer_commission_art /
     // users.dealer_commission_other); the former global env vars are gone.
   },

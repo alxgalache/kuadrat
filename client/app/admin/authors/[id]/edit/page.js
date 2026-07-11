@@ -30,6 +30,8 @@ function AuthorEditPageContent({ params }) {
   const [pickupInstructions, setPickupInstructions] = useState('')
   const [dealerCommissionArt, setDealerCommissionArt] = useState('')
   const [dealerCommissionOther, setDealerCommissionOther] = useState('')
+  const [taxVatArt, setTaxVatArt] = useState('')
+  const [taxVatOther, setTaxVatOther] = useState('')
   const [avatarFile, setAvatarFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [loading, setLoading] = useState(true)
@@ -79,6 +81,8 @@ function AuthorEditPageContent({ params }) {
       setPickupInstructions(author.pickup_instructions || '')
       setDealerCommissionArt(author.dealer_commission_art != null ? String(author.dealer_commission_art) : '')
       setDealerCommissionOther(author.dealer_commission_other != null ? String(author.dealer_commission_other) : '')
+      setTaxVatArt(author.tax_vat_art != null ? String(author.tax_vat_art) : '')
+      setTaxVatOther(author.tax_vat_other != null ? String(author.tax_vat_other) : '')
       if (author.profile_img) {
         setPreviewUrl(getAuthorImageUrl(author.profile_img))
       }
@@ -197,6 +201,18 @@ function AuthorEditPageContent({ params }) {
       return
     }
 
+    // Validate VAT percentages (0–100)
+    const taxVatArtNum = parseFloat(taxVatArt)
+    const taxVatOtherNum = parseFloat(taxVatOther)
+    if (taxVatArt === '' || isNaN(taxVatArtNum) || taxVatArtNum < 0 || taxVatArtNum > 100) {
+      showError('Error de validación', 'El IVA de arte debe ser un número entre 0 y 100')
+      return
+    }
+    if (taxVatOther === '' || isNaN(taxVatOtherNum) || taxVatOtherNum < 0 || taxVatOtherNum > 100) {
+      showError('Error de validación', 'El IVA de otros productos debe ser un número entre 0 y 100')
+      return
+    }
+
     setSaving(true)
 
     try {
@@ -220,7 +236,9 @@ function AuthorEditPageContent({ params }) {
         pickup_country: pickupCountry.trim(),
         pickup_instructions: pickupInstructions.trim(),
         dealer_commission_art: commissionArtNum,
-        dealer_commission_other: commissionOtherNum
+        dealer_commission_other: commissionOtherNum,
+        tax_vat_art: taxVatArtNum,
+        tax_vat_other: taxVatOtherNum
       })
 
       // Save Sendcloud config if there is data
@@ -502,6 +520,53 @@ function AuthorEditPageContent({ params }) {
                             value={dealerCommissionOther}
                             onChange={(e) => setDealerCommissionOther(e.target.value)}
                             placeholder="Ej: 10"
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm/6 font-semibold text-gray-900">IVA del vendedor</h3>
+                    <p className="text-sm/6 text-gray-500">
+                      10 = autor (REBU) · otro valor (p. ej. 21) = facturación vía cooperativa (régimen general). Solo afecta a ventas futuras.
+                    </p>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                      <div>
+                        <label htmlFor="taxVatArt" className="block text-sm/6 font-medium text-gray-900">
+                          IVA arte (%)
+                        </label>
+                        <div className="mt-2">
+                          <input
+                            id="taxVatArt"
+                            name="taxVatArt"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={taxVatArt}
+                            onChange={(e) => setTaxVatArt(e.target.value)}
+                            placeholder="Ej: 10"
+                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="taxVatOther" className="block text-sm/6 font-medium text-gray-900">
+                          IVA otros productos (%)
+                        </label>
+                        <div className="mt-2">
+                          <input
+                            id="taxVatOther"
+                            name="taxVatOther"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={taxVatOther}
+                            onChange={(e) => setTaxVatOther(e.target.value)}
+                            placeholder="Ej: 21"
                             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                           />
                         </div>

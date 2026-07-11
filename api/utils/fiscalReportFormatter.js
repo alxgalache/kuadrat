@@ -152,6 +152,14 @@ function csvRow(fields) {
  * @param {object} user  Seller row from `users`.
  * @returns {{ mode: 'factura_recibida'|'error', explanation: string }}
  */
+// Format a whole-percentage rate for display, trimming trailing decimals
+// (10 → "10", 10.5 → "10.5"). Falls back to the given default when unset.
+function formatVatRate(rate, fallback) {
+  const value = rate === null || rate === undefined || rate === '' ? fallback : Number(rate);
+  if (!Number.isFinite(value)) return String(fallback);
+  return String(Math.round(value * 100) / 100);
+}
+
 function inferInvoicingMode(user) {
   if (!user || !user.tax_status) {
     return {
@@ -159,18 +167,22 @@ function inferInvoicingMode(user) {
       explanation: 'Datos fiscales incompletos para el artista.',
     };
   }
+  // Compose the VAT part from the seller's configured rates (defaults 10/21).
+  const artRate = formatVatRate(user.tax_vat_art, 10);
+  const otherRate = formatVatRate(user.tax_vat_other, 21);
+  const vatClause = `con el IVA correspondiente (${artRate}% obras de arte, ${otherRate}% otros)`;
   if (user.tax_status === 'autonomo') {
     return {
       mode: 'factura_recibida',
       explanation:
-        'El artista autónomo emite factura a 140d por su parte de la venta (precio − comisión) con el IVA correspondiente (10% obras de arte, 21% otros). Para productos estándar, 140d emite factura al artista por la comisión con IVA del 21%.',
+        `El artista autónomo emite factura a 140d por su parte de la venta (precio − comisión) ${vatClause}. Para productos estándar, 140d emite factura al artista por la comisión con IVA del 21%.`,
     };
   }
   if (user.tax_status === 'sociedad') {
     return {
       mode: 'factura_recibida',
       explanation:
-        'La sociedad artística emite factura a 140d por su parte de la venta (precio − comisión) con el IVA correspondiente (10% obras de arte, 21% otros). Para productos estándar, 140d emite factura a la sociedad por la comisión con IVA del 21%.',
+        `La sociedad artística emite factura a 140d por su parte de la venta (precio − comisión) ${vatClause}. Para productos estándar, 140d emite factura a la sociedad por la comisión con IVA del 21%.`,
     };
   }
   return {
@@ -306,7 +318,8 @@ async function loadSellerUserById(userId) {
              fiscal_address_line1, fiscal_address_line2,
              fiscal_address_city, fiscal_address_postal_code,
              fiscal_address_province, fiscal_address_country,
-             irpf_retention_rate
+             irpf_retention_rate,
+             tax_vat_art, tax_vat_other
       FROM users
       WHERE id = ?
     `,
@@ -329,7 +342,8 @@ async function loadSellerUsersByIds(userIds) {
              fiscal_address_line1, fiscal_address_line2,
              fiscal_address_city, fiscal_address_postal_code,
              fiscal_address_province, fiscal_address_country,
-             irpf_retention_rate
+             irpf_retention_rate,
+             tax_vat_art, tax_vat_other
       FROM users
       WHERE id IN (${placeholders})
     `,

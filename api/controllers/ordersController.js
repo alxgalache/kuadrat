@@ -7,6 +7,7 @@ const { sendBuyerToSellerContactEmail } = require('../services/emailService');
 const { updateRevolutOrder } = require('../services/revolutService');
 const { updatePaymentIntent, findOrCreateCustomer } = require('../services/stripeService');
 const crypto = require('crypto');
+const { artVatRegimeForRate } = require('../utils/vatRegime');
 
 // Public site base URL used for product images/links in Revolut payload
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
@@ -454,7 +455,7 @@ const placeOrder = async (req, res, next) => {
     if (sellerIds.length > 0) {
       const sellerPlaceholders = sellerIds.map(() => '?').join(',');
       const sellerResult = await db.execute({
-        sql: `SELECT id, dealer_commission_art, dealer_commission_other
+        sql: `SELECT id, dealer_commission_art, dealer_commission_other, tax_vat_art
               FROM users WHERE id IN (${sellerPlaceholders})`,
         args: sellerIds,
       });
@@ -462,14 +463,18 @@ const placeOrder = async (req, res, next) => {
         sellerCommissionMap.set(row.id, {
           art: Number(row.dealer_commission_art) || 0,
           other: Number(row.dealer_commission_other) || 0,
+          artVatRegime: artVatRegimeForRate(row.tax_vat_art),
         });
       }
     }
 
     for (const item of artItems) {
       const product = artProducts.find((p) => p.id === item.id);
-      const sellerRate = (sellerCommissionMap.get(product.seller_id)?.art || 0) / 100;
+      const sellerInfo = sellerCommissionMap.get(product.seller_id);
+      const sellerRate = (sellerInfo?.art || 0) / 100;
       const commissionAmount = product.price * sellerRate;
+      // Freeze the fiscal regime derived from the seller's current art VAT rate.
+      const vatRegime = sellerInfo?.artVatRegime || 'art_rebu';
       await db.execute({
         sql: `INSERT INTO art_order_items (
           order_id,
@@ -482,8 +487,9 @@ const placeOrder = async (req, res, next) => {
           commission_amount,
           status,
           sendcloud_shipping_option_code,
-          sendcloud_service_point_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          sendcloud_service_point_id,
+          vat_regime
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           orderId,
           product.id,
@@ -496,6 +502,7 @@ const placeOrder = async (req, res, next) => {
           'pending',
           item.shipping?.shippingOptionCode || null,
           item.shipping?.servicePointId || null,
+          vatRegime,
         ],
       });
     }
@@ -1357,6 +1364,7 @@ const getOrderByIdAdmin = async (req, res, next) => {
       sql: `
         SELECT
           aoi.*,
+          COALESCE(aoi.vat_regime, 'art_rebu') AS vat_regime,
           a.name,
           a.description,
           a.type,
@@ -1671,8 +1679,11 @@ const updateItemStatus = async (req, res, next) => {
 
     // When confirming, guard against double-crediting: check current item status
     if (status === 'confirmed') {
+      const regimeSelect = product_type === 'art'
+        ? ", COALESCE(vat_regime, 'art_rebu') AS vat_regime"
+        : '';
       const currentItemResult = await db.execute({
-        sql: `SELECT status, price_at_purchase, commission_amount FROM ${table} WHERE id = ?`,
+        sql: `SELECT status, price_at_purchase, commission_amount${regimeSelect} FROM ${table} WHERE id = ?`,
         args: [itemId],
       });
       if (currentItemResult.rows.length > 0 && currentItemResult.rows[0].status === 'confirmed') {
@@ -1698,9 +1709,12 @@ const updateItemStatus = async (req, res, next) => {
         batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
       }
       if (sellerId && sellerEarning > 0) {
-        // Change #2 — credit the bucket matching the item's VAT regime:
-        // art → REBU 21%, others → standard 21%. Never mix regimes.
-        const bucketColumn = product_type === 'art'
+        // Credit the bucket matching the item's frozen VAT regime. Art carries a
+        // per-item snapshot (art_rebu | standard_vat); others are always standard.
+        const itemRegime = product_type === 'art'
+          ? (item.vat_regime || 'art_rebu')
+          : 'standard_vat';
+        const bucketColumn = itemRegime === 'art_rebu'
           ? 'available_withdrawal_art_rebu'
           : 'available_withdrawal_standard_vat';
         batch.add(
@@ -2160,9 +2174,12 @@ const updateItemStatusPublic = async (req, res, next) => {
     const productTable = product_type === 'art' ? 'art' : 'others';
 
     // Verify item belongs to this order and get its current status + seller info
+    const regimeSelect = product_type === 'art'
+      ? ", COALESCE(i.vat_regime, 'art_rebu') AS vat_regime"
+      : '';
     const itemResult = await db.execute({
       sql: `
-        SELECT i.id, i.status, i.price_at_purchase, i.commission_amount, p.seller_id
+        SELECT i.id, i.status, i.price_at_purchase, i.commission_amount, p.seller_id${regimeSelect}
         FROM ${table} i
         LEFT JOIN ${productTable} p ON i.${idColumn} = p.id
         WHERE i.id = ? AND i.order_id = ?
@@ -2197,8 +2214,12 @@ const updateItemStatusPublic = async (req, res, next) => {
       const batch = createBatch();
       batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
       if (sellerId && sellerEarning > 0) {
-        // Change #2 — credit the VAT-regime bucket that matches the item type.
-        const bucketColumn = product_type === 'art'
+        // Credit the bucket matching the item's frozen VAT regime (art carries a
+        // per-item snapshot; others are always standard).
+        const itemRegime = product_type === 'art'
+          ? (item.vat_regime || 'art_rebu')
+          : 'standard_vat';
+        const bucketColumn = itemRegime === 'art_rebu'
           ? 'available_withdrawal_art_rebu'
           : 'available_withdrawal_standard_vat';
         batch.add(
@@ -2281,7 +2302,8 @@ const updateOrderStatusPublic = async (req, res, next) => {
     // Get all items from the order
     const artItemsResult = await db.execute({
       sql: `
-        SELECT aoi.id, aoi.status, aoi.price_at_purchase, aoi.commission_amount, a.seller_id
+        SELECT aoi.id, aoi.status, aoi.price_at_purchase, aoi.commission_amount, a.seller_id,
+               COALESCE(aoi.vat_regime, 'art_rebu') AS vat_regime
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
         WHERE aoi.order_id = ?
@@ -2321,27 +2343,27 @@ const updateOrderStatusPublic = async (req, res, next) => {
     }
 
     if (status === 'confirmed') {
-      // Change #2 — credit seller wallets split by VAT regime. Art items feed
-      // the REBU 21% bucket; other items feed the standard 21% bucket. We key
-      // by (sellerId, bucket) to avoid ever mixing regimes inside a single
-      // ledger row even if the buyer bought both kinds in one order.
-      const artEarningsBySeller = {};
+      // Credit seller wallets split by the item's frozen VAT regime. Art items
+      // feed the bucket named by their per-item snapshot (art_rebu → REBU,
+      // standard_vat → standard); other items always feed the standard bucket.
+      // We key by (bucket, sellerId) so a mixed order never mixes regimes inside
+      // a single ledger update — the snapshot, not the table, decides the bucket.
+      const REBU_BUCKET = 'available_withdrawal_art_rebu';
+      const STANDARD_BUCKET = 'available_withdrawal_standard_vat';
+      const earningsByBucket = { [REBU_BUCKET]: {}, [STANDARD_BUCKET]: {} };
+      const addEarning = (bucket, sellerId, earning) => {
+        if (!sellerId || !(earning > 0)) return;
+        earningsByBucket[bucket][sellerId] =
+          (earningsByBucket[bucket][sellerId] || 0) + earning;
+      };
       for (const item of allArtItems) {
-        const sellerId = item.seller_id;
-        if (!sellerId) continue;
         const earning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
-        if (earning > 0) {
-          artEarningsBySeller[sellerId] = (artEarningsBySeller[sellerId] || 0) + earning;
-        }
+        const bucket = item.vat_regime === 'standard_vat' ? STANDARD_BUCKET : REBU_BUCKET;
+        addEarning(bucket, item.seller_id, earning);
       }
-      const otherEarningsBySeller = {};
       for (const item of allOtherItems) {
-        const sellerId = item.seller_id;
-        if (!sellerId) continue;
         const earning = (Number(item.price_at_purchase) || 0) - (Number(item.commission_amount) || 0);
-        if (earning > 0) {
-          otherEarningsBySeller[sellerId] = (otherEarningsBySeller[sellerId] || 0) + earning;
-        }
+        addEarning(STANDARD_BUCKET, item.seller_id, earning);
       }
 
       // Atomic batch: update all items + credit each seller
@@ -2354,24 +2376,19 @@ const updateOrderStatusPublic = async (req, res, next) => {
       }
       batch.add('UPDATE orders SET status = ? WHERE id = ?', ['confirmed', orderId]);
 
-      for (const [sellerId, earning] of Object.entries(artEarningsBySeller)) {
-        batch.add(
-          'UPDATE users SET available_withdrawal_art_rebu = available_withdrawal_art_rebu + ? WHERE id = ?',
-          [earning, sellerId]
-        );
-      }
-      for (const [sellerId, earning] of Object.entries(otherEarningsBySeller)) {
-        batch.add(
-          'UPDATE users SET available_withdrawal_standard_vat = available_withdrawal_standard_vat + ? WHERE id = ?',
-          [earning, sellerId]
-        );
+      for (const [bucket, bySeller] of Object.entries(earningsByBucket)) {
+        for (const [sellerId, earning] of Object.entries(bySeller)) {
+          batch.add(
+            `UPDATE users SET ${bucket} = ${bucket} + ? WHERE id = ?`,
+            [earning, sellerId]
+          );
+        }
       }
       await batch.execute();
 
       logger.info({
         orderId: Number(orderId),
-        artEarningsBySeller,
-        otherEarningsBySeller,
+        earningsByBucket,
       }, 'Order confirmed by buyer - seller balances updated (public)');
     } else {
       // Status is 'arrived' — update all items and order status
@@ -2436,9 +2453,12 @@ const updateItemStatusAdmin = async (req, res, next) => {
     const productTable = product_type === 'art' ? 'art' : 'others';
 
     // Get item with seller info
+    const regimeSelect = product_type === 'art'
+      ? ", COALESCE(i.vat_regime, 'art_rebu') AS vat_regime"
+      : '';
     const itemResult = await db.execute({
       sql: `
-        SELECT i.id, i.status, i.price_at_purchase, i.commission_amount, p.seller_id
+        SELECT i.id, i.status, i.price_at_purchase, i.commission_amount, p.seller_id${regimeSelect}
         FROM ${table} i
         LEFT JOIN ${productTable} p ON i.${idColumn} = p.id
         WHERE i.id = ? AND i.order_id = ?
@@ -2458,10 +2478,13 @@ const updateItemStatusAdmin = async (req, res, next) => {
     const batch = createBatch();
     batch.add(`UPDATE ${table} SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE id = ?`, [status, itemId]);
 
-    // Change #2 — bucket accounting. Art items hit the REBU bucket, others
-    // the standard bucket. Credit on transition to 'confirmed', debit on
-    // reversal from 'confirmed'. Never write to the legacy column.
-    const bucketColumn = product_type === 'art'
+    // Bucket accounting by the item's frozen VAT regime (symmetric credit/debit,
+    // so a debit always targets the same bucket that was credited). Art carries a
+    // per-item snapshot; others are always standard. Never write the legacy column.
+    const itemRegime = product_type === 'art'
+      ? (item.vat_regime || 'art_rebu')
+      : 'standard_vat';
+    const bucketColumn = itemRegime === 'art_rebu'
       ? 'available_withdrawal_art_rebu'
       : 'available_withdrawal_standard_vat';
 
@@ -2531,7 +2554,8 @@ const updateOrderStatusAdmin = async (req, res, next) => {
     // Get all items with their current status, price, commission, and seller
     const artItemsResult = await db.execute({
       sql: `
-        SELECT aoi.id, aoi.status, aoi.price_at_purchase, aoi.commission_amount, a.seller_id, 'art' as product_type
+        SELECT aoi.id, aoi.status, aoi.price_at_purchase, aoi.commission_amount, a.seller_id, 'art' as product_type,
+               COALESCE(aoi.vat_regime, 'art_rebu') AS vat_regime
         FROM art_order_items aoi
         LEFT JOIN art a ON aoi.art_id = a.id
         WHERE aoi.order_id = ?
@@ -2541,7 +2565,8 @@ const updateOrderStatusAdmin = async (req, res, next) => {
 
     const otherItemsResult = await db.execute({
       sql: `
-        SELECT ooi.id, ooi.status, ooi.price_at_purchase, ooi.commission_amount, o.seller_id, 'other' as product_type
+        SELECT ooi.id, ooi.status, ooi.price_at_purchase, ooi.commission_amount, o.seller_id, 'other' as product_type,
+               'standard_vat' AS vat_regime
         FROM other_order_items ooi
         LEFT JOIN others o ON ooi.other_id = o.id
         WHERE ooi.order_id = ?
@@ -2560,10 +2585,10 @@ const updateOrderStatusAdmin = async (req, res, next) => {
     batch.add('UPDATE art_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', [status, orderId]);
     batch.add('UPDATE other_order_items SET status = ?, status_modified = CURRENT_TIMESTAMP WHERE order_id = ?', [status, orderId]);
 
-    // Change #2 — adjustments keyed by (sellerId, bucket) so art items and
-    // other items from the same order are credited/debited independently to
-    // their respective VAT regime buckets.
-    const bucketFor = (productType) => (productType === 'art'
+    // Adjustments keyed by (sellerId, bucket) so items from the same order are
+    // credited/debited independently to their respective VAT regime buckets,
+    // decided by each item's frozen regime (snapshot), not by its table.
+    const bucketFor = (regime) => (regime === 'art_rebu'
       ? 'available_withdrawal_art_rebu'
       : 'available_withdrawal_standard_vat');
 
@@ -2577,7 +2602,7 @@ const updateOrderStatusAdmin = async (req, res, next) => {
 
       if (!sellerId || earning <= 0) continue;
 
-      const bucket = bucketFor(item.product_type);
+      const bucket = bucketFor(item.vat_regime);
 
       if (!sellerAdjustments[sellerId]) {
         sellerAdjustments[sellerId] = {

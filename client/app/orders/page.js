@@ -243,6 +243,10 @@ function OrdersPageContent() {
     // endpoint. Replaces the former NEXT_PUBLIC_DEALER_COMMISSION_* env vars.
     const [commissionRateArt, setCommissionRateArt] = useState(null)
     const [commissionRateOthers, setCommissionRateOthers] = useState(null)
+    // Per-seller VAT and the derived art fiscal regime. When the seller's art
+    // regime is 'standard_vat' (cooperativa artists at 21%), their art earnings
+    // accrue in the standard bucket, which we annotate in the wallet UI.
+    const [artVatRegime, setArtVatRegime] = useState('art_rebu')
 
     // Withdrawal modal state — Change #2: the modal is now a single-step
     // "nudge" confirmation. No IBAN or recipient data; the admin receives an
@@ -297,6 +301,7 @@ function OrdersPageContent() {
             setWalletBalance(Number(data.balance) || (artRebu + standardVat))
             if (data.commissionRateArt != null) setCommissionRateArt(Number(data.commissionRateArt))
             if (data.commissionRateOthers != null) setCommissionRateOthers(Number(data.commissionRateOthers))
+            if (data.artVatRegime) setArtVatRegime(data.artVatRegime)
         } catch (err) {
             console.error('Error loading wallet:', err)
         } finally {
@@ -571,6 +576,11 @@ function OrdersPageContent() {
                                 <dd className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">
                                     {loadingWallet ? '...' : `${walletStandardVat.toFixed(2)} €`}
                                 </dd>
+                                {artVatRegime === 'standard_vat' && (
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Incluye tus obras de arte (IVA 21%)
+                                    </p>
+                                )}
                             </div>
                         </dl>
 
@@ -656,7 +666,12 @@ function OrdersPageContent() {
                                                     <dd className="font-medium text-gray-900 tabular-nums">{walletArtRebu.toFixed(2)} €</dd>
                                                 </div>
                                                 <div className="flex justify-between">
-                                                    <dt className="text-gray-500">Productos y servicios (21%)</dt>
+                                                    <dt className="text-gray-500">
+                                                        Productos y servicios (21%)
+                                                        {artVatRegime === 'standard_vat' && (
+                                                            <span className="block text-xs text-gray-400">Incluye tus obras de arte (IVA 21%)</span>
+                                                        )}
+                                                    </dt>
                                                     <dd className="font-medium text-gray-900 tabular-nums">{walletStandardVat.toFixed(2)} €</dd>
                                                 </div>
                                                 <div className="flex justify-between border-t border-gray-200 pt-2">

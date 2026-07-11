@@ -241,6 +241,21 @@ function AuthorProfilePageContent({ params }) {
               <dd className="mt-1 text-sm text-gray-900">{author.dealer_commission_other}%</dd>
             </div>
           )}
+          {author.tax_vat_art != null && (
+            <div>
+              <dt className="text-sm font-medium text-gray-500">IVA arte</dt>
+              <dd className="mt-1 text-sm text-gray-900">
+                {author.tax_vat_art}%
+                {Number(author.tax_vat_art) === 10 ? ' (REBU)' : ' (régimen general)'}
+              </dd>
+            </div>
+          )}
+          {author.tax_vat_other != null && (
+            <div>
+              <dt className="text-sm font-medium text-gray-500">IVA otros productos</dt>
+              <dd className="mt-1 text-sm text-gray-900">{author.tax_vat_other}%</dd>
+            </div>
+          )}
         </div>
 
         {/* Products Table */}

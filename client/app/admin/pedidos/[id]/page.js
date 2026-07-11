@@ -215,8 +215,15 @@ function OrderDetailContent() {
     return order.items.reduce((sum, item) => sum + (item.shipping_cost || 0), 0)
   }
 
-  const hasArtItems = order?.items?.some(item => item.product_type === 'art')
-  const hasOtherItems = order?.items?.some(item => item.product_type === 'other')
+  // Invoice series are chosen by each item's fiscal regime, not by its table:
+  // REBU art → Serie A (REBU); other products + standard-regime art → Serie P (IVA 21%).
+  const hasRebuItems = order?.items?.some(
+    item => item.product_type === 'art' && (item.vat_regime || 'art_rebu') === 'art_rebu'
+  )
+  const hasStandardItems = order?.items?.some(
+    item => item.product_type === 'other'
+      || (item.product_type === 'art' && item.vat_regime === 'standard_vat')
+  )
 
   if (loading) {
     return (
@@ -408,12 +415,12 @@ function OrderDetailContent() {
             </div>
 
             {/* Facturas */}
-            {(hasArtItems || hasOtherItems) && (
+            {(hasRebuItems || hasStandardItems) && (
               <div className="rounded-lg bg-white border border-gray-300 shadow-sm overflow-hidden mb-6">
                 <div className="px-4 py-5 sm:p-6">
                   <h2 className="text-lg font-medium text-gray-900 mb-4">Facturas</h2>
                   <div className="space-y-3">
-                    {hasArtItems && (
+                    {hasRebuItems && (
                       <button
                         onClick={() => handleInvoiceDownload('rebu')}
                         disabled={downloadingInvoice === 'rebu'}
@@ -422,7 +429,7 @@ function OrderDetailContent() {
                         {downloadingInvoice === 'rebu' ? 'Generando...' : 'Descargar factura REBU'}
                       </button>
                     )}
-                    {hasOtherItems && (
+                    {hasStandardItems && (
                       <button
                         onClick={() => handleInvoiceDownload('standard')}
                         disabled={downloadingInvoice === 'standard'}

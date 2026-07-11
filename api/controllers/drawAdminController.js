@@ -2,6 +2,7 @@ const drawService = require('../services/drawService');
 const marketingEmailService = require('../services/marketingEmailService');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
+const { artVatRegimeForRate } = require('../utils/vatRegime');
 
 /**
  * POST /api/admin/draws
@@ -355,11 +356,13 @@ const billParticipation = async (req, res, next) => {
 
     // 4. Create order item (art or other)
     if (data.product_type === 'art') {
+      // Freeze the fiscal regime derived from the seller's art VAT rate.
+      const vatRegime = artVatRegimeForRate(data.tax_vat_art);
       await db.execute({
         sql: `INSERT INTO art_order_items (
-                order_id, art_id, price_at_purchase, shipping_cost, commission_amount, status
-              ) VALUES (?, ?, ?, ?, ?, 'pending')`,
-        args: [orderId, data.product_id, drawPrice, parsedShippingCost, commissionAmount],
+                order_id, art_id, price_at_purchase, shipping_cost, commission_amount, status, vat_regime
+              ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+        args: [orderId, data.product_id, drawPrice, parsedShippingCost, commissionAmount, vatRegime],
       });
     } else {
       await db.execute({

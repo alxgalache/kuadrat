@@ -25,18 +25,30 @@ describe('fiscalReportFormatter', () => {
       expect(result.explanation).toMatch(/desconocido/i);
     });
 
-    it('returns factura_recibida for autonomo', () => {
+    it('returns factura_recibida for autonomo with default rates', () => {
       const result = inferInvoicingMode({ tax_status: 'autonomo' });
       expect(result.mode).toBe('factura_recibida');
       expect(result.explanation).toMatch(/autónomo/i);
       expect(result.explanation).toMatch(/parte de la venta/);
+      expect(result.explanation).toContain('(10% obras de arte, 21% otros)');
     });
 
-    it('returns factura_recibida for sociedad', () => {
+    it('returns factura_recibida for sociedad with default rates', () => {
       const result = inferInvoicingMode({ tax_status: 'sociedad' });
       expect(result.mode).toBe('factura_recibida');
       expect(result.explanation).toMatch(/sociedad/i);
       expect(result.explanation).toMatch(/parte de la venta/);
+      expect(result.explanation).toContain('(10% obras de arte, 21% otros)');
+    });
+
+    it('uses the seller configured VAT rates in the explanation (cooperativa 21/21)', () => {
+      const result = inferInvoicingMode({
+        tax_status: 'autonomo',
+        tax_vat_art: 21,
+        tax_vat_other: 21,
+      });
+      expect(result.mode).toBe('factura_recibida');
+      expect(result.explanation).toContain('(21% obras de arte, 21% otros)');
     });
 
     it('returns error when user is null', () => {

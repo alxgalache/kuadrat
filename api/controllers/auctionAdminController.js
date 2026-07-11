@@ -2,6 +2,7 @@ const auctionService = require('../services/auctionService');
 const marketingEmailService = require('../services/marketingEmailService');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
+const { artVatRegimeForRate } = require('../utils/vatRegime');
 
 /**
  * POST /api/admin/auctions
@@ -703,11 +704,16 @@ const billBid = async (req, res, next) => {
     const orderId = Number(orderResult.lastInsertRowid);
 
     // 4. Create art_order_item (auctions are always art products)
+    // Freeze the fiscal regime from the seller's art VAT rate; a non-art
+    // product (should not occur for auctions) falls back to standard_vat.
+    const vatRegime = data.product_type === 'other'
+      ? 'standard_vat'
+      : artVatRegimeForRate(data.tax_vat_art);
     await db.execute({
       sql: `INSERT INTO art_order_items (
-              order_id, art_id, price_at_purchase, shipping_cost, commission_amount, status
-            ) VALUES (?, ?, ?, ?, ?, 'pending')`,
-      args: [orderId, data.product_id, bidAmount, parsedShippingCost, commissionAmount],
+              order_id, art_id, price_at_purchase, shipping_cost, commission_amount, status, vat_regime
+            ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      args: [orderId, data.product_id, bidAmount, parsedShippingCost, commissionAmount, vatRegime],
     });
 
     // 5. Charge off-session via Stripe

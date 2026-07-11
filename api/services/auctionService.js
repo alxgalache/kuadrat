@@ -1050,6 +1050,7 @@ async function getBidBillingData(bidId) {
             COALESCE(a.seller_id, o.seller_id) AS seller_id,
             su.dealer_commission_art AS dealer_commission_art,
             su.dealer_commission_other AS dealer_commission_other,
+            su.tax_vat_art AS tax_vat_art,
             COALESCE(a.name, o.name) AS product_name,
             COALESCE(
               (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1),

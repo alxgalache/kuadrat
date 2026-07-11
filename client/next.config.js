@@ -7,15 +7,25 @@ const nextConfig = {
   cacheHandler: require.resolve('./cache-handler.js'),
   cacheMaxMemorySize: 0,
   images: {
-    // In development, bypass the optimizer entirely so local http:// API images load without
-    // remotePatterns restrictions. In production, only https:// URLs are served anyway.
-    unoptimized: process.env.NODE_ENV === 'development',
     dangerouslyAllowLocalIP: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'api.pre.140d.art'},
       { protocol: 'https', hostname: 'api.140d.art'},
       { protocol: 'https', hostname: 'cdn.140d.art'},
+      // Fallback avatars for authors without a profile image (admin/autores, seller/profile)
+      { protocol: 'https', hostname: 'ui-avatars.com'},
     ],
+  },
+  async rewrites() {
+    // Dev-only image proxy: the image optimizer fetches sources from the Next server,
+    // which inside the dev Docker network cannot reach the API through the browser-facing
+    // localhost URL. Product image helpers return same-origin /img-proxy/ paths in dev
+    // (see client/lib/api.js) and this rewrite forwards them to the internal API URL.
+    if (process.env.NODE_ENV !== 'development') return [];
+    const internalApiUrl = process.env.INTERNAL_API_URL || 'http://localhost:3001/api';
+    return [
+      { source: '/img-proxy/:path*', destination: `${internalApiUrl}/:path*` },
+    ];
   },
   async redirects() {
     return [
