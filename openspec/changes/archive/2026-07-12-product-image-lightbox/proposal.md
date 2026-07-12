@@ -5,9 +5,10 @@ Las imágenes de producto se muestran en contenedores cuadrados (`aspect-square`
 ## What Changes
 
 - **Lightbox en páginas de detalle** (`galeria/p/[id]` y `tienda/p/[id]`, vía `ProductImageCarousel`):
-  - Detección del aspect ratio real de cada imagen en cliente (naturalWidth/naturalHeight al cargar).
-  - SOLO si la imagen visible no es cuadrada (fuera de una tolerancia del 2%): pill superpuesto arriba-derecha con icono de orientación (rectángulo vertical u horizontal según la imagen) y texto "Ver imagen completa"; la imagen adquiere `cursor-pointer`.
+  - Detección del aspect ratio real de cada imagen en cliente (naturalWidth/naturalHeight al cargar), usada para dimensionar el panel del lightbox (no para condicionar su apertura).
+  - Para TODAS las imágenes (independientemente del ratio): pill superpuesto arriba-derecha con icono de lupa y texto "Ver imagen completa"; la imagen adquiere `cursor-pointer`.
   - Click en la imagen abre un modal lightbox: fondo negro semitransparente, imagen completa sin recortar (`object-contain`), botón "X" arriba-derecha, cierre con click en el fondo o con ESC.
+  - **Zoom con la rueda del ratón dentro del lightbox** (tipo lupa de tienda): la rueda amplía/reduce solo la imagen (nunca la página ni el fondo oscurecido), recortado al marco de la imagen (`overflow-hidden`) para preservar el cierre por click-fuera y mantener los controles en las esquinas. Listener `wheel` nativo no-passive para poder `preventDefault`. Con zoom activo, la porción visible sigue el movimiento del cursor (sin arrastre); al salir el cursor de la imagen (o al cerrar/navegar) el zoom vuelve al estado inicial. Cursor por defecto sobre la imagen. Pinch táctil fuera de alcance.
   - Si el producto tiene varias imágenes, el modal muestra flechas de navegación con el mismo diseño que las flechas actuales del carrusel de detalle.
   - Implementación propia sin librería externa de lightbox, usando `@headlessui/react` `Dialog` (ya es dependencia) para focus-trap, ESC y click-outside.
 - **El grid de productos NO cambia visualmente**: sigue mostrando las imágenes recortadas con `object-cover`, sin pill ni lightbox.

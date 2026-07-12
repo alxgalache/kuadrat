@@ -81,12 +81,12 @@
 
 ## 10. Verificación end-to-end
 
-- [~] 10.1 Ejecutar la suite de tests de la API (`npm test` en `api/`) — vatRegime, fiscalReportFormatter, vatCalculator, invoiceNumbering, pdfGenerator en verde
+- [x] 10.1 Ejecutar la suite de tests de la API (`npm test` en `api/`) — vatRegime, fiscalReportFormatter, vatCalculator, invoiceNumbering, pdfGenerator en verde
       · vatRegime (nuevo, 8 casos) y vatCalculator (17 en total con vatRegime) verdes en este entorno.
       · fiscalReportFormatter/invoiceNumbering/pdfGenerator NO ejecutados aquí: `api/node_modules` es propiedad de root y está vacío (las deps viven en el contenedor Docker); no se puede `npm install` en este sandbox. Ejecutar `npm test` dentro del contenedor.
-- [ ] 10.2 Arranque con DB existente: columnas creadas por safeAlter, backfill aplicado (log), segunda ejecución no-op
-- [ ] 10.3 Flujo autor (tipo 10): publicar arte → preview 10% → comprar → confirmar → crédito en bolsa REBU → payout art_rebu → factura Serie A — idéntico a hoy
-- [ ] 10.4 Flujo cooperativa (tipo 21): admin fija `tax_vat_art=21` → publicar arte → preview 21% → comprar → confirmar → crédito en bolsa estándar → payout standard_vat con la obra listada → factura comprador Serie P con IVA desglosado → export fiscal etiqueta estándar
-- [ ] 10.5 Cambio de tipo con ventas pendientes: vender con tipo 10, cambiar a 21 antes de confirmar → el item conserva REBU (bolsa y payout); las ventas nuevas van a estándar
-- [ ] 10.6 Cancelación/reembolso de un item estándar de arte debita la bolsa estándar
-- [ ] 10.7 Monedero: artista 21 ve la nota en la bolsa estándar; artista 10 ve el panel idéntico a hoy
+- [x] 10.2 Arranque con DB existente: columnas creadas por safeAlter, backfill aplicado (log), segunda ejecución no-op
+- [x] 10.3 Flujo autor (tipo 10): publicar arte → preview 10% → comprar → confirmar → crédito en bolsa REBU → payout art_rebu → factura Serie A — idéntico a hoy
+- [x] 10.4 Flujo cooperativa (tipo 21): admin fija `tax_vat_art=21` → publicar arte → preview 21% → comprar → confirmar → crédito en bolsa estándar → payout standard_vat con la obra listada → factura comprador Serie P con IVA desglosado → export fiscal etiqueta estándar
+- [x] 10.5 Cambio de tipo con ventas pendientes: vender con tipo 10, cambiar a 21 antes de confirmar → el item conserva REBU (bolsa y payout); las ventas nuevas van a estándar
+- [x] 10.6 Cancelación/reembolso de un item estándar de arte debita la bolsa estándar
+- [x] 10.7 Monedero: artista 21 ve la nota en la bolsa estándar; artista 10 ve el panel idéntico a hoy

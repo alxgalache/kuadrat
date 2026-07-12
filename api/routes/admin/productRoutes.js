@@ -4,6 +4,7 @@ const { db } = require('../../config/database')
 const logger = require('../../config/logger')
 const auctionAdminController = require('../../controllers/auctionAdminController')
 const { getProductEditData } = require('../../controllers/adminProductEditController')
+const { attachProductImages } = require('../../utils/productImages')
 
 /**
  * GET /api/admin/products/for-auction
@@ -84,11 +85,14 @@ router.get('/:id/preview', async (req, res) => {
 
     const product = result.rows[0];
 
+    await attachProductImages([product], type === 'art' ? 'art' : 'other');
+
     if (type === 'others') {
       const varsResult = await db.execute({
         sql: 'SELECT * FROM other_vars WHERE other_id = ?',
         args: [productId]
       });
+      await attachProductImages(varsResult.rows, 'other_var');
       product.variations = varsResult.rows;
     }
 

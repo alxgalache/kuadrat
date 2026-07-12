@@ -17,7 +17,7 @@ Restricciones: minimalismo extremo (Tailwind UI as-is), sin TypeScript, UI en es
 - Imágenes del grid optimizadas también en desarrollo (sin cambios en prod).
 
 **Non-Goals:**
-- Zoom/pinch dentro del lightbox.
+- Pinch-zoom táctil dentro del lightbox (el zoom es con rueda de ratón en escritorio; en móvil el lightbox se comporta como una vista fija).
 - Cambiar el layout del grid o del carrusel (siguen cuadrados con `object-cover`).
 - Guardar dimensiones de imagen en BD o generar thumbnails en el backend.
 - Aplicar el lightbox a subastas, sorteos o eventos (solo detalle de arte y tienda; extensible en el futuro).
@@ -32,8 +32,8 @@ En `ProductImageCarousel`, el `onLoad` del `next/image` lee `naturalWidth/natura
 
 Nota: con el optimizador activo, `naturalWidth/naturalHeight` corresponden a la variante servida del srcset, pero el **ratio** se preserva en el redimensionado, que es lo único que se usa.
 
-### D3 — Pill y clickabilidad solo para la imagen visible no cuadrada
-El pill ("Ver imagen completa" + icono) se superpone arriba-derecha (`absolute top-2 right-2`, mismo lenguaje visual que el pill de variaciones del grid: fondo `bg-white/80`, `rounded-full`, texto `text-xs`/`text-sm` gris oscuro). El icono es un pequeño SVG inline de rectángulo con orientación según la imagen (vertical → rectángulo en vertical; horizontal → apaisado), `aria-hidden`. El click que abre el lightbox se habilita en toda la imagen (y en el pill) SOLO cuando la imagen actual del carrusel no es cuadrada; con imagen cuadrada no hay pill, ni `cursor-pointer`, ni apertura. Al navegar el carrusel, el pill aparece/desaparece según la imagen visible.
+### D3 — Pill y clickabilidad para TODAS las imágenes
+El pill ("Ver imagen completa" + icono de lupa `MagnifyingGlassPlusIcon`) se superpone arriba-derecha (`absolute top-2 right-2`, mismo lenguaje visual que el pill de variaciones del grid: fondo `bg-white/80`, `rounded-full`, texto `text-xs`/`text-sm` gris oscuro), `aria-hidden` en el icono. El click que abre el lightbox se habilita en toda la imagen (y en el pill) para cualquier imagen visible, independientemente de su ratio; `cursor-pointer` siempre que haya imagen. La detección de ratio se conserva únicamente para sembrar el dimensionado del panel del lightbox (`knownRatios`), no para condicionar el pill ni la apertura. Motivo del cambio: el lightbox aporta valor (vista completa + zoom) también en imágenes cuadradas, así que se ofrece siempre en lugar de solo cuando hay recorte.
 
 ### D4 — Lightbox: estructura y comportamiento
 - `Dialog` con backdrop `bg-black/70` (oscurecido "leve" pero suficiente contraste; transición de opacidad).
@@ -48,6 +48,14 @@ El pill ("Ver imagen completa" + icono) se superpone arriba-derecha (`absolute t
 - `client/lib/api.js`: `getArtImageUrl`/`getOthersImageUrl` devuelven `/img-proxy/art/images/<basename>` y `/img-proxy/others/images/<basename>` cuando `process.env.NODE_ENV === 'development'` y no hay `CDN_URL` (Next inlina `NODE_ENV` también en el bundle cliente, por lo que la condición es estable en build). Al ser URLs relativas (same-origin), el optimizador las acepta sin `remotePatterns` y el fetch interno atraviesa el rewrite hasta `api:3001`.
 - Alternativa considerada: añadir `{ protocol: 'http', hostname: 'localhost', port: '3001' }` a `remotePatterns` — descartada: el fetch server-side del optimizador desde el contenedor `client` no alcanza `localhost:3001`, que es exactamente el motivo del bypass actual.
 - Prod/staging: los helpers siguen devolviendo URLs absolutas (CDN o API) y nada cambia.
+
+### D6 — Zoom con rueda de ratón dentro del lightbox
+- **Listener nativo no-passive:** el `onWheel` de React se registra passive en la raíz, por lo que `e.preventDefault()` se ignora. Para impedir de verdad el scroll/zoom de la página (incluido `ctrl`+rueda del trackpad) se adjunta el listener con `el.addEventListener('wheel', h, { passive: false })` vía `ref` sobre la caja de la imagen, solo mientras el lightbox está abierto. El `Dialog` ya bloquea el scroll del `body`, pero el `preventDefault` cubre el caso del zoom del navegador y el scroll-chaining.
+- **Recorte al marco (`overflow-hidden`):** el panel ya se dimensiona al box exacto de la imagen; se le añade `overflow-hidden` y el zoom se aplica como `transform: translate() scale()` sobre un wrapper `absolute inset-0` (`transform-origin: 0 0`). Así el zoom amplía el detalle DENTRO del mismo rectángulo, se preserva "click fuera cierra" (el box no cambia de tamaño), y la X/flechas siguen en las esquinas (con `z-10` para quedar sobre la imagen transformada). Alternativa descartada: dejar que la imagen desborde a pantalla completa — degrada el cierre por click-fuera y tapa los controles.
+- **Pan tipo lupa de tienda (sigue al cursor):** con `transform-origin 0 0`, la fracción de cursor `fx = mx/W`, `fy = my/H` (acotada a `[0,1]`) determina el translate: `tx = −fx·(s−1)·W`, `ty = −fy·(s−1)·H`. Así, al barrer el cursor de un borde a otro, la porción visible recorre todo el desbordamiento de la imagen; los límites quedan garantizados por `fx,fy ∈ [0,1]` (sin huecos, no hace falta clamp adicional). El zoom NO exige arrastre: el `pointermove` recalcula el translate desde la posición del cursor (solo cuando `scale > 1`, si no devuelve el mismo estado para evitar re-render). Escala acotada `[1, 5]`; la rueda re-ancla al cursor actual.
+- **Reset:** el zoom vuelve al estado inicial cuando el cursor sale de la imagen (`pointerleave` → `ZERO_TRANSFORM`), y también vía efecto en `[open, safeIndex]` (abrir/cerrar y cambio de imagen).
+- **Cursor:** por defecto sobre la imagen (sin `zoom-in`/`grab`), para no sugerir arrastre.
+- **Táctil:** el pinch queda fuera de alcance (Non-Goal); sin gesto de pellizco.
 
 ## Risks / Trade-offs
 

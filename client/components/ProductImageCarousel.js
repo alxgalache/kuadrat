@@ -2,12 +2,9 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/20/solid'
+import { ChevronLeftIcon, ChevronRightIcon, MagnifyingGlassPlusIcon } from '@heroicons/react/20/solid'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import ProductImageLightbox from '@/components/ProductImageLightbox'
-
-// Images within this tolerance of a 1:1 ratio are treated as square (no crop indicator)
-const SQUARE_RATIO_TOLERANCE = 0.02
 
 export default function ProductImageCarousel({ images, imageType, name, priority = false }) {
   const [index, setIndex] = useState(0)
@@ -24,22 +21,18 @@ export default function ProductImageCarousel({ images, imageType, name, priority
   const goPrev = () => setIndex((i) => (i - 1 + list.length) % list.length)
   const goNext = () => setIndex((i) => (i + 1) % list.length)
 
+  // Ratio is recorded per image so the lightbox can size its panel before measuring
   const handleImageLoad = (basename) => (e) => {
     const { naturalWidth, naturalHeight } = e.target
     if (!naturalWidth || !naturalHeight) return
     setRatios((prev) => (prev[basename] ? prev : { ...prev, [basename]: naturalWidth / naturalHeight }))
   }
 
-  // Unknown ratio (not loaded yet) is treated as square: no pill, no lightbox trigger
-  const currentRatio = current ? ratios[current.basename] : null
-  const isCropped = currentRatio != null && Math.abs(currentRatio - 1) > SQUARE_RATIO_TOLERANCE
-  const isVertical = isCropped && currentRatio < 1
-
   return (
     <>
     <div
-      className={`aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative${isCropped ? ' cursor-pointer' : ''}`}
-      onClick={isCropped ? () => setLightboxOpen(true) : undefined}
+      className={`aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative${current ? ' cursor-pointer' : ''}`}
+      onClick={current ? () => setLightboxOpen(true) : undefined}
     >
       {current && (
         <Image
@@ -53,24 +46,13 @@ export default function ProductImageCarousel({ images, imageType, name, priority
         />
       )}
 
-      {isCropped && (
+      {current && (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setLightboxOpen(true) }}
           className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-white shadow focus:outline-none focus:ring-2 focus:ring-gray-500"
         >
-          <svg
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            className="size-3.5"
-            aria-hidden="true"
-          >
-            {isVertical
-              ? <rect x="6" y="3" width="8" height="14" rx="1.5" />
-              : <rect x="3" y="6" width="14" height="8" rx="1.5" />}
-          </svg>
+          <MagnifyingGlassPlusIcon className="size-3.5" aria-hidden="true" />
           Ver imagen completa
         </button>
       )}
