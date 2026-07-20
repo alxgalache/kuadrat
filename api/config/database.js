@@ -513,6 +513,10 @@ async function initializeDatabase() {
         max_attendees INTEGER,
         status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','active','finished','cancelled')),
         livekit_room_name TEXT,
+        provider TEXT NOT NULL DEFAULT 'livekit' CHECK(provider IN ('livekit','agora')),
+        interaction_mode TEXT NOT NULL DEFAULT 'broadcast' CHECK(interaction_mode IN ('broadcast','meeting')),
+        agora_channel_name TEXT,
+        whiteboard_room_uuid TEXT,
         video_started_at DATETIME,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (host_user_id) REFERENCES users(id)
@@ -540,6 +544,8 @@ async function initializeDatabase() {
         email_verified INTEGER NOT NULL DEFAULT 0,
         verification_code_hash TEXT,
         verification_code_expires_at DATETIME,
+        agora_uid INTEGER,
+        speaker_granted INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
       )
     `);
@@ -727,6 +733,19 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE events ADD COLUMN host_credit_excluded INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN commission_amount REAL');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN host_credited_at DATETIME');
+
+    // Agora streaming provider (add-agora-streaming-provider) — per-event
+    // provider selection. interaction_mode is only meaningful for Agora events;
+    // agora_channel_name is set on start; whiteboard_room_uuid is the lazily
+    // created Interactive Whiteboard room (optional phase). agora_uid is the
+    // attendee's stable numeric RTC uid (>= 101; host is always 1) and
+    // speaker_granted the current broadcast-mode promotion state.
+    await safeAlter("ALTER TABLE events ADD COLUMN provider TEXT NOT NULL DEFAULT 'livekit'");
+    await safeAlter("ALTER TABLE events ADD COLUMN interaction_mode TEXT NOT NULL DEFAULT 'broadcast'");
+    await safeAlter('ALTER TABLE events ADD COLUMN agora_channel_name TEXT');
+    await safeAlter('ALTER TABLE events ADD COLUMN whiteboard_room_uuid TEXT');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN agora_uid INTEGER');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN speaker_granted INTEGER NOT NULL DEFAULT 0');
 
     // Stripe Connect (Change #2: stripe-connect-manual-payouts) — two-bucket wallet.
     // `available_withdrawal` (legacy) stays as a deprecated column — zeroed by

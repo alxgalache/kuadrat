@@ -6,6 +6,8 @@ const fs = require('fs')
 const eventAdminController = require('../../controllers/eventAdminController')
 const { validate } = require('../../middleware/validate')
 const {
+  createEventSchema,
+  updateEventSchema,
   markEventFinishedSchema,
   excludeEventCreditSchema,
 } = require('../../validators/eventSchemas')
@@ -43,7 +45,7 @@ const eventVideoUpload = multer({
  * POST /api/admin/espacios
  * Create a new event
  */
-router.post('/', eventAdminController.createEvent);
+router.post('/', validate(createEventSchema), eventAdminController.createEvent);
 
 /**
  * GET /api/admin/espacios
@@ -61,7 +63,7 @@ router.get('/:id', eventAdminController.getEvent);
  * PUT /api/admin/espacios/:id
  * Update event
  */
-router.put('/:id', eventAdminController.updateEvent);
+router.put('/:id', validate(updateEventSchema), eventAdminController.updateEvent);
 
 /**
  * DELETE /api/admin/espacios/:id

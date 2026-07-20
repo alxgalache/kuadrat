@@ -65,16 +65,34 @@ const nextConfig = {
       // LiveKit Cloud (events/streaming)
       'https://*.livekit.cloud',
       'wss://*.livekit.cloud',
+      // Agora (events/streaming, per-event provider): access points + wss
+      // signaling live on *.agora.io and the SD-RTN edge on *.sd-rtn.com
+      'https://*.agora.io',
+      'wss://*.agora.io',
+      'https://*.sd-rtn.com',
+      'wss://*.sd-rtn.com',
+      // Agora Interactive Whiteboard (Netless): REST + gateway websockets
+      'https://*.netless.link',
+      'wss://*.netless.link',
+      // Agora solutions endpoints + whiteboard fallback logger (Argus) — silences
+      // the CSP network noise from white-web-sdk's agora-foundation fallback
+      'https://*.agoralab.co',
+      'wss://*.agoralab.co',
+      // white-web-sdk loads its modules from blob: URLs (script inject + fetch)
+      'blob:',
       // Plausible Analytics
       'https://analytics.140d.art',
     ].join(' ');
 
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com https://analytics.140d.art",
+      // 'blob:' required by the Agora Interactive Whiteboard (white-web-sdk): it
+      // loads its modules via document.createElement('script') with src=blob:
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com https://analytics.140d.art",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `img-src 'self' data: https: http: blob: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
-      "font-src 'self' https://fonts.gstatic.com",
+      // *.netless.link serves the whiteboard fonts (convertcdn.netless.link/fonts)
+      "font-src 'self' https://fonts.gstatic.com https://*.netless.link",
       `connect-src ${cspConnectSrc}`,
       "frame-src 'self' https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com",
       `media-src 'self' blob: https: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,

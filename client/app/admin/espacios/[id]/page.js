@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminAPI, triggerDownload } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
+import { MEETING_MAX_ATTENDEES } from '@/lib/constants'
 import { ArrowLeftIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid'
 
 function EventDetailContent({ id }) {
@@ -71,6 +72,8 @@ function EventDetailContent({ id }) {
     price: ev.price || '',
     currency: ev.currency || 'EUR',
     format: ev.format || 'live',
+    provider: ev.provider || 'livekit',
+    interaction_mode: ev.interaction_mode || 'broadcast',
     content_type: ev.content_type || 'streaming',
     category: ev.category || 'charla',
     video_url: ev.video_url || '',
@@ -99,8 +102,18 @@ function EventDetailContent({ id }) {
   }
 
   const handleSave = async () => {
-    setSaving(true)
     setError('')
+
+    const isMeeting = form.format === 'live' && form.provider === 'agora' && form.interaction_mode === 'meeting'
+    if (isMeeting) {
+      const capacity = form.max_attendees ? parseInt(form.max_attendees, 10) : NaN
+      if (!Number.isInteger(capacity) || capacity < 1 || capacity > MEETING_MAX_ATTENDEES) {
+        setError(`El modo reunión requiere un aforo entre 1 y ${MEETING_MAX_ATTENDEES} asistentes`)
+        return
+      }
+    }
+
+    setSaving(true)
     try {
       const payload = {
         ...form,
@@ -109,6 +122,8 @@ function EventDetailContent({ id }) {
         price: form.access_type === 'paid' ? parseFloat(form.price) : null,
         max_attendees: form.max_attendees ? parseInt(form.max_attendees, 10) : null,
         cover_image_url: form.cover_image_url || null,
+        provider: form.format === 'live' ? form.provider : 'livekit',
+        interaction_mode: form.format === 'live' && form.provider === 'agora' ? form.interaction_mode : 'broadcast',
         video_url: (form.format === 'video' && videoSource === 'url') ? (form.video_url || null) : (form.video_url?.startsWith('uploaded:') ? form.video_url : null),
       }
       await adminAPI.events.update(id, payload)
@@ -408,6 +423,34 @@ function EventDetailContent({ id }) {
                     </select>
                   </div>
                 </div>
+                {form.format === 'live' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Proveedor de streaming</label>
+                      <select
+                        value={form.provider}
+                        onChange={(e) => setForm({ ...form, provider: e.target.value })}
+                        className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                      >
+                        <option value="livekit">LiveKit</option>
+                        <option value="agora">Agora</option>
+                      </select>
+                    </div>
+                    {form.provider === 'agora' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Modo de interacción</label>
+                        <select
+                          value={form.interaction_mode}
+                          onChange={(e) => setForm({ ...form, interaction_mode: e.target.value })}
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                        >
+                          <option value="broadcast">Stream (mano levantada)</option>
+                          <option value="meeting">Reunión (cámaras)</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {form.format === 'video' && (
                   <div className="space-y-3">
                     <fieldset>
@@ -474,14 +517,24 @@ function EventDetailContent({ id }) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Máx. asistentes</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {form.format === 'live' && form.provider === 'agora' && form.interaction_mode === 'meeting'
+                      ? 'Máx. asistentes *'
+                      : 'Máx. asistentes'}
+                  </label>
                   <input
                     type="number"
                     min="1"
+                    max={form.format === 'live' && form.provider === 'agora' && form.interaction_mode === 'meeting' ? MEETING_MAX_ATTENDEES : undefined}
                     value={form.max_attendees}
                     onChange={(e) => setForm({ ...form, max_attendees: e.target.value })}
                     className="mt-1 block w-full max-w-xs rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   />
+                  {form.format === 'live' && form.provider === 'agora' && form.interaction_mode === 'meeting' && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Obligatorio en modo reunión: máximo {MEETING_MAX_ATTENDEES} asistentes. Límite técnico de Agora: 17 emisores de vídeo simultáneos.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-x-3">

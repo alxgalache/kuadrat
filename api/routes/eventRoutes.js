@@ -4,7 +4,7 @@ const eventController = require('../controllers/eventController');
 const { authenticate } = require('../middleware/authorization');
 const { validate } = require('../middleware/validate');
 const { sensitiveLimiter } = require('../middleware/rateLimiter');
-const { sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema } = require('../validators/eventSchemas');
+const { sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema, renewTokenSchema, whiteboardTokenSchema } = require('../validators/eventSchemas');
 
 // All routes are public (no authentication required) unless specified
 
@@ -61,6 +61,20 @@ router.post('/:id/token', eventController.getViewerToken);
  * Get LiveKit host token (requires auth, seller only)
  */
 router.post('/:id/host-token', authenticate, eventController.getHostToken);
+
+/**
+ * POST /api/events/:id/renew-token
+ * Agora events: re-issue an RTC token for the caller's current role
+ * Authentication: attendee credentials in body, or JWT for host/admin
+ */
+router.post('/:id/renew-token', validate(renewTokenSchema), eventController.renewToken);
+
+/**
+ * POST /api/events/:id/whiteboard-token
+ * Agora events (optional whiteboard phase): per-role whiteboard room token
+ * Authentication: attendee credentials in body, or JWT for host/admin
+ */
+router.post('/:id/whiteboard-token', validate(whiteboardTokenSchema), eventController.getWhiteboardToken);
 
 /**
  * POST /api/events/:id/end

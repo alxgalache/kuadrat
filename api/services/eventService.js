@@ -46,7 +46,7 @@ function generateSlug(title) {
 async function createEvent({
   title, description, event_datetime, duration_minutes, host_user_id,
   cover_image_url, access_type, price, currency, format, content_type,
-  category, video_url, max_attendees, status,
+  category, video_url, max_attendees, status, provider, interaction_mode,
 }) {
   const id = generateUUID();
   const slug = generateSlug(title);
@@ -54,13 +54,14 @@ async function createEvent({
   await db.execute({
     sql: `INSERT INTO events (id, title, slug, description, event_datetime, duration_minutes,
           host_user_id, cover_image_url, access_type, price, currency, format, content_type,
-          category, video_url, max_attendees, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          category, video_url, max_attendees, status, provider, interaction_mode)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id, title, slug, description || null, event_datetime, duration_minutes || 60,
       host_user_id, cover_image_url || null, access_type || 'free',
       price || null, currency || 'EUR', format || 'live', content_type || 'streaming',
       category, video_url || null, max_attendees || null, status || 'draft',
+      provider || 'livekit', interaction_mode || 'broadcast',
     ],
   });
 
@@ -74,7 +75,7 @@ async function updateEvent(id, fields) {
   const allowedFields = [
     'title', 'description', 'event_datetime', 'duration_minutes', 'host_user_id',
     'cover_image_url', 'access_type', 'price', 'currency', 'format', 'content_type',
-    'category', 'video_url', 'max_attendees', 'status',
+    'category', 'video_url', 'max_attendees', 'status', 'provider', 'interaction_mode',
   ];
 
   const setClauses = [];
@@ -263,7 +264,7 @@ async function getAttendeeCount(eventId) {
 // Event Lifecycle
 // ---------------------------------------------------------------------------
 
-async function startEvent(id, { livekitRoomName = null, videoStartedAt = null } = {}) {
+async function startEvent(id, { livekitRoomName = null, videoStartedAt = null, agoraChannelName = null } = {}) {
   const setClauses = ["status = 'active'"];
   const args = [];
 
@@ -274,6 +275,10 @@ async function startEvent(id, { livekitRoomName = null, videoStartedAt = null } 
   if (videoStartedAt) {
     setClauses.push('video_started_at = ?');
     args.push(videoStartedAt);
+  }
+  if (agoraChannelName) {
+    setClauses.push('agora_channel_name = ?');
+    args.push(agoraChannelName);
   }
 
   args.push(id);
@@ -386,6 +391,18 @@ async function updateAttendeeIp(attendeeId, ipAddress) {
   await db.execute({
     sql: 'UPDATE event_attendees SET ip_address = ? WHERE id = ?',
     args: [ipAddress, attendeeId],
+  });
+}
+
+/**
+ * Agora broadcast mode: persist the current promotion state. speaker_granted
+ * drives the role of every future/renewed RTC token (design D4), so it
+ * survives api restarts and token renewals.
+ */
+async function setSpeakerGranted(attendeeId, granted) {
+  await db.execute({
+    sql: 'UPDATE event_attendees SET speaker_granted = ? WHERE id = ?',
+    args: [granted ? 1 : 0, attendeeId],
   });
 }
 
@@ -518,6 +535,7 @@ module.exports = {
   isEmailBanned,
   isIpBanned,
   updateAttendeeIp,
+  setSpeakerGranted,
   markAttendeeChatBanned,
   isAttendeeChatBanned,
   // Email verification & password access

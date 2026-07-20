@@ -3,17 +3,33 @@ const fs = require('fs');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const marketingEmailService = require('../services/marketingEmailService');
+const { promoteAgoraParticipant, demoteAgoraParticipant } = require('./eventController');
 const logger = require('../config/logger');
 
 // ---------------------------------------------------------------------------
 // POST /api/admin/events
 // ---------------------------------------------------------------------------
+// Business rule shared by create/update (validated over the MERGED state on
+// update): meeting mode is Agora-only and capped at 16 attendees (Agora hard
+// limit: 17 simultaneous video senders). Returns an es-ES error string or null.
+const validateProviderBusinessRules = ({ provider, interaction_mode, max_attendees }) => {
+  if (interaction_mode !== 'meeting') return null;
+  if (provider !== 'agora') {
+    return 'El modo reunión requiere el proveedor Agora';
+  }
+  const capacity = max_attendees != null && max_attendees !== '' ? parseInt(max_attendees, 10) : NaN;
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 16) {
+    return 'El modo reunión requiere un aforo entre 1 y 16 asistentes (límite técnico de Agora)';
+  }
+  return null;
+};
+
 const createEvent = async (req, res, next) => {
   try {
     const {
       title, description, event_datetime, duration_minutes, host_user_id,
       cover_image_url, access_type, price, currency, format, content_type,
-      category, video_url, max_attendees, status,
+      category, video_url, max_attendees, status, provider, interaction_mode,
     } = req.body;
 
     if (!title || !event_datetime || !host_user_id || !category) {
@@ -32,10 +48,23 @@ const createEvent = async (req, res, next) => {
       });
     }
 
+    const providerError = validateProviderBusinessRules({
+      provider: provider || 'livekit',
+      interaction_mode: interaction_mode || 'broadcast',
+      max_attendees,
+    });
+    if (providerError) {
+      return res.status(400).json({
+        success: false,
+        title: 'Datos inválidos',
+        message: providerError,
+      });
+    }
+
     const event = await eventService.createEvent({
       title, description, event_datetime, duration_minutes, host_user_id,
       cover_image_url, access_type, price, currency, format, content_type,
-      category, video_url, max_attendees, status,
+      category, video_url, max_attendees, status, provider, interaction_mode,
     });
 
     // Marketing announcement (non-blocking; never throws; guarded send-once)
@@ -120,6 +149,17 @@ const updateEvent = async (req, res, next) => {
       });
     }
 
+    // Re-validate the provider rules over the merged (current + incoming) state
+    const merged = { ...current, ...req.body };
+    const providerError = validateProviderBusinessRules(merged);
+    if (providerError) {
+      return res.status(400).json({
+        success: false,
+        title: 'Datos inválidos',
+        message: providerError,
+      });
+    }
+
     const event = await eventService.updateEvent(req.params.id, req.body);
 
     // Marketing announcement on transition into 'scheduled' (guarded send-once)
@@ -190,6 +230,11 @@ const startEvent = async (req, res, next) => {
       event = await eventService.startEvent(req.params.id, {
         videoStartedAt: new Date().toISOString(),
       });
+    } else if (current.provider === 'agora') {
+      // Agora channels are implicit — no external call, just fix the name
+      event = await eventService.startEvent(req.params.id, {
+        agoraChannelName: `event-${current.id}`,
+      });
     } else {
       // Live format: create LiveKit room
       const roomName = `event-${current.id}`;
@@ -248,8 +293,9 @@ const endEvent = async (req, res, next) => {
       });
     }
 
-    // Delete LiveKit room (only for live format events)
-    if (current.format !== 'video' && current.livekit_room_name) {
+    // Delete LiveKit room (only for live format LiveKit events; Agora channels
+    // are implicit — nothing to delete, clients leave() on event_ended)
+    if (current.format !== 'video' && current.provider !== 'agora' && current.livekit_room_name) {
       try {
         await livekitService.deleteRoom(current.livekit_room_name);
       } catch (lkError) {
@@ -296,6 +342,17 @@ const getAttendees = async (req, res, next) => {
 const promoteParticipant = async (req, res, next) => {
   try {
     const current = await eventService.getEventById(req.params.id);
+
+    // ── Agora branch ─────────────────────────────────────────
+    if (current?.provider === 'agora') {
+      if (!current.agora_channel_name) {
+        return res.status(400).json({ success: false, message: 'Sala no disponible' });
+      }
+      await promoteAgoraParticipant(req.app, current, req.params.identity);
+      return res.status(200).json({ success: true, message: 'Participante promovido' });
+    }
+
+    // ── LiveKit branch (unchanged) ───────────────────────────
     if (!current || !current.livekit_room_name) {
       return res.status(400).json({
         success: false,
@@ -328,6 +385,17 @@ const promoteParticipant = async (req, res, next) => {
 const demoteParticipant = async (req, res, next) => {
   try {
     const current = await eventService.getEventById(req.params.id);
+
+    // ── Agora branch ─────────────────────────────────────────
+    if (current?.provider === 'agora') {
+      if (!current.agora_channel_name) {
+        return res.status(400).json({ success: false, message: 'Sala no disponible' });
+      }
+      await demoteAgoraParticipant(req.app, current, req.params.identity);
+      return res.status(200).json({ success: true, message: 'Participante degradado a espectador' });
+    }
+
+    // ── LiveKit branch (unchanged) ───────────────────────────
     if (!current || !current.livekit_room_name) {
       return res.status(400).json({
         success: false,
@@ -359,6 +427,19 @@ const muteParticipant = async (req, res, next) => {
   try {
     const { trackSid, muted } = req.body;
     const current = await eventService.getEventById(req.params.id);
+
+    // ── Agora branch: soft mute via socket (design R4 — hard enforcement
+    // is available by demoting, which creates a kicking rule) ──
+    if (current?.provider === 'agora') {
+      if (!current.agora_channel_name) {
+        return res.status(400).json({ success: false, message: 'Sala no disponible' });
+      }
+      const eventSocket = req.app.get('eventSocket');
+      if (eventSocket) eventSocket.notifyForceMute(current.id, req.params.identity);
+      return res.status(200).json({ success: true, message: 'Silenciado' });
+    }
+
+    // ── LiveKit branch (unchanged) ───────────────────────────
     if (!current || !current.livekit_room_name) {
       return res.status(400).json({
         success: false,
@@ -386,6 +467,29 @@ const muteParticipant = async (req, res, next) => {
 const listParticipants = async (req, res, next) => {
   try {
     const current = await eventService.getEventById(req.params.id);
+
+    // ── Agora branch: backend Socket.IO presence is authoritative (the RTC
+    // channel can't see non-publishing audience). Same shape the admin
+    // panel consumes for LiveKit participants. ──
+    if (current?.provider === 'agora') {
+      const eventSocket = req.app.get('eventSocket');
+      const presence = eventSocket ? eventSocket.getEventRoomPresence(current.id) : [];
+      return res.status(200).json({
+        success: true,
+        participants: presence.map(p => ({
+          identity: p.identity,
+          name: p.name,
+          state: 'ACTIVE',
+          joinedAt: null,
+          permission: { canPublish: p.isHost || p.speaker },
+          tracks: [],
+          handRaised: p.handRaised,
+          chatBanned: p.chatBanned,
+        })),
+      });
+    }
+
+    // ── LiveKit branch (unchanged) ───────────────────────────
     if (!current || !current.livekit_room_name) {
       return res.status(200).json({ success: true, participants: [] });
     }

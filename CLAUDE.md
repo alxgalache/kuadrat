@@ -11,8 +11,8 @@ Kuadrat is a minimalist online marketplace for art, functioning as a virtual art
 * **Frontend:** Next.js 16, React 19, JavaScript (no TypeScript), TailwindCSS, App Router
 * **Auth:** Passport.js (passport-local + passport-jwt), JWT tokens
 * **Payments:** Stripe (primary), Revolut (legacy support)
-* **Real-time:** Socket.IO for auctions and event notifications
-* **Streaming:** LiveKit for live events with guest access
+* **Real-time:** Socket.IO for auctions and event notifications (plus the authenticated per-event room used by Agora events)
+* **Streaming:** LiveKit + Agora, selectable per event (`events.provider`, default `livekit`); Agora adds an `interaction_mode` (`broadcast` = LiveKit parity | `meeting` = Meet-style camera grid, max 16 attendees)
 * **Email:** Nodemailer with SMTP
 * **Logging:** Pino (structured JSON in production, pretty in development)
 * **Validation:** Zod schemas for API request validation
@@ -80,6 +80,7 @@ api/
 │   ├── auctionService.js  — Auction business logic
 │   ├── eventService.js    — Event CRUD + LiveKit
 │   ├── livekitService.js  — LiveKit token generation
+│   ├── agoraService.js    — Agora RTC tokens (agora-token) + moderation REST (kicking rules)
 │   └── revolutService.js  — Revolut payment integration (legacy)
 ├── validators/            — Zod request validation schemas
 │   ├── authSchemas.js
@@ -95,7 +96,7 @@ api/
 │   └── paymentHelpers.js  — Currency conversion, VAT
 ├── socket/
 │   ├── auctionSocket.js   — Real-time auction events
-│   └── eventSocket.js     — Real-time event notifications
+│   └── eventSocket.js     — Event notifications + authenticated Agora event rooms (presence, chat, moderation)
 ├── scheduler/
 │   └── auctionScheduler.js — Cron job (every 30s) for auction lifecycle
 └── server.js              — Express + Socket.IO + middleware stack
@@ -204,6 +205,7 @@ All environment variables are validated at startup via `api/config/env.js`. See 
 * **Email:** SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM, BUSINESS_EMAIL (optional; falls back to EMAIL_FROM — used by the art product inquiry form as the commercial inbox)
 * **Payments:** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, PAYMENT_PROVIDER
 * **LiveKit:** LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+* **Agora:** AGORA_APP_ID, AGORA_APP_CERTIFICATE (RTC tokens), AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET (moderation REST). All server-side — the App ID reaches the client in the token endpoint response (no `NEXT_PUBLIC_*`, no Docker build-args). The Agora console project MUST have **Co-host authentication** enabled or subscriber tokens could publish. Optional whiteboard phase: AGORA_WHITEBOARD_APP_IDENTIFIER, AGORA_WHITEBOARD_AK, AGORA_WHITEBOARD_SK, AGORA_WHITEBOARD_REGION (default `eu`) — empty hides the host's whiteboard toggle. The whiteboard SDK (`white-web-sdk`) loads its modules from `blob:` URLs, so the `client/next.config.js` CSP MUST allow `blob:` in `script-src` and `connect-src` (plus the existing `worker-src`); `*.netless.link` is in `font-src` and `*.agoralab.co` in `connect-src` to silence its network noise. The console warning `Cannot find module 'agora-foundation/lib/logger'` / "fallback to Argus" is **benign and expected**: `white-web-sdk@2.16.56` peer-depends on `agora-foundation@3.11.1`, unpublished on npm (only `3.11.0` exists) — do NOT force a version; the SDK falls back to its Argus logger.
 * **NTAG 424 DNA (CoA):** NTAG424_SYSTEM_ID, NTAG424_K_PICC, NTAG424_MASTER_KEY, IP_HASH_SALT — critical secrets validated via `requiredHex()`. Custody documented in `scripts/nfc-personalization/README.md §7`.
 * **Captcha (Cloudflare Turnstile):** TURNSTILE_SECRET (api, optional — when empty the inquiry endpoint refuses with 503 CAPTCHA_UNAVAILABLE), NEXT_PUBLIC_TURNSTILE_SITE_KEY (client, optional — when empty the inquiry CTA on the art product page is hidden). Used by the art product inquiry form. Test keys ("always passes") are documented in `.env.example`.
 * **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, COA_VERIFY_RATE_LIMIT_*, INQUIRY_RATE_LIMIT_*, etc. Note: `*_WINDOW_SECONDS` is multiplied by 60 in the limiter — values are effectively in MINUTES (legacy naming).

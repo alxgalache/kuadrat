@@ -17,6 +17,10 @@ const EventLiveRoom = dynamic(
   () => import('@/components/EventLiveRoom'),
   { ssr: false }
 )
+const AgoraLiveRoom = dynamic(
+  () => import('@/components/AgoraLiveRoom'),
+  { ssr: false }
+)
 const EventVideoPlayer = dynamic(
   () => import('@/components/EventVideoPlayer'),
   { ssr: false }
@@ -70,6 +74,8 @@ export default function EventDetail({ params }) {
   const [hasAccess, setHasAccess] = useState(false)
   const [livekitToken, setLivekitToken] = useState(null)
   const [livekitUrl, setLivekitUrl] = useState(null)
+  // Agora credentials: { appId, channel, uid, rtcToken, interactionMode }
+  const [agoraCreds, setAgoraCreds] = useState(null)
   const [isHost, setIsHost] = useState(false)
   const [kicked, setKicked] = useState(false)
   const [hostAuthor, setHostAuthor] = useState(null)
@@ -89,8 +95,12 @@ export default function EventDetail({ params }) {
 
     try {
       const data = await eventsAPI.getViewerToken(event.id, session.attendeeId, session.accessToken)
-      setLivekitToken(data.token)
-      setLivekitUrl(data.livekitUrl)
+      if (data.provider === 'agora') {
+        setAgoraCreds(data)
+      } else {
+        setLivekitToken(data.token)
+        setLivekitUrl(data.livekitUrl)
+      }
     } catch (err) {
       console.error('Error getting viewer token:', err)
     }
@@ -100,8 +110,12 @@ export default function EventDetail({ params }) {
     if (!event?.id) return
     try {
       const data = await eventsAPI.getHostToken(event.id)
-      setLivekitToken(data.token)
-      setLivekitUrl(data.livekitUrl)
+      if (data.provider === 'agora') {
+        setAgoraCreds(data)
+      } else {
+        setLivekitToken(data.token)
+        setLivekitUrl(data.livekitUrl)
+      }
     } catch (err) {
       console.error('Error getting host token:', err)
     }
@@ -139,12 +153,12 @@ export default function EventDetail({ params }) {
 
   // When server broadcasts event_ended, show modal if viewer
   useEffect(() => {
-    if (eventEnded && !isHost && livekitToken) {
+    if (eventEnded && !isHost && (livekitToken || agoraCreds)) {
       setStreamEndedModalOpen(true)
     } else if (eventEnded) {
       loadEvent()
     }
-  }, [eventEnded, isHost, livekitToken, loadEvent])
+  }, [eventEnded, isHost, livekitToken, agoraCreds, loadEvent])
 
   // Check for stored session
   useEffect(() => {
@@ -161,17 +175,18 @@ export default function EventDetail({ params }) {
     }
   }, [event, user])
 
-  // Auto-connect to LiveKit when event is active and user has access (live format only)
+  // Auto-connect to the streaming room when event is active and user has
+  // access (live format only; provider decided by the token response)
   useEffect(() => {
-    if (!event || event.status !== 'active' || livekitToken) return
-    if (event.format === 'video') return // Video events don't use LiveKit
+    if (!event || event.status !== 'active' || livekitToken || agoraCreds) return
+    if (event.format === 'video') return // Video events don't use RTC
 
     if (isHost) {
       connectAsHost()
     } else if (hasAccess) {
       connectAsViewer()
     }
-  }, [event?.status, event?.format, hasAccess, isHost, livekitToken, connectAsHost, connectAsViewer])
+  }, [event?.status, event?.format, hasAccess, isHost, livekitToken, agoraCreds, connectAsHost, connectAsViewer])
 
   const handleAccessGranted = ({ attendeeId, accessToken }) => {
     setHasAccess(true)
@@ -187,6 +202,7 @@ export default function EventDetail({ params }) {
     setKicked(true)
     setLivekitToken(null)
     setLivekitUrl(null)
+    setAgoraCreds(null)
     // Clear stored session so banned user can't reconnect
     if (event?.id) {
       try { localStorage.removeItem(`event_attendee_${event.id}`) } catch {}
@@ -374,8 +390,8 @@ export default function EventDetail({ params }) {
     )
   }
 
-  // Active event with LiveKit room
-  if (event.status === 'active' && livekitToken && livekitUrl) {
+  // Active event with a live room (LiveKit or Agora, per event.provider)
+  if (event.status === 'active' && ((livekitToken && livekitUrl) || agoraCreds)) {
     return (
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
@@ -390,16 +406,30 @@ export default function EventDetail({ params }) {
             <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
           </div>
 
-          {/* LiveKit room */}
+          {/* Live room */}
           <div>
-            <EventLiveRoom
-              token={livekitToken}
-              serverUrl={livekitUrl}
-              roomName={event.livekit_room_name}
-              isHost={isHost}
-              eventId={event.id}
-              onKicked={handleKicked}
-            />
+            {agoraCreds ? (
+              <AgoraLiveRoom
+                appId={agoraCreds.appId}
+                channel={agoraCreds.channel}
+                uid={agoraCreds.uid}
+                rtcToken={agoraCreds.rtcToken}
+                interactionMode={agoraCreds.interactionMode}
+                isHost={isHost}
+                eventId={event.id}
+                onKicked={handleKicked}
+                whiteboardAvailable={!!agoraCreds.whiteboardAvailable}
+              />
+            ) : (
+              <EventLiveRoom
+                token={livekitToken}
+                serverUrl={livekitUrl}
+                roomName={event.livekit_room_name}
+                isHost={isHost}
+                eventId={event.id}
+                onKicked={handleKicked}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -523,7 +553,7 @@ export default function EventDetail({ params }) {
                         ? 'El evento está en directo. Recargando...'
                         : 'Podrás acceder cuando el evento comience.'}
                     </p>
-                    {event.status === 'active' && !livekitToken && (
+                    {event.status === 'active' && !livekitToken && !agoraCreds && (
                       <button
                         type="button"
                         onClick={connectAsViewer}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
+import { MEETING_MAX_ATTENDEES } from '@/lib/constants'
 import { ArrowLeftIcon } from '@heroicons/react/20/solid'
 
 function NewEventPageContent() {
@@ -20,6 +21,8 @@ function NewEventPageContent() {
   const [price, setPrice] = useState('')
   const [currency, setCurrency] = useState('EUR')
   const [format, setFormat] = useState('live')
+  const [provider, setProvider] = useState('livekit')
+  const [interactionMode, setInteractionMode] = useState('broadcast')
   const [contentType, setContentType] = useState('streaming')
   const [category, setCategory] = useState('charla')
   const [videoUrl, setVideoUrl] = useState('')
@@ -63,6 +66,15 @@ function NewEventPageContent() {
       return
     }
 
+    const isMeeting = format === 'live' && provider === 'agora' && interactionMode === 'meeting'
+    if (isMeeting) {
+      const capacity = maxAttendees ? parseInt(maxAttendees, 10) : NaN
+      if (!Number.isInteger(capacity) || capacity < 1 || capacity > MEETING_MAX_ATTENDEES) {
+        setError(`El modo reunión requiere un aforo entre 1 y ${MEETING_MAX_ATTENDEES} asistentes`)
+        return
+      }
+    }
+
     setSaving(true)
 
     try {
@@ -77,6 +89,8 @@ function NewEventPageContent() {
         price: accessType === 'paid' ? parseFloat(price) : null,
         currency,
         format,
+        provider: format === 'live' ? provider : 'livekit',
+        interaction_mode: format === 'live' && provider === 'agora' ? interactionMode : 'broadcast',
         content_type: contentType,
         category,
         video_url: (format === 'video' && videoSource === 'url') ? (videoUrl || null) : null,
@@ -293,6 +307,42 @@ function NewEventPageContent() {
               </div>
             </div>
 
+            {format === 'live' && (
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="provider" className="block text-sm font-medium text-gray-700">
+                    Proveedor de streaming
+                  </label>
+                  <select
+                    id="provider"
+                    value={provider}
+                    onChange={(e) => setProvider(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                  >
+                    <option value="livekit">LiveKit</option>
+                    <option value="agora">Agora</option>
+                  </select>
+                </div>
+
+                {provider === 'agora' && (
+                  <div>
+                    <label htmlFor="interactionMode" className="block text-sm font-medium text-gray-700">
+                      Modo de interacción
+                    </label>
+                    <select
+                      id="interactionMode"
+                      value={interactionMode}
+                      onChange={(e) => setInteractionMode(e.target.value)}
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                    >
+                      <option value="broadcast">Stream (mano levantada)</option>
+                      <option value="meeting">Reunión (cámaras)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
             {format === 'video' && (
               <div className="mt-4 space-y-3">
                 <fieldset>
@@ -424,16 +474,25 @@ function NewEventPageContent() {
 
             <div className="mt-4">
               <label htmlFor="maxAttendees" className="block text-sm font-medium text-gray-700">
-                Asistentes máximos (dejar vacío para ilimitado)
+                {format === 'live' && provider === 'agora' && interactionMode === 'meeting'
+                  ? 'Asistentes máximos *'
+                  : 'Asistentes máximos (dejar vacío para ilimitado)'}
               </label>
               <input
                 type="number"
                 id="maxAttendees"
                 min="1"
+                max={format === 'live' && provider === 'agora' && interactionMode === 'meeting' ? MEETING_MAX_ATTENDEES : undefined}
+                required={format === 'live' && provider === 'agora' && interactionMode === 'meeting'}
                 value={maxAttendees}
                 onChange={(e) => setMaxAttendees(e.target.value)}
                 className="mt-1 block w-full max-w-xs rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
               />
+              {format === 'live' && provider === 'agora' && interactionMode === 'meeting' && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Obligatorio en modo reunión: máximo {MEETING_MAX_ATTENDEES} asistentes. Límite técnico de Agora: 17 emisores de vídeo simultáneos.
+                </p>
+              )}
             </div>
           </div>
 

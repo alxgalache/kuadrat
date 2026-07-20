@@ -205,6 +205,30 @@ const config = {
     apiSecret: optional('LIVEKIT_API_SECRET', ''),
   },
 
+  // --- Agora (per-event streaming provider, coexists with LiveKit) ---
+  // appId/appCertificate feed RTC token generation (agora-token, AccessToken2);
+  // customerId/customerSecret are the RESTful API credentials (Basic Auth) used
+  // for moderation kicking rules. agoraService fails with a clear error when
+  // invoked unconfigured. The appId travels to the client in the token endpoint
+  // response (same pattern as livekit.url) — no NEXT_PUBLIC_* var.
+  agora: {
+    appId: optional('AGORA_APP_ID', ''),
+    appCertificate: optional('AGORA_APP_CERTIFICATE', ''),
+    customerId: optional('AGORA_CUSTOMER_ID', ''),
+    customerSecret: optional('AGORA_CUSTOMER_SECRET', ''),
+  },
+
+  // --- Agora Interactive Whiteboard (optional phase) ---
+  // SDK tokens are generated server-side from ak/sk (netless-token); only
+  // per-role room tokens ever reach the client. When unconfigured, the
+  // whiteboard toggle is hidden for the host (silent degradation).
+  agoraWhiteboard: {
+    appIdentifier: optional('AGORA_WHITEBOARD_APP_IDENTIFIER', ''),
+    ak: optional('AGORA_WHITEBOARD_AK', ''),
+    sk: optional('AGORA_WHITEBOARD_SK', ''),
+    region: optional('AGORA_WHITEBOARD_REGION', 'eu'),
+  },
+
   // --- Events (Change #3: stripe-connect-events-wallet) ---
   events: {
     creditGraceDays: optionalInt('EVENT_CREDIT_GRACE_DAYS', 1),

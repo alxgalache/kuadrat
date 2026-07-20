@@ -49,6 +49,33 @@ const getViewerTokenSchema = z.object({
 });
 
 /**
+ * Cross-field rule for the streaming provider (design D8): meeting mode is
+ * Agora-only and requires a capped capacity (Agora hard limit: 17 simultaneous
+ * video senders → max_attendees ≤ 16). Runs on whatever the body carries; the
+ * admin controller re-validates the merged state on update.
+ */
+function validateProviderRules(body, ctx) {
+  if (body.interaction_mode !== 'meeting') return;
+  if (body.provider !== 'agora') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['interaction_mode'],
+      message: 'El modo reunión requiere el proveedor Agora',
+    });
+  }
+  const capacity = body.max_attendees != null && body.max_attendees !== ''
+    ? parseInt(body.max_attendees, 10)
+    : NaN;
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 16) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['max_attendees'],
+      message: 'El modo reunión requiere un aforo entre 1 y 16 asistentes',
+    });
+  }
+}
+
+/**
  * POST /api/admin/events
  *
  * Controller checks: title, event_datetime, host_user_id, category are required.
@@ -59,9 +86,11 @@ const createEventSchema = z.object({
     title: z.string().min(1, 'Título es obligatorio'),
     description: z.string().optional(),
     event_datetime: z.string().min(1, 'Fecha del evento es obligatoria'),
-    duration_minutes: z.union([z.number(), z.string()]).optional(),
+    // The admin form serializes empty optionals as null (e.g. `value || null`,
+    // and NaN → null through JSON), so these must be nullable besides optional.
+    duration_minutes: z.union([z.number(), z.string()]).optional().nullable(),
     host_user_id: z.union([z.number(), z.string()]).refine(v => !!v, 'Host es obligatorio'),
-    cover_image_url: z.string().optional(),
+    cover_image_url: z.string().optional().nullable(),
     access_type: z.string().optional(),
     price: z.union([z.number(), z.string()]).optional().nullable(),
     currency: z.string().optional(),
@@ -71,8 +100,38 @@ const createEventSchema = z.object({
     video_url: z.string().optional().nullable(),
     max_attendees: z.union([z.number(), z.string()]).optional().nullable(),
     status: z.string().optional(),
-  }).strip(),
+    provider: z.enum(['livekit', 'agora'], { message: 'Proveedor de streaming inválido' }).optional(),
+    interaction_mode: z.enum(['broadcast', 'meeting'], { message: 'Modo de interacción inválido' }).optional(),
+  }).strip().superRefine(validateProviderRules),
 });
+
+/**
+ * Partial-update variant: only flags fields actually present in the body
+ * (a PUT may legitimately omit provider/max_attendees for an event that is
+ * already valid). The merged state is re-validated in eventAdminController.
+ */
+function validateProviderRulesPartial(body, ctx) {
+  if (body.interaction_mode !== 'meeting') return;
+  if (body.provider !== undefined && body.provider !== 'agora') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['interaction_mode'],
+      message: 'El modo reunión requiere el proveedor Agora',
+    });
+  }
+  if (body.max_attendees !== undefined) {
+    const capacity = body.max_attendees != null && body.max_attendees !== ''
+      ? parseInt(body.max_attendees, 10)
+      : NaN;
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 16) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['max_attendees'],
+        message: 'El modo reunión requiere un aforo entre 1 y 16 asistentes',
+      });
+    }
+  }
+}
 
 /**
  * PUT /api/admin/events/:id
@@ -96,6 +155,36 @@ const updateEventSchema = z.object({
     video_url: z.string().optional().nullable(),
     max_attendees: z.union([z.number(), z.string()]).optional().nullable(),
     status: z.string().optional(),
+    provider: z.enum(['livekit', 'agora'], { message: 'Proveedor de streaming inválido' }).optional(),
+    interaction_mode: z.enum(['broadcast', 'meeting'], { message: 'Modo de interacción inválido' }).optional(),
+  }).strip().superRefine(validateProviderRulesPartial),
+});
+
+/**
+ * POST /api/events/:id/renew-token
+ *
+ * Agora events: re-issues an RTC token for the caller's current role.
+ * Credentials: attendeeId+accessToken in the body, OR a host/admin JWT in the
+ * Authorization header (both optional here; the controller validates the
+ * combination).
+ */
+const renewTokenSchema = z.object({
+  body: z.object({
+    attendeeId: z.union([z.number(), z.string()]).optional(),
+    accessToken: z.string().optional(),
+  }).strip(),
+});
+
+/**
+ * POST /api/events/:id/whiteboard-token
+ *
+ * Agora events, optional whiteboard phase. Same credential model as
+ * /renew-token: attendee credentials in the body or host/admin JWT.
+ */
+const whiteboardTokenSchema = z.object({
+  body: z.object({
+    attendeeId: z.union([z.number(), z.string()]).optional(),
+    accessToken: z.string().optional(),
   }).strip(),
 });
 
@@ -169,6 +258,8 @@ module.exports = {
   createPaymentSchema,
   confirmPaymentSchema,
   getViewerTokenSchema,
+  renewTokenSchema,
+  whiteboardTokenSchema,
   createEventSchema,
   updateEventSchema,
   muteParticipantSchema,

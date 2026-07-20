@@ -50,8 +50,9 @@ export const fetchStoryVideos = async () => {
   }
 };
 
-// Helper function to get auth token from localStorage
-const getAuthToken = () => {
+// Helper function to get auth token from localStorage.
+// Exported: the Agora event-room socket join needs the raw JWT (host path).
+export const getAuthToken = () => {
   if (typeof window !== 'undefined') {
     return localStorage.getItem('token');
   }
@@ -1559,6 +1560,34 @@ export const eventsAPI = {
   getHostToken: async (eventId) => {
     return apiRequest(`/events/${eventId}/host-token`, {
       method: 'POST',
+    });
+  },
+
+  // Agora events: re-issue an RTC token for the caller's current role.
+  // Attendees pass their credentials; the host passes nothing (JWT header).
+  renewToken: async (eventId, attendeeId = null, accessToken = null) => {
+    const body = {};
+    if (attendeeId && accessToken) {
+      body.attendeeId = attendeeId;
+      body.accessToken = accessToken;
+    }
+    return apiRequest(`/events/${eventId}/renew-token`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  // Agora events, optional whiteboard phase: per-role whiteboard room token.
+  // Same credential model as renewToken.
+  getWhiteboardToken: async (eventId, attendeeId = null, accessToken = null) => {
+    const body = {};
+    if (attendeeId && accessToken) {
+      body.attendeeId = attendeeId;
+      body.accessToken = accessToken;
+    }
+    return apiRequest(`/events/${eventId}/whiteboard-token`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     });
   },
 

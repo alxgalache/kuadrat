@@ -3,9 +3,12 @@ const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { ApiError } = require('../middleware/errorHandler');
+const config = require('../config/env');
 const logger = require('../config/logger');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
+const agoraService = require('../services/agoraService');
+const whiteboardService = require('../services/whiteboardService');
 const stripeService = require('../services/stripeService');
 const { sendEventVerificationEmail, sendEventConfirmationEmail } = require('../services/emailService');
 
@@ -272,6 +275,41 @@ const getViewerToken = async (req, res, next) => {
       throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
     }
 
+    // ── Agora branch ─────────────────────────────────────────
+    if (event.provider === 'agora') {
+      if (!event.agora_channel_name) {
+        throw new ApiError(400, 'La sala aún no está disponible', 'Sala no disponible');
+      }
+
+      const uid = await agoraService.ensureAttendeeUid(id, attendee.id);
+      // meeting: everyone publishes (enters muted/cam-off client-side);
+      // broadcast: role follows the persisted promotion state. Chat bans do
+      // NOT affect the RTC token — chat runs on our Socket.IO room.
+      const role = event.interaction_mode === 'meeting' || attendee.speaker_granted === 1
+        ? 'publisher'
+        : 'subscriber';
+      const rtcToken = agoraService.generateRtcToken({
+        channel: event.agora_channel_name,
+        uid,
+        role,
+      });
+
+      // Mark as joined
+      await eventService.updateAttendeeStatus(attendeeId, 'joined');
+
+      return res.status(200).json({
+        success: true,
+        provider: 'agora',
+        appId: config.agora.appId,
+        channel: event.agora_channel_name,
+        uid,
+        rtcToken,
+        interactionMode: event.interaction_mode,
+        whiteboardAvailable: whiteboardService.isConfigured(),
+      });
+    }
+
+    // ── LiveKit branch (unchanged) ───────────────────────────
     if (!event.livekit_room_name) {
       throw new ApiError(400, 'La sala aún no está disponible', 'Sala no disponible');
     }
@@ -319,6 +357,31 @@ const getHostToken = async (req, res, next) => {
       throw new ApiError(403, 'Solo el host puede obtener este token', 'Acceso denegado');
     }
 
+    // ── Agora branch ─────────────────────────────────────────
+    if (event.provider === 'agora') {
+      if (!event.agora_channel_name) {
+        throw new ApiError(400, 'La sala aún no está disponible', 'Sala no disponible');
+      }
+
+      const rtcToken = agoraService.generateRtcToken({
+        channel: event.agora_channel_name,
+        uid: agoraService.HOST_UID,
+        role: 'publisher',
+      });
+
+      return res.status(200).json({
+        success: true,
+        provider: 'agora',
+        appId: config.agora.appId,
+        channel: event.agora_channel_name,
+        uid: agoraService.HOST_UID,
+        rtcToken,
+        interactionMode: event.interaction_mode,
+        whiteboardAvailable: whiteboardService.isConfigured(),
+      });
+    }
+
+    // ── LiveKit branch (unchanged) ───────────────────────────
     if (!event.livekit_room_name) {
       throw new ApiError(400, 'La sala aún no está disponible', 'Sala no disponible');
     }
@@ -332,6 +395,199 @@ const getHostToken = async (req, res, next) => {
       token,
       roomName: event.livekit_room_name,
       livekitUrl: process.env.LIVEKIT_URL,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/renew-token
+// Agora events: re-issue an RTC token for the caller's CURRENT role. Called by
+// the client on token-privilege-will-expire and after promote/demote. Accepts
+// attendee credentials in the body or a host/admin JWT in the header.
+// ---------------------------------------------------------------------------
+const renewToken = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attendeeId, accessToken } = req.body;
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+    if (event.provider !== 'agora') {
+      throw new ApiError(400, 'Este evento no admite renovación de token', 'Solicitud inválida');
+    }
+    if (event.status !== 'active') {
+      throw new ApiError(400, 'El evento no está activo', 'Evento no activo');
+    }
+    if (!event.agora_channel_name) {
+      throw new ApiError(400, 'La sala no está disponible', 'Sala no disponible');
+    }
+
+    // Attendee path: same re-validations as the token endpoint
+    if (attendeeId && accessToken) {
+      const attendee = await eventService.getAttendeeByAccessToken(id, accessToken);
+      if (!attendee || attendee.id !== attendeeId) {
+        throw new ApiError(403, 'Token de acceso inválido', 'Acceso denegado');
+      }
+      if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+        throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
+      }
+      if (await eventService.isEmailBanned(id, attendee.email)) {
+        throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
+      }
+      if (await eventService.isIpBanned(id, getClientIp(req))) {
+        throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
+      }
+
+      const uid = await agoraService.ensureAttendeeUid(id, attendee.id);
+      const role = event.interaction_mode === 'meeting' || attendee.speaker_granted === 1
+        ? 'publisher'
+        : 'subscriber';
+      const rtcToken = agoraService.generateRtcToken({
+        channel: event.agora_channel_name,
+        uid,
+        role,
+      });
+
+      return res.status(200).json({
+        success: true,
+        provider: 'agora',
+        appId: config.agora.appId,
+        channel: event.agora_channel_name,
+        uid,
+        rtcToken,
+        role,
+        interactionMode: event.interaction_mode,
+      });
+    }
+
+    // Host/admin path: JWT in the Authorization header
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      let decoded;
+      try {
+        decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+      } catch {
+        throw new ApiError(403, 'Credenciales inválidas', 'Acceso denegado');
+      }
+      if (decoded.id !== event.host_user_id && decoded.role !== 'admin') {
+        throw new ApiError(403, 'Solo el host puede renovar este token', 'Acceso denegado');
+      }
+
+      const rtcToken = agoraService.generateRtcToken({
+        channel: event.agora_channel_name,
+        uid: agoraService.HOST_UID,
+        role: 'publisher',
+      });
+
+      return res.status(200).json({
+        success: true,
+        provider: 'agora',
+        appId: config.agora.appId,
+        channel: event.agora_channel_name,
+        uid: agoraService.HOST_UID,
+        rtcToken,
+        role: 'publisher',
+        interactionMode: event.interaction_mode,
+      });
+    }
+
+    throw new ApiError(403, 'Credenciales requeridas', 'Acceso denegado');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/whiteboard-token
+// Agora events, optional whiteboard phase. Host (JWT): writer token + lazy
+// room creation. Attendees: reader (broadcast) or writer when the host
+// enabled "everyone writes" in meeting mode; requires the whiteboard to be
+// active (toggle state lives in the Socket.IO room).
+// ---------------------------------------------------------------------------
+const getWhiteboardToken = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attendeeId, accessToken } = req.body;
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+    if (event.provider !== 'agora') {
+      throw new ApiError(400, 'Este evento no admite pizarra', 'Solicitud inválida');
+    }
+    if (event.status !== 'active') {
+      throw new ApiError(400, 'El evento no está activo', 'Evento no activo');
+    }
+    if (!whiteboardService.isConfigured()) {
+      throw new ApiError(503, 'La pizarra interactiva no está configurada', 'Pizarra no disponible');
+    }
+
+    const { appIdentifier, region } = config.agoraWhiteboard;
+
+    // Host/admin path: writer token + lazy room creation on first activation
+    const authHeader = req.headers.authorization;
+    if (!attendeeId && authHeader?.startsWith('Bearer ')) {
+      let decoded;
+      try {
+        decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+      } catch {
+        throw new ApiError(403, 'Credenciales inválidas', 'Acceso denegado');
+      }
+      if (decoded.id !== event.host_user_id && decoded.role !== 'admin') {
+        throw new ApiError(403, 'Solo el host puede activar la pizarra', 'Acceso denegado');
+      }
+
+      const uuid = await whiteboardService.ensureRoom(event);
+      return res.status(200).json({
+        success: true,
+        appIdentifier,
+        region,
+        uuid,
+        roomToken: whiteboardService.generateRoomToken(uuid, 'writer'),
+        role: 'writer',
+        uid: `host-${decoded.id}`,
+      });
+    }
+
+    // Attendee path: same re-validations as the token endpoint
+    if (!attendeeId || !accessToken) {
+      throw new ApiError(403, 'Credenciales requeridas', 'Acceso denegado');
+    }
+    const attendee = await eventService.getAttendeeByAccessToken(id, accessToken);
+    if (!attendee || attendee.id !== attendeeId) {
+      throw new ApiError(403, 'Token de acceso inválido', 'Acceso denegado');
+    }
+    if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+      throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
+    }
+    if (await eventService.isEmailBanned(id, attendee.email)) {
+      throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
+    }
+    if (await eventService.isIpBanned(id, getClientIp(req))) {
+      throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
+    }
+
+    // The host activates first (creating the room); attendees need it active
+    const eventSocket = req.app.get('eventSocket');
+    const wbState = eventSocket?.getWhiteboardState(id) || { active: false, everyoneWrites: false };
+    if (!wbState.active || !event.whiteboard_room_uuid) {
+      throw new ApiError(400, 'La pizarra no está activa', 'Pizarra no disponible');
+    }
+
+    const role = event.interaction_mode === 'meeting' && wbState.everyoneWrites ? 'writer' : 'reader';
+    return res.status(200).json({
+      success: true,
+      appIdentifier,
+      region,
+      uuid: event.whiteboard_room_uuid,
+      roomToken: whiteboardService.generateRoomToken(event.whiteboard_room_uuid, role),
+      role,
+      uid: `viewer-${attendee.id}`,
     });
   } catch (error) {
     next(error);
@@ -358,8 +614,9 @@ const endEvent = async (req, res, next) => {
       throw new ApiError(403, 'Solo el host puede finalizar este evento', 'Acceso denegado');
     }
 
-    // Delete LiveKit room (only for live format events)
-    if (current.format !== 'video' && current.livekit_room_name) {
+    // Delete LiveKit room (only for live format LiveKit events; Agora channels
+    // are implicit — nothing to delete, clients leave() on event_ended)
+    if (current.format !== 'video' && current.provider !== 'agora' && current.livekit_room_name) {
       try {
         await livekitService.deleteRoom(current.livekit_room_name);
       } catch (lkError) {
@@ -383,6 +640,59 @@ const endEvent = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
+// Agora moderation helpers (shared with eventAdminController)
+// Promotion state persists in event_attendees.speaker_granted (drives token
+// renewals); the kicking rule is belt-and-braces enforcement (design D5/R2),
+// so REST failures are logged but never block the flow. Socket signals tell
+// the target client to renew its token and (un)publish.
+// ---------------------------------------------------------------------------
+async function resolveAgoraAttendee(event, identity) {
+  if (!identity.startsWith('viewer-')) {
+    throw new ApiError(400, 'Participante inválido', 'Solicitud inválida');
+  }
+  const attendeeId = identity.replace('viewer-', '');
+  const attendee = await eventService.getAttendeeById(attendeeId);
+  if (!attendee || attendee.event_id !== event.id) {
+    throw new ApiError(404, 'Participante no encontrado', 'Error');
+  }
+  return attendee;
+}
+
+async function promoteAgoraParticipant(app, event, identity) {
+  const attendee = await resolveAgoraAttendee(event, identity);
+
+  await eventService.setSpeakerGranted(attendee.id, true);
+
+  if (attendee.agora_uid != null) {
+    try {
+      await agoraService.liftPublishBan(event.agora_channel_name, Number(attendee.agora_uid));
+    } catch (err) {
+      logger.warn({ err, identity }, '[eventController] Could not lift Agora publish ban');
+    }
+  }
+
+  const eventSocket = app.get('eventSocket');
+  if (eventSocket) eventSocket.notifyPromoted(event.id, identity);
+}
+
+async function demoteAgoraParticipant(app, event, identity) {
+  const attendee = await resolveAgoraAttendee(event, identity);
+
+  await eventService.setSpeakerGranted(attendee.id, false);
+
+  if (attendee.agora_uid != null) {
+    try {
+      await agoraService.banPublish(event.agora_channel_name, Number(attendee.agora_uid));
+    } catch (err) {
+      logger.warn({ err, identity }, '[eventController] Could not create Agora publish ban');
+    }
+  }
+
+  const eventSocket = app.get('eventSocket');
+  if (eventSocket) eventSocket.notifyDemoted(event.id, identity);
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/events/:id/participants/:identity/promote
 // Grant canPublish permission (host-only)
 // ---------------------------------------------------------------------------
@@ -404,6 +714,13 @@ const promoteParticipant = async (req, res, next) => {
       throw new ApiError(403, 'Solo el host puede promover participantes', 'Acceso denegado');
     }
 
+    // ── Agora branch ─────────────────────────────────────────
+    if (event.provider === 'agora') {
+      await promoteAgoraParticipant(req.app, event, identity);
+      return res.status(200).json({ success: true });
+    }
+
+    // ── LiveKit branch (unchanged) ───────────────────────────
     if (!event.livekit_room_name) {
       throw new ApiError(400, 'La sala no está disponible', 'Sala no disponible');
     }
@@ -442,6 +759,13 @@ const demoteParticipant = async (req, res, next) => {
       throw new ApiError(403, 'Solo el host puede gestionar participantes', 'Acceso denegado');
     }
 
+    // ── Agora branch ─────────────────────────────────────────
+    if (event.provider === 'agora') {
+      await demoteAgoraParticipant(req.app, event, identity);
+      return res.status(200).json({ success: true });
+    }
+
+    // ── LiveKit branch (unchanged) ───────────────────────────
     if (!event.livekit_room_name) {
       throw new ApiError(400, 'La sala no está disponible', 'Sala no disponible');
     }
@@ -624,7 +948,10 @@ const banFromChat = async (req, res, next) => {
     }
 
     const event = await eventService.getEventById(id);
-    if (!event || event.status !== 'active' || !event.livekit_room_name) {
+    const roomAvailable = event?.provider === 'agora'
+      ? !!event?.agora_channel_name
+      : !!event?.livekit_room_name;
+    if (!event || event.status !== 'active' || !roomAvailable) {
       throw new ApiError(400, 'Evento no disponible', 'Error');
     }
 
@@ -644,6 +971,15 @@ const banFromChat = async (req, res, next) => {
     const alreadyBanned = await eventService.isAttendeeChatBanned(attendeeId);
     if (alreadyBanned) {
       return res.status(200).json({ success: true, alreadyBanned: true });
+    }
+
+    if (event.provider === 'agora') {
+      // Agora: the chat runs on our Socket.IO room — persist and broadcast,
+      // the socket server enforces the ban on every message
+      await eventService.markAttendeeChatBanned(attendeeId);
+      const eventSocket = req.app.get('eventSocket');
+      if (eventSocket) eventSocket.notifyChatBanned(id, identity);
+      return res.status(200).json({ success: true });
     }
 
     // Revoke canPublishData in LiveKit
@@ -681,7 +1017,10 @@ const reportSpam = async (req, res, next) => {
     }
 
     const event = await eventService.getEventById(id);
-    if (!event || event.status !== 'active' || !event.livekit_room_name) {
+    const roomAvailable = event?.provider === 'agora'
+      ? !!event?.agora_channel_name
+      : !!event?.livekit_room_name;
+    if (!event || event.status !== 'active' || !roomAvailable) {
       throw new ApiError(400, 'Evento no disponible', 'Error');
     }
 
@@ -724,6 +1063,15 @@ const reportSpam = async (req, res, next) => {
     const alreadyChatBanned = await eventService.isAttendeeChatBanned(spammerAttendeeId);
     if (alreadyChatBanned) {
       return res.status(200).json({ success: true, alreadyBanned: true });
+    }
+
+    if (event.provider === 'agora') {
+      // Agora: persist + broadcast; the Socket.IO chat server enforces the ban
+      await eventService.markAttendeeChatBanned(spammerAttendeeId);
+      await eventService.banAttendee(id, spammer.email, spammer.ip_address, 'spam');
+      const eventSocket = req.app.get('eventSocket');
+      if (eventSocket) eventSocket.notifyChatBanned(id, identity);
+      return res.status(200).json({ success: true });
     }
 
     // Chat-ban: revoke canPublishData in LiveKit (stays in room, can't chat)
@@ -860,6 +1208,8 @@ module.exports = {
   confirmPayment,
   getViewerToken,
   getHostToken,
+  renewToken,
+  getWhiteboardToken,
   endEvent,
   promoteParticipant,
   demoteParticipant,
@@ -868,4 +1218,7 @@ module.exports = {
   sendVerification,
   verifyEmail,
   verifyPassword,
+  // Agora moderation helpers (reused by eventAdminController)
+  promoteAgoraParticipant,
+  demoteAgoraParticipant,
 };

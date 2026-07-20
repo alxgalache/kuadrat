@@ -67,9 +67,18 @@ export const BID_PHASES = {
 export const STALE_ARRIVED_DAYS = 10;
 export const STALE_SENT_DAYS = 15;
 
-// Event spam detection
+// Event spam detection (same thresholds enforced server-side in
+// api/socket/eventSocket.js for Agora rooms)
 export const SPAM_MAX_MESSAGES = 10;
 export const SPAM_WINDOW_MS = 10000;
+
+// Agora live rooms
+// volume-indicator reports levels 0-100 every ~2s; above this threshold the
+// participant shows the green "speaking" ring (parity with useIsSpeaking).
+export const AGORA_SPEAKING_VOLUME_THRESHOLD = 10;
+// Hard cap for meeting mode capacity (Agora limit: 17 simultaneous video
+// senders → 16 attendees + host). Mirrored by the API validators.
+export const MEETING_MAX_ATTENDEES = 16;
 
 // Public brand name — the user-facing marketplace brand.
 // "Kuadrat" is only the internal codename; any text shown to buyers, sellers,
