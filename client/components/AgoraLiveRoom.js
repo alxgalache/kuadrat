@@ -17,29 +17,48 @@ const WhiteboardPanel = dynamic(
 
 const HOST_RTC_UID = 1
 
-// Fullscreen the given element (the container of an Agora video track). iOS Safari
-// only allows fullscreen on <video>, so fall back to webkitEnterFullscreen there.
-function enterFullscreen(el) {
-  if (!el) return
-  if (document.fullscreenElement) {
-    document.exitFullscreen?.()
-    return
-  }
-  if (el.requestFullscreen) {
-    el.requestFullscreen().catch((err) => console.warn('Fullscreen error:', err))
-    return
-  }
-  const video = el.querySelector('video')
-  if (video?.webkitEnterFullscreen) {
-    try { video.webkitEnterFullscreen() } catch { /* unsupported */ }
-  }
+const THEATER_STRIP_PAGE = 5
+
+// ---------------------------------------------------------------------------
+// Theater mode — fullscreen overlay with a paginated participant strip
+// ---------------------------------------------------------------------------
+// State-driven overlay (fixed inset-0). Native browser fullscreen is requested
+// on the wrapper as a progressive enhancement (iOS Safari has no element
+// fullscreen; the overlay alone covers the viewport there). The wrapper is
+// ALWAYS mounted around the featured media so the whiteboard never changes its
+// position in the React tree — a move would destroy and rejoin the fastboard
+// room, losing the writable session.
+function TheaterShell({ open, onClose, normalClassName = '', children }) {
+  const shellRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const el = shellRef.current
+    if (el?.requestFullscreen) el.requestFullscreen().catch(() => { /* iOS / denied */ })
+    // Escape must work even without native fullscreen (overlay-only mode)
+    const onKeyDown = (e) => { if (e.key === 'Escape') onClose() }
+    const onFullscreenChange = () => { if (!document.fullscreenElement) onClose() }
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('fullscreenchange', onFullscreenChange)
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => { /* already out */ })
+    }
+  }, [open, onClose])
+
+  return (
+    <div ref={shellRef} className={open ? 'fixed inset-0 z-[60] bg-black flex flex-col' : normalClassName}>
+      {children}
+    </div>
+  )
 }
 
-function FullscreenButton({ targetRef, className = '' }) {
+function TheaterButton({ onOpen, className = '' }) {
   return (
     <button
       type="button"
-      onClick={() => enterFullscreen(targetRef.current)}
+      onClick={onOpen}
       className={`rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors ${className}`}
       title="Pantalla completa"
     >
@@ -47,6 +66,132 @@ function FullscreenButton({ targetRef, className = '' }) {
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
       </svg>
     </button>
+  )
+}
+
+// Overlay chrome: hide/show the strip + exit theater (top-right corner, clear
+// of the fastboard toolbar which lives on the left/bottom edges)
+function TheaterChrome({ stripVisible, onToggleStrip, onClose }) {
+  return (
+    <div className="absolute top-3 right-3 z-20 flex gap-x-2">
+      <button
+        type="button"
+        onClick={onToggleStrip}
+        className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
+        title={stripVisible ? 'Ocultar participantes' : 'Mostrar participantes'}
+      >
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+          {stripVisible ? (
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          ) : (
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+          )}
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
+        title="Salir de pantalla completa"
+      >
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+// Bottom strip: windows of 5 tiles with endless (modulo) rotation. Keeping the
+// component mounted while hidden preserves the pagination position; only the
+// visible window mounts tiles (bounded video decode cost with 16 attendees).
+function TheaterStrip({ entries, visible, renderTile }) {
+  const [start, setStart] = useState(0)
+  const count = entries.length
+  const paged = count > THEATER_STRIP_PAGE
+
+  const windowEntries = useMemo(() => {
+    if (!paged) return entries
+    return Array.from({ length: THEATER_STRIP_PAGE }, (_, i) => entries[(start + i) % count])
+  }, [entries, paged, start, count])
+
+  if (!visible || count === 0) return null
+
+  return (
+    <div className="flex-shrink-0 flex items-center justify-center gap-x-2 px-3 pb-3 pt-2">
+      {paged && (
+        <button
+          type="button"
+          onClick={() => setStart((s) => ((s - THEATER_STRIP_PAGE) % count + count) % count)}
+          className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors flex-shrink-0"
+          title="Participantes anteriores"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+        </button>
+      )}
+      <div className="flex items-end gap-x-2">
+        {windowEntries.map(renderTile)}
+      </div>
+      {paged && (
+        <button
+          type="button"
+          onClick={() => setStart((s) => (s + THEATER_STRIP_PAGE) % count)}
+          className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors flex-shrink-0"
+          title="Participantes siguientes"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
+// Compact square camera tile for the meeting theater strip (no moderation menu)
+function TheaterMeetingTile({ entry, isLocal, room, remoteByUid, speakingUids, localUid }) {
+  const remoteUser = entry.agoraUid != null ? remoteByUid.get(Number(entry.agoraUid)) : null
+  const videoTrack = isLocal
+    ? (room.camEnabled ? room.camTrackRef.current : null)
+    : (remoteUser?.videoTrack || null)
+  const micActive = isLocal ? room.micEnabled : !!remoteUser?.hasAudio
+  const speaking = speakingUids.has(isLocal ? localUid : Number(entry.agoraUid))
+
+  const initial = (entry.name || '?').charAt(0).toUpperCase()
+  const displayName = isLocal ? `${entry.name} (Tu)` : entry.name
+
+  return (
+    <div
+      className={`w-16 h-16 sm:w-24 sm:h-24 flex-shrink-0 bg-gray-900 rounded-lg overflow-hidden relative transition-shadow duration-300 ${
+        speaking ? 'ring-2 ring-green-400' : ''
+      }`}
+      style={speaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+      title={displayName}
+    >
+      {videoTrack ? (
+        <AgoraVideo track={videoTrack} className="w-full h-full" fit="cover" />
+      ) : (
+        <div className="flex items-center justify-center h-full">
+          <span className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-gray-700 text-sm sm:text-lg font-semibold text-white">
+            {initial}
+          </span>
+        </div>
+      )}
+      <div className="absolute bottom-0 inset-x-0 flex items-center gap-x-1 bg-black/50 px-1 py-0.5">
+        <span className="text-[10px] text-white truncate flex-1">{displayName}</span>
+        {micActive ? (
+          <svg className="h-2.5 w-2.5 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+          </svg>
+        ) : (
+          <svg className="h-2.5 w-2.5 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+          </svg>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -270,6 +415,7 @@ export default function AgoraLiveRoom({
       roomToken={wbCreds.roomToken}
       uid={wbCreds.uid || socket.selfIdentity || String(uid)}
       writable={wbCreds.role === 'writer'}
+      displayName={selfPresence?.name || ''}
     />
   ) : null
 
@@ -441,7 +587,17 @@ function BroadcastArea({
   whiteboardElement, whiteboard,
 }) {
   const hostRemote = remoteByUid.get(HOST_RTC_UID)
-  const hostVideoRef = useRef(null)
+
+  const [theaterOpen, setTheaterOpen] = useState(false)
+  const [stripVisible, setStripVisible] = useState(true)
+  const closeTheater = useCallback(() => setTheaterOpen(false), [])
+  const openTheater = useCallback(() => setTheaterOpen(true), [])
+
+  // Theater strip: everyone except the host (featured above)
+  const stripEntries = useMemo(
+    () => socket.presence.filter((p) => !p.isHost),
+    [socket.presence]
+  )
 
   // Host area track: local preview for the host (screen preferred), the
   // host's single published track for viewers (screen replaces camera)
@@ -463,65 +619,103 @@ function BroadcastArea({
 
   return (
     <>
-      {whiteboardElement ? (
-        <>
-          {/* Whiteboard takes the main area; host video shrinks to a tile
-              (audio keeps flowing untouched) */}
-          <div className="rounded-lg overflow-hidden aspect-video w-full relative border border-gray-200 bg-white">
-            {whiteboardElement}
-          </div>
-          <div className="mt-3 flex">
-            <div
-              className={`bg-black rounded-lg overflow-hidden aspect-video w-48 relative transition-shadow duration-300 ${
-                hostSpeaking ? 'ring-2 ring-green-400' : ''
-              }`}
-              style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+      <TheaterShell open={theaterOpen} onClose={closeTheater}>
+        {whiteboardElement ? (
+          <>
+            {/* Whiteboard takes the main area; host video shrinks to a tile
+                (audio keeps flowing untouched) */}
+            <div className={theaterOpen
+              ? 'relative flex-1 min-h-0 bg-white'
+              : 'rounded-lg overflow-hidden aspect-video w-full relative border border-gray-200 bg-white'}
             >
-              {hostTrack ? (
-                <AgoraVideo track={hostTrack} className="w-full h-full" fit="cover" />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-white text-xs">{isHost ? 'Tu cámara' : 'Host'}</p>
-                </div>
+              {whiteboardElement}
+              {/* Theater for the whiteboard — host and viewers alike */}
+              {!theaterOpen && (
+                <TheaterButton onOpen={openTheater} className="absolute top-2 right-2 z-10" />
               )}
             </div>
-          </div>
-          <SpeakingPulseStyle />
-        </>
-      ) : (
-      /* Host video */
-      <div
-        ref={hostVideoRef}
-        className={`bg-black rounded-lg overflow-hidden aspect-video w-full relative transition-shadow duration-300 ${
-          hostSpeaking ? 'ring-2 ring-green-400' : ''
-        }`}
-        style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
-      >
-        {hostTrack ? (
-          <AgoraVideo track={hostTrack} className="w-full h-full" fit="contain" />
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full gap-2">
-            {isHost ? (
-              <>
-                <p className="text-white text-sm">Tu vista de presentador</p>
-                <p className="text-gray-400 text-xs">Activa tu cámara con el control de abajo</p>
-              </>
-            ) : (
-              <p className="text-white text-sm">Esperando al host...</p>
+            {!theaterOpen && (
+              <div className="mt-3 flex">
+                <div
+                  className={`bg-black rounded-lg overflow-hidden aspect-video w-48 relative transition-shadow duration-300 ${
+                    hostSpeaking ? 'ring-2 ring-green-400' : ''
+                  }`}
+                  style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+                >
+                  {hostTrack ? (
+                    <AgoraVideo track={hostTrack} className="w-full h-full" fit="cover" />
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-white text-xs">{isHost ? 'Tu cámara' : 'Host'}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
-          </div>
+          </>
+        ) : (
+        /* Host video */
+        <div
+          className={`relative transition-shadow duration-300 ${
+            theaterOpen ? 'flex-1 min-h-0 bg-black' : 'bg-black rounded-lg overflow-hidden aspect-video w-full'
+          } ${hostSpeaking ? 'ring-2 ring-green-400' : ''}`}
+          style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+        >
+          {hostTrack ? (
+            <AgoraVideo track={hostTrack} className="w-full h-full" fit="contain" />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-2">
+              {isHost ? (
+                <>
+                  <p className="text-white text-sm">Tu vista de presentador</p>
+                  <p className="text-gray-400 text-xs">Activa tu cámara con el control de abajo</p>
+                </>
+              ) : (
+                <p className="text-white text-sm">Esperando al host...</p>
+              )}
+            </div>
+          )}
+
+          {/* Theater on the host video (screen or camera) — viewers only */}
+          {!theaterOpen && !isHost && hostTrack && (
+            <TheaterButton onOpen={openTheater} className="absolute bottom-2 right-2" />
+          )}
+        </div>
         )}
 
-        {/* Fullscreen the host video (screen or camera) — viewers only */}
-        {!isHost && hostTrack && (
-          <FullscreenButton targetRef={hostVideoRef} className="absolute bottom-2 right-2" />
+        {theaterOpen && (
+          <>
+            <TheaterChrome
+              stripVisible={stripVisible}
+              onToggleStrip={() => setStripVisible((v) => !v)}
+              onClose={closeTheater}
+            />
+            {/* Broadcast strip: the avatar+mic tiles of the normal view (state only) */}
+            <TheaterStrip
+              entries={stripEntries}
+              visible={stripVisible}
+              renderTile={(p) => (
+                <AgoraParticipantTile
+                  key={p.identity}
+                  entry={p}
+                  isLocal={p.identity === socket.selfIdentity}
+                  viewerIsHost={false}
+                  remoteByUid={remoteByUid}
+                  speakingUids={room.speakingUids}
+                  localMicEnabled={room.micEnabled}
+                  amSpeaker={amSpeaker}
+                  wasPromoted={false}
+                  readOnly
+                />
+              )}
+            />
+          </>
         )}
         <SpeakingPulseStyle />
-      </div>
-      )}
+      </TheaterShell>
 
       {/* Promoted viewers grid */}
-      {promotedVideoUsers.length > 0 && (
+      {!theaterOpen && promotedVideoUsers.length > 0 && (
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
           {promotedVideoUsers.map((u) => (
             <div
@@ -537,18 +731,21 @@ function BroadcastArea({
         </div>
       )}
 
-      {/* Participant grid — below host video */}
-      <AgoraParticipantGrid
-        presence={socket.presence}
-        selfIdentity={socket.selfIdentity}
-        remoteByUid={remoteByUid}
-        speakingUids={room.speakingUids}
-        viewerIsHost={isHost}
-        eventId={eventId}
-        localMicEnabled={room.micEnabled}
-        amSpeaker={amSpeaker}
-        onSelfMute={() => room.setMicrophoneEnabled(false)}
-      />
+      {/* Participant grid — below host video (unmounted while the theater is
+          open: its tiles reappear in the theater strip) */}
+      {!theaterOpen && (
+        <AgoraParticipantGrid
+          presence={socket.presence}
+          selfIdentity={socket.selfIdentity}
+          remoteByUid={remoteByUid}
+          speakingUids={room.speakingUids}
+          viewerIsHost={isHost}
+          eventId={eventId}
+          localMicEnabled={room.micEnabled}
+          amSpeaker={amSpeaker}
+          onSelfMute={() => room.setMicrophoneEnabled(false)}
+        />
+      )}
 
       {/* Toggle controls for host */}
       {isHost && (
@@ -872,9 +1069,12 @@ function AgoraParticipantGrid({
   )
 }
 
+// `readOnly` renders the tile as pure state (theater strip): no click actions,
+// name styled for the dark overlay background.
 function AgoraParticipantTile({
   entry, isLocal, viewerIsHost, remoteByUid, speakingUids,
   localMicEnabled, amSpeaker, wasPromoted, onPromote, onDemote, onSelfMute,
+  readOnly = false,
 }) {
   const isHostParticipant = entry.isHost
   const handRaised = entry.handRaised
@@ -891,14 +1091,14 @@ function AgoraParticipantTile({
   const handleClick = useCallback(() => {
     if (isHostParticipant) return
     if (isLocal) {
-      if (canPublish && isMicActive) onSelfMute()
+      if (canPublish && isMicActive) onSelfMute?.()
       return
     }
     if (!viewerIsHost) return
     if (canPublish) {
-      onDemote(entry.identity)
+      onDemote?.(entry.identity)
     } else {
-      onPromote(entry.identity)
+      onPromote?.(entry.identity)
     }
   }, [isLocal, viewerIsHost, isHostParticipant, canPublish, isMicActive, onSelfMute, onPromote, onDemote, entry.identity])
 
@@ -948,9 +1148,9 @@ function AgoraParticipantTile({
     <div className="flex flex-col items-center gap-1">
       <button
         type="button"
-        onClick={handleClick}
-        className={`relative w-14 h-14 rounded-lg flex items-center justify-center text-lg font-semibold transition-shadow duration-300 ${getTileClasses()}`}
-        title={getTitle()}
+        onClick={readOnly ? undefined : handleClick}
+        className={`relative w-14 h-14 rounded-lg flex items-center justify-center text-lg font-semibold transition-shadow duration-300 ${getTileClasses()} ${readOnly ? '!cursor-default' : ''}`}
+        title={readOnly ? (isLocal ? '(Tu)' : displayName) : getTitle()}
       >
         {initial}
 
@@ -965,9 +1165,9 @@ function AgoraParticipantTile({
         {!isHostParticipant && (canPublish && isMicActive ? <ActiveMicBadge /> : <MutedMicBadge />)}
       </button>
       <span className={`text-xs text-center max-w-16 truncate ${
-        isHostParticipant ? 'text-gray-900 font-semibold'
-        : isLocal ? 'text-red-600 font-medium'
-        : 'text-gray-600'
+        isHostParticipant ? (readOnly ? 'text-white font-semibold' : 'text-gray-900 font-semibold')
+        : isLocal ? (readOnly ? 'text-red-400 font-medium' : 'text-red-600 font-medium')
+        : (readOnly ? 'text-gray-300' : 'text-gray-600')
       }`}>{isHostParticipant ? 'Host' : shortName}</span>
     </div>
   )
@@ -977,7 +1177,6 @@ function AgoraParticipantTile({
 // Meeting mode — Meet-style grid of large tiles, self-serve controls for all
 // ---------------------------------------------------------------------------
 function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, whiteboardElement, whiteboard }) {
-  const featuredRef = useRef(null)
   const hostEntry = socket.presence.find((p) => p.isHost)
   const hostScreenSharing = !whiteboardElement && !!hostEntry?.screenSharing
 
@@ -986,6 +1185,23 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
   // screen; otherwise the host watches everyone in an equal grid (own tile first),
   // which is better for interacting with all participants.
   const showFeatured = !!whiteboardElement || hostScreenSharing || !isHost
+
+  const [theaterOpen, setTheaterOpen] = useState(false)
+  const [stripVisible, setStripVisible] = useState(true)
+  const closeTheater = useCallback(() => setTheaterOpen(false), [])
+  const openTheater = useCallback(() => setTheaterOpen(true), [])
+
+  // The featured area can disappear live (the host stops sharing / closes the
+  // whiteboard and drops to the equal grid): nothing left to feature
+  useEffect(() => {
+    if (theaterOpen && !showFeatured) setTheaterOpen(false)
+  }, [theaterOpen, showFeatured])
+
+  // Theater strip: everyone except the host (featured above)
+  const stripEntries = useMemo(
+    () => socket.presence.filter((p) => !p.isHost),
+    [socket.presence]
+  )
 
   // Host's own featured track (screen has priority over camera); the host sees their
   // own track, everyone else sees the host's remote track.
@@ -1005,42 +1221,78 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
 
   return (
     <>
-      {showFeatured && (whiteboardElement ? (
-        <div className="rounded-lg overflow-hidden aspect-video w-full relative border border-gray-200 bg-white mb-3 flex-shrink-0">
-          {whiteboardElement}
-        </div>
-      ) : (
-        <div
-          ref={featuredRef}
-          className={`bg-black rounded-lg overflow-hidden aspect-video w-full relative mb-3 flex-shrink-0 transition-shadow duration-300 ${
-            hostSpeaking ? 'ring-2 ring-green-400' : ''
-          }`}
-          style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
-        >
-          {hostVideoTrack ? (
-            <AgoraVideo track={hostVideoTrack} className="w-full h-full" fit="contain" />
+      {showFeatured && (
+        <TheaterShell open={theaterOpen} onClose={closeTheater} normalClassName="mb-3 flex-shrink-0">
+          {whiteboardElement ? (
+            <div className={theaterOpen
+              ? 'relative flex-1 min-h-0 bg-white'
+              : 'rounded-lg overflow-hidden aspect-video w-full relative border border-gray-200 bg-white'}
+            >
+              {whiteboardElement}
+              {/* Theater for the whiteboard — host and attendees alike */}
+              {!theaterOpen && (
+                <TheaterButton onOpen={openTheater} className="absolute top-2 right-2 z-10" />
+              )}
+            </div>
           ) : (
-            <div className="flex items-center justify-center h-full">
-              <span className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-700 text-3xl font-semibold text-white">
-                {(hostEntry?.name || 'H').charAt(0).toUpperCase()}
-              </span>
+            <div
+              className={`relative transition-shadow duration-300 ${
+                theaterOpen ? 'flex-1 min-h-0 bg-black' : 'bg-black rounded-lg overflow-hidden aspect-video w-full'
+              } ${hostSpeaking ? 'ring-2 ring-green-400' : ''}`}
+              style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+            >
+              {hostVideoTrack ? (
+                <AgoraVideo track={hostVideoTrack} className="w-full h-full" fit="contain" />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <span className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-700 text-3xl font-semibold text-white">
+                    {(hostEntry?.name || 'H').charAt(0).toUpperCase()}
+                  </span>
+                </div>
+              )}
+              <div className="absolute bottom-1 left-1 bg-black/50 rounded px-1.5 py-0.5">
+                <span className="text-xs text-white">
+                  {hostEntry?.name || 'Host'}{hostScreenSharing ? ' — pantalla' : ''}
+                </span>
+              </div>
+              {/* Theater whenever the featured area has content (camera or screen) */}
+              {!theaterOpen && hostVideoTrack && (
+                <TheaterButton onOpen={openTheater} className="absolute bottom-2 right-2" />
+              )}
             </div>
           )}
-          <div className="absolute bottom-1 left-1 bg-black/50 rounded px-1.5 py-0.5">
-            <span className="text-xs text-white">
-              {hostEntry?.name || 'Host'}{hostScreenSharing ? ' — pantalla' : ''}
-            </span>
-          </div>
-          {/* Attendees can fullscreen the shared screen */}
-          {hostScreenSharing && (
-            <FullscreenButton targetRef={featuredRef} className="absolute bottom-2 right-2" />
+          {theaterOpen && (
+            <>
+              <TheaterChrome
+                stripVisible={stripVisible}
+                onToggleStrip={() => setStripVisible((v) => !v)}
+                onClose={closeTheater}
+              />
+              {/* Meeting strip: compact square camera tiles */}
+              <TheaterStrip
+                entries={stripEntries}
+                visible={stripVisible}
+                renderTile={(p) => (
+                  <TheaterMeetingTile
+                    key={p.identity}
+                    entry={p}
+                    isLocal={p.identity === socket.selfIdentity}
+                    room={room}
+                    remoteByUid={remoteByUid}
+                    speakingUids={room.speakingUids}
+                    localUid={localUid}
+                  />
+                )}
+              />
+            </>
           )}
-        </div>
-      ))}
+        </TheaterShell>
+      )}
 
-      {/* Camera tiles — rows of 3 (2 on mobile) */}
-      {gridEntries.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+      {/* Camera tiles — rows of 5 square tiles (all breakpoints); unmounted
+          while the theater is open so each track has a single container */}
+      {!theaterOpen && gridEntries.length > 0 && (
+        <div className="grid grid-cols-5 gap-2">
           {gridEntries.map((p) => (
             <MeetingTile
               key={p.identity}
@@ -1095,7 +1347,7 @@ function MeetingTile({ entry, isLocal, room, remoteByUid, speakingUids, viewerIs
 
   return (
     <div
-      className={`bg-black rounded-lg overflow-hidden aspect-video relative transition-shadow duration-300 ${
+      className={`bg-black rounded-lg overflow-hidden aspect-square relative transition-shadow duration-300 ${
         speaking ? 'ring-2 ring-green-400' : ''
       }`}
       style={speaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
@@ -1104,15 +1356,15 @@ function MeetingTile({ entry, isLocal, room, remoteByUid, speakingUids, viewerIs
         <AgoraVideo track={videoTrack} className="w-full h-full" fit="cover" />
       ) : (
         <div className="flex items-center justify-center h-full">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-700 text-2xl font-semibold text-white">
+          <span className="flex h-10 w-10 text-lg sm:h-16 sm:w-16 sm:text-2xl items-center justify-center rounded-full bg-gray-700 font-semibold text-white">
             {initial}
           </span>
         </div>
       )}
 
       {/* Name + mic badge */}
-      <div className="absolute bottom-1 left-1 flex items-center gap-x-1.5 bg-black/50 rounded px-1.5 py-0.5">
-        <span className="text-xs text-white">{displayName}</span>
+      <div className="absolute bottom-1 left-1 max-w-[calc(100%-0.5rem)] flex items-center gap-x-1.5 bg-black/50 rounded px-1.5 py-0.5">
+        <span className="text-xs text-white truncate">{displayName}</span>
         {micActive ? (
           <svg className="h-3 w-3 text-green-400" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />

@@ -35,8 +35,10 @@ const READER_UI_CONFIG = {
  * @param {string} props.roomToken - Per-role room token from the backend
  * @param {string} props.uid - Unique member id (our event identity)
  * @param {boolean} props.writable - true = writer role, false = reader
+ * @param {string} [props.displayName] - Real user name shown next to the live
+ *   cursor (window-manager resolves it as payload.nickName || memberId)
  */
-export default function WhiteboardPanel({ appIdentifier, region, uuid, roomToken, uid, writable }) {
+export default function WhiteboardPanel({ appIdentifier, region, uuid, roomToken, uid, writable, displayName = '' }) {
   const containerRef = useRef(null)
   const [loading, setLoading] = useState(true)
 
@@ -49,7 +51,13 @@ export default function WhiteboardPanel({ appIdentifier, region, uuid, roomToken
       try {
         const fastboard = await createFastboard({
           sdkConfig: { appIdentifier, region },
-          joinRoom: { uid, uuid, roomToken, isWritable: !!writable },
+          joinRoom: {
+            uid,
+            uuid,
+            roomToken,
+            isWritable: !!writable,
+            ...(displayName ? { userPayload: { nickName: displayName } } : {}),
+          },
         })
         if (cancelled || !containerRef.current) {
           fastboard.destroy()
@@ -68,7 +76,7 @@ export default function WhiteboardPanel({ appIdentifier, region, uuid, roomToken
       try { ui?.destroy() } catch { /* already gone */ }
       try { app?.destroy() } catch { /* already gone */ }
     }
-  }, [appIdentifier, region, uuid, roomToken, uid, writable])
+  }, [appIdentifier, region, uuid, roomToken, uid, writable, displayName])
 
   return (
     <div className="w-full h-full bg-white relative">
