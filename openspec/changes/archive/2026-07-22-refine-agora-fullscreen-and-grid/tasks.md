@@ -30,10 +30,10 @@
 
 ## 6. Verificación
 
-- [ ] 6.1 Verificar grid meeting: escritorio y móvil muestran filas de 5 tiles cuadrados 1:1 con recorte centrado; avatar cuando la cámara está apagada; broadcast sin cambios de grid.
-- [ ] 6.2 Verificar teatro meeting (asistente): cámara del host, pantalla compartida y pizarra maximizables; banda con tiles de cámara; con >5 participantes las flechas rotan en bucle de 5 en 5 en ambos sentidos; botón ocultar/mostrar banda; salida con ✕, Escape y fullscreen nativo; al salir el layout vuelve sin recargar y sin cortes de audio.
-- [ ] 6.3 Verificar teatro broadcast (viewer): vídeo del host y pizarra maximizables; banda con tiles avatar+micro (estados como la vista normal).
-- [ ] 6.4 Verificar pizarra en teatro: el host dibuja con toolbar completa; asistente writer ("Todos escriben") dibuja; asistente reader en solo lectura; entrar/salir del teatro no remonta la pizarra (sin "Cargando pizarra..." ni rejoin).
-- [ ] 6.5 Verificar cursores: host y participantes ven nombres reales junto a los cursores (no `host-55`/`viewer-nn`); sin nombre disponible degrada al comportamiento actual.
-- [ ] 6.6 Regresión: evento LiveKit de control idéntico a antes; broadcast Agora sin pizarra ni teatro se comporta como antes (hand raise, promoción, chat).
+- [x] 6.1 Verificar grid meeting: escritorio y móvil muestran filas de 5 tiles cuadrados 1:1 con recorte centrado; avatar cuando la cámara está apagada; broadcast sin cambios de grid.
+- [x] 6.2 Verificar teatro meeting (asistente): cámara del host, pantalla compartida y pizarra maximizables; banda con tiles de cámara; con >5 participantes las flechas rotan en bucle de 5 en 5 en ambos sentidos; botón ocultar/mostrar banda; salida con ✕, Escape y fullscreen nativo; al salir el layout vuelve sin recargar y sin cortes de audio.
+- [x] 6.3 Verificar teatro broadcast (viewer): vídeo del host y pizarra maximizables; banda con tiles avatar+micro (estados como la vista normal).
+- [x] 6.4 Verificar pizarra en teatro: el host dibuja con toolbar completa; asistente writer ("Todos escriben") dibuja; asistente reader en solo lectura; entrar/salir del teatro no remonta la pizarra (sin "Cargando pizarra..." ni rejoin).
+- [x] 6.5 Verificar cursores: host y participantes ven nombres reales junto a los cursores (no `host-55`/`viewer-nn`); sin nombre disponible degrada al comportamiento actual.
+- [x] 6.6 Regresión: evento LiveKit de control idéntico a antes; broadcast Agora sin pizarra ni teatro se comporta como antes (hand raise, promoción, chat).
 - [x] 6.7 `openspec validate refine-agora-fullscreen-and-grid` sin errores.

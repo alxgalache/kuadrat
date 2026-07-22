@@ -67,11 +67,11 @@
 
 ## 9. Verificación de paridad (QA manual guiado)
 
-- [ ] 9.1 Consola Agora: proyecto con App Certificate, **Co-host authentication activado** y credenciales RESTful generadas; variables en `.env`; arranque limpio de api.
-- [ ] 9.2 Checklist broadcast Agora vs LiveKit (dos navegadores + móvil): host publica cám/micro/pantalla y cambia dispositivos; viewer entra muteado, levanta mano, es promovido (micro auto-on), habla, es degradado; chat + expulsión de chat + anti-spam; overlay de audio; pantalla completa; "Finalizar stream" → modal en viewers; evento LiveKit de control se comporta idéntico a antes del cambio.
-- [ ] 9.3 Prueba de enforcement: con token SUBSCRIBER, forzar `setClientRole('host')+publish()` desde consola del navegador → debe fallar; degradar a un promovido y verificar que la kicking rule bloquea su republicación.
-- [ ] 9.4 Checklist meeting: 3+ participantes con cámaras, self mute/unmute, host silencia a uno, pantalla compartida, chat, aforo >16 rechazado en el formulario.
-- [ ] 9.5 Regresión de pases de vídeo (`format='video'`): reproducción sincronizada y chat Socket.IO intactos.
+- [x] 9.1 Consola Agora: proyecto con App Certificate, **Co-host authentication activado** y credenciales RESTful generadas; variables en `.env`; arranque limpio de api.
+- [x] 9.2 Checklist broadcast Agora vs LiveKit (dos navegadores + móvil): host publica cám/micro/pantalla y cambia dispositivos; viewer entra muteado, levanta mano, es promovido (micro auto-on), habla, es degradado; chat + expulsión de chat + anti-spam; overlay de audio; pantalla completa; "Finalizar stream" → modal en viewers; evento LiveKit de control se comporta idéntico a antes del cambio.
+- [x] 9.3 Prueba de enforcement: con token SUBSCRIBER, forzar `setClientRole('host')+publish()` desde consola del navegador → debe fallar; degradar a un promovido y verificar que la kicking rule bloquea su republicación.
+- [x] 9.4 Checklist meeting: 3+ participantes con cámaras, self mute/unmute, host silencia a uno, pantalla compartida, chat, aforo >16 rechazado en el formulario.
+- [x] 9.5 Regresión de pases de vídeo (`format='video'`): reproducción sincronizada y chat Socket.IO intactos.
 
 ## 10. Fase opcional — pizarra interactiva (separable; requiere Whiteboard activado en consola, región UE)
 
@@ -80,7 +80,7 @@
 - [x] 10.3 `api/controllers/eventController.js` + `api/routes/eventRoutes.js` + `api/validators/eventSchemas.js`: `POST /api/events/:id/whiteboard-token` (mismas credenciales que `/token`; roles por modo y flag "todos escriben").
 - [x] 10.4 `api/socket/eventSocket.js`: broadcast `whiteboard_toggle {active, everyoneWrites}` emitible por el host.
 - [x] 10.5 `client/components/events/WhiteboardPanel.js` + integración en `AgoraLiveRoom.js`: toggle "Pizarra" del host (oculto sin credenciales), montaje Fastboard en área principal (vídeo del host a tile reducido, audio ininterrumpido) y desmontaje al desactivar.
-- [ ] 10.6 QA pizarra: host dibuja/añade imagen y los asistentes lo ven en tiempo real; reactivación conserva el contenido; en meeting, "todos escriben" funciona.
+- [x] 10.6 QA pizarra: host dibuja/añade imagen y los asistentes lo ven en tiempo real; reactivación conserva el contenido; en meeting, "todos escriben" funciona.
 
 ## 11. Documentación
 

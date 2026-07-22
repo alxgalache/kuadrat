@@ -25,9 +25,9 @@
 
 ## 5. Verificación
 
-- [ ] 5.1 Banda dinámica: en monitor panorámico la banda llena el ancho (más de 5 tiles si caben); en iPhone vertical tiles + flechas quedan íntegramente en pantalla y la paginación en bucle funciona en ambos sentidos; al rotar el dispositivo se recalcula la capacidad; sin flechas cuando todos caben; ocultar/mostrar banda conserva la posición.
-- [ ] 5.2 Fin de evento en teatro: host finaliza con un participante en teatro (con y sin fullscreen nativo, iPhone incluido) → el teatro se cierra y aparece el diálogo "Evento finalizado" con "Aceptar"; participantes en vista normal sin regresión.
-- [ ] 5.3 Imágenes: host sube JPG/PNG/WEBP desde dispositivo y aparece para todos; asistente writer (Todos escriben) sube e inserta por URL; reader las ve sin poder manipular ni insertar; writer mueve/redimensiona con el selector y se propaga; fichero >10MB o tipo inválido rechazado con error es-ES; subida de asistente sin writer → 403.
-- [ ] 5.4 Panel de apps: writers ven la toolbar sin el botón de apps (sin Code/Countdown); readers sin toolbar como antes; el resto de la toolbar intacta.
-- [ ] 5.5 Regresión: pizarra en teatro sigue sin remontarse al entrar/salir; cursores con nombres reales intactos; evento LiveKit de control sin cambios.
+- [x] 5.1 Banda dinámica: en monitor panorámico la banda llena el ancho (más de 5 tiles si caben); en iPhone vertical tiles + flechas quedan íntegramente en pantalla y la paginación en bucle funciona en ambos sentidos; al rotar el dispositivo se recalcula la capacidad; sin flechas cuando todos caben; ocultar/mostrar banda conserva la posición.
+- [x] 5.2 Fin de evento en teatro: host finaliza con un participante en teatro (con y sin fullscreen nativo, iPhone incluido) → el teatro se cierra y aparece el diálogo "Evento finalizado" con "Aceptar"; participantes en vista normal sin regresión.
+- [x] 5.3 Imágenes: host sube JPG/PNG/WEBP desde dispositivo y aparece para todos; asistente writer (Todos escriben) sube e inserta por URL; reader las ve sin poder manipular ni insertar; writer mueve/redimensiona con el selector y se propaga; fichero >10MB o tipo inválido rechazado con error es-ES; subida de asistente sin writer → 403.
+- [x] 5.4 Panel de apps: writers ven la toolbar sin el botón de apps (sin Code/Countdown); readers sin toolbar como antes; el resto de la toolbar intacta.
+- [x] 5.5 Regresión: pizarra en teatro sigue sin remontarse al entrar/salir; cursores con nombres reales intactos; evento LiveKit de control sin cambios.
 - [x] 5.6 `openspec validate refine-agora-theater-strip-and-whiteboard-images` sin errores.
