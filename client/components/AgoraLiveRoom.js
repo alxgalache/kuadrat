@@ -17,7 +17,15 @@ const WhiteboardPanel = dynamic(
 
 const HOST_RTC_UID = 1
 
-const THEATER_STRIP_PAGE = 5
+// Theater strip geometry — these MUST stay in step with the Tailwind classes
+// of the strip tiles and arrows: tiles are w-16 (64px) under the sm breakpoint
+// and sm:w-24 (96px) from 640px up, separated by gap-x-2 (8px); each arrow
+// button renders ~32px wide plus its 8px gap.
+const STRIP_TILE_W_MOBILE = 64
+const STRIP_TILE_W_DESKTOP = 96
+const STRIP_TILE_GAP = 8
+const STRIP_ARROW_SPACE = 40
+const STRIP_PADDING_X = 24 // px-3
 
 // ---------------------------------------------------------------------------
 // Theater mode — fullscreen overlay with a paginated participant strip
@@ -102,27 +110,53 @@ function TheaterChrome({ stripVisible, onToggleStrip, onClose }) {
   )
 }
 
-// Bottom strip: windows of 5 tiles with endless (modulo) rotation. Keeping the
-// component mounted while hidden preserves the pagination position; only the
-// visible window mounts tiles (bounded video decode cost with 16 attendees).
+// Bottom strip: sliding window of as many current-size tiles as the width can
+// hold (arrows included when pagination is needed), with endless (modulo)
+// rotation in blocks of the visible count. Keeping the component mounted while
+// hidden preserves the pagination position; only the visible window mounts
+// tiles (bounded video decode cost with 16 attendees).
 function TheaterStrip({ entries, visible, renderTile }) {
   const [start, setStart] = useState(0)
+  const [capacity, setCapacity] = useState(1)
+  const containerRef = useRef(null)
   const count = entries.length
-  const paged = count > THEATER_STRIP_PAGE
+
+  // Recompute how many tiles fit whenever the strip (viewport) resizes or the
+  // participant count crosses the pagination threshold
+  useEffect(() => {
+    if (!visible) return
+    const el = containerRef.current
+    if (!el) return
+    const compute = () => {
+      const tileW = window.innerWidth >= 640 ? STRIP_TILE_W_DESKTOP : STRIP_TILE_W_MOBILE
+      const fits = (w) => Math.max(1, Math.floor((w + STRIP_TILE_GAP) / (tileW + STRIP_TILE_GAP)))
+      const width = el.clientWidth - STRIP_PADDING_X
+      let next = fits(width)
+      // Arrows only take space when this many tiles still need pagination
+      if (count > next) next = fits(width - 2 * STRIP_ARROW_SPACE)
+      setCapacity(next)
+    }
+    compute()
+    const observer = new ResizeObserver(compute)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [visible, count])
+
+  const paged = count > capacity
 
   const windowEntries = useMemo(() => {
     if (!paged) return entries
-    return Array.from({ length: THEATER_STRIP_PAGE }, (_, i) => entries[(start + i) % count])
-  }, [entries, paged, start, count])
+    return Array.from({ length: Math.min(capacity, count) }, (_, i) => entries[(start + i) % count])
+  }, [entries, paged, start, capacity, count])
 
   if (!visible || count === 0) return null
 
   return (
-    <div className="flex-shrink-0 flex items-center justify-center gap-x-2 px-3 pb-3 pt-2">
+    <div ref={containerRef} className="flex-shrink-0 flex items-center justify-center gap-x-2 px-3 pb-3 pt-2">
       {paged && (
         <button
           type="button"
-          onClick={() => setStart((s) => ((s - THEATER_STRIP_PAGE) % count + count) % count)}
+          onClick={() => setStart((s) => ((s - capacity) % count + count) % count)}
           className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors flex-shrink-0"
           title="Participantes anteriores"
         >
@@ -137,7 +171,7 @@ function TheaterStrip({ entries, visible, renderTile }) {
       {paged && (
         <button
           type="button"
-          onClick={() => setStart((s) => (s + THEATER_STRIP_PAGE) % count)}
+          onClick={() => setStart((s) => (s + capacity) % count)}
           className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors flex-shrink-0"
           title="Participantes siguientes"
         >
@@ -224,6 +258,7 @@ export default function AgoraLiveRoom({
   eventId,
   onKicked,
   whiteboardAvailable = false,
+  eventEnded = false,
 }) {
   const isMeeting = interactionMode === 'meeting'
 
@@ -406,6 +441,17 @@ export default function AgoraLiveRoom({
     socket.toggleWhiteboard(whiteboardState.active, value)
   }, [socket, whiteboardState.active])
 
+  // Device image upload for the whiteboard insert-image control (writers);
+  // the backend re-validates the effective writer role on every upload
+  const handleWhiteboardImageUpload = useCallback(async (file) => {
+    return eventsAPI.uploadWhiteboardImage(
+      eventId,
+      file,
+      isHost ? null : attendeeSession?.attendeeId,
+      isHost ? null : attendeeSession?.accessToken
+    )
+  }, [eventId, isHost, attendeeSession])
+
   const whiteboardElement = whiteboardState.active && wbCreds ? (
     <WhiteboardPanel
       key={`${wbCreds.uuid}:${wbCreds.role}`}
@@ -416,6 +462,7 @@ export default function AgoraLiveRoom({
       uid={wbCreds.uid || socket.selfIdentity || String(uid)}
       writable={wbCreds.role === 'writer'}
       displayName={selfPresence?.name || ''}
+      onUploadImage={handleWhiteboardImageUpload}
     />
   ) : null
 
@@ -470,6 +517,7 @@ export default function AgoraLiveRoom({
               isHost={isHost}
               eventId={eventId}
               localUid={uid}
+              eventEnded={eventEnded}
               whiteboardElement={whiteboardElement}
               whiteboard={{
                 available: whiteboardAvailable,
@@ -491,6 +539,7 @@ export default function AgoraLiveRoom({
               amSpeaker={amSpeaker}
               eventId={eventId}
               localUid={uid}
+              eventEnded={eventEnded}
               whiteboardElement={whiteboardElement}
               whiteboard={{
                 available: whiteboardAvailable,
@@ -583,7 +632,7 @@ function AgoraVideo({ track, className, fit = 'contain' }) {
 // ---------------------------------------------------------------------------
 function BroadcastArea({
   room, socket, selfPresence, remoteByUid, nameByUid,
-  isHost, amSpeaker, eventId, localUid,
+  isHost, amSpeaker, eventId, localUid, eventEnded,
   whiteboardElement, whiteboard,
 }) {
   const hostRemote = remoteByUid.get(HOST_RTC_UID)
@@ -592,6 +641,12 @@ function BroadcastArea({
   const [stripVisible, setStripVisible] = useState(true)
   const closeTheater = useCallback(() => setTheaterOpen(false), [])
   const openTheater = useCallback(() => setTheaterOpen(true), [])
+
+  // Event ended while in theater: close it (TheaterShell's cleanup also exits
+  // native fullscreen) so the "Evento finalizado" dialog is visible
+  useEffect(() => {
+    if (eventEnded) setTheaterOpen(false)
+  }, [eventEnded])
 
   // Theater strip: everyone except the host (featured above)
   const stripEntries = useMemo(
@@ -1176,7 +1231,7 @@ function AgoraParticipantTile({
 // ---------------------------------------------------------------------------
 // Meeting mode — Meet-style grid of large tiles, self-serve controls for all
 // ---------------------------------------------------------------------------
-function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, whiteboardElement, whiteboard }) {
+function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard }) {
   const hostEntry = socket.presence.find((p) => p.isHost)
   const hostScreenSharing = !whiteboardElement && !!hostEntry?.screenSharing
 
@@ -1196,6 +1251,12 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
   useEffect(() => {
     if (theaterOpen && !showFeatured) setTheaterOpen(false)
   }, [theaterOpen, showFeatured])
+
+  // Event ended while in theater: close it (TheaterShell's cleanup also exits
+  // native fullscreen) so the "Evento finalizado" dialog is visible
+  useEffect(() => {
+    if (eventEnded) setTheaterOpen(false)
+  }, [eventEnded])
 
   // Theater strip: everyone except the host (featured above)
   const stripEntries = useMemo(

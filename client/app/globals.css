@@ -22,6 +22,17 @@ body {
   @apply bg-white text-gray-900;
 }
 
+/* iOS Safari: any element overflowing the viewport width widens the layout
+   viewport, so the page first-paints slightly zoomed in (until the user
+   pinches out). Clipping horizontal overflow on the root keeps the layout
+   viewport at device width. `clip` (unlike `hidden`) does not create a scroll
+   container; the `hidden` line above it is the fallback for older engines. */
+html,
+body {
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
 /* Hide scrollbar for horizontal scroll */
 @layer utilities {
   .scrollbar-hide {

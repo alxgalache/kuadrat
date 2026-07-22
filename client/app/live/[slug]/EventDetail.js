@@ -419,6 +419,7 @@ export default function EventDetail({ params }) {
                 eventId={event.id}
                 onKicked={handleKicked}
                 whiteboardAvailable={!!agoraCreds.whiteboardAvailable}
+                eventEnded={eventEnded}
               />
             ) : (
               <EventLiveRoom

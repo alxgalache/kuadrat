@@ -30,11 +30,6 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [termsClicked, setTermsClicked] = useState(() => {
-    try {
-      return localStorage.getItem('event_terms_read') === 'true'
-    } catch { return false }
-  })
   const [termsAccepted, setTermsAccepted] = useState(false)
 
   const [attendeeId, setAttendeeId] = useState(null)
@@ -80,11 +75,6 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
   const handleRegister = async () => {
     if (!firstName.trim() || !lastName.trim() || !email.trim()) {
       setError('Todos los campos son obligatorios')
-      return
-    }
-
-    if (!termsClicked) {
-      setError('Debes abrir y leer las normas de participación antes de continuar')
       return
     }
 
@@ -320,15 +310,10 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
             href="/legal/normas-eventos"
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => {
-              setTermsClicked(true)
-              try { localStorage.setItem('event_terms_read', 'true') } catch {}
-            }}
             className="font-medium text-gray-900 underline hover:text-gray-700"
           >
             normas y términos para la participación en eventos en directo
           </a>
-          {' '}(lectura obligatoria)
         </label>
       </div>
 

@@ -9,6 +9,7 @@ const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const agoraService = require('../services/agoraService');
 const whiteboardService = require('../services/whiteboardService');
+const s3Service = require('../services/s3Service');
 const stripeService = require('../services/stripeService');
 const { sendEventVerificationEmail, sendEventConfirmationEmail } = require('../services/emailService');
 
@@ -589,6 +590,131 @@ const getWhiteboardToken = async (req, res, next) => {
       role,
       uid: `viewer-${attendee.id}`,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/whiteboard-image
+// Upload an image to insert into the active whiteboard. Same credential model
+// as whiteboard-token; only effective writers may upload (host always,
+// attendees when "everyone writes" is on in meeting mode). Stored under the
+// whiteboard/ prefix with a UUID name (S3 when configured, local disk
+// otherwise), no DB row — the returned public URL is the only reference.
+// ---------------------------------------------------------------------------
+const WHITEBOARD_IMAGES_DIR = path.join(__dirname, '..', 'uploads', 'whiteboard');
+const WHITEBOARD_IMAGE_EXTENSIONS = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+};
+
+const uploadWhiteboardImage = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attendeeId, accessToken } = req.body;
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+    if (event.provider !== 'agora') {
+      throw new ApiError(400, 'Este evento no admite pizarra', 'Solicitud inválida');
+    }
+    if (event.status !== 'active') {
+      throw new ApiError(400, 'El evento no está activo', 'Evento no activo');
+    }
+
+    const eventSocket = req.app.get('eventSocket');
+    const wbState = eventSocket?.getWhiteboardState(id) || { active: false, everyoneWrites: false };
+    if (!wbState.active) {
+      throw new ApiError(400, 'La pizarra no está activa', 'Pizarra no disponible');
+    }
+
+    // Writer check — host/admin path (JWT) or attendee path (access token)
+    const authHeader = req.headers.authorization;
+    if (!attendeeId && authHeader?.startsWith('Bearer ')) {
+      let decoded;
+      try {
+        decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+      } catch {
+        throw new ApiError(403, 'Credenciales inválidas', 'Acceso denegado');
+      }
+      if (decoded.id !== event.host_user_id && decoded.role !== 'admin') {
+        throw new ApiError(403, 'Solo el host puede subir imágenes a la pizarra', 'Acceso denegado');
+      }
+    } else {
+      if (!attendeeId || !accessToken) {
+        throw new ApiError(403, 'Credenciales requeridas', 'Acceso denegado');
+      }
+      const attendee = await eventService.getAttendeeByAccessToken(id, accessToken);
+      // Multipart form fields always arrive as strings — compare loosely
+      if (!attendee || String(attendee.id) !== String(attendeeId)) {
+        throw new ApiError(403, 'Token de acceso inválido', 'Acceso denegado');
+      }
+      if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+        throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
+      }
+      if (await eventService.isEmailBanned(id, attendee.email)) {
+        throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
+      }
+      if (await eventService.isIpBanned(id, getClientIp(req))) {
+        throw new ApiError(403, 'Has sido expulsado de este evento', 'Acceso denegado');
+      }
+      // Attendees are writers only while "everyone writes" is on (meeting)
+      if (!(event.interaction_mode === 'meeting' && wbState.everyoneWrites)) {
+        throw new ApiError(403, 'No tienes permiso de escritura en la pizarra', 'Acceso denegado');
+      }
+    }
+
+    const file = req.file;
+    if (!file) {
+      throw new ApiError(400, 'No se recibió ninguna imagen', 'Solicitud inválida');
+    }
+    const ext = WHITEBOARD_IMAGE_EXTENSIONS[file.mimetype];
+    if (!ext) {
+      throw new ApiError(400, 'Solo se permiten imágenes PNG, JPG o WEBP', 'Solicitud inválida');
+    }
+
+    const basename = `${crypto.randomUUID()}.${ext}`;
+    if (config.useS3) {
+      await s3Service.uploadFile(`whiteboard/${basename}`, file.buffer, file.mimetype);
+    } else {
+      await fs.promises.mkdir(WHITEBOARD_IMAGES_DIR, { recursive: true });
+      await fs.promises.writeFile(path.join(WHITEBOARD_IMAGES_DIR, basename), file.buffer);
+    }
+
+    // Absolute URL loadable by every participant's browser: CDN when media is
+    // on S3, otherwise this API's own public serving endpoint (the request
+    // origin is exactly what all clients use to reach the API)
+    const url = config.cdnBaseUrl
+      ? `${config.cdnBaseUrl}/whiteboard/${encodeURIComponent(basename)}`
+      : `${req.protocol}://${req.get('host')}/api/events/whiteboard-images/${encodeURIComponent(basename)}`;
+
+    logger.info({ eventId: id, basename }, 'Whiteboard image uploaded');
+    return res.status(201).json({ success: true, url });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/events/whiteboard-images/:basename
+// Public read endpoint for locally stored whiteboard images (with S3 the URLs
+// point at the CDN instead, mirroring the product image pattern)
+// ---------------------------------------------------------------------------
+const getWhiteboardImage = async (req, res, next) => {
+  try {
+    const { basename } = req.params;
+    if (!/^[A-Za-z0-9-]+\.(png|jpg|webp)$/.test(basename)) {
+      throw new ApiError(400, 'Nombre de imagen inválido', 'Solicitud inválida');
+    }
+    const filePath = path.join(WHITEBOARD_IMAGES_DIR, basename);
+    if (!fs.existsSync(filePath)) {
+      throw new ApiError(404, 'Imagen no encontrada', 'Imagen no encontrada');
+    }
+    res.sendFile(filePath);
   } catch (error) {
     next(error);
   }
@@ -1210,6 +1336,8 @@ module.exports = {
   getHostToken,
   renewToken,
   getWhiteboardToken,
+  uploadWhiteboardImage,
+  getWhiteboardImage,
   endEvent,
   promoteParticipant,
   demoteParticipant,

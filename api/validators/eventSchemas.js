@@ -189,6 +189,19 @@ const whiteboardTokenSchema = z.object({
 });
 
 /**
+ * POST /api/events/:id/whiteboard-image
+ *
+ * Multipart upload (fields arrive as strings). Same credential model as
+ * /whiteboard-token; the image file itself is validated by multer + controller.
+ */
+const whiteboardImageSchema = z.object({
+  body: z.object({
+    attendeeId: z.union([z.number(), z.string()]).optional(),
+    accessToken: z.string().optional(),
+  }).strip(),
+});
+
+/**
  * POST /api/admin/events/:id/participants/:identity/mute
  *
  * Controller reads trackSid and muted from body.
@@ -260,6 +273,7 @@ module.exports = {
   getViewerTokenSchema,
   renewTokenSchema,
   whiteboardTokenSchema,
+  whiteboardImageSchema,
   createEventSchema,
   updateEventSchema,
   muteParticipantSchema,

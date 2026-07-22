@@ -1591,6 +1591,21 @@ export const eventsAPI = {
     });
   },
 
+  // Upload an image for the active whiteboard (host or writer attendees).
+  // Returns { url } — an absolute URL ready for fastboard's insertImage.
+  uploadWhiteboardImage: async (eventId, file, attendeeId = null, accessToken = null) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    if (attendeeId && accessToken) {
+      formData.append('attendeeId', attendeeId);
+      formData.append('accessToken', accessToken);
+    }
+    return apiRequest(`/events/${eventId}/whiteboard-image`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
   promoteParticipant: async (eventId, identity) => {
     return apiRequest(`/events/${eventId}/participants/${encodeURIComponent(identity)}/promote`, {
       method: 'POST',

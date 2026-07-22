@@ -1,12 +1,32 @@
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const eventController = require('../controllers/eventController');
 const { authenticate } = require('../middleware/authorization');
 const { validate } = require('../middleware/validate');
+const { cacheControl } = require('../middleware/cache');
 const { sensitiveLimiter } = require('../middleware/rateLimiter');
-const { sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema, renewTokenSchema, whiteboardTokenSchema } = require('../validators/eventSchemas');
+const { sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema, renewTokenSchema, whiteboardTokenSchema, whiteboardImageSchema } = require('../validators/eventSchemas');
+
+// Multer configuration for whiteboard image uploads (PNG, JPG, WEBP) up to
+// 10MB (memory storage) — same limits as product images
+const whiteboardImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (allowedMimeTypes.includes(file.mimetype)) return cb(null, true);
+    cb(new Error('Only PNG, JPG, and WEBP images are allowed'));
+  },
+});
 
 // All routes are public (no authentication required) unless specified
+
+/**
+ * GET /api/events/whiteboard-images/:basename
+ * Serve locally stored whiteboard images (with S3, URLs point at the CDN)
+ */
+router.get('/whiteboard-images/:basename', cacheControl({ maxAge: 86400 }), eventController.getWhiteboardImage);
 
 /**
  * GET /api/events
@@ -75,6 +95,14 @@ router.post('/:id/renew-token', validate(renewTokenSchema), eventController.rene
  * Authentication: attendee credentials in body, or JWT for host/admin
  */
 router.post('/:id/whiteboard-token', validate(whiteboardTokenSchema), eventController.getWhiteboardToken);
+
+/**
+ * POST /api/events/:id/whiteboard-image
+ * Agora events (optional whiteboard phase): upload an image to insert into
+ * the active whiteboard (host or writer attendees). Multer must run before
+ * validate() so the multipart body fields are parsed.
+ */
+router.post('/:id/whiteboard-image', whiteboardImageUpload.single('image'), validate(whiteboardImageSchema), eventController.uploadWhiteboardImage);
 
 /**
  * POST /api/events/:id/end

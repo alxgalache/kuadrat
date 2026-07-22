@@ -20,6 +20,14 @@ const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUB
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://140d.art'
 
+// Explicit viewport (Next.js would inject the same defaults, but iOS Safari
+// computed a slightly zoomed-in first paint when horizontal overflow widened
+// the layout viewport — see the html/body overflow-x rule in globals.css)
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+}
+
 export const metadata = {
   metadataBase: new URL(SITE_URL),
 
