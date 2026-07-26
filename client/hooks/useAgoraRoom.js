@@ -65,6 +65,12 @@ export default function useAgoraRoom({
   const [micEnabled, setMicEnabled] = useState(false)
   const [camEnabled, setCamEnabled] = useState(false)
   const [screenEnabled, setScreenEnabled] = useState(false)
+  // Bumped whenever the camera track object is created or destroyed. camTrackRef
+  // is a ref, so nothing re-renders when the track is swapped; consumers that own
+  // a resource bound to the track (useAgoraVideoEffect's background processor)
+  // reconcile off this counter. Toggling the camera off/on does NOT bump it —
+  // the track survives via setEnabled(false).
+  const [camTrackVersion, setCamTrackVersion] = useState(0)
   const [clientRole, setClientRole] = useState(initialRole)
   const joinedRef = useRef(false)
 
@@ -187,10 +193,12 @@ export default function useAgoraRoom({
       joinedRef.current = false
       AgoraRTC.onAutoplayFailed = () => {}
       client.removeAllListeners()
+      const hadCamTrack = !!camTrackRef.current
       for (const ref of [micTrackRef, camTrackRef, screenTrackRef]) {
         try { ref.current?.close() } catch { /* already closed */ }
         ref.current = null
       }
+      if (hadCamTrack) setCamTrackVersion((v) => v + 1)
       cameraWasOnRef.current = false
       clientRef.current = null
       // Chain the async teardown (settle any pending join, then leave) so the
@@ -244,6 +252,7 @@ export default function useAgoraRoom({
       if (!camTrackRef.current) {
         const track = await createCameraTrackWithRetry(deviceId)
         camTrackRef.current = track
+        setCamTrackVersion((v) => v + 1)
         // While screen sharing, the camera stays unpublished (single video
         // slot; screen has priority — design D7)
         if (!screenTrackRef.current) {
@@ -326,6 +335,7 @@ export default function useAgoraRoom({
   const becomeAudience = useCallback(async () => {
     const client = clientRef.current
     if (!client) return
+    const hadCamTrack = !!camTrackRef.current
     for (const ref of [micTrackRef, camTrackRef, screenTrackRef]) {
       if (ref.current) {
         try { await client.unpublish(ref.current) } catch { /* not published */ }
@@ -333,6 +343,7 @@ export default function useAgoraRoom({
         ref.current = null
       }
     }
+    if (hadCamTrack) setCamTrackVersion((v) => v + 1)
     setMicEnabled(false)
     setCamEnabled(false)
     setScreenEnabled(false)
@@ -383,5 +394,7 @@ export default function useAgoraRoom({
     micTrackRef,
     camTrackRef,
     screenTrackRef,
+    // Changes when the camera track object itself is created/destroyed
+    camTrackVersion,
   }
 }

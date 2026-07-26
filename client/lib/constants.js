@@ -80,6 +80,17 @@ export const AGORA_SPEAKING_VOLUME_THRESHOLD = 10;
 // senders → 16 attendees + host). Mirrored by the API validators.
 export const MEETING_MAX_ATTENDEES = 16;
 
+// Agora virtual background (camera effects)
+// Effect preference persisted per device; validated on read against the catalog
+// in lib/virtualBackgrounds.js (a background removed from the repo degrades to none).
+export const AGORA_VIDEO_EFFECT_STORAGE_KEY = 'kuadrat.agora.videoEffect';
+// blurDegree accepted by the extension: 1 (low), 2 (medium), 3 (high).
+export const AGORA_BLUR_DEGREE_SOFT = 1;
+export const AGORA_BLUR_DEGREE_STRONG = 3;
+// Static catalog served from client/public/fondos-virtuales/. The processor needs
+// the ORIGINAL file (a raw HTMLImageElement), never the next/image optimized URL.
+export const AGORA_BACKGROUNDS_BASE_PATH = '/fondos-virtuales/';
+
 // Public brand name — the user-facing marketplace brand.
 // "Kuadrat" is only the internal codename; any text shown to buyers, sellers,
 // or visitors should use these constants instead of the repo/project name.

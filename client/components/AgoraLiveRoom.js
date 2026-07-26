@@ -5,8 +5,10 @@ import dynamic from 'next/dynamic'
 import { eventsAPI } from '@/lib/api'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import DeviceDropdown from '@/components/events/DeviceDropdown'
+import VideoEffectsMenu from '@/components/events/VideoEffectsMenu'
 import useAgoraRoom from '@/hooks/useAgoraRoom'
 import useAgoraDevices from '@/hooks/useAgoraDevices'
+import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
 import useEventRoomSocket from '@/hooks/useEventRoomSocket'
 
 // Fastboard is heavy — load it only when the host opens the whiteboard
@@ -848,6 +850,19 @@ function AgoraHostControls({ room, eventId, endLabel, whiteboard }) {
     camEnabled: room.camEnabled,
   })
 
+  const videoEffect = useAgoraVideoEffect({
+    camTrackRef: room.camTrackRef,
+    camTrackVersion: room.camTrackVersion,
+    camEnabled: room.camEnabled,
+  })
+
+  // Same state as the device dropdowns, so only one menu is ever open. Opening
+  // the effects panel is what triggers the extension download.
+  const toggleEffectsMenu = useCallback((kind) => {
+    setOpenDeviceMenu(kind)
+    if (kind === 'effects') videoEffect.ensureLoaded()
+  }, [videoEffect])
+
   const toggleMic = useCallback(async () => {
     setDeviceError('')
     try {
@@ -910,7 +925,9 @@ function AgoraHostControls({ room, eventId, endLabel, whiteboard }) {
   return (
     <>
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-x-6 flex-wrap">
+        {/* gap-y: this row wraps once there are enough controls (Efectos, Pizarra)
+            or the viewport narrows — without it the wrapped lines touch */}
+        <div className="flex items-center gap-x-6 gap-y-3 flex-wrap">
           <div className="relative flex items-center gap-x-2">
             <span className="text-sm text-gray-700">Micrófono</span>
             <ToggleSwitch checked={room.micEnabled} onChange={toggleMic} />
@@ -935,6 +952,20 @@ function AgoraHostControls({ room, eventId, endLabel, whiteboard }) {
               onSelect={selectDevice('videoinput')}
             />
           </div>
+          {videoEffect.supported && (
+            <div className="relative flex items-center gap-x-2">
+              <span className="text-sm text-gray-700">Efectos</span>
+              <VideoEffectsMenu
+                isOpen={openDeviceMenu === 'effects'}
+                onToggle={toggleEffectsMenu}
+                disabled={!room.camEnabled}
+                status={videoEffect.status}
+                effect={videoEffect.effect}
+                applying={videoEffect.applying}
+                onSelect={videoEffect.selectEffect}
+              />
+            </div>
+          )}
           {devices.playbackDevices.length > 0 && (
             <div className="relative flex items-center gap-x-2">
               <span className="text-sm text-gray-700">Altavoces</span>
@@ -971,6 +1002,9 @@ function AgoraHostControls({ room, eventId, endLabel, whiteboard }) {
           )}
           {deviceError && (
             <span className="text-xs text-red-600">{deviceError}</span>
+          )}
+          {videoEffect.message && (
+            <span className="text-xs text-red-600">{videoEffect.message}</span>
           )}
         </div>
         <button
@@ -1481,6 +1515,19 @@ function MeetingSelfControls({ room }) {
     camEnabled: room.camEnabled,
   })
 
+  const videoEffect = useAgoraVideoEffect({
+    camTrackRef: room.camTrackRef,
+    camTrackVersion: room.camTrackVersion,
+    camEnabled: room.camEnabled,
+  })
+
+  // Same state as the device dropdowns, so only one menu is ever open. Opening
+  // the effects panel is what triggers the extension download.
+  const toggleEffectsMenu = (kind) => {
+    setOpenDeviceMenu(kind)
+    if (kind === 'effects') videoEffect.ensureLoaded()
+  }
+
   const toggleMic = async () => {
     setDeviceError('')
     try {
@@ -1514,7 +1561,8 @@ function MeetingSelfControls({ room }) {
   }
 
   return (
-    <div className="flex items-center gap-x-6 flex-wrap">
+    // gap-y: this row wraps on narrow viewports — without it the lines touch
+    <div className="flex items-center gap-x-6 gap-y-3 flex-wrap">
       <div className="relative flex items-center gap-x-2">
         <span className="text-sm text-gray-700">Micrófono</span>
         <ToggleSwitch checked={room.micEnabled} onChange={toggleMic} />
@@ -1539,6 +1587,20 @@ function MeetingSelfControls({ room }) {
           onSelect={selectDevice('videoinput')}
         />
       </div>
+      {videoEffect.supported && (
+        <div className="relative flex items-center gap-x-2">
+          <span className="text-sm text-gray-700">Efectos</span>
+          <VideoEffectsMenu
+            isOpen={openDeviceMenu === 'effects'}
+            onToggle={toggleEffectsMenu}
+            disabled={!room.camEnabled}
+            status={videoEffect.status}
+            effect={videoEffect.effect}
+            applying={videoEffect.applying}
+            onSelect={videoEffect.selectEffect}
+          />
+        </div>
+      )}
       {devices.playbackDevices.length > 0 && (
         <div className="relative flex items-center gap-x-2">
           <span className="text-sm text-gray-700">Altavoces</span>
@@ -1554,6 +1616,9 @@ function MeetingSelfControls({ room }) {
       )}
       {deviceError && (
         <span className="text-xs text-red-600">{deviceError}</span>
+      )}
+      {videoEffect.message && (
+        <span className="text-xs text-red-600">{videoEffect.message}</span>
       )}
     </div>
   )

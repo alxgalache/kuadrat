@@ -87,7 +87,11 @@ const nextConfig = {
     const csp = [
       "default-src 'self'",
       // 'blob:' required by the Agora Interactive Whiteboard (white-web-sdk): it
-      // loads its modules via document.createElement('script') with src=blob:
+      // loads its modules via document.createElement('script') with src=blob:.
+      // 'unsafe-eval' is ALSO what allows WebAssembly compilation: the Agora
+      // virtual background extension compiles a base64-embedded WASM module at
+      // runtime. Replacing it with a stricter directive requires keeping at least
+      // 'wasm-unsafe-eval' or camera background effects stop working.
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com https://analytics.140d.art",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `img-src 'self' data: https: http: blob: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,

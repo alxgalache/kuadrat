@@ -12,7 +12,7 @@ Kuadrat is a minimalist online marketplace for art, functioning as a virtual art
 * **Auth:** Passport.js (passport-local + passport-jwt), JWT tokens
 * **Payments:** Stripe (primary), Revolut (legacy support)
 * **Real-time:** Socket.IO for auctions and event notifications (plus the authenticated per-event room used by Agora events)
-* **Streaming:** LiveKit + Agora, selectable per event (`events.provider`, default `livekit`); Agora adds an `interaction_mode` (`broadcast` = LiveKit parity | `meeting` = Meet-style camera grid, max 16 attendees)
+* **Streaming:** LiveKit + Agora, selectable per event (`events.provider`, default `livekit`); Agora adds an `interaction_mode` (`broadcast` = LiveKit parity | `meeting` = Meet-style camera grid, max 16 attendees) and client-side virtual backgrounds (see below)
 * **Email:** Nodemailer with SMTP
 * **Logging:** Pino (structured JSON in production, pretty in development)
 * **Validation:** Zod schemas for API request validation
@@ -193,6 +193,16 @@ Product images live in a single polymorphic table `product_images`:
 Read path: API controllers select product rows WITHOUT `basename` and then call `attachProductImages(rows, productType)` from `api/utils/productImages.js` to hydrate each row with `images: [...]` and a derived `thumbnail_basename`. For SQL paths that snapshot a single basename (orders, payments, emails), use the inline subquery `(SELECT basename FROM product_images WHERE product_type = ? AND product_id = X.id ORDER BY position ASC, id ASC LIMIT 1) AS basename`.
 
 The cap of 3 images per `(product_type, product_id)` is enforced at the upload layer (multer maxCount + controller validation), not at the DB level. The `art`, `others`, and `other_vars` tables no longer carry a `basename` column.
+
+## Agora Virtual Backgrounds (client-only)
+
+Background blur / image replacement over the local camera in Agora rooms. **Frontend only** — no API, DB, or env vars involved; the processed video is published straight to the channel, so no signalling and no LiveKit impact.
+
+* **Where:** `client/hooks/useAgoraVideoEffect.js` (processor lifecycle) + `client/components/events/VideoEffectsMenu.js` (panel), mounted next to the Camera toggle in `AgoraHostControls` (host, both modes) and `MeetingSelfControls` (meeting attendees). Broadcast attendees never get it — they don't publish video.
+* **Adding a background:** drop a file in `client/public/fondos-virtuales/` (16:9, 1280×720 recommended, even width×height, JPG/WEBP, <300 KB) and add its `{ file, label }` entry to `client/lib/virtualBackgrounds.js`. Order there is the display order; an empty catalog is valid (panel shows only blur).
+* **Lifecycle rules:** `agora-extension-virtual-background` (~2.1 MB, WASM inlined) is loaded via dynamic `import()` on the **first panel open**, never at mount. `setOptions()` must always run **before** `enable()` (otherwise the SDK applies blur degree 1). "Ninguno" only `disable()`s — the processor stays initialized. The processor is reconciled against `camTrackVersion` from `useAgoraRoom`, which ticks whenever the camera track is created or destroyed; `unpipe()` + `release()` happen when the track goes away. Never applied to screen share or the whiteboard.
+* **Degradation:** the control is hidden on mobile (vendor advises against it), replaced by an es-ES notice when `checkCompatibility()` is false, and auto-disabled on `processor.onoverload` — the persisted preference (`localStorage`, key in `client/lib/constants.js`) is not overwritten in that case.
+* **CSP:** no changes needed; `'unsafe-eval'` in `script-src` (already present) is what lets the WASM compile.
 
 ## Environment Variables
 
