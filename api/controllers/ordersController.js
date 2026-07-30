@@ -8,6 +8,7 @@ const { updateRevolutOrder } = require('../services/revolutService');
 const { updatePaymentIntent, findOrCreateCustomer } = require('../services/stripeService');
 const crypto = require('crypto');
 const { artVatRegimeForRate } = require('../utils/vatRegime');
+const { artCommissionAmount } = require('../utils/artCommission');
 
 // Public site base URL used for product images/links in Revolut payload
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
@@ -363,9 +364,16 @@ const placeOrder = async (req, res, next) => {
     const reservedArtIds = [];
     const reservedVariantEntries = []; // { variantId, quantity }
 
-    // Reserve art items: UPDATE art SET is_sold = 1 WHERE id = ? AND is_sold = 0
+    // Reserve art items: consume one edition copy per item. is_sold means
+    // "edition sold out" and is only written together with editions_sold.
     for (const product of artProducts) {
-      reservationBatch.add('UPDATE art SET is_sold = 1 WHERE id = ? AND is_sold = 0', [product.id]);
+      reservationBatch.add(
+        `UPDATE art
+         SET editions_sold = editions_sold + 1,
+             is_sold = CASE WHEN editions_sold + 1 >= edition_size THEN 1 ELSE 0 END
+         WHERE id = ? AND editions_sold < edition_size`,
+        [product.id],
+      );
       reservedArtIds.push(product.id);
     }
 
@@ -398,7 +406,10 @@ const placeOrder = async (req, res, next) => {
           const rollbackBatch = createBatch();
           for (let i = 0; i < resultIndex; i++) {
             if (i < reservedArtIds.length && reservationResults[i]?.rowsAffected > 0) {
-              rollbackBatch.add('UPDATE art SET is_sold = 0 WHERE id = ?', [reservedArtIds[i]]);
+              rollbackBatch.add(
+                'UPDATE art SET editions_sold = MAX(editions_sold - 1, 0), is_sold = 0 WHERE id = ? AND editions_sold > 0',
+                [reservedArtIds[i]],
+              );
             }
           }
           if (rollbackBatch.size() > 0) await rollbackBatch.execute();
@@ -416,7 +427,10 @@ const placeOrder = async (req, res, next) => {
           // Rollback all reservations made in this batch
           const rollbackBatch = createBatch();
           for (const aid of reservedArtIds) {
-            rollbackBatch.add('UPDATE art SET is_sold = 0 WHERE id = ?', [aid]);
+            rollbackBatch.add(
+              'UPDATE art SET editions_sold = MAX(editions_sold - 1, 0), is_sold = 0 WHERE id = ? AND editions_sold > 0',
+              [aid],
+            );
           }
           for (let i = 0; i < reservedVariantEntries.indexOf(entry); i++) {
             const prev = reservedVariantEntries[i];
@@ -471,10 +485,15 @@ const placeOrder = async (req, res, next) => {
     for (const item of artItems) {
       const product = artProducts.find((p) => p.id === item.id);
       const sellerInfo = sellerCommissionMap.get(product.seller_id);
-      const sellerRate = (sellerInfo?.art || 0) / 100;
-      const commissionAmount = product.price * sellerRate;
       // Freeze the fiscal regime derived from the seller's current art VAT rate.
+      // The same regime value drives the commission split (flat for REBU,
+      // margin grossed up by its 21% VAT for standard_vat) and the row snapshot.
       const vatRegime = sellerInfo?.artVatRegime || 'art_rebu';
+      const commissionAmount = artCommissionAmount({
+        price: product.price,
+        commissionRate: sellerInfo?.art || 0,
+        vatRegime,
+      });
       await db.execute({
         sql: `INSERT INTO art_order_items (
           order_id,
@@ -2861,17 +2880,11 @@ async function confirmOrderPayment(req, res, next) {
     });
 
     // Inventory updates
-    // 1) Mark art items as sold
-    const artItemsRes = await db.execute({
-      sql: 'SELECT aoi.art_id FROM art_order_items aoi WHERE aoi.order_id = ?',
-      args: [order_id],
-    });
-    const uniqueArtIds = [...new Set(artItemsRes.rows.map(r => r.art_id))];
-    for (const artId of uniqueArtIds) {
-      await db.execute({ sql: 'UPDATE art SET is_sold = 1 WHERE id = ?', args: [artId] });
-    }
+    // Art items are NOT touched here: the placeOrder reservation already
+    // consumed one edition copy per item (single point of consumption), and
+    // re-marking is no longer idempotent now that inventory is a counter.
 
-    // 2) Decrement others variants stock and mark product as sold if out of stock
+    // Decrement others variants stock and mark product as sold if out of stock
     const otherItemsRes = await db.execute({
       sql: 'SELECT other_var_id FROM other_order_items WHERE order_id = ?',
       args: [order_id],

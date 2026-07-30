@@ -13,7 +13,7 @@ import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
-import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY, PAYMENT_ENABLED, ART_BUY_AVAILABLE } from '@/lib/constants'
+import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY, PAYMENT_ENABLED, ART_BUY_AVAILABLE, EDITION_COPY } from '@/lib/constants'
 
 const ArtProductInquiryModal = dynamic(
   () => import('@/components/ArtProductInquiryModal'),
@@ -261,6 +261,12 @@ export default function ArtProductDetail({ params }) {
                 <span className="font-medium">Medidas:</span>{' '}
                 {product.dimensions && `${product.dimensions.split('x').slice(0, -1).join(' x ')} cm`}
               </p>
+              {product.edition_size > 1 && (
+                <p className="text-lg text-gray-700 mt-1">
+                  <span className="font-medium">Edición:</span>{' '}
+                  {EDITION_COPY.limited(product.edition_size)}
+                </p>
+              )}
               {product.seller_full_name && (
                 <p className="text-lg text-gray-700 mt-1">
                   <span className="font-medium">Autor:</span>{' '}

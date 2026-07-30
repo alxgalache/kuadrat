@@ -1,6 +1,6 @@
 const request = require('supertest');
 const bcrypt = require('bcrypt');
-const { app } = require('../server');
+const { app } = require('./helpers/app');
 const { db } = require('../config/database');
 
 describe('Auth API Endpoints', () => {

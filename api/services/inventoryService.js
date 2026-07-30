@@ -4,14 +4,31 @@ const logger = require('../config/logger');
 
 /**
  * Release reserved inventory for a given order.
- * Resets is_sold = 0 for art items and increments stock for variant items.
- * Uses a Turso batch transaction for atomicity.
+ * Releases one edition copy per art item (guarded decrement) and increments
+ * stock for variant items. Uses a Turso batch transaction for atomicity.
+ *
+ * Runs at most once per order: the release is first claimed by setting
+ * orders.inventory_released_at conditionally, so concurrent or repeated calls
+ * (webhook + TTL cleanup) can never decrement the edition counter twice.
  *
  * @param {number} orderId - The order ID whose inventory should be released
  * @param {string} reason - Reason for release (e.g., 'payment_failed', 'reservation_expired', 'cancelled')
  * @returns {Promise<{ artReleased: number, variantsReleased: number }>}
  */
 async function releaseOrderInventory(orderId, reason = 'unknown') {
+  // Claim the release; bail out if another caller already released this order.
+  const claim = await db.execute({
+    sql: 'UPDATE orders SET inventory_released_at = CURRENT_TIMESTAMP WHERE id = ? AND inventory_released_at IS NULL',
+    args: [orderId],
+  });
+  if (claim.rowsAffected === 0) {
+    logger.warn(
+      { action: 'inventory_release_skipped', orderId, reason },
+      'Inventory already released for this order — skipping',
+    );
+    return { artReleased: 0, variantsReleased: 0 };
+  }
+
   const releaseBatch = createBatch();
   let artReleased = 0;
   let variantsReleased = 0;
@@ -23,7 +40,10 @@ async function releaseOrderInventory(orderId, reason = 'unknown') {
   });
   const uniqueArtIds = [...new Set(artItemsRes.rows.map((r) => r.art_id))];
   for (const artId of uniqueArtIds) {
-    releaseBatch.add('UPDATE art SET is_sold = 0 WHERE id = ? AND is_sold = 1', [artId]);
+    releaseBatch.add(
+      'UPDATE art SET editions_sold = MAX(editions_sold - 1, 0), is_sold = 0 WHERE id = ? AND editions_sold > 0',
+      [artId],
+    );
     artReleased++;
   }
 

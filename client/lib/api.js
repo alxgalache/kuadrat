@@ -710,6 +710,18 @@ export const adminAPI = {
       });
     },
 
+    // Landscape portrait shown below the `md` breakpoint. Same field name and
+    // constraints as uploadAvatar; only the target column differs.
+    uploadAvatarMobile: async (id, avatarFile) => {
+      const formData = new FormData();
+      formData.append('avatar', avatarFile);
+
+      return apiRequest(`/admin/authors/${id}/upload-avatar-mobile`, {
+        method: 'POST',
+        body: formData,
+      });
+    },
+
     getProducts: async (id) => {
       return apiRequest(`/admin/authors/${id}/products`);
     },

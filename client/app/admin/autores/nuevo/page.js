@@ -1,12 +1,11 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import NextImage from 'next/image'
 import { useRouter } from 'next/navigation'
-import { adminAPI, getAuthorImageUrl } from '@/lib/api'
-import { PhotoIcon } from '@heroicons/react/24/solid'
+import Image from 'next/image'
+import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { useDropzone } from 'react-dropzone'
+import AuthorImageDropzone from '@/components/admin/AuthorImageDropzone'
 import { useNotification } from '@/contexts/NotificationContext'
 import QuillEditor from '@/components/QuillEditor'
 import 'quill/dist/quill.snow.css'
@@ -25,7 +24,12 @@ function NewAuthorPageContent() {
   const [pickupCountry, setPickupCountry] = useState('')
   const [pickupInstructions, setPickupInstructions] = useState('')
   const [avatarFile, setAvatarFile] = useState(null)
-  const [previewUrl, setPreviewUrl] = useState('')
+  const [avatarMobileFile, setAvatarMobileFile] = useState(null)
+  // Previews are rendered in the right column, so the URLs are lifted out of
+  // the dropzones (which still own the object-URL lifecycle).
+  const [avatarPreview, setAvatarPreview] = useState('')
+  const [avatarMobilePreview, setAvatarMobilePreview] = useState('')
+  const [hideImgMobile, setHideImgMobile] = useState(false)
   const [saving, setSaving] = useState(false)
   const router = useRouter()
   const { showError, showApiError, showSuccess } = useNotification()
@@ -48,64 +52,8 @@ function NewAuthorPageContent() {
     'link'
   ]
 
-  const validateAndSetAvatar = async (file) => {
-    // Reset previous state
-    if (previewUrl && avatarFile) {
-      try {
-        URL.revokeObjectURL(previewUrl)
-      } catch {}
-    }
-    setAvatarFile(null)
-
-    if (!file) return
-
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
-    if (!allowedTypes.includes(file.type)) {
-      showError('Formato de imagen inválido', 'Solo se permiten imágenes PNG, JPG y WEBP')
-      return
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      showError('Archivo demasiado grande', 'La imagen debe ser de 10MB o menos')
-      return
-    }
-
-    const objectUrl = URL.createObjectURL(file)
-    try {
-      const img = new Image()
-      const loaded = new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-      })
-      img.src = objectUrl
-      await loaded
-
-      setAvatarFile(file)
-      setPreviewUrl(objectUrl)
-    } catch (err) {
-      showError('Imagen inválida', 'No se pudo procesar el archivo de imagen')
-      try {
-        URL.revokeObjectURL(objectUrl)
-      } catch {}
-    }
-  }
-
-  const onDrop = async (acceptedFiles) => {
-    if (acceptedFiles.length > 0) {
-      await validateAndSetAvatar(acceptedFiles[0])
-    }
-  }
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpg', '.jpeg'],
-      'image/webp': ['.webp']
-    },
-    maxFiles: 1,
-    multiple: false
-  })
+  // File validation, preview and object-URL lifecycle now live in
+  // AuthorImageDropzone, shared with the edit page.
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -149,14 +97,19 @@ function NewAuthorPageContent() {
         pickup_city: pickupCity.trim(),
         pickup_postal_code: pickupPostalCode.trim(),
         pickup_country: pickupCountry.trim(),
-        pickup_instructions: pickupInstructions.trim()
+        pickup_instructions: pickupInstructions.trim(),
+        hide_profile_img_mobile: hideImgMobile
       })
 
       const newAuthorId = result.author.id
 
-      // Upload avatar if provided
+      // Upload images if provided. Both endpoints need the author to exist, so
+      // they run after the create call.
       if (avatarFile && newAuthorId) {
         await adminAPI.authors.uploadAvatar(newAuthorId, avatarFile)
+      }
+      if (avatarMobileFile && newAuthorId) {
+        await adminAPI.authors.uploadAvatarMobile(newAuthorId, avatarMobileFile)
       }
 
       showSuccess('Creado', result.emailSent
@@ -411,47 +364,82 @@ function NewAuthorPageContent() {
                     </div>
                   </div>
 
-                  {/* Avatar Upload */}
-                  <div>
-                    <label className="block text-sm/6 font-medium text-gray-900">
-                      Avatar (opcional)
-                    </label>
-                    <div
-                      {...getRootProps()}
-                      className={`mt-2 flex justify-center rounded-lg border-2 border-dashed px-6 py-10 cursor-pointer transition-colors ${
-                        isDragActive
-                          ? 'border-black bg-gray-50'
-                          : 'border-gray-900/25 hover:border-gray-900/50'
-                      }`}
-                    >
-                      <div className="text-center">
-                        <PhotoIcon aria-hidden="true" className="mx-auto size-12 text-gray-300"/>
-                        <div className="mt-4 flex text-sm/6 text-gray-600">
-                          <input {...getInputProps()} />
-                          <p className="font-semibold text-black">
-                            {isDragActive ? 'Suelta la imagen aquí' : 'Haz clic para subir o arrastra y suelta'}
-                          </p>
-                        </div>
-                        <p className="text-xs/5 text-gray-600">PNG, JPG o WEBP hasta 10MB</p>
-                      </div>
+                  {/* Both image fields live here; their previews are rendered
+                      in the right column (see below). */}
+                  <AuthorImageDropzone
+                    label="Avatar (opcional)"
+                    hint="Se muestra en pantallas grandes."
+                    onFileChange={setAvatarFile}
+                    showPreview={false}
+                    onPreviewChange={setAvatarPreview}
+                  />
+
+                  <AuthorImageDropzone
+                    label="Imagen para móvil (opcional)"
+                    hint="Se muestra en pantallas pequeñas y medianas, donde la ficha se apila y la imagen es más apaisada. Si se deja vacía, se usa el avatar."
+                    onFileChange={setAvatarMobileFile}
+                    showPreview={false}
+                    onPreviewChange={setAvatarMobilePreview}
+                  />
+
+                  <div className="relative flex items-start">
+                    <div className="flex h-6 items-center">
+                      <input
+                        id="hide_profile_img_mobile"
+                        name="hide_profile_img_mobile"
+                        type="checkbox"
+                        checked={hideImgMobile}
+                        onChange={(e) => setHideImgMobile(e.target.checked)}
+                        className="size-4 rounded border-gray-300 text-black focus:ring-black"
+                      />
+                    </div>
+                    <div className="ml-3 text-sm/6">
+                      <label htmlFor="hide_profile_img_mobile" className="font-medium text-gray-900">
+                        No mostrar imagen en versión móvil
+                      </label>
+                      <p className="text-gray-500">
+                        La ficha del artista se abrirá directamente por el nombre en pantallas pequeñas y medianas.
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Right Column - Avatar Preview */}
-                <div className="lg:col-span-2 space-y-4">
-                  {previewUrl && (
+                {/* Right Column - previews of both images, stacked. The avatar
+                    is shown as a plain rectangle: the artist card
+                    (AuthorModal) crops it to a column, not to a circle. */}
+                <div className="lg:col-span-2 space-y-8">
+                  {avatarPreview && (
                     <div>
-                      <label className="block text-sm/6 font-medium text-gray-900">Vista previa</label>
+                      <label className="block text-sm/6 font-medium text-gray-900">
+                        Vista previa del avatar
+                      </label>
                       <div className="mt-2">
-                        <NextImage
-                          src={previewUrl}
-                          alt="Preview"
+                        <Image
+                          src={avatarPreview}
+                          alt="Vista previa del avatar"
                           width={0}
                           height={0}
                           unoptimized
                           style={{ width: '100%', height: 'auto' }}
-                          className="rounded-full"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {avatarMobilePreview && (
+                    <div>
+                      <label className="block text-sm/6 font-medium text-gray-900">
+                        Vista previa de la imagen para móvil
+                      </label>
+                      <div className="mt-2">
+                        <Image
+                          src={avatarMobilePreview}
+                          alt="Vista previa de la imagen para móvil"
+                          width={0}
+                          height={0}
+                          unoptimized
+                          style={{ width: '100%', height: 'auto' }}
+                          className="rounded-lg"
                         />
                       </div>
                     </div>

@@ -7,8 +7,9 @@
     "dev": "nodemon --inspect=0.0.0.0:9229 server.js",
     "pre": "nodemon server.js",
     "start": "node server.js",
-    "test": "jest --coverage --detectOpenHandles",
-    "test:watch": "jest --watch"
+    "backup:now": "node scripts/runBackup.js",
+    "test": "NODE_ENV=test jest --coverage --detectOpenHandles",
+    "test:watch": "NODE_ENV=test jest --watch"
   },
   "keywords": [],
   "author": "",

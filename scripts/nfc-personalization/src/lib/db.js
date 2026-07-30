@@ -24,7 +24,7 @@ export function turso() {
 
 export async function findArtBySlug(slug) {
   const result = await turso().execute({
-    sql: `SELECT id, name, slug, status, removed
+    sql: `SELECT id, name, slug, status, removed, edition_size
           FROM art
           WHERE slug = ?
           LIMIT 1`,
@@ -33,22 +33,27 @@ export async function findArtBySlug(slug) {
   return result.rows[0] || null;
 }
 
-export async function findActiveTagByArt(artId) {
+/**
+ * All active tags bound to an artwork, ordered by edition number.
+ * A limited edition has one physical sticker (and one row) per copy, so this
+ * returns up to `art.edition_size` rows; unique works return at most one.
+ */
+export async function listActiveTagsByArt(artId) {
   const result = await turso().execute({
-    sql: `SELECT uid FROM nfc_tags
+    sql: `SELECT uid, edition_number FROM nfc_tags
           WHERE art_id = ? AND status = 'active'
-          LIMIT 1`,
+          ORDER BY edition_number ASC, personalized_at ASC`,
     args: [artId],
   });
-  return result.rows[0] || null;
+  return result.rows;
 }
 
 export async function getTagByUid(uid) {
   const result = await turso().execute({
-    sql: `SELECT t.uid, t.art_id, t.serial_label, t.status, t.last_counter,
+    sql: `SELECT t.uid, t.art_id, t.serial_label, t.edition_number, t.status, t.last_counter,
                  t.is_permanently_locked, t.personalized_at, t.personalized_by,
                  t.locked_at, t.notes,
-                 a.name AS art_name, a.slug AS art_slug
+                 a.name AS art_name, a.slug AS art_slug, a.edition_size
           FROM nfc_tags t
           LEFT JOIN art a ON a.id = t.art_id
           WHERE t.uid = ?
@@ -58,11 +63,11 @@ export async function getTagByUid(uid) {
   return result.rows[0] || null;
 }
 
-export async function insertNfcTag({ uid, artId, serialLabel, operator }) {
+export async function insertNfcTag({ uid, artId, serialLabel, editionNumber = null, operator }) {
   await turso().execute({
-    sql: `INSERT INTO nfc_tags (uid, art_id, serial_label, status, personalized_by)
-          VALUES (?, ?, ?, 'active', ?)`,
-    args: [uid, artId, serialLabel, operator],
+    sql: `INSERT INTO nfc_tags (uid, art_id, serial_label, edition_number, status, personalized_by)
+          VALUES (?, ?, ?, ?, 'active', ?)`,
+    args: [uid, artId, serialLabel, editionNumber, operator],
   });
 }
 

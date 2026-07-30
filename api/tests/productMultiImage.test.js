@@ -1,7 +1,7 @@
 const request = require('supertest');
 const bcrypt = require('bcrypt');
 const zlib = require('zlib');
-const { app } = require('../server');
+const { app } = require('./helpers/app');
 const { db } = require('../config/database');
 
 // Build a minimal valid 600x600 grayscale PNG buffer. Sufficient to pass
@@ -90,6 +90,19 @@ describe('Multi-image product upload', () => {
   const longDescription = 'Lorem ipsum '.repeat(20); // > 100 chars
   const pngBuf = makePng();
 
+  // A freshly created product is pending approval, and the public detail
+  // endpoints filter on `visible = 1 AND status = 'approved' AND removed = 0`
+  // (artController.getArtProductById / othersController). Against a shared
+  // preproduction database this was masked by whatever happened to be there;
+  // against a clean local database the GET correctly returns 404. Publish the
+  // fixture explicitly so the test asserts image nesting, not moderation state.
+  const publish = async (table, id) => {
+    await db.execute({
+      sql: `UPDATE ${table} SET visible = 1, status = 'approved', removed = 0 WHERE id = ?`,
+      args: [id],
+    });
+  };
+
   describe('POST /api/art', () => {
     test('creates with 1, 2, and 3 images and GET returns the array', async () => {
       for (const count of [1, 2, 3]) {
@@ -110,6 +123,7 @@ describe('Multi-image product upload', () => {
         expect(res.body.product.images).toHaveLength(count);
         createdArtIds.push(res.body.product.id);
 
+        await publish('art', res.body.product.id);
         const getRes = await request(app).get(`/api/art/${res.body.product.id}`);
         expect(getRes.statusCode).toBe(200);
         expect(getRes.body.product.images).toHaveLength(count);
@@ -180,6 +194,7 @@ describe('Multi-image product upload', () => {
       expect(res.body.product.variations[0].images).toHaveLength(2);
       expect(res.body.product.variations[1].images).toHaveLength(1);
 
+      await publish('others', res.body.product.id);
       const getRes = await request(app).get(`/api/others/${res.body.product.id}`);
       expect(getRes.statusCode).toBe(200);
       expect(getRes.body.product.images).toHaveLength(2);

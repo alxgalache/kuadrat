@@ -33,6 +33,125 @@ body {
   overflow-x: clip;
 }
 
+/* Rich-text author biography (Quill output).
+   Tailwind's preflight resets `p` margins and strips `ul`/`ol` of their
+   markers and indentation, and this project does NOT install
+   @tailwindcss/typography — so `prose` classes are inert and bios rendered as
+   flat, marker-less lines. These rules restore the formatting, scoped to the
+   `.author-bio` container so nothing else in the app is affected. */
+@layer components {
+  .author-bio {
+    line-height: 1.65;
+  }
+
+  .author-bio p {
+    margin-bottom: 0.75em;
+  }
+
+  .author-bio p:last-child {
+    margin-bottom: 0;
+  }
+
+  .author-bio strong,
+  .author-bio b {
+    font-weight: 600;
+  }
+
+  .author-bio em,
+  .author-bio i {
+    font-style: italic;
+  }
+
+  .author-bio u {
+    text-decoration: underline;
+  }
+
+  .author-bio a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    @apply text-gray-900 font-medium;
+  }
+
+  .author-bio a:hover {
+    @apply text-gray-600;
+  }
+
+  .author-bio ul,
+  .author-bio ol {
+    margin-top: 0.75em;
+    margin-bottom: 0.75em;
+    padding-left: 1.5em;
+  }
+
+  .author-bio li {
+    margin-bottom: 0.35em;
+    padding-left: 0.25em;
+  }
+
+  .author-bio li::marker {
+    @apply text-gray-400;
+  }
+
+  /* Quill 2 encodes the list type in `data-list` on each `li`, NOT in the tag:
+     a bullet list is emitted as `<ol><li data-list="bullet">`. Styling by tag
+     alone would therefore number every bullet list. Neutralize the wrapper and
+     derive the marker from the attribute; the `:not([data-list])` rules keep
+     plain HTML from other sources working. The `ol` counter stays alive, so
+     `data-list="ordered"` items still number sequentially from 1. */
+  .author-bio ol {
+    list-style: none;
+  }
+
+  .author-bio li[data-list='bullet'] {
+    list-style-type: disc;
+  }
+
+  .author-bio li[data-list='ordered'] {
+    list-style-type: decimal;
+  }
+
+  .author-bio ul li:not([data-list]) {
+    list-style-type: disc;
+  }
+
+  .author-bio ol li:not([data-list]) {
+    list-style-type: decimal;
+  }
+
+  /* Artist card panel height. Capped against the viewport so a long biography
+     scrolls inside the card instead of pushing the panel past the screen
+     edges. `dvh` discounts the dynamic browser chrome on iOS/Android, where
+     `vh` would leave the bottom action bar — and with it the "Cerrar" button —
+     under the browser UI; the `vh` line before it is the fallback for engines
+     without `dvh`. Written here rather than as two Tailwind classes because
+     utility order in the class attribute does not control cascade order.
+
+     The fallback goes through `@supports` rather than two `max-height` lines in
+     the same rule: the build's CSS optimizer deduplicates repeated properties
+     and keeps only the last one, which silently dropped the `vh` line. */
+  .author-card-panel {
+    max-height: 88vh;
+  }
+
+  @media (min-width: 768px) {
+    .author-card-panel {
+      max-height: 90vh;
+    }
+  }
+
+  @supports (max-height: 1dvh) {
+    .author-card-panel {
+      max-height: 88dvh;
+    }
+
+    @media (min-width: 768px) {
+      .author-card-panel {
+        max-height: 90dvh;
+      }
+    }
+  }
+}
+
 /* Hide scrollbar for horizontal scroll */
 @layer utilities {
   .scrollbar-hide {

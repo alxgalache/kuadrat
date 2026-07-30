@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import { getArtImageUrl } from '@/lib/api'
 import CoaDescription from '@/components/coa/CoaDescription'
+import { EDITION_COPY } from '@/lib/constants'
 
 /**
  * Rendered when /api/coa/verify returns status='ok'.
@@ -74,6 +75,14 @@ export default function CoaSuccess({ art, counter }) {
 
             {art.artistName && (
               <p className="mt-1 text-sm text-gray-500">{art.artistName}</p>
+            )}
+
+            {art.editionSize > 1 && (
+              <p className="mt-1 text-sm font-medium text-gray-700">
+                {art.editionNumber
+                  ? EDITION_COPY.coaNumbered(art.editionNumber, art.editionSize)
+                  : EDITION_COPY.limited(art.editionSize)}
+              </p>
             )}
 
             {art.description && (

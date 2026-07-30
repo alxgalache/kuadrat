@@ -6,6 +6,13 @@ coverage/
 *.log
 .DS_Store
 
+# Test environment. `.env.test` IS versioned (dummy values only, see its header);
+# `.env.test.local` holds personal overrides and must never be committed.
+.env.test.local
+
+# Local SQLite database used by the test suite (recreated on every run).
+.tmp/
+
 # User uploads - keep directory structure but ignore files
 uploads/**/*
 !uploads/**/.gitkeep

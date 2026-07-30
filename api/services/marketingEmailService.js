@@ -36,7 +36,14 @@ const esc = (v) => escapeForEmail(v == null ? '' : String(v));
 // Resend client (created once, only when marketing is active)
 // ---------------------------------------------------------------------------
 let resendClient = null;
-const marketingActive = () => Boolean(config.marketing.enabled && config.marketing.apiKey);
+// The `noop` transport is an extra kill switch on top of the existing circuit
+// breaker: under NODE_ENV=test (or EMAIL_TRANSPORT=noop) no broadcast, contact
+// create/update or segment change may reach Resend, even if someone enables
+// marketing in that environment. Every send path in this module goes through
+// this check before getClient() is ever called.
+const marketingActive = () => Boolean(
+  config.emailTransport !== 'noop' && config.marketing.enabled && config.marketing.apiKey
+);
 const getClient = () => {
   if (!resendClient) resendClient = new Resend(config.marketing.apiKey);
   return resendClient;

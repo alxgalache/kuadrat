@@ -58,6 +58,32 @@ describe('listTags', () => {
     expect(body.pagination).toEqual({ page: 1, pages: 1, total: 3, limit: 20 });
   });
 
+  it('lists several active copies of the same artwork, each with its number', async () => {
+    // A limited edition has one row per physical copy, all sharing art_id.
+    db.execute
+      .mockResolvedValueOnce({ rows: [{ total: 3 }] })
+      .mockResolvedValueOnce({
+        rows: [
+          { uid: 'A1'.repeat(7), serial_label: 'GAL-2026-0042-1/15', art_id: 42, edition_number: 1, edition_size: 15, status: 'active' },
+          { uid: 'A2'.repeat(7), serial_label: 'GAL-2026-0042-2/15', art_id: 42, edition_number: 2, edition_size: 15, status: 'active' },
+          { uid: 'A3'.repeat(7), serial_label: 'GAL-2026-0042-3/15', art_id: 42, edition_number: 3, edition_size: 15, status: 'active' },
+        ],
+      });
+
+    const req = { query: { art_id: '42' } };
+    const res = mockRes();
+    await listTags(req, res, jest.fn());
+
+    const listSql = db.execute.mock.calls[1][0].sql;
+    expect(listSql).toContain('t.edition_number');
+    expect(listSql).toContain('a.edition_size');
+
+    const { tags } = res.json.mock.calls[0][0];
+    expect(tags).toHaveLength(3);
+    expect(tags.map((t) => t.edition_number)).toEqual([1, 2, 3]);
+    expect(new Set(tags.map((t) => t.art_id)).size).toBe(1);
+  });
+
   it('applies status and art_id filters in the SQL', async () => {
     db.execute
       .mockResolvedValueOnce({ rows: [{ total: 1 }] })
@@ -137,6 +163,42 @@ describe('getTagDetail', () => {
     // events_limit must have been clamped/passed in the SQL args
     const eventsCall = db.execute.mock.calls[1][0];
     expect(eventsCall.args[1]).toBe(2);
+  });
+
+  it('selects and returns the copy number and the edition size', async () => {
+    db.execute
+      .mockResolvedValueOnce({
+        rows: [{
+          uid: 'AB'.repeat(7),
+          serial_label: 'GAL-2026-0042-3/15',
+          art_id: 42,
+          edition_number: 3,
+          art_name: 'Iluminados por la misma luz',
+          art_slug: 'iluminados-por-la-misma-luz',
+          edition_size: 15,
+          art_basename: 'iluminados.jpg',
+          status: 'active',
+          last_counter: 3,
+          is_permanently_locked: 1,
+          personalized_at: '2026-07-01 10:00:00',
+          personalized_by: 'op',
+          locked_at: null,
+          notes: null,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const req = { params: { uid: 'ab'.repeat(7) }, query: {} };
+    const res = mockRes();
+    await getTagDetail(req, res, jest.fn());
+
+    const detailSql = db.execute.mock.calls[0][0].sql;
+    expect(detailSql).toContain('t.edition_number');
+    expect(detailSql).toContain('a.edition_size');
+
+    const { tag } = res.json.mock.calls[0][0];
+    expect(tag.edition_number).toBe(3);
+    expect(tag.edition_size).toBe(15);
   });
 });
 

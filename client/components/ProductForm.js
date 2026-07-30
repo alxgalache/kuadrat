@@ -6,7 +6,7 @@ import {useRouter} from 'next/navigation'
 import {sellerAPI, getArtImageUrl, getOthersImageUrl} from '@/lib/api'
 import {PhotoIcon, PlusIcon, XMarkIcon} from '@heroicons/react/24/solid'
 import {ChevronDownIcon} from '@heroicons/react/16/solid'
-import {SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, MAX_PRODUCT_IMAGES} from '@/lib/constants'
+import {SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, MAX_PRODUCT_IMAGES, PLATFORM_MARGIN_VAT_RATE, EDITION_COPY} from '@/lib/constants'
 import {useDropzone} from 'react-dropzone'
 import {useNotification} from '@/contexts/NotificationContext'
 import QuillEditor from '@/components/QuillEditor'
@@ -148,6 +148,8 @@ function ImageDropzoneSlot({ previewUrl, onDrop, onClear, isFirst }) {
 // - initialProductType (edit): 'art' | 'other' — category is locked in edit mode
 // - initialCommissionRates (edit): { art, other } for the net-earnings preview
 // - initialTaxRates (edit): { art, other } per-seller VAT rates for the preview
+// - initialArtVatRegime (edit): 'art_rebu' | 'standard_vat' — the owner's art
+//   regime, derived server-side; selects which art earnings legend renders
 // - onSubmit(formData, productCategory): performs the API call; errors it
 //   throws are shown via showApiError
 export default function ProductForm({
@@ -156,6 +158,7 @@ export default function ProductForm({
     initialProductType = 'art',
     initialCommissionRates = null,
     initialTaxRates = null,
+    initialArtVatRegime = null,
     onSubmit,
 }) {
     const isEdit = mode === 'edit'
@@ -189,6 +192,10 @@ export default function ProductForm({
     const [canCopack, setCanCopack] = useState(initialProduct ? initialProduct.can_copack !== 0 : true)
     const [forAuction, setForAuction] = useState(initialProduct ? !!initialProduct.for_auction : false)
     const [aiGenerated, setAiGenerated] = useState(initialProduct ? !!initialProduct.ai_generated : false)
+    // Art only. Fixed at creation, immutable afterwards (read-only note in edit mode).
+    const [editionSize, setEditionSize] = useState(
+        initialProduct?.edition_size != null ? String(initialProduct.edition_size) : '1'
+    )
     // Global product image slots (1..MAX_PRODUCT_IMAGES). The first slot is
     // required; additional slots are optional and individually removable.
     const [imageSlots, setImageSlots] = useState(() => {
@@ -221,6 +228,10 @@ export default function ProductForm({
               }
             : {art: null, other: null}
     )
+    // Art VAT regime ('art_rebu' | 'standard_vat'), always derived server-side
+    // (never from the rate on the client). Selects which art earnings legend
+    // renders; while unknown, no art legend is shown.
+    const [artVatRegime, setArtVatRegime] = useState(isEdit ? initialArtVatRegime || null : null)
 
     // For "others" products - variations. Each variation has its own array of
     // image slots (0..MAX_PRODUCT_IMAGES). Variation images are optional.
@@ -426,6 +437,7 @@ export default function ProductForm({
                     art: data.taxVatArt != null ? Number(data.taxVatArt) : null,
                     other: data.taxVatOther != null ? Number(data.taxVatOther) : null,
                 })
+                setArtVatRegime(data.artVatRegime || null)
             })
             .catch((err) => {
                 console.error('Error loading commission rates:', err)
@@ -597,6 +609,10 @@ export default function ProductForm({
 
             if (productCategory === 'art') {
                 formData.append('type', type.trim())
+                if (!isEdit) {
+                    const editionNum = parseInt(editionSize, 10)
+                    formData.append('edition_size', String(Number.isInteger(editionNum) && editionNum >= 1 ? editionNum : 1))
+                }
             } else {
                 const variationsData = hasVariations
                     ? variations.map((v) => {
@@ -662,20 +678,32 @@ export default function ProductForm({
         setShowDecimalWarning(false)
     }
 
-    // Net earnings preview. Commission and VAT rates both come from the
-    // seller's own configured values (per-seller). The preview only renders once
-    // the commission AND VAT rate for the active category are available.
+    // Earnings preview. Commission and VAT rates both come from the seller's
+    // own configured values (per-seller). The preview only renders once the
+    // commission AND VAT rate for the active category are available; for art it
+    // additionally requires the server-derived VAT regime, which selects the
+    // legend: REBU shows the net message, standard_vat (cooperative billing)
+    // shows the gross message.
     const priceValue = parseFloat(price)
     const activeCommissionRate = productCategory === 'art' ? commissionRates.art : commissionRates.other
     const activeVatRate = productCategory === 'art' ? taxRates.art : taxRates.other
     const showNetEarnings = !isNaN(priceValue) && priceValue >= 10 &&
         activeCommissionRate != null && !isNaN(activeCommissionRate) &&
-        activeVatRate != null && !isNaN(activeVatRate)
+        activeVatRate != null && !isNaN(activeVatRate) &&
+        (productCategory !== 'art' || artVatRegime != null)
     let netEarnings = null
     if (showNetEarnings) {
         const commissionRate = activeCommissionRate / 100
         const vatRate = activeVatRate / 100
-        if (productCategory === 'art') {
+        if (productCategory === 'art' && artVatRegime === 'standard_vat') {
+            // Cooperative split: mirrors api/utils/artCommission.js (artist share
+            // rounded, gallery margin grossed up by the platform margin VAT) so
+            // the previewed amount equals the future wallet credit to the cent.
+            const gross = Math.round(
+                (priceValue * (1 - commissionRate)) / (1 + commissionRate * PLATFORM_MARGIN_VAT_RATE) * 100
+            ) / 100
+            netEarnings = { standardArt: true, gross }
+        } else if (productCategory === 'art') {
             const gross = priceValue * (1 - commissionRate)
             const net = gross / (1 + vatRate)
             netEarnings = { net, gross, vatPercent: activeVatRate }
@@ -796,7 +824,9 @@ export default function ProductForm({
                                             </div>
                                             {netEarnings && (
                                                 <p className="mt-2 text-sm text-gray-500">
-                                                    Recibirás {netEarnings.net.toFixed(2)}€ netos por la venta ({netEarnings.gross.toFixed(2)}€ incluyendo {netEarnings.vatPercent}% IVA)
+                                                    {netEarnings.standardArt
+                                                        ? <>Recibirás {netEarnings.gross.toFixed(2)}€ brutos por la venta</>
+                                                        : <>Recibirás {netEarnings.net.toFixed(2)}€ netos por la venta ({netEarnings.gross.toFixed(2)}€ incluyendo {netEarnings.vatPercent}% IVA)</>}
                                                 </p>
                                             )}
                                         </div>
@@ -821,6 +851,41 @@ export default function ProductForm({
                                                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                                                     />
                                                 </div>
+                                            </div>
+                                        )}
+
+                                        {productCategory === 'art' && !isEdit && (
+                                            <div>
+                                                <label htmlFor="editionSize" className="block text-sm/6 font-medium text-gray-900">
+                                                    Nº de ejemplares de la edición
+                                                </label>
+                                                <label className="block text-sm/6 font-medium text-gray-400">
+                                                    1 para obra única. No podrá modificarse después.
+                                                </label>
+                                                <div className="mt-2">
+                                                    <input
+                                                        id="editionSize"
+                                                        name="editionSize"
+                                                        type="number"
+                                                        min="1"
+                                                        max="1000"
+                                                        step="1"
+                                                        value={editionSize}
+                                                        onChange={(e) => setEditionSize(e.target.value)}
+                                                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {productCategory === 'art' && isEdit && Number(editionSize) > 1 && (
+                                            <div>
+                                                <label className="block text-sm/6 font-medium text-gray-900">
+                                                    Edición
+                                                </label>
+                                                <p className="mt-2 text-sm/6 text-gray-600">
+                                                    {EDITION_COPY.limited(editionSize)} (no modificable)
+                                                </p>
                                             </div>
                                         )}
                                     </div>

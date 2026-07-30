@@ -62,7 +62,13 @@ jest.mock('pdfkit', () => {
     mockStream.pipe = jest.fn().mockReturnValue(mockStream);
     return mockStream;
   });
-}, { virtual: true });
+});
+// NOTE: this mock used to carry `{ virtual: true }`, meaning "this module does
+// not exist". pdfkit IS a real dependency, so the virtual registration lost to
+// the real module as soon as another suite had loaded it (any suite that
+// requires app.js pulls pdfkit in through the order controllers). These tests
+// then silently ran against real PDFKit and failed — but only when they ran
+// after an integration suite. See openspec/changes/test-env-isolation.
 
 jest.mock('../config/logger', () => ({
   info: jest.fn(),

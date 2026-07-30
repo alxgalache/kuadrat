@@ -50,6 +50,13 @@ export const NEWSLETTER_ENABLED = process.env.NEXT_PUBLIC_NEWSLETTER_ENABLED !==
 // Maximum number of images per product (global) and per variation (others)
 export const MAX_PRODUCT_IMAGES = 3;
 
+// Platform margin VAT (general rate) applied on top of the gallery's margin for
+// standard-regime art sales (cooperative artists). Mirrors VAT_RATE_STANDARD in
+// api/utils/vatCalculator.js — it is the gallery's own VAT, NOT the seller's
+// tax_vat_art. Used by the publish form's gross-earnings preview so it matches
+// the sale-time split in api/utils/artCommission.js to the cent.
+export const PLATFORM_MARGIN_VAT_RATE = 0.21;
+
 // Bid modal phases
 export const BID_PHASES = {
   CHOOSE: 'choose',
@@ -260,6 +267,27 @@ export const NEWSLETTER_COPY = {
   bannerErrorRateLimit: 'Has realizado demasiados intentos. Inténtalo de nuevo más tarde.',
   bannerErrorDisabled: 'La suscripción no está disponible en este momento.',
   bannerErrorGeneric: 'No se pudo completar la suscripción. Inténtalo más tarde.',
+};
+
+// Limited-edition copy (Spanish). The remaining-copies count is deliberately
+// never shown to buyers.
+export const EDITION_COPY = {
+  // Ficha pública y formulario admin: "Edición limitada de 15 ejemplares"
+  limited: (editionSize) => `Edición limitada de ${editionSize} ejemplares`,
+  // CoA con nº de ejemplar: "Edición Limitada. Ejemplar 3 de 15"
+  coaNumbered: (editionNumber, editionSize) =>
+    `Edición Limitada. Ejemplar ${editionNumber} de ${editionSize}`,
+  // Admin CoA: "Ejemplar 3 de 15"
+  adminNumbered: (editionNumber, editionSize) => `Ejemplar ${editionNumber} de ${editionSize}`,
+};
+
+// Artist card modal copy (Spanish).
+export const AUTHOR_CARD_COPY = {
+  // Etiqueta de sección sobre la biografía (se renderiza en mayúsculas)
+  bioLabel: 'Biografía',
+  // Mostrado cuando el artista no tiene biografía publicada
+  bioEmpty: 'Este artista todavía no ha publicado su biografía.',
+  close: 'Cerrar',
 };
 
 // CoA verification result messages (Spanish) shown to a collector when their

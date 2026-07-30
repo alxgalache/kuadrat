@@ -24,6 +24,8 @@ const getVisibleAuthors = async (req, res, next) => {
           u.full_name,
           u.slug,
           u.profile_img,
+          u.profile_img_mobile,
+          u.hide_profile_img_mobile,
           u.location,
           u.bio,
           u.visible
@@ -40,6 +42,8 @@ const getVisibleAuthors = async (req, res, next) => {
           u.full_name,
           u.slug,
           u.profile_img,
+          u.profile_img_mobile,
+          u.hide_profile_img_mobile,
           u.location,
           u.bio,
           u.visible
@@ -58,6 +62,8 @@ const getVisibleAuthors = async (req, res, next) => {
           u.full_name,
           u.slug,
           u.profile_img,
+          u.profile_img_mobile,
+          u.hide_profile_img_mobile,
           u.location,
           u.bio,
           u.visible
@@ -98,6 +104,8 @@ const getAuthorBySlug = async (req, res, next) => {
           full_name,
           slug,
           profile_img,
+          profile_img_mobile,
+          hide_profile_img_mobile,
           location,
           bio,
           visible

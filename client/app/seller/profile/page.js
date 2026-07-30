@@ -195,7 +195,7 @@ function SellerProfilePageContent() {
             <h2 className="text-lg font-medium text-gray-900">Biografía</h2>
             <SafeAuthorBio
               html={profile.bio}
-              className="mt-2 text-sm text-gray-700 prose prose-sm max-w-none"
+              className="author-bio mt-2 text-sm text-gray-700"
             />
           </div>
         )}

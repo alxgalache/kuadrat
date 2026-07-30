@@ -6,7 +6,7 @@ import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import StatusBadge from '@/components/admin/StatusBadge'
 import useDebounce from '@/hooks/useDebounce'
-import { DEBOUNCE_SEARCH, ADMIN_PAGE_SIZE } from '@/lib/constants'
+import { DEBOUNCE_SEARCH, ADMIN_PAGE_SIZE, EDITION_COPY } from '@/lib/constants'
 import { EyeIcon, LockClosedIcon, XMarkIcon } from '@heroicons/react/20/solid'
 
 function formatDate(value) {
@@ -219,6 +219,11 @@ function CoaListContent() {
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-700">
                             {tag.serial_label || '—'}
+                            {tag.edition_size > 1 && tag.edition_number && (
+                              <span className="ml-2 text-xs text-gray-400">
+                                {EDITION_COPY.adminNumbered(tag.edition_number, tag.edition_size)}
+                              </span>
+                            )}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-700">
                             {tag.art_id ? (

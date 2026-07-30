@@ -106,6 +106,20 @@ const isProduction = process.env.NODE_ENV === 'production';
 const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 const isTest = process.env.NODE_ENV === 'test';
 
+// A `file:` database URL means a local SQLite file rather than a remote Turso
+// instance. It takes no auth token — see the `turso` block below.
+const isFileDatabaseUrl = (process.env.TURSO_DATABASE_URL || '').startsWith('file:');
+
+// --- Email transport ---
+// EMAIL_TRANSPORT is orthogonal to EMAIL_PROVIDER: the provider picks WHICH
+// service would be used (Resend or SMTP), the transport decides WHETHER
+// anything leaves the process at all. `noop` short-circuits the single send
+// chokepoint in services/emailService.js, so no provider is ever contacted.
+// It is forced on under NODE_ENV=test and must be opted into anywhere else.
+const emailTransport = isTest
+  ? 'noop'
+  : (optional('EMAIL_TRANSPORT', 'live') === 'noop' ? 'noop' : 'live');
+
 const config = {
   // --- Application ---
   nodeEnv: optional('NODE_ENV', 'development'),
@@ -121,9 +135,11 @@ const config = {
   siteApiBaseUrl: optional('SITE_API_BASE_URL', 'https://api.pre.140d.art'),
 
   // --- Database ---
+  // A local SQLite file (`file:` URL, used by the test suite) has no auth
+  // token; the token stays mandatory for any remote Turso instance.
   turso: {
     databaseUrl: required('TURSO_DATABASE_URL'),
-    authToken: required('TURSO_AUTH_TOKEN'),
+    authToken: requiredIf(!isFileDatabaseUrl, 'TURSO_AUTH_TOKEN'),
   },
 
   // --- Authentication ---
@@ -135,6 +151,8 @@ const config = {
   // --- Email ---
   // Provider switch (default 'resend'). See the emailProvider validation above.
   emailProvider,
+  // Transport switch: 'live' (default) or 'noop'. See the derivation above.
+  emailTransport,
   // Resend HTTP API key. Required only when EMAIL_PROVIDER=resend.
   resendApiKey: requiredIf(emailProvider === 'resend', 'RESEND_API_KEY'),
   // Legacy SMTP (Nodemailer). Host/user/pass required only when
@@ -347,6 +365,20 @@ const config = {
   },
   cdnBaseUrl: optional('CDN_BASE_URL', ''),
 
+  // --- Database backups (change: turso-s3-backups) ---
+  // Daily dump of the Turso database uploaded to a DEDICATED S3 bucket, never
+  // the media one. Activation is by configuration being present (same criterion
+  // as `config.useS3`), not by a NODE_ENV === 'production' check: today only
+  // production has these variables set, but nothing in the code says so.
+  // `enabled` is forced off under test — see the `backup.enabled` line below.
+  backup: {
+    bucket: optional('AWS_S3_BACKUP_BUCKET', ''),
+    // Falls back to the media region: the backup bucket lives in the same
+    // region today, and a wrong region surfaces as an opaque 301 redirect.
+    region: optional('AWS_S3_BACKUP_REGION', '') || optional('AWS_S3_REGION', 'eu-west-1'),
+    cron: optional('DB_BACKUP_CRON', '0 4 * * *'),
+  },
+
   // --- Access Control ---
   webAppHidden: optional('WEB_APP_HIDDEN', ''),
   testAccessPassword: optional('TEST_ACCESS_PASSWORD', ''),
@@ -354,6 +386,11 @@ const config = {
 
 // Convenience flag: true when S3 is configured for media storage
 config.useS3 = !!config.aws.s3Bucket;
+
+// Scheduled backups are opt-in AND unconditionally off under test: a test run
+// must never dump a database to S3, whatever the env file says. The scheduler
+// additionally refuses to start without a bucket (see backupScheduler.js).
+config.backup.enabled = optionalBool('DB_BACKUP_ENABLED', false) && config.nodeEnv !== 'test';
 
 /**
  * Returns the list of env var names that must be set before a fiscal export

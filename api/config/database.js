@@ -4,11 +4,44 @@ const path = require('path');
 require('dotenv').config();
 const logger = require('./logger');
 
-// Create Turso database client
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const databaseUrl = process.env.TURSO_DATABASE_URL || '';
+const isTest = process.env.NODE_ENV === 'test';
+// libsql speaks the same protocol to a local SQLite file (`file:`) and to a
+// remote Turso instance (`libsql:` / `wss:` / `https:`), so the whole codebase
+// is agnostic to which one is behind `db` — only the URL changes.
+const isFileUrl = databaseUrl.startsWith('file:');
+
+// ── Anti-remote guard ────────────────────────────────────────────────────────
+// The reason this change exists: a test run must never be able to write to the
+// preproduction database. This runs before the client is created, so nothing
+// can slip through — not a stale `.env` in the container, not a failed dotenv
+// override, not a future compose file injecting the wrong URL.
+if (isTest && !isFileUrl) {
+  console.error(
+    '\n[DB GUARD] Refusing to run tests against a non-local database.\n' +
+    `  NODE_ENV=test but TURSO_DATABASE_URL is "${databaseUrl || '<empty>'}".\n` +
+    '  The test suite may only use a local SQLite file (a "file:" URL).\n' +
+    '  Check api/.env.test and api/tests/setup/env.js — the environment file\n' +
+    '  must be loaded with { override: true } so it wins over variables\n' +
+    '  already injected into the process (docker-compose env_file).\n'
+  );
+  process.exit(1);
+}
+
+if (!isTest && isFileUrl) {
+  logger.warn(
+    { databaseUrl },
+    'Using a LOCAL SQLite file as the database — this is expected only in test runs'
+  );
+}
+
+// Create the database client. A local `file:` URL takes no auth token; passing
+// one is meaningless and some libsql versions reject the combination outright.
+const db = createClient(
+  isFileUrl
+    ? { url: databaseUrl }
+    : { url: databaseUrl, authToken: process.env.TURSO_AUTH_TOKEN }
+);
 
 // Initialize database schema
 // This function is idempotent and safe to run on every startup.
@@ -28,6 +61,12 @@ async function initializeDatabase() {
         full_name TEXT,
         slug TEXT UNIQUE,
         profile_img TEXT,
+        -- Landscape-oriented variant used below the md breakpoint, where the
+        -- artist card stacks and the image band is far wider than tall. NULL
+        -- falls back to profile_img. hide_profile_img_mobile suppresses the
+        -- image entirely on small screens, whichever variant would apply.
+        profile_img_mobile TEXT,
+        hide_profile_img_mobile INTEGER NOT NULL DEFAULT 0,
         location TEXT,
         bio TEXT,
         email_contact TEXT,
@@ -115,6 +154,10 @@ async function initializeDatabase() {
         for_auction INTEGER NOT NULL DEFAULT 0,
         for_draw INTEGER NOT NULL DEFAULT 0,
         ai_generated INTEGER NOT NULL DEFAULT 0,
+        -- Limited editions: is_sold means "edition sold out" and is only ever
+        -- written together with editions_sold in the same statement.
+        edition_size INTEGER NOT NULL DEFAULT 1,
+        editions_sold INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (seller_id) REFERENCES users(id)
       )
     `);
@@ -238,7 +281,8 @@ async function initializeDatabase() {
         stripe_customer_id TEXT,
         reserved_at DATETIME,
         payment_mismatch INTEGER NOT NULL DEFAULT 0,
-        notes TEXT
+        notes TEXT,
+        inventory_released_at DATETIME
       )
     `);
 
@@ -707,6 +751,10 @@ async function initializeDatabase() {
     // TAX_VAT_ES / TAX_VAT_ART_ES env vars. art = 10 → REBU, otherwise standard.
     await safeAlter('ALTER TABLE users ADD COLUMN tax_vat_art REAL NOT NULL DEFAULT 10');
     await safeAlter('ALTER TABLE users ADD COLUMN tax_vat_other REAL NOT NULL DEFAULT 21');
+    // Separate artist portrait for small screens, plus an opt-out. See the
+    // users CREATE TABLE above for the semantics.
+    await safeAlter('ALTER TABLE users ADD COLUMN profile_img_mobile TEXT');
+    await safeAlter('ALTER TABLE users ADD COLUMN hide_profile_img_mobile INTEGER NOT NULL DEFAULT 0');
     // Per-item fiscal regime snapshot, frozen at sale time (see utils/vatRegime.js).
     await safeAlter('ALTER TABLE art_order_items ADD COLUMN vat_regime TEXT');
     // Backfill existing art order items: all historical sales were REBU (the only
@@ -723,6 +771,27 @@ async function initializeDatabase() {
     }
     // Unique partial index on stripe_connect_account_id (ALTER TABLE can't add UNIQUE in SQLite)
     await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stripe_connect_account_id ON users(stripe_connect_account_id) WHERE stripe_connect_account_id IS NOT NULL');
+
+    // Limited editions (art-limited-editions) — edition_size is fixed at
+    // creation; editions_sold counts reserved/sold copies; is_sold now means
+    // "edition sold out" and is only written together with editions_sold.
+    // inventory_released_at guards releaseOrderInventory against double release.
+    await safeAlter('ALTER TABLE art ADD COLUMN edition_size INTEGER NOT NULL DEFAULT 1');
+    await safeAlter('ALTER TABLE art ADD COLUMN editions_sold INTEGER NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE orders ADD COLUMN inventory_released_at DATETIME');
+    await safeAlter('ALTER TABLE nfc_tags ADD COLUMN edition_number INTEGER');
+    // Backfill: pre-edition rows sold as unique works (edition_size = 1) must
+    // read as fully consumed. Idempotent — no-op on reruns.
+    {
+      const backfill = await db.execute(
+        'UPDATE art SET editions_sold = 1 WHERE is_sold = 1 AND editions_sold = 0'
+      );
+      if (backfill.rowsAffected > 0) {
+        logger.info(
+          `[database] Backfilled editions_sold=1 on ${backfill.rowsAffected} sold art rows`
+        );
+      }
+    }
 
     // Stripe Connect (Change #3: stripe-connect-events-wallet) — paid events credit
     // the host's standard_vat bucket after a 1-day grace period. `finished_at` is
@@ -965,6 +1034,7 @@ async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS nfc_tags (
         uid TEXT PRIMARY KEY,
         art_id INTEGER NOT NULL,
+        edition_number INTEGER,
         serial_label TEXT,
         status TEXT NOT NULL DEFAULT 'active'
           CHECK(status IN ('active','revoked','lost','damaged')),
@@ -1143,6 +1213,15 @@ async function initializeDatabase() {
 // Only runs when the postal_codes table is empty (fresh database).
 async function importPostalCodes() {
   try {
+    // ES.csv is ~1.4 MB / tens of thousands of rows and the test database is
+    // recreated from scratch on every run, so the import is skipped under test
+    // in favour of the handful of seed rows in tests/setup/seed.js. Set
+    // SEED_POSTAL_CODES=1 when a test genuinely needs the full table.
+    if (isTest && process.env.SEED_POSTAL_CODES !== '1') {
+      logger.info('Test mode: skipping ES.csv postal codes import (set SEED_POSTAL_CODES=1 to force)');
+      return;
+    }
+
     const countResult = await db.execute('SELECT COUNT(*) as count FROM postal_codes');
     if (countResult.rows[0].count > 0) {
       return;

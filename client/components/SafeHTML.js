@@ -94,6 +94,28 @@ export default function SafeHTML({
 }
 
 /**
+ * Author bio sanitizer config.
+ *
+ * Module-level constant on purpose: SafeHTML memoizes on [html, config], so an
+ * object literal here would be recreated on every render and the memo would
+ * never hit.
+ *
+ * `data-list` is allowed because Quill 2 encodes bullet lists as
+ * `<ol><li data-list="bullet">` — the list type lives in the attribute, not in
+ * the tag, so stripping it makes bullets indistinguishable from numbering. It
+ * is an inert data attribute: it executes nothing and loads nothing.
+ *
+ * `span` is explicitly forbidden (rather than merely absent from ALLOWED_TAGS)
+ * so the editor-only `<span class="ql-ui" contenteditable="false">` Quill
+ * injects into every `li` never reaches the published markup.
+ */
+const AUTHOR_BIO_CONFIG = {
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'ul', 'ol', 'li'],
+  ALLOWED_ATTR: ['href', 'target', 'rel', 'data-list'],
+  FORBID_TAGS: ['span'],
+}
+
+/**
  * SafeHTML for author bios - more restrictive
  */
 export function SafeAuthorBio({ html, className = '' }) {
@@ -101,10 +123,7 @@ export function SafeAuthorBio({ html, className = '' }) {
     <SafeHTML
       html={html}
       className={className}
-      config={{
-        ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'ul', 'ol', 'li'],
-        ALLOWED_ATTR: ['href', 'target', 'rel'],
-      }}
+      config={AUTHOR_BIO_CONFIG}
     />
   )
 }

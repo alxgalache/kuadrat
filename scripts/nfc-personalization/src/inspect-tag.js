@@ -88,6 +88,9 @@ async function processCard(reader) {
         console.log('📂 BD nfc_tags:');
         console.log(`     art:                "${tag.art_name}" (id=${tag.art_id}, slug=${tag.art_slug})`);
         console.log(`     serial:             ${tag.serial_label || '-'}`);
+        if (tag.edition_number) {
+          console.log(`     ejemplar:           ${tag.edition_number} de ${tag.edition_size}`);
+        }
         console.log(`     status:             ${tag.status}`);
         console.log(`     last_counter:       ${tag.last_counter}`);
         console.log(`     locked:             ${tag.is_permanently_locked === 1 ? 'SÍ' : 'no'}`);

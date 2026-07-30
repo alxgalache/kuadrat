@@ -108,6 +108,8 @@ router.get('/products', async (req, res) => {
               status,
               removed,
               created_at,
+              edition_size,
+              editions_sold,
               'art' as product_type
             FROM art
             WHERE seller_id = ? AND removed = 0
@@ -159,7 +161,10 @@ router.get('/products', async (req, res) => {
 
     // Combine art and others products
     const allProducts = [
-      ...artResult.rows.map(art => ({ ...art, total_stock: art.is_sold ? 0 : 1 })),
+      ...artResult.rows.map(art => ({
+        ...art,
+        total_stock: Math.max((art.edition_size || 1) - (art.editions_sold || 0), 0),
+      })),
       ...othersWithVariations
     ];
 
@@ -430,6 +435,7 @@ router.get('/commission-rates', async (req, res, next) => {
       commissionRateOther: Number(row.dealer_commission_other) || 0,
       taxVatArt: Number(row.tax_vat_art) || 0,
       taxVatOther: Number(row.tax_vat_other) || 0,
+      artVatRegime: artVatRegimeForRate(row.tax_vat_art),
     });
   } catch (error) {
     next(error);

@@ -6,6 +6,7 @@ const slugify = require('slugify');
 const {
   validateCommonProductFields,
   validateArtType,
+  validateEditionSize,
   validateImageFile,
   generateUniqueBasename,
 } = require('../utils/productValidation');
@@ -127,13 +128,14 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'art');
 
 const createArtProduct = async (req, res, next) => {
   try {
-    const { name, description, price, type, weight, dimensions, for_auction, ai_generated } = req.body;
+    const { name, description, price, type, weight, dimensions, for_auction, ai_generated, edition_size } = req.body;
     const seller_id = req.user.id;
 
     // Collect all validation errors (shared rules with the admin edit endpoint)
     const validationErrors = [
       ...validateCommonProductFields({ name, description, price, weight, dimensions }, 'art'),
       ...validateArtType(type),
+      ...validateEditionSize(edition_size),
     ];
 
     // Validate image files (at least 1, max 3)
@@ -209,14 +211,16 @@ const createArtProduct = async (req, res, next) => {
       const dimensionsValue = dimensions && typeof dimensions === 'string' ? dimensions.trim() : null;
       const forAuctionVal = for_auction === '1' || for_auction === 1 ? 1 : 0;
       const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
+      // edition_size is fixed at creation and immutable afterwards
+      const editionSizeVal = edition_size ? parseInt(edition_size, 10) : 1;
 
       // Insert the art row first (we need its id for product_images)
       const insertResult = await db.execute({
         sql: `
-          INSERT INTO art (seller_id, name, description, price, type, slug, weight, dimensions, for_auction, ai_generated)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO art (seller_id, name, description, price, type, slug, weight, dimensions, for_auction, ai_generated, edition_size)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
-        args: [seller_id, name, description, priceNum, type, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal],
+        args: [seller_id, name, description, priceNum, type, slug, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal, editionSizeVal],
       });
 
       const artId = insertResult.lastInsertRowid;

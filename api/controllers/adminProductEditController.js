@@ -6,6 +6,7 @@ const logger = require('../config/logger');
 const config = require('../config/env');
 const s3Service = require('../services/s3Service');
 const { attachProductImages } = require('../utils/productImages');
+const { artVatRegimeForRate } = require('../utils/vatRegime');
 const { createBatch } = require('../utils/transaction');
 const {
   validateCommonProductFields,
@@ -201,6 +202,8 @@ const getProductEditData = async (req, res, next) => {
         art: Number(sellerRow.tax_vat_art) || 0,
         other: Number(sellerRow.tax_vat_other) || 0,
       },
+      // Derived server-side so the client never re-implements the regime rule.
+      artVatRegime: artVatRegimeForRate(sellerRow.tax_vat_art),
     });
   } catch (error) {
     next(error);
@@ -277,6 +280,8 @@ const updateArtProduct = async (req, res, next) => {
       const aiGeneratedVal = ai_generated === '1' || ai_generated === 1 ? 1 : 0;
 
       const batch = createBatch();
+      // edition_size is intentionally absent: the edition run is fixed at
+      // creation and immutable (like slug and status).
       batch.add(
         `UPDATE art SET name = ?, description = ?, price = ?, type = ?, weight = ?, dimensions = ?, for_auction = ?, ai_generated = ? WHERE id = ?`,
         [name, description, parseFloat(price), type, weightValue, dimensionsValue, forAuctionVal, aiGeneratedVal, productId],

@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>140d · Esquema IVA — obra facturada por cooperativa (PVP 337 €)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --desk:#DCE3D9;
+    --paper:#FCFCFA;
+    --ink:#16212A;
+    --muted:#6C7970;
+    --rule:#DCE2D8;
+    --rule-strong:#B9C3B4;
+    --iva:#574B94;
+    --iva-tint:#EDEAF6;
+    --iva-tint-2:#E2DDF1;
+    --neto:#1E6B55;
+    --neto-tint:#E4EFEA;
+    --pad:38px;
+    --col-base:7.4rem;
+    --col-iva:7.4rem;
+    --col-total:8.2rem;
+  }
+
+  *{box-sizing:border-box;}
+
+  html{-webkit-text-size-adjust:100%;}
+
+  body{
+    margin:0;
+    padding:34px 20px 60px;
+    background:var(--desk);
+    color:var(--ink);
+    font-family:'Archivo',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:15px;
+    line-height:1.45;
+  }
+
+  .sheet{
+    max-width:940px;
+    margin:0 auto;
+    background:var(--paper);
+    border:1px solid var(--rule-strong);
+    box-shadow:0 1px 0 rgba(22,33,42,.06), 0 18px 40px -28px rgba(22,33,42,.5);
+  }
+
+  /* ---------- cabecera ---------- */
+
+  .head{padding:var(--pad) var(--pad) 26px;border-bottom:2px solid var(--ink);}
+
+  .eyebrow{
+    display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+    font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:18px;
+  }
+  .eyebrow b{color:var(--ink);font-weight:700;}
+
+  h1{
+    margin:0;
+    font-size:clamp(28px,4.4vw,42px);
+    font-weight:700;
+    letter-spacing:-.022em;
+    line-height:1.06;
+  }
+  h1 span{display:block;color:var(--iva);}
+
+  .lead{margin:14px 0 0;max-width:48ch;color:#3C4952;font-size:15px;}
+
+  .premises{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px;}
+  .chip{
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    font-size:11.5px;font-weight:500;
+    padding:7px 11px;
+    border:1px solid var(--rule-strong);
+    background:#F4F6F1;
+    white-space:nowrap;
+  }
+  .chip b{font-weight:700;}
+  .chip.key{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+
+  /* ---------- ledger ---------- */
+
+  .ledger{position:relative;padding:0 var(--pad) 8px;}
+
+  /* el canal del IVA: la firma de la ficha */
+  .band{
+    position:absolute;z-index:0;
+    top:0;bottom:8px;
+    right:calc(var(--pad) + var(--col-total));
+    width:var(--col-iva);
+    background:var(--iva-tint);
+    border-left:1px solid var(--iva-tint-2);
+    border-right:1px solid var(--iva-tint-2);
+  }
+
+  .grid{position:relative;z-index:1;}
+
+  .r{
+    display:grid;
+    grid-template-columns:1fr var(--col-base) var(--col-iva) var(--col-total);
+    align-items:baseline;
+    column-gap:0;
+  }
+  .r > *{padding:9px 12px;}
+  .r > *:first-child{padding-left:0;}
+  .r > *:last-child{padding-right:0;}
+  .num{
+    text-align:right;
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    font-size:14px;
+    font-variant-numeric:tabular-nums;
+    white-space:nowrap;
+  }
+
+  .colhead{border-bottom:1px solid var(--rule-strong);}
+  .colhead > *{
+    padding-top:14px;padding-bottom:8px;
+    font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+  }
+  .colhead .num{text-align:right;}
+  .colhead .h-iva{color:var(--iva);}
+
+  .mvt{border-bottom:1px solid var(--rule);padding-bottom:14px;}
+  .mvt:last-of-type{border-bottom:0;}
+
+  .mvt-head{
+    display:flex;align-items:center;gap:12px;
+    padding:22px 0 8px;
+  }
+  .step{
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    font-size:10.5px;font-weight:700;letter-spacing:.08em;
+    color:var(--paper);background:var(--ink);
+    padding:5px 8px;white-space:nowrap;
+  }
+  .mvt-title{font-size:16px;font-weight:600;letter-spacing:-.01em;}
+  .mvt-title em{font-style:normal;color:var(--muted);font-weight:400;}
+
+  .concept{font-size:14px;}
+  .concept small{display:block;color:var(--muted);font-size:12px;margin-top:2px;}
+
+  .r.sum{border-top:1px solid var(--rule-strong);}
+  .r.sum .concept{font-weight:600;font-size:12px;letter-spacing:.09em;text-transform:uppercase;}
+  .r.sum .num{font-weight:700;font-size:16px;}
+
+  .pay .num:last-child{color:var(--neto);}
+  .iva-cell{color:var(--iva);font-weight:500;}
+  .r.sum .iva-cell{color:var(--iva);}
+
+  .note{
+    margin:10px 0 0;
+    padding-left:14px;
+    border-left:2px solid var(--rule-strong);
+    font-size:13px;color:#4A5760;max-width:62ch;
+  }
+  .note b{color:var(--ink);}
+
+  /* flecha entre movimientos */
+  .arrow{
+    display:flex;align-items:center;gap:10px;
+    padding:14px 0 0;
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    font-size:11.5px;letter-spacing:.04em;color:var(--muted);
+  }
+  .arrow i{font-style:normal;color:var(--ink);font-weight:700;}
+  .arrow::before{content:"↓";font-size:15px;color:var(--iva);font-weight:700;}
+
+  /* ---------- comprobación ---------- */
+
+  .check{
+    margin:0;
+    padding:24px var(--pad) 26px;
+    background:var(--iva-tint);
+    border-top:2px solid var(--ink);
+  }
+  .check-h{
+    font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--iva);margin-bottom:12px;
+  }
+  .eq{
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    font-size:clamp(14px,2.3vw,18px);font-weight:500;
+    line-height:1.9;letter-spacing:-.01em;
+  }
+  .eq b{font-weight:700;color:var(--iva);}
+  .check p{margin:12px 0 0;font-size:13px;color:#3C4952;max-width:66ch;}
+
+  /* ---------- resultado ---------- */
+
+  .out{
+    display:grid;grid-template-columns:repeat(4,1fr);
+    border-top:1px solid var(--rule-strong);
+  }
+  .cell{padding:20px var(--pad) 22px;border-right:1px solid var(--rule);}
+  .cell:nth-child(n+2){padding-left:20px;}
+  .cell:last-child{border-right:0;}
+  .cell dt{
+    font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:8px;
+  }
+  .cell dd{
+    margin:0;
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;
+  }
+  .cell small{display:block;margin-top:6px;font-size:11.5px;color:var(--muted);font-family:'Archivo',sans-serif;font-weight:400;line-height:1.35;}
+  .c-iva dd{color:var(--iva);}
+  .c-neto dd{color:var(--neto);}
+
+  /* ---------- fórmulas ---------- */
+
+  .rule-box{
+    margin:0;padding:24px var(--pad) 26px;
+    border-top:2px solid var(--ink);
+  }
+  .rule-lab{
+    display:block;
+    font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+    margin-bottom:14px;
+  }
+  .formula{
+    display:inline-block;
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    font-size:clamp(14px,2.4vw,18px);font-weight:700;
+    background:var(--ink);color:var(--paper);
+    padding:12px 16px;
+    margin:0 10px 16px 0;
+  }
+  .formula span{color:#B7AEE4;}
+
+  .flist{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:0;
+    border-top:1px solid var(--rule);
+  }
+  .flist div{
+    display:flex;justify-content:space-between;gap:14px;align-items:baseline;
+    padding:9px 0;border-bottom:1px solid var(--rule);
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    font-size:12.5px;
+  }
+  .flist div:nth-child(odd){padding-right:24px;border-right:1px solid var(--rule);}
+  .flist div:nth-child(even){padding-left:24px;}
+  .flist b{font-weight:700;white-space:nowrap;}
+  .flist .lab{color:var(--muted);font-weight:400;}
+
+  .why{
+    margin-top:16px;font-size:12.5px;color:#4A5760;max-width:70ch;line-height:1.55;
+  }
+  .why b{color:var(--ink);}
+  .why code{
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+    background:var(--iva-tint);padding:1px 5px;font-size:12px;
+  }
+
+  footer{padding:20px var(--pad) 30px;border-top:1px solid var(--rule);}
+  footer p{margin:0 0 8px;font-size:12px;color:var(--muted);max-width:74ch;line-height:1.5;}
+  footer p:last-child{margin-bottom:0;}
+  footer b{color:var(--ink);font-weight:600;}
+  .alt{
+    margin-top:14px;padding:12px 14px;
+    background:var(--neto-tint);border-left:3px solid var(--neto);
+    font-size:12.5px;color:#2C3B34;max-width:74ch;
+  }
+  .alt b{color:var(--neto);}
+
+  /* ---------- responsive ---------- */
+
+  @media (max-width:760px){
+    :root{--pad:20px;}
+    body{padding:16px 10px 40px;}
+    .band{display:none;}
+    .r{grid-template-columns:1fr auto;}
+    .r > *{padding:4px 0;}
+    .colhead{display:none;}
+    .r .num{text-align:right;}
+    .r .num::before{
+      content:attr(data-l);
+      float:left;
+      font-family:'Archivo',sans-serif;
+      font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+      color:var(--muted);
+      padding-right:14px;
+    }
+    .r .iva-cell{
+      background:var(--iva-tint);
+      padding-left:8px;padding-right:8px;
+      border-left:2px solid var(--iva);
+    }
+    .r .iva-cell::before{color:var(--iva);}
+    .r > .num{grid-column:1 / -1;}
+    .r > .concept{grid-column:1 / -1;padding-bottom:6px;}
+    .r.sum .num{font-size:15px;}
+    .out{grid-template-columns:repeat(2,1fr);}
+    .cell{border-bottom:1px solid var(--rule);}
+    .cell:nth-child(2n){border-right:0;}
+    .cell:nth-child(n+2){padding-left:var(--pad);}
+    .flist{grid-template-columns:1fr;}
+    .flist div:nth-child(odd){padding-right:0;border-right:0;}
+    .flist div:nth-child(even){padding-left:0;}
+  }
+
+  /* ---------- impresión ---------- */
+
+  @media print{
+    body{background:#fff;padding:0;font-size:11.5px;}
+    .sheet{border:0;box-shadow:none;max-width:none;}
+    :root{--pad:14mm;}
+    .band{background:#F0EEF8;}
+    .mvt-head{padding-top:14px;}
+    footer, .rule-box{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+
+<main class="sheet">
+
+  <div class="head">
+    <div class="eyebrow">
+      <span><b>140d</b> · Galería de arte</span>
+      <span>Ficha fiscal · caso cooperativa</span>
+    </div>
+    <h1>Obra facturada<br>por cooperativa<span>21 % en los dos pasos</span></h1>
+    <p class="lead">La artista no factura como autora: lo hace la cooperativa en nombre propio. No hay 10 % ni REBU. Todo va en régimen general.</p>
+    <div class="premises">
+      <span class="chip key">PVP objetivo · <b>337,00 €</b></span>
+      <span class="chip">Factura cooperativa · <b>240,14 € IVA incl.</b></span>
+      <span class="chip">Margen galería · <b>80,05 €</b></span>
+      <span class="chip">Reparto · <b>75 / 25</b></span>
+      <span class="chip">Comisión coop. estimada · <b>8 %</b></span>
+    </div>
+  </div>
+
+  <div class="ledger">
+    <div class="band" aria-hidden="true"></div>
+
+    <div class="grid">
+
+      <div class="r colhead">
+        <div>Concepto</div>
+        <div class="num">Base</div>
+        <div class="num h-iva">IVA 21 %</div>
+        <div class="num">Total</div>
+      </div>
+
+      <!-- MOVIMIENTO 1 -->
+      <section class="mvt">
+        <div class="mvt-head">
+          <span class="step">FACTURA 1</span>
+          <span class="mvt-title">La cooperativa te factura a ti <em>— proveedor</em></span>
+        </div>
+
+        <div class="r">
+          <div class="concept">Obra original
+            <small>Emite la cooperativa con su CIF · régimen general</small>
+          </div>
+          <div class="num" data-l="Base">198,46</div>
+          <div class="num iva-cell" data-l="IVA 21 %">41,68</div>
+          <div class="num" data-l="Total">240,14</div>
+        </div>
+
+        <div class="r sum pay">
+          <div class="concept">Total factura · lo que pagas</div>
+          <div class="num" data-l="Base">198,46</div>
+          <div class="num iva-cell" data-l="IVA 21 %">41,68</div>
+          <div class="num" data-l="Total">240,14</div>
+        </div>
+
+        <p class="note">Pagas <b>240,14 €</b>, pero tu coste real es <b>198,46 €</b>: los 41,68 € de IVA te los deduces después. No son gasto tuyo, son dinero de paso.</p>
+
+        <div class="arrow">tu coste sin IVA <i>198,46 €</i> + tu margen <i>80,05 €</i></div>
+      </section>
+
+      <!-- MOVIMIENTO 2 -->
+      <section class="mvt">
+        <div class="mvt-head">
+          <span class="step">FACTURA 2</span>
+          <span class="mvt-title">Tú facturas al cliente final <em>— venta</em></span>
+        </div>
+
+        <div class="r">
+          <div class="concept">Obra original
+            <small>198,46 coste + 80,05 margen</small>
+          </div>
+          <div class="num" data-l="Base">278,51</div>
+          <div class="num iva-cell" data-l="IVA 21 %">58,49</div>
+          <div class="num" data-l="Total">337,00</div>
+        </div>
+
+        <div class="r sum pay">
+          <div class="concept">Total factura · lo que cobras</div>
+          <div class="num" data-l="Base">278,51</div>
+          <div class="num iva-cell" data-l="IVA 21 %">58,49</div>
+          <div class="num" data-l="Total">337,00</div>
+        </div>
+
+        <p class="note">Factura ordinaria con <b>IVA desglosado</b>. Sin mención al régimen especial: aquí <b>no aplica el REBU</b>, así que no debe aparecer en la factura ni registrarse en el libro de bienes usados.</p>
+
+        <div class="arrow">IVA cobrado <i>58,49 €</i> − IVA pagado <i>41,68 €</i></div>
+      </section>
+
+      <!-- MOVIMIENTO 3 -->
+      <section class="mvt">
+        <div class="mvt-head">
+          <span class="step">MODELO 303</span>
+          <span class="mvt-title">Tu declaración trimestral de IVA <em>— liquidación</em></span>
+        </div>
+
+        <div class="r">
+          <div class="concept">IVA repercutido
+            <small>El que has cobrado al cliente</small>
+          </div>
+          <div class="num">&nbsp;</div>
+          <div class="num iva-cell" data-l="Repercutido">+ 58,49</div>
+          <div class="num">&nbsp;</div>
+        </div>
+
+        <div class="r">
+          <div class="concept">IVA soportado deducible
+            <small>El que has pagado a la cooperativa</small>
+          </div>
+          <div class="num">&nbsp;</div>
+          <div class="num iva-cell" data-l="Soportado">− 41,68</div>
+          <div class="num">&nbsp;</div>
+        </div>
+
+        <div class="r sum">
+          <div class="concept">Resultado · a ingresar</div>
+          <div class="num">&nbsp;</div>
+          <div class="num iva-cell" data-l="A ingresar">= 16,81</div>
+          <div class="num">&nbsp;</div>
+        </div>
+
+        <p class="note">Ingresas <b>16,81 €</b>, que es exactamente el 21 % de tus 80,05 € de margen. La cooperativa, por su parte, ingresa sus <b>41,68 €</b>.</p>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="check">
+    <div class="check-h">Comprobación — no hay IVA duplicado</div>
+    <div class="eq">41,68 <span style="color:var(--muted)">(ingresa la cooperativa)</span> + 16,81 <span style="color:var(--muted)">(ingresas tú)</span> = <b>58,49 €</b> = 21 % × 278,51 €</div>
+    <p>Todo el IVA de la cadena equivale al 21 % de la base final. El impuesto se cobra una sola vez y lo soporta íntegramente el cliente. Lo que encarece la obra no es una duplicidad de IVA, sino el tipo del 21 % en lugar del 10 %.</p>
+  </div>
+
+  <dl class="out">
+    <div class="cell">
+      <dt>Paga el cliente</dt>
+      <dd>337,00 €</dd>
+      <small>Precio final de venta</small>
+    </div>
+    <div class="cell c-iva">
+      <dt>IVA a Hacienda</dt>
+      <dd>58,49 €</dd>
+      <small>41,68 coop. + 16,81 tú</small>
+    </div>
+    <div class="cell c-neto">
+      <dt>Tu beneficio neto</dt>
+      <dd>80,05 €</dd>
+      <small>Íntegro, sin merma por el IVA</small>
+    </div>
+    <div class="cell">
+      <dt>Neto de la artista</dt>
+      <dd>182,58 €</dd>
+      <small>240,14 − 41,68 IVA − 15,88 comisión coop.<br>Antes de cotizaciones e IRPF</small>
+    </div>
+  </dl>
+
+  <div class="rule-box">
+    <span class="rule-lab">Regla rápida — partiendo del PVP que quieres</span>
+    <span class="formula">Margen <span>=</span> PVP ÷ 4,21</span>
+    <span class="formula">Factura coop. <span>=</span> Margen × 3</span>
+
+    <div class="flist">
+      <div><span class="lab">Tu margen neto</span><b>337 ÷ 4,21 = 80,05</b></div>
+      <div><span class="lab">Factura coop. (IVA incl.)</span><b>80,05 × 3 = 240,14</b></div>
+      <div><span class="lab">Base de esa factura</span><b>240,14 ÷ 1,21 = 198,46</b></div>
+      <div><span class="lab">Base imponible total</span><b>337 ÷ 1,21 = 278,51</b></div>
+      <div><span class="lab">IVA que ingresas tú</span><b>80,05 × 0,21 = 16,81</b></div>
+      <div><span class="lab">IVA total de la operación</span><b>278,51 × 0,21 = 58,49</b></div>
+      <div><span class="lab">Camino inverso</span><b>PVP = Margen × 4,21</b></div>
+      <div><span class="lab">O bien</span><b>PVP = coop. + (margen × 1,21)</b></div>
+    </div>
+
+    <p class="why"><b>De dónde sale el 4,21.</b> El reparto 75 / 25 significa que la factura de la cooperativa es <code>3 × tu margen</code>. Y el PVP es esa factura más tu margen con IVA: <code>3m + 1,21m = 4,21m</code>. Si algún día cambias el reparto, sustituye el 3: con un 70 / 30 sería <code>2,333m + 1,21m = 3,543m</code>.</p>
+  </div>
+
+  <footer>
+    <p><b>Por qué 240,14 y no 240,00.</b> Con un PVP clavado en 337 €, los dos números no pueden ser redondos a la vez: si la factura de la cooperativa fuese 240,00 €, tu margen saldría 80,17 € y la proporción se rompería. Ajustando 14 céntimos arriba y 5 abajo, el reparto 75 / 25 se mantiene intacto y todas las sumas cuadran al céntimo.</p>
+    <p>La comisión de la cooperativa se ha estimado en un <b>8 % sobre la base</b>. Ajusta ese porcentaje al real de su cooperativa; no lleva IVA deducible para ti, se descuenta internamente al socio.</p>
+    <div class="alt"><b>Alternativa si algún día la artista se da de alta como autora (epígrafe 861.1):</b> con el mismo PVP de 337 € y tu mismo margen de 80,05 €, la obra iría al 10 % y ella pasaría de 182,58 € a <b>226,31 €</b>, al desaparecer la comisión de la cooperativa y bajar el IVA. El impuesto total caería de 58,49 € a 30,64 €.</div>
+    <p style="margin-top:16px;font-size:11px;">140d · Documento de trabajo interno. No sustituye el criterio de la gestoría. Cifras redondeadas a dos decimales.</p>
+  </footer>
+
+</main>
+
+</body>
+</html>

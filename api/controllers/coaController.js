@@ -21,6 +21,8 @@ function projectArtForCollector(row) {
     type: row.art_type,
     dimensions: row.art_dimensions,
     artistName: row.artist_name || null,
+    editionSize: row.edition_size || 1,
+    editionNumber: row.edition_number || null,
   };
 }
 
@@ -77,9 +79,11 @@ const verifyCoa = async (req, res, next) => {
               t.status            AS tag_status,
               t.last_counter      AS last_counter,
               t.is_permanently_locked AS is_permanently_locked,
+              t.edition_number    AS edition_number,
               a.id                AS art_id,
               a.name              AS art_name,
               a.slug              AS art_slug,
+              a.edition_size      AS edition_size,
               a.description       AS art_description,
               (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS art_basename,
               a.type              AS art_type,

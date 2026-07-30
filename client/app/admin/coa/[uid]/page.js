@@ -9,6 +9,7 @@ import StatusBadge from '@/components/admin/StatusBadge'
 import CoaEventsTable from '@/components/admin/CoaEventsTable'
 import CoaStatusModal from '@/components/admin/CoaStatusModal'
 import { ArrowLeftIcon, LockClosedIcon, PencilSquareIcon } from '@heroicons/react/20/solid'
+import { EDITION_COPY } from '@/lib/constants'
 
 const EVENTS_INITIAL = 25
 const EVENTS_STEP = 25
@@ -173,6 +174,15 @@ function CoaDetailContent({ uid }) {
             <dl className="mt-3 grid grid-cols-3 gap-y-3 text-sm">
               <dt className="text-gray-500">Serial</dt>
               <dd className="col-span-2 text-gray-900">{tag.serial_label || '—'}</dd>
+
+              {tag.edition_size > 1 && tag.edition_number && (
+                <>
+                  <dt className="text-gray-500">Edición</dt>
+                  <dd className="col-span-2 text-gray-900">
+                    {EDITION_COPY.adminNumbered(tag.edition_number, tag.edition_size)}
+                  </dd>
+                </>
+              )}
 
               <dt className="text-gray-500">Último contador</dt>
               <dd className="col-span-2 text-gray-900 font-mono">{tag.last_counter ?? '—'}</dd>

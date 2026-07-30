@@ -574,15 +574,9 @@ async function processOrderConfirmation(orderId, paymentId) {
   const { createBatch } = require('../utils/transaction');
   const inventoryBatch = createBatch();
 
-  // 1) Ensure art items are marked as sold (idempotent — already set by placeOrder)
-  const artItemsRes = await db.execute({
-    sql: 'SELECT aoi.art_id FROM art_order_items aoi WHERE aoi.order_id = ?',
-    args: [orderId],
-  });
-  const uniqueArtIds = [...new Set(artItemsRes.rows.map(r => r.art_id))];
-  for (const artId of uniqueArtIds) {
-    inventoryBatch.add('UPDATE art SET is_sold = 1 WHERE id = ?', [artId]);
-  }
+  // 1) Art items are NOT touched here: the placeOrder reservation already
+  // consumed one edition copy per item, and re-marking is no longer
+  // idempotent now that art inventory is a counter (editions_sold).
 
   // 2) Decrement others variants stock — only if order was NOT reserved by placeOrder
   // (i.e., legacy orders without reserved_at). For reserved orders, stock was already decremented.

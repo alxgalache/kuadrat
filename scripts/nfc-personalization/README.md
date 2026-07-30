@@ -97,16 +97,53 @@ npm run personalize
 1. Coloca una pegatina virgen sobre el ACR1552U.
 2. El script muestra el UID detectado y la versión del chip.
 3. Introduce el `slug` de la obra (el campo `slug` en la tabla `art`).
-4. Confirma el binding.
-5. El script cambia las cinco claves del chip, escribe el NDEF y configura
+4. **Si la obra es de edición limitada** (`art.edition_size > 1`), el script
+   muestra cuántos ejemplares ya están personalizados y pide el número de
+   ejemplar de esta pegatina (1..N). Ver §2.1.
+5. Confirma el binding.
+6. El script cambia las cinco claves del chip, escribe el NDEF y configura
    SDM. Registra la pegatina en `nfc_tags` (`status='active'`,
    `is_permanently_locked=0`).
-6. Retira la pegatina y pásala por un móvil. El navegador debe abrir:
+7. Retira la pegatina y pásala por un móvil. El navegador debe abrir:
    `https://140d.art/coa?picc=<32hex>&cmac=<16hex>` con valores **distintos
    en cada lectura**. La página `/coa` debe mostrar la obra correcta.
-7. Si todo correcto: pega la pegatina al CoA físico.
-8. **NO ejecutes `lock` todavía.** Espera 1-7 días con uso real para
+8. Si todo correcto: pega la pegatina al CoA físico.
+9. **NO ejecutes `lock` todavía.** Espera 1-7 días con uso real para
    detectar errores antes de bloquear.
+
+---
+
+## 2.1 Obras con edición limitada (tirada de N ejemplares)
+
+Una obra con `art.edition_size > 1` (p. ej. 15 impresiones de un collage
+digital) lleva **una pegatina física por ejemplar**: 15 pegatinas → 15 filas
+en `nfc_tags`, todas con el mismo `art_id`. Cada una tiene su propio UID, sus
+propias claves derivadas y su propio contador anti-replay, así que se pueden
+verificar y **revocar de forma independiente** (si se pierde el ejemplar 7,
+revocas solo esa pegatina).
+
+**El certificado en papel es único y compartido.** Lleva impreso "Edición
+limitada de N ejemplares" bajo el título y el autor; **la artista escribe a
+mano** la numeración de cada ejemplar (`3/15`) en el apartado
+"Fecha y numeración". El operador registra ese mismo número al personalizar,
+de modo que papel y BD coinciden.
+
+Durante `npm run personalize`:
+
+- El script lista los ejemplares ya asignados y pide el número (1..N).
+- **Rechaza un número ya usado** por otra pegatina activa (muestra su UID y
+  la sentencia SQL para revocarla si fuera un reemplazo).
+- **Rechaza personalizar más de `edition_size` pegatinas activas** para la
+  misma obra ("edición completa").
+- Guarda `edition_number` y genera el serial
+  `GAL-YYYY-XXXX-<n>/<N>` (p. ej. `GAL-2026-0042-3/15`). Las obras únicas
+  mantienen `edition_number = NULL` y el serial `GAL-YYYY-XXXX` de siempre.
+
+Al verificar, `/coa` muestra "Edición Limitada. Ejemplar n de N", y el admin
+(`/admin/coa`) distingue cada ejemplar en el listado y en el detalle.
+
+`edition_size` se fija al publicar la obra y **es inmutable**: si el número
+no es el correcto, hay que corregirlo en la BD antes de personalizar el lote.
 
 ---
 
@@ -205,15 +242,18 @@ ANTES de empezar:
 
 POR CADA pegatina (FASE 1 — PROGRAMACIÓN):
 [ ] Slug de la obra identificado: _______________
+[ ] Si edición limitada: nº de ejemplar de ESTA pegatina: ____ de ____
 [ ] `npm run personalize` ejecutado sin errores
 [ ] UID anotado: __________________
 [ ] Confirmación de obra: "_______________"
 [ ] Claves K1→K2→K3→K4→K0 cambiadas sin error
 [ ] NDEF + SDM configurados
-[ ] Insertado en BD con serial GAL-YYYY-XXXX
+[ ] Insertado en BD con serial GAL-YYYY-XXXX (o GAL-YYYY-XXXX-n/N)
 [ ] Tap con móvil: URL dinámica ≠ ceros, valores cambian entre lecturas
 [ ] Página /coa muestra la obra correcta
+[ ] Si edición: /coa muestra "Edición Limitada. Ejemplar n de N"
 [ ] Contador SDM incrementa entre lecturas
+[ ] Si edición: numeración n/N escrita a mano en el CoA ("Fecha y numeración")
 [ ] Pegatina pegada al CoA físico correspondiente
 [ ] CoA archivado / asociado a la obra
 

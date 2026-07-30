@@ -164,6 +164,41 @@ client/
 * **Constants:** Magic numbers extracted to `lib/constants.js`.
 * **API Client:** Centralized `lib/api.js` with request deduplication and global 401/429 handling.
 
+## Testing (isolation rules — non-negotiable)
+
+The local development environment points at the **preproduction** Turso database and at the real email provider. A test run must therefore never be allowed to reach either. Run the backend suite with `npm test` from `api/` (or `docker compose exec api npm test`).
+
+**The three guarantees, each enforced in code rather than by convention:**
+
+* **Local database.** `api/.env.test` sets `TURSO_DATABASE_URL=file:./.tmp/test.db` — a local SQLite file through the very same `@libsql/client`, so no application code changes. `api/tests/setup/globalSetup.js` recreates it from `initializeDatabase()` (still the single source of schema truth) and `globalTeardown.js` deletes it; `KEEP_TEST_DB=1` keeps it for post-mortem. `importPostalCodes()` is skipped under test (`SEED_POSTAL_CODES=1` forces the full ES.csv import); a few sample codes are seeded in `tests/setup/seed.js`.
+* **Anti-remote guard.** `api/config/database.js` aborts the process (`process.exit(1)`, before the client is created) when `NODE_ENV=test` and the URL is not `file:`. This is the backstop that makes the rest a guarantee: a stale `.env`, a compose file injecting preprod, or a broken dotenv override can no longer write to preproduction.
+* **No email leaves the process.** `config.emailTransport` is `noop` whenever `NODE_ENV=test` (or `EMAIL_TRANSPORT=noop`). `sendMail()` in `api/services/emailService.js` — the single chokepoint for both Resend and SMTP — records the message in an in-memory outbox and returns a synthetic `messageId` instead of contacting anyone. `marketingEmailService.marketingActive()` carries the same kill switch. Assert on email with `emailService.__getOutbox()` / `__clearOutbox()`.
+
+**Structural rules that make the above possible:**
+
+* `api/app.js` assembles Express + Socket.IO and is **free of side effects**; `api/server.js` is the process entry point and owns everything that touches the world (schema init, wallet migration, email verification, `listen`, the five schedulers, graceful shutdown). Tests import `app.js`, never `server.js` — importing `server.js` would start the schedulers, which mutate whatever database is configured.
+* Integration tests require `tests/helpers/app.js`, not `../app` directly: it registers the `afterAll` that releases the Socket.IO handles, without which the Jest worker never exits.
+* Sentry is skipped entirely under test (`instrument.js` and the `setupExpressErrorHandler` call are both guarded). Merely importing `@sentry/node` installs global require-hook instrumentation that survives Jest's per-file module registry and breaks unrelated suites.
+* `dotenv` does **not** overwrite variables already in `process.env`, and in Docker the preprod values arrive via compose `env_file`. `tests/setup/env.js` therefore loads `.env.test` with `{ override: true }`. Never load a test env file without it.
+* `api/.env.test` is **versioned** and contains dummy values only — never a real credential. Personal overrides go in the gitignored `.env.test.local`.
+* `tests/testEnvironmentIsolation.test.js` asserts all three guarantees; treat a failure there as a stop-the-line event.
+* `client/` has no test runner yet. When one is added the same rule applies: client tests must not reach the network, the API or any real database.
+
+## Database Backups (production only)
+
+Daily dump of the Turso database to a dedicated S3 bucket, at 04:00 `Europe/Madrid`. Full operational guide in `docs/backups-s3.md`.
+
+* **No Turso CLI.** `api/services/dbDumpService.js` reproduces SQLite's `.dump` over the `@libsql/client` connection the app already has: read `sqlite_master`, page rows by `rowid`, emit indexes last. The file restores with the existing manual procedure in `docs/turso-doc.md`. No Go binary in the image, no platform token, no child process.
+* **`sqlite_sequence` is load-bearing.** It is an internal `sqlite_%` table, so the obvious filter would drop it — and a restored database would then reissue `orders` ids that already appear on invoices. The dump emits `DELETE FROM sqlite_sequence;` plus its rows (never its `CREATE TABLE`). `api/tests/dbDump.test.js` asserts the round trip.
+* **`INSERT`s carry an explicit column list**, unlike a real `.dump`. Columns added through `safeAlter` land at the end of the table while sitting mid-list in the dumped `CREATE TABLE`; a positional insert would silently shift every value one column over when restoring into a schema built by `initializeDatabase()`.
+* **The process never deletes.** Dailies go to `daily/`, and the 4th of each month is uploaded *additionally* to `monthly/` (same buffer, second `PutObject`). An S3 lifecycle rule expires `daily/` after 15 days; `monthly/` has no rule. The IAM policy grants **only `s3:PutObject`** on the backup bucket — no `GetObject`, no `DeleteObject` — so the api can write a copy but never read one back or destroy the history.
+* **Credentials:** none in any `.env`. `s3Service.js` builds the client without credentials and the EC2 instance role supplies them through the SDK's default chain.
+* **Activation is by configuration present** (`DB_BACKUP_ENABLED` + `AWS_S3_BACKUP_BUCKET`), never by a `NODE_ENV === 'production'` check — same criterion as `config.useS3`. Forced off under `NODE_ENV=test`, and started from `server.js` only, which tests never import. `.env.test` sets `DB_BACKUP_ENABLED=true` **on purpose**, so the isolation assertion is meaningful.
+* **Failure is loud on three channels** (log + Sentry + email to `BUSINESS_EMAIL`) and never escapes the cron callback. Sentry is required lazily and skipped under test — importing `@sentry/node` in Jest breaks unrelated suites.
+* **Manual run:** `docker compose exec api npm run backup:now`. Ignores `DB_BACKUP_ENABLED` (deliberate operator action), still needs the bucket.
+* **Known blind spot:** a container down at 04:00 produces no copy *and no alert* — the alerting lives inside the process that never ran. Checking that the day's object exists in `daily/` is part of the operational procedure.
+* **Staging is out of scope** by decision: self-hosted, no IMDS, no AWS credentials, non-critical data. Backed up by hand.
+
 ## Database Schema Management
 
 The database schema is defined in `api/config/database.js`. This file is the **single source of truth**.
@@ -193,6 +228,32 @@ Product images live in a single polymorphic table `product_images`:
 Read path: API controllers select product rows WITHOUT `basename` and then call `attachProductImages(rows, productType)` from `api/utils/productImages.js` to hydrate each row with `images: [...]` and a derived `thumbnail_basename`. For SQL paths that snapshot a single basename (orders, payments, emails), use the inline subquery `(SELECT basename FROM product_images WHERE product_type = ? AND product_id = X.id ORDER BY position ASC, id ASC LIMIT 1) AS basename`.
 
 The cap of 3 images per `(product_type, product_id)` is enforced at the upload layer (multer maxCount + controller validation), not at the DB level. The `art`, `others`, and `other_vars` tables no longer carry a `basename` column.
+
+## Art Limited Editions (`edition_size` / `editions_sold`)
+
+An `art` row can represent a run of N copies (e.g. 15 prints of a digital collage), not just a unique physical work. Two columns on `art` model it: `edition_size` (fixed at creation, default 1, **immutable** — never written by any edit endpoint, same as `slug`/`status`) and `editions_sold` (copies reserved or sold).
+
+**The load-bearing rule:** `is_sold` now means *"edition sold out"* and is **only ever written in the same SQL statement as `editions_sold`** — never on its own. That keeps every existing `is_sold` reader (gallery filter, sold badge, auction eligibility, seller dashboard) working untouched, and with `edition_size = 1` the behavior is bit-for-bit the pre-existing one. The two statements are:
+
+```sql
+-- Consume one copy (guarded increment; rowsAffected = 0 means sold out)
+UPDATE art SET editions_sold = editions_sold + 1,
+       is_sold = CASE WHEN editions_sold + 1 >= edition_size THEN 1 ELSE 0 END
+ WHERE id = ? AND editions_sold < edition_size
+-- Release one copy (guarded decrement)
+UPDATE art SET editions_sold = MAX(editions_sold - 1, 0), is_sold = 0
+ WHERE id = ? AND editions_sold > 0
+```
+
+A regression test in `api/tests/editionInventory.test.js` greps `controllers/`, `services/` and `scheduler/` and fails if any `UPDATE art` touches `is_sold` without `editions_sold`.
+
+**One consumption point per sales channel** — the counter is NOT idempotent, so a second write double-counts:
+* **Checkout:** `ordersController.placeOrder` reserves. `verifyPayment` (both the Stripe path and `paymentsController`) deliberately does **not** re-mark art — the old `is_sold = 1` re-marking was only safe because a flag is idempotent.
+* **Draws:** `drawAdminController.billParticipation` consumes *before* charging Stripe and releases on charge failure; `draws.units` caps how many winners can be billed.
+* **Auctions:** `auctionScheduler.processAuctionEnd` consumes exactly one copy on adjudication; auction billing never touches inventory.
+* **Release:** `inventoryService.releaseOrderInventory` is the single release path and claims `orders.inventory_released_at` conditionally first, so a double release (webhook + TTL cleanup) can never decrement twice.
+
+Buyers see only "Edición limitada de N ejemplares" (never the remaining count); the cart still forbids the same artwork twice, but a buyer may purchase another copy in a later order. Texts live in `EDITION_COPY` in `client/lib/constants.js`.
 
 ## Agora Virtual Backgrounds (client-only)
 
@@ -237,6 +298,7 @@ Each artwork ships with a paper Certificate of Authenticity carrying a NTAG 424 
 * **Public endpoint:** `GET /api/coa/verify?picc=<32hex>&cmac=<16hex>` → `{ status: ok | malformed | invalid_cmac | unknown_tag | revoked | replay }`. No auth, dedicated rate limit (`coaVerifyLimiter`).
 * **Admin endpoints:** `GET /api/admin/coa/tags` (paginated list), `GET /api/admin/coa/tags/:uid` (detail + last N `verification_events`), `PATCH /api/admin/coa/tags/:uid/status` (revoke / lost / damaged with audit notes).
 * **Public page:** `client/app/coa/page.js` (Server Component, `force-dynamic`). Calls the backend via `INTERNAL_API_URL` and renders success or failure with es-ES messages from `client/lib/constants.js`.
-* **Tables:** `nfc_tags` (one row per sticker, FK to `art` with `ON DELETE RESTRICT`) and `verification_events` (audit log of every tap, including failed attempts; IPs stored as HMAC-SHA256).
-* **Personalization scripts:** `scripts/nfc-personalization/` — separate Node.js subproject, ESM, **runs OUTSIDE Docker** (needs USB access to the ACR1552U reader). Uses the `ntag424` library (AGPL, internal use only) for the NTAG protocol; uses the same key derivation as the backend (`AES-CMAC(MASTER_KEY, label||UID||SYSTEM_ID)`).
+* **Tables:** `nfc_tags` (one row per **physical sticker**, FK to `art` with `ON DELETE RESTRICT`) and `verification_events` (audit log of every tap, including failed attempts; IPs stored as HMAC-SHA256).
+* **Limited editions:** an artwork with `edition_size > 1` gets one sticker (one `nfc_tags` row) per copy, all sharing `art_id` — the schema always allowed it (PK is `uid`; `art_id` is not unique). `nfc_tags.edition_number` holds the copy number (NULL for unique works) and `serial_label` becomes `GAL-<year>-<artId>-<n>/<N>`. The paper certificate is a single shared design ("Edición limitada de N ejemplares") that the artist numbers by hand; the operator records the same number when personalizing. Each sticker keeps its own derived keys, anti-replay counter and `status`, so copies are revocable one by one. `/coa` shows "Edición Limitada. Ejemplar n de N".
+* **Personalization scripts:** `scripts/nfc-personalization/` — separate Node.js subproject, ESM, **runs OUTSIDE Docker** (needs USB access to the ACR1552U reader). Uses the `ntag424` library (AGPL, internal use only) for the NTAG protocol; uses the same key derivation as the backend (`AES-CMAC(MASTER_KEY, label||UID||SYSTEM_ID)`). The "one active tag per artwork" guard is enforced there (not in the DB): it allows up to `edition_size` active tags and rejects a duplicate copy number.
 * **Reference:** `docs/guia_ntag424_galeria.md` for the deep technical context.

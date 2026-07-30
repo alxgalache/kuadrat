@@ -28,9 +28,13 @@ async function executeBatch(statements) {
  *
  * Usage:
  *   const batch = createBatch();
- *   batch.add('UPDATE art SET is_sold = 1 WHERE id = ?', [artId]);
+ *   batch.add('UPDATE other_vars SET stock = stock - 1 WHERE id = ? AND stock > 0', [variantId]);
  *   batch.add('UPDATE orders SET status = ? WHERE id = ?', ['paid', orderId]);
  *   const results = await batch.execute();
+ *
+ * Note: art inventory is a counter — `is_sold` must never be written on its
+ * own. See the limited-editions section in CLAUDE.md for the two allowed
+ * statements.
  *
  * @returns {{ add: Function, execute: Function, size: Function }}
  */

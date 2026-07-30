@@ -88,6 +88,21 @@ const validateArtType = (type) => {
   return errors;
 };
 
+// Validate the art-only `edition_size` field (limited editions). Optional —
+// absent/empty means unique work (1). Immutable after creation, so only the
+// create endpoint uses this.
+const validateEditionSize = (editionSize) => {
+  const errors = [];
+  if (editionSize === undefined || editionSize === null || editionSize === '') {
+    return errors;
+  }
+  const editionNum = Number(editionSize);
+  if (!Number.isInteger(editionNum) || editionNum < 1 || editionNum > 1000) {
+    errors.push({ field: 'edition_size', message: 'El número de ejemplares de la edición debe ser un entero entre 1 y 1000' });
+  }
+  return errors;
+};
+
 // Validate a single uploaded image file (MIME type + minimum dimensions)
 const validateImageFile = (file, fieldName) => {
   const errors = [];
@@ -129,6 +144,7 @@ module.exports = {
   ALLOWED_MIME_TYPES,
   validateCommonProductFields,
   validateArtType,
+  validateEditionSize,
   validateImageFile,
   getFileExtension,
   generateUniqueBasename,

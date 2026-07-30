@@ -118,11 +118,28 @@ async function processAuctionEnd(auctionId, app) {
 
     for (const winner of winningBids) {
       try {
-        const table = winner.productType === 'art' ? 'art' : 'others';
-        await db.execute({
-          sql: `UPDATE ${table} SET is_sold = 1 WHERE id = ?`,
-          args: [winner.productId],
-        });
+        if (winner.productType === 'art') {
+          // An auction adjudicates exactly one edition copy. This is the only
+          // inventory touch of the auction channel (billing never consumes).
+          const result = await db.execute({
+            sql: `UPDATE art
+                  SET editions_sold = editions_sold + 1,
+                      is_sold = CASE WHEN editions_sold + 1 >= edition_size THEN 1 ELSE 0 END
+                  WHERE id = ? AND editions_sold < edition_size`,
+            args: [winner.productId],
+          });
+          if (result.rowsAffected === 0) {
+            logger.error(
+              { productId: winner.productId, auctionId, action: 'auction_edition_exhausted' },
+              'Scheduler: Edition already sold out when adjudicating auction',
+            );
+          }
+        } else {
+          await db.execute({
+            sql: 'UPDATE others SET is_sold = 1 WHERE id = ?',
+            args: [winner.productId],
+          });
+        }
       } catch (err) {
         logger.error({ productId: winner.productId, err }, 'Scheduler: Error marking product sold');
       }

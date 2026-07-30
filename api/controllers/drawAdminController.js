@@ -3,6 +3,27 @@ const marketingEmailService = require('../services/marketingEmailService');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
 const { artVatRegimeForRate } = require('../utils/vatRegime');
+const { artCommissionAmount } = require('../utils/artCommission');
+
+// Draws never pre-reserve edition copies — consumption happens when billing
+// each winner. This check only prevents creating/updating a draw whose units
+// could never be fully billed at the time of the operation.
+// Returns an es-ES error message, or null when the units fit.
+const validateArtUnitsAvailability = async ({ productId, productType, units }) => {
+  if (productType !== 'art') return null;
+  const res = await db.execute({
+    sql: 'SELECT edition_size, editions_sold FROM art WHERE id = ?',
+    args: [productId],
+  });
+  if (res.rows.length === 0) return 'El producto del sorteo no existe';
+  const available = Math.max((res.rows[0].edition_size || 1) - (res.rows[0].editions_sold || 0), 0);
+  if (units > available) {
+    return available === 0
+      ? 'La edición de esta obra está agotada: no quedan ejemplares para sortear'
+      : `Solo ${available === 1 ? 'queda' : 'quedan'} ${available} ejemplar${available === 1 ? '' : 'es'} disponible${available === 1 ? '' : 's'} de la edición para sortear`;
+  }
+  return null;
+};
 
 /**
  * POST /api/admin/draws
@@ -27,13 +48,35 @@ const createDraw = async (req, res, next) => {
       });
     }
 
+    const unitsVal = units ? parseInt(units, 10) : 1;
+    if (!Number.isInteger(unitsVal) || unitsVal < 1) {
+      return res.status(400).json({
+        success: false,
+        title: 'Unidades inválidas',
+        message: 'El número de unidades debe ser un entero mayor o igual que 1',
+      });
+    }
+
+    const unitsError = await validateArtUnitsAvailability({
+      productId: parseInt(product_id, 10),
+      productType: product_type,
+      units: unitsVal,
+    });
+    if (unitsError) {
+      return res.status(400).json({
+        success: false,
+        title: 'Unidades no disponibles',
+        message: unitsError,
+      });
+    }
+
     const draw = await drawService.createDraw({
       name,
       description,
       product_id: parseInt(product_id, 10),
       product_type,
       price: parseFloat(price),
-      units: units ? parseInt(units, 10) : 1,
+      units: unitsVal,
       min_participants: min_participants ? parseInt(min_participants, 10) : 30,
       max_participations: parseInt(max_participations, 10),
       start_datetime,
@@ -121,6 +164,34 @@ const updateDraw = async (req, res, next) => {
     if (start_datetime !== undefined) fields.start_datetime = start_datetime;
     if (end_datetime !== undefined) fields.end_datetime = end_datetime;
     if (status !== undefined) fields.status = status;
+
+    // Validate units against edition availability with the effective values
+    // (payload overrides falling back to the stored draw).
+    if (fields.units !== undefined || fields.product_id !== undefined || fields.product_type !== undefined) {
+      const existing = await drawService.getDrawById(id);
+      if (existing) {
+        const effectiveUnits = fields.units !== undefined ? fields.units : existing.units || 1;
+        if (!Number.isInteger(effectiveUnits) || effectiveUnits < 1) {
+          return res.status(400).json({
+            success: false,
+            title: 'Unidades inválidas',
+            message: 'El número de unidades debe ser un entero mayor o igual que 1',
+          });
+        }
+        const unitsError = await validateArtUnitsAvailability({
+          productId: fields.product_id !== undefined ? fields.product_id : existing.product_id,
+          productType: fields.product_type !== undefined ? fields.product_type : existing.product_type,
+          units: effectiveUnits,
+        });
+        if (unitsError) {
+          return res.status(400).json({
+            success: false,
+            title: 'Unidades no disponibles',
+            message: unitsError,
+          });
+        }
+      }
+    }
 
     const draw = await drawService.updateDraw(id, fields);
 
@@ -275,6 +346,19 @@ const finishDraw = async (req, res, next) => {
  * POST /api/admin/draws/:id/participations/:participationId/bill
  */
 const billParticipation = async (req, res, next) => {
+  // Edition copy consumed for this billing (released if the charge fails).
+  let consumedArtId = null;
+  const releaseEditionCopy = async () => {
+    if (consumedArtId == null) return;
+    const artId = consumedArtId;
+    consumedArtId = null;
+    await db.execute({
+      sql: 'UPDATE art SET editions_sold = MAX(editions_sold - 1, 0), is_sold = 0 WHERE id = ? AND editions_sold > 0',
+      args: [artId],
+    });
+    logger.warn({ action: 'inventory_released', productId: artId, type: 'art', reason: 'draw_billing_failed' }, 'Draw billing edition copy released');
+  };
+
   try {
     const { id, participationId } = req.params;
     const { shippingCost = 0 } = req.body;
@@ -302,14 +386,62 @@ const billParticipation = async (req, res, next) => {
       });
     }
 
+    // 2b. Enforce the draw units cap. Billed = orders created for this draw
+    // whose charge did not fail (failed billings release their copy, so a
+    // substitute winner can still be billed).
+    const unitsRes = await db.execute({ sql: 'SELECT units FROM draws WHERE id = ?', args: [id] });
+    const drawUnits = unitsRes.rows[0] ? Number(unitsRes.rows[0].units) || 1 : 1;
+    const billedRes = await db.execute({
+      sql: `SELECT COUNT(*) AS billed
+            FROM orders o
+            JOIN draw_participations dp ON o.notes = 'draw_participation:' || dp.id
+            WHERE dp.draw_id = ? AND o.status != 'payment_failed'`,
+      args: [id],
+    });
+    if (Number(billedRes.rows[0]?.billed || 0) >= drawUnits) {
+      return res.status(409).json({
+        success: false,
+        message: `Ya se han facturado las ${drawUnits} unidades del sorteo`,
+      });
+    }
+
+    // 2c. For art, atomically consume one edition copy BEFORE charging, so two
+    // concurrent billings can never oversell the edition.
+    if (data.product_type === 'art') {
+      const consume = await db.execute({
+        sql: `UPDATE art
+              SET editions_sold = editions_sold + 1,
+                  is_sold = CASE WHEN editions_sold + 1 >= edition_size THEN 1 ELSE 0 END
+              WHERE id = ? AND editions_sold < edition_size`,
+        args: [data.product_id],
+      });
+      if (consume.rowsAffected === 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'La edición de esta obra está agotada: no quedan ejemplares disponibles',
+        });
+      }
+      consumedArtId = data.product_id;
+    }
+
     // 3. Create order
     const token = require('crypto').randomUUID();
     const drawPrice = Number(data.price) || 0;
     const parsedShippingCost = Number(shippingCost) || 0;
-    const commissionRate = data.product_type === 'other'
-      ? ((Number(data.dealer_commission_other) || 0) / 100)
-      : ((Number(data.dealer_commission_art) || 0) / 100);
-    const commissionAmount = Math.round(drawPrice * commissionRate * 100) / 100;
+    // Freeze the fiscal regime derived from the seller's art VAT rate. The
+    // same regime value drives the art commission split (flat for REBU, margin
+    // grossed up by its 21% VAT for standard_vat) and the row snapshot below.
+    // Other-product draws keep the flat split (always standard, no regime column).
+    const vatRegime = data.product_type === 'art'
+      ? artVatRegimeForRate(data.tax_vat_art)
+      : 'standard_vat';
+    const commissionAmount = data.product_type === 'art'
+      ? artCommissionAmount({
+          price: drawPrice,
+          commissionRate: Number(data.dealer_commission_art) || 0,
+          vatRegime,
+        })
+      : Math.round(drawPrice * ((Number(data.dealer_commission_other) || 0) / 100) * 100) / 100;
     const totalPrice = drawPrice + parsedShippingCost;
 
     const orderResult = await db.execute({
@@ -356,8 +488,6 @@ const billParticipation = async (req, res, next) => {
 
     // 4. Create order item (art or other)
     if (data.product_type === 'art') {
-      // Freeze the fiscal regime derived from the seller's art VAT rate.
-      const vatRegime = artVatRegimeForRate(data.tax_vat_art);
       await db.execute({
         sql: `INSERT INTO art_order_items (
                 order_id, art_id, price_at_purchase, shipping_cost, commission_amount, status, vat_regime
@@ -397,12 +527,18 @@ const billParticipation = async (req, res, next) => {
         sql: `UPDATE orders SET status = 'payment_failed' WHERE id = ?`,
         args: [orderId],
       });
+      await releaseEditionCopy();
       return res.status(200).json({
         success: false,
         message: 'Error al realizar el cobro. El pedido se ha creado pero el pago ha fallado.',
         orderId,
       });
     }
+
+    // The charge went through (paid, SCA pending, or unknown-but-not-failed):
+    // the consumed copy is now definitive and must never be released by the
+    // outer catch (e.g. if the confirmation email or a later update throws).
+    consumedArtId = null;
 
     // 6. Update order to paid
     const itemTable = data.product_type === 'art' ? 'art_order_items' : 'other_order_items';
@@ -477,6 +613,13 @@ const billParticipation = async (req, res, next) => {
       orderId,
     });
   } catch (error) {
+    // Unexpected failure after the edition copy was consumed (e.g. order
+    // insert error) — release it so no phantom copy stays consumed.
+    try {
+      await releaseEditionCopy();
+    } catch (releaseErr) {
+      logger.error({ err: releaseErr }, 'Failed to release edition copy after draw billing error');
+    }
     next(error);
   }
 };

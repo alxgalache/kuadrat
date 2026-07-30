@@ -48,8 +48,10 @@ const listTags = async (req, res, next) => {
               t.uid,
               t.serial_label,
               t.art_id,
+              t.edition_number,
               a.name AS art_name,
               a.slug AS art_slug,
+              a.edition_size,
               t.status,
               t.last_counter,
               t.is_permanently_locked,
@@ -87,8 +89,10 @@ const getTagDetail = async (req, res, next) => {
               t.uid,
               t.serial_label,
               t.art_id,
+              t.edition_number,
               a.name AS art_name,
               a.slug AS art_slug,
+              a.edition_size,
               (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS art_basename,
               t.status,
               t.last_counter,
@@ -172,7 +176,7 @@ const updateTagStatus = async (req, res, next) => {
     }
 
     const updatedQuery = await db.execute({
-      sql: `SELECT uid, serial_label, art_id, status, last_counter,
+      sql: `SELECT uid, serial_label, art_id, edition_number, status, last_counter,
                    is_permanently_locked, personalized_at, personalized_by,
                    locked_at, notes
             FROM nfc_tags

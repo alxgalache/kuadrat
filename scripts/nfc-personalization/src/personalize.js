@@ -3,6 +3,8 @@
  * Personalize one NTAG 424 DNA sticker:
  *  - read UID
  *  - ask operator which artwork (slug) to bind it to
+ *  - for a limited edition (art.edition_size > 1), ask which copy this
+ *    sticker certifies; one sticker (one row) per physical copy
  *  - derive five per-UID keys
  *  - replace factory K0 with diversified K0, K1, K2, K3, K4
  *  - write NDEF URL template with PICC + CMAC placeholders
@@ -32,7 +34,7 @@ import {
 import { deriveAllKeys } from './lib/crypto.js';
 import {
   findArtBySlug,
-  findActiveTagByArt,
+  listActiveTagsByArt,
   insertNfcTag,
   markAsDamaged,
 } from './lib/db.js';
@@ -50,7 +52,7 @@ function bannerStart() {
   console.log('   Coloca una pegatina sobre el lector ACR1552U para empezar.\n');
 }
 
-function bannerDone(uidHex, art) {
+function bannerDone(uidHex, art, editionNumber, editionSize) {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('  PRÓXIMOS PASOS PARA ESTA PEGATINA:');
   console.log('  1. Retira la pegatina del lector.');
@@ -58,6 +60,11 @@ function bannerDone(uidHex, art) {
   console.log(`     ${BASE_URL}/coa?picc=<32hex>&cmac=<16hex>`);
   console.log('     con valores DISTINTOS en cada lectura.');
   console.log(`  3. Verifica que la página muestra: "${art.name}".`);
+  if (editionNumber) {
+    console.log(`     y "Edición Limitada. Ejemplar ${editionNumber} de ${editionSize}".`);
+    console.log(`  3b. Anota a mano "${editionNumber}/${editionSize}" en el apartado`);
+    console.log('      "Fecha y numeración" del certificado en papel.');
+  }
   console.log('  4. Si todo correcto, pega la pegatina al CoA físico y archiva.');
   console.log('  5. Tras 1-7 días de verificación con uso real:');
   console.log(`     npm run lock -- ${uidHex}`);
@@ -99,17 +106,57 @@ async function processCard(reader) {
       return;
     }
 
-    const existing = await findActiveTagByArt(art.id);
-    if (existing) {
-      console.error(`✗ La obra "${art.name}" (id=${art.id}) ya tiene un tag activo: ${existing.uid}`);
-      console.error(`  Revoca el anterior antes: UPDATE nfc_tags SET status='revoked' WHERE uid='${existing.uid}';`);
+    const editionSize = Number(art.edition_size) || 1;
+    const activeTags = await listActiveTagsByArt(art.id);
+
+    if (activeTags.length >= editionSize) {
+      if (editionSize === 1) {
+        console.error(`✗ La obra "${art.name}" (id=${art.id}) ya tiene un tag activo: ${activeTags[0].uid}`);
+        console.error(`  Revoca el anterior antes: UPDATE nfc_tags SET status='revoked' WHERE uid='${activeTags[0].uid}';`);
+      } else {
+        console.error(`✗ La edición de "${art.name}" (id=${art.id}) ya está completa: ${activeTags.length}/${editionSize} tags activos.`);
+        console.error(`  UIDs: ${activeTags.map((t) => `${t.uid}${t.edition_number ? ` (ej. ${t.edition_number})` : ''}`).join(', ')}`);
+        console.error(`  Revoca el que corresponda antes: UPDATE nfc_tags SET status='revoked' WHERE uid='...';`);
+      }
       return;
     }
 
+    // Limited editions: one sticker per copy, numbered by the artist on the
+    // shared paper certificate. Unique works keep edition_number NULL.
+    let editionNumber = null;
+    if (editionSize > 1) {
+      const taken = new Set(activeTags.map((t) => Number(t.edition_number)).filter(Boolean));
+      console.log(`   Edición limitada de ${editionSize} ejemplares — ${activeTags.length} ya personalizados.`);
+      if (taken.size > 0) {
+        console.log(`   Ejemplares ya asignados: ${[...taken].sort((a, b) => a - b).join(', ')}`);
+      }
+
+      const answer = await prompts({
+        type: 'number',
+        name: 'editionNumber',
+        message: `Nº de ejemplar de esta pegatina (1-${editionSize}):`,
+        min: 1,
+        max: editionSize,
+      });
+      editionNumber = answer.editionNumber;
+
+      if (!Number.isInteger(editionNumber) || editionNumber < 1 || editionNumber > editionSize) {
+        console.error(`✗ Número de ejemplar inválido. Debe ser un entero entre 1 y ${editionSize}.`);
+        return;
+      }
+      if (taken.has(editionNumber)) {
+        const dup = activeTags.find((t) => Number(t.edition_number) === editionNumber);
+        console.error(`✗ El ejemplar ${editionNumber} de ${editionSize} ya tiene un tag activo: ${dup.uid}`);
+        console.error(`  Revoca el anterior antes: UPDATE nfc_tags SET status='revoked' WHERE uid='${dup.uid}';`);
+        return;
+      }
+    }
+
+    const editionLabel = editionNumber ? ` — ejemplar ${editionNumber} de ${editionSize}` : '';
     const { confirm } = await prompts({
       type: 'confirm',
       name: 'confirm',
-      message: `Vincular tag ${uidHex} → obra "${art.name}" (id=${art.id})?`,
+      message: `Vincular tag ${uidHex} → obra "${art.name}" (id=${art.id})${editionLabel}?`,
       initial: true,
     });
     if (!confirm) {
@@ -162,17 +209,19 @@ async function processCard(reader) {
     console.log('✓ NDEF escrito y SDM configurado.');
 
     const year = new Date().getFullYear();
-    const serial = `GAL-${year}-${String(art.id).padStart(4, '0')}`;
+    const baseSerial = `GAL-${year}-${String(art.id).padStart(4, '0')}`;
+    const serial = editionNumber ? `${baseSerial}-${editionNumber}/${editionSize}` : baseSerial;
     await insertNfcTag({
       uid: uidHex,
       artId: art.id,
       serialLabel: serial,
+      editionNumber,
       operator: OPERATOR,
     });
     registeredInDb = true;
     console.log(`✓ Insertado en BD con serial ${serial}.\n`);
 
-    bannerDone(uidHex, art);
+    bannerDone(uidHex, art, editionNumber, editionSize);
   } catch (err) {
     console.error('✗ Error procesando el tag:', err.message);
     if (uidHex && registeredInDb) {

@@ -49,7 +49,8 @@ router.post('/', async (req, res) => {
   try {
     const {
       email, full_name, slug, bio, location, email_contact, visible,
-      pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions
+      pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
+      hide_profile_img_mobile
     } = req.body
 
     // Validate required fields
@@ -97,8 +98,8 @@ router.post('/', async (req, res) => {
     const result = await db.execute({
       sql: `INSERT INTO users (email, password_hash, full_name, slug, bio, location, email_contact, role, visible,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
-            password_setup_token, password_setup_token_expires)
-            VALUES (?, '', ?, ?, ?, ?, ?, 'seller', ?, ?, ?, ?, ?, ?, ?, ?)`,
+            password_setup_token, password_setup_token_expires, hide_profile_img_mobile)
+            VALUES (?, '', ?, ?, ?, ?, ?, 'seller', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         email,
         full_name,
@@ -113,7 +114,8 @@ router.post('/', async (req, res) => {
         pickup_country || '',
         pickup_instructions || '',
         setupToken,
-        tokenExpires
+        tokenExpires,
+        hide_profile_img_mobile ? 1 : 0
       ]
     })
 
@@ -131,7 +133,7 @@ router.post('/', async (req, res) => {
 
     // Fetch created user
     const newUser = await db.execute({
-      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, visible, created_at,
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
             password_setup_token_expires
             FROM users
@@ -161,7 +163,7 @@ router.post('/', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, visible, created_at,
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
             password_hash, password_setup_token_expires
             FROM users
@@ -200,7 +202,7 @@ router.get('/shipping-methods', getShippingMethods)
 router.get('/:id', async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, visible, created_at,
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
             password_hash, password_setup_token_expires,
             stripe_connect_account_id, stripe_connect_status, stripe_transfers_capability_active,
@@ -322,14 +324,15 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
       full_name, bio, location, email, email_contact, visible,
       pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
       dealer_commission_art, dealer_commission_other,
-      tax_vat_art, tax_vat_other
+      tax_vat_art, tax_vat_other,
+      hide_profile_img_mobile
     } = req.body
     const authorId = req.params.id
 
     // Verify author exists and is a seller
     const checkResult = await db.execute({
       sql: `SELECT id, dealer_commission_art, dealer_commission_other,
-                   tax_vat_art, tax_vat_other
+                   tax_vat_art, tax_vat_other, hide_profile_img_mobile
             FROM users WHERE id = ? AND role = ?`,
       args: [authorId, 'seller']
     })
@@ -356,6 +359,10 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
     const taxVatOther = tax_vat_other !== undefined
       ? Number(tax_vat_other)
       : Number(existing.tax_vat_other)
+    // Same omitted-field convention as above: absent leaves the flag untouched.
+    const hideImgMobile = hide_profile_img_mobile !== undefined
+      ? (hide_profile_img_mobile ? 1 : 0)
+      : Number(existing.hide_profile_img_mobile)
 
     // Update author
     await db.execute({
@@ -363,20 +370,22 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
             SET full_name = ?, bio = ?, location = ?, email = ?, email_contact = ?, visible = ?,
             pickup_address = ?, pickup_city = ?, pickup_postal_code = ?, pickup_country = ?, pickup_instructions = ?,
             dealer_commission_art = ?, dealer_commission_other = ?,
-            tax_vat_art = ?, tax_vat_other = ?
+            tax_vat_art = ?, tax_vat_other = ?,
+            hide_profile_img_mobile = ?
             WHERE id = ?`,
       args: [
         full_name, bio, location, email, email_contact, visible ? 1 : 0,
         pickup_address || '', pickup_city || '', pickup_postal_code || '', pickup_country || '', pickup_instructions || '',
         commissionArt, commissionOther,
         taxVatArt, taxVatOther,
+        hideImgMobile,
         authorId
       ]
     })
 
     // Fetch updated author
     const updatedResult = await db.execute({
-      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, visible, created_at,
+      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
             dealer_commission_art, dealer_commission_other,
             tax_vat_art, tax_vat_other
@@ -400,78 +409,109 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
 })
 
 /**
+ * Store an uploaded author portrait into one of the two avatar columns.
+ *
+ * Both variants live in the same `authors/` bucket/directory and use the same
+ * `author-<suffix><ext>` naming, so `getAuthorImageUrl` on the client resolves
+ * either one without knowing which column it came from. The column name is
+ * chosen from a fixed literal at the call site — never from request data — so
+ * it can't be steered into another column.
+ *
+ * @param {'profile_img'|'profile_img_mobile'} column
+ */
+async function storeAuthorAvatar(req, res, column) {
+  const authorId = req.params.id
+
+  if (!req.file) {
+    return res.status(400).json({
+      title: 'Error de validacion',
+      message: 'No se proporciono ningun archivo'
+    })
+  }
+
+  // Verify author exists
+  const result = await db.execute({
+    sql: `SELECT id, ${column} AS current_img FROM users WHERE id = ? AND role = ?`,
+    args: [authorId, 'seller']
+  })
+
+  if (result.rows.length === 0) {
+    return res.status(404).json({
+      title: 'No encontrado',
+      message: 'Autor no encontrado'
+    })
+  }
+
+  const author = result.rows[0]
+
+  // Generate filename
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+  const ext = path.extname(req.file.originalname)
+  const filename = 'author-' + uniqueSuffix + ext
+
+  // Delete the previous file for THIS column only, so replacing one variant
+  // never removes the other.
+  if (author.current_img) {
+    if (config.useS3) {
+      await s3Service.deleteFile(`authors/${author.current_img}`)
+    } else {
+      const oldImagePath = path.join(AUTHORS_UPLOADS_DIR, author.current_img)
+      if (fs.existsSync(oldImagePath)) {
+        fs.unlinkSync(oldImagePath)
+      }
+    }
+  }
+
+  // Upload new avatar
+  if (config.useS3) {
+    await s3Service.uploadFile(`authors/${filename}`, req.file.buffer, req.file.mimetype)
+  } else {
+    if (!fs.existsSync(AUTHORS_UPLOADS_DIR)) {
+      fs.mkdirSync(AUTHORS_UPLOADS_DIR, { recursive: true })
+    }
+    await fs.promises.writeFile(path.join(AUTHORS_UPLOADS_DIR, filename), req.file.buffer)
+  }
+
+  await db.execute({
+    sql: `UPDATE users SET ${column} = ? WHERE id = ?`,
+    args: [filename, authorId]
+  })
+
+  res.json({
+    title: 'Avatar actualizado',
+    message: 'Avatar del autor actualizado correctamente',
+    filename: filename
+  })
+}
+
+/**
  * POST /api/admin/authors/:id/upload-avatar
- * Upload author avatar
+ * Upload the author's main (desktop) portrait
  */
 router.post('/:id/upload-avatar', authorUpload.single('avatar'), async (req, res) => {
   try {
-    const authorId = req.params.id
-
-    if (!req.file) {
-      return res.status(400).json({
-        title: 'Error de validacion',
-        message: 'No se proporciono ningun archivo'
-      })
-    }
-
-    // Verify author exists
-    const result = await db.execute({
-      sql: 'SELECT id, profile_img FROM users WHERE id = ? AND role = ?',
-      args: [authorId, 'seller']
-    })
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        title: 'No encontrado',
-        message: 'Autor no encontrado'
-      })
-    }
-
-    const author = result.rows[0]
-
-    // Generate filename
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    const ext = path.extname(req.file.originalname)
-    const filename = 'author-' + uniqueSuffix + ext
-
-    // Delete old avatar if exists
-    if (author.profile_img) {
-      if (config.useS3) {
-        await s3Service.deleteFile(`authors/${author.profile_img}`)
-      } else {
-        const oldImagePath = path.join(AUTHORS_UPLOADS_DIR, author.profile_img)
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath)
-        }
-      }
-    }
-
-    // Upload new avatar
-    if (config.useS3) {
-      await s3Service.uploadFile(`authors/${filename}`, req.file.buffer, req.file.mimetype)
-    } else {
-      if (!fs.existsSync(AUTHORS_UPLOADS_DIR)) {
-        fs.mkdirSync(AUTHORS_UPLOADS_DIR, { recursive: true })
-      }
-      await fs.promises.writeFile(path.join(AUTHORS_UPLOADS_DIR, filename), req.file.buffer)
-    }
-
-    // Update database with new avatar filename
-    await db.execute({
-      sql: 'UPDATE users SET profile_img = ? WHERE id = ?',
-      args: [filename, authorId]
-    })
-
-    res.json({
-      title: 'Avatar actualizado',
-      message: 'Avatar del autor actualizado correctamente',
-      filename: filename
-    })
+    await storeAuthorAvatar(req, res, 'profile_img')
   } catch (error) {
     logger.error({ err: error }, 'Error uploading avatar')
     res.status(500).json({
       title: 'Error del servidor',
       message: 'No se pudo subir el avatar'
+    })
+  }
+})
+
+/**
+ * POST /api/admin/authors/:id/upload-avatar-mobile
+ * Upload the landscape portrait shown below the `md` breakpoint
+ */
+router.post('/:id/upload-avatar-mobile', authorUpload.single('avatar'), async (req, res) => {
+  try {
+    await storeAuthorAvatar(req, res, 'profile_img_mobile')
+  } catch (error) {
+    logger.error({ err: error }, 'Error uploading mobile avatar')
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudo subir la imagen para móvil'
     })
   }
 })
