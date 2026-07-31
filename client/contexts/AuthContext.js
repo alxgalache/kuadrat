@@ -24,6 +24,18 @@ export function AuthProvider({ children }) {
     return data
   }
 
+  // Password setup from an activation link. It auto-logs the user in, so it must
+  // go through the context: authAPI writes localStorage directly and the provider
+  // only reads it on mount, so a client-side redirect would leave `user` null
+  // (navbar showing a logged-out state) until a full page reload.
+  const completeAccountSetup = async (token, password, confirmPassword) => {
+    const data = await authAPI.setPassword(token, password, confirmPassword)
+    if (data.token && data.user) {
+      setUser(data.user)
+    }
+    return data
+  }
+
   const logout = () => {
     authAPI.logout()
     setUser(null)
@@ -32,6 +44,7 @@ export function AuthProvider({ children }) {
   const value = {
     user,
     login,
+    completeAccountSetup,
     logout,
     isAuthenticated: !!user,
     loading,

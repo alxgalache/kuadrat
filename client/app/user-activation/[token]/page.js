@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { authAPI } from '@/lib/api'
+import { useAuth } from '@/contexts/AuthContext'
 import Link from 'next/link'
 
 // Password validation requirements
@@ -47,6 +48,7 @@ function getStrengthText(strength) {
 export default function SetupAccountPage() {
   const params = useParams()
   const router = useRouter()
+  const { completeAccountSetup } = useAuth()
   const token = params.token
 
   const [loading, setLoading] = useState(true)
@@ -116,7 +118,7 @@ export default function SetupAccountPage() {
     setSubmitting(true)
 
     try {
-      const result = await authAPI.setPassword(token, password, confirmPassword)
+      const result = await completeAccountSetup(token, password, confirmPassword)
       if (result.success) {
         setSuccess(true)
         // Redirect to seller dashboard after 2 seconds

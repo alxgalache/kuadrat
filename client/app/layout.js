@@ -1,6 +1,5 @@
 import './globals.css'
 // import ShippingBanner from '@/components/ShippingBanner'
-import Script from 'next/script'
 import JsonLd from '@/components/JsonLd'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { CartProvider } from '@/contexts/CartContext'
@@ -13,7 +12,6 @@ import NewsletterBanner from '@/components/NewsletterBanner'
 import RateLimitHandler from '@/components/RateLimitHandler'
 import TestAccessGate from '@/components/TestAccessGate'
 import LayoutWrapper from '@/components/LayoutWrapper'
-import { IS_PROD } from '@/lib/env'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
@@ -158,23 +156,6 @@ export default function RootLayout({ children }) {
             </AuthProvider>
           </BannerNotificationProvider>
         </NotificationProvider>
-        {/* Plausible Analytics — solo en producción */}
-        {IS_PROD && (
-          <>
-            {/* Stub de cola asíncrona: permite llamar a window.plausible() antes de que el script externo cargue */}
-            <Script
-              id="plausible-init"
-              strategy="beforeInteractive"
-              dangerouslySetInnerHTML={{
-                __html: `window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()`,
-              }}
-            />
-            <Script
-              strategy="afterInteractive"
-              src="https://analytics.140d.art/js/pa-wBK9e93pedt0sh-_3hOYT.js"
-            />
-          </>
-        )}
       </body>
     </html>
   )
