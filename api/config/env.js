@@ -342,7 +342,26 @@ const config = {
   ipHashSalt: requiredHexAtLeast('IP_HASH_SALT', 16),
 
   // --- Sentry ---
+  // `enabled` is the READ-ONLY mirror of the criterion that instrument.js
+  // applies. instrument.js is the authority: it must run before any other
+  // module is required (OpenTelemetry patches `require`, so it has to win the
+  // race), which rules out importing THIS file from there — doing so would
+  // load the whole env validation, and its process.exit paths, ahead of
+  // Sentry.init(). The duplication is therefore deliberate; do not "fix" it by
+  // making instrument.js require config/env.js. api/tests/sentryGating.test.js
+  // asserts the two criteria agree across the whole environment matrix.
+  //
+  // Two independent gates, which must NOT be collapsed into one:
+  //   NODE_ENV=test        -> Sentry is never imported at all (structural: the
+  //                           global require-hook instrumentation survives
+  //                           Jest's per-file module registry and breaks
+  //                           unrelated suites). See instrument.js and app.js.
+  //   NODE_ENV=development -> imported and initialized, but transport off, so
+  //                           the wiring stays identical across environments
+  //                           while HMR/nodemon noise stops leaving the box.
+  //                           SENTRY_ENABLE_DEV=true opts back in on purpose.
   sentry: {
+    enabled: !isTest && (!isDevelopment || optionalBool('SENTRY_ENABLE_DEV', false)),
     tracesSampleRate: optionalFloat('SENTRY_TRACES_SAMPLE_RATE', 0.1),
     profilesSampleRate: optionalFloat('SENTRY_PROFILES_SAMPLE_RATE', 0.0),
   },
