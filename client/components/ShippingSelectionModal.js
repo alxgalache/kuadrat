@@ -298,13 +298,15 @@ export default function ShippingSelectionModal({
                             {method.description}
                           </span>
                         )}
-                        {method.pickup_address && (
+                        {(method.pickup_address || method.pickup_city || method.pickup_postal_code) && (
                           <div className="mt-2 text-sm text-gray-700">
                             <p className="font-medium">Dirección de recogida:</p>
-                            <p>{method.pickup_address}</p>
-                            <p>
-                              {method.pickup_city} {method.pickup_postal_code}
-                            </p>
+                            {method.pickup_address && <p>{method.pickup_address}</p>}
+                            {(method.pickup_city || method.pickup_postal_code) && (
+                              <p>
+                                {method.pickup_city} {method.pickup_postal_code}
+                              </p>
+                            )}
                             {method.pickup_instructions && (
                               <p className="mt-1 text-xs text-gray-600">{method.pickup_instructions}</p>
                             )}
