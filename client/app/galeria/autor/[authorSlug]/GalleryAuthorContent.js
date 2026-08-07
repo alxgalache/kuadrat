@@ -9,6 +9,7 @@ import AuthorMobileFilter from '@/components/AuthorMobileFilter'
 import ProductGrid from '@/components/ProductGrid'
 import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
+import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
 
 export default function GalleryAuthorContent({ params }) {
   const router = useRouter()
@@ -18,8 +19,11 @@ export default function GalleryAuthorContent({ params }) {
   const [modalOpen, setModalOpen] = useState(false)
   const productListRef = useRef(null)
 
+  // Se invoca ANTES que useGalleryProducts: la instantánea tiene que estar
+  // disponible en el efecto de montaje del listado.
+  const restoration = useGridScrollRestoration()
   const { authors } = useGalleryAuthors('art', authorSlug)
-  const { products, loading, error, page, isFading } = useGalleryProducts(artAPI, authorSlug)
+  const { products, loading, error, page, isFading } = useGalleryProducts(artAPI, authorSlug, restoration)
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)
@@ -103,6 +107,7 @@ export default function GalleryAuthorContent({ params }) {
                 isFading={isFading}
                 getImageUrl={getArtImageUrl}
                 baseRoute="/galeria"
+                onProductOpen={restoration.onProductOpen}
               />
             </div>
           </main>

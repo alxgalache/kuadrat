@@ -304,3 +304,19 @@ export const COA_FAILURE_MESSAGES = {
   revoked:
     'Este certificado ha sido marcado como revocado, perdido o dañado. Ponte en contacto con la galería para más información.',
 };
+
+// Grid scroll restoration (galería / tienda, incluidas sus rutas por autor).
+// La instantánea se guarda en sessionStorage bajo GRID_RESTORE_STORAGE_PREFIX +
+// el id que marca la entrada del historial; ese id vive en window.history.state
+// bajo GRID_RESTORE_HISTORY_KEY, que es lo que distingue "volver atrás" de una
+// navegación nueva a la misma URL.
+export const GRID_RESTORE_STORAGE_PREFIX = 'kuadrat.gridRestore.';
+export const GRID_RESTORE_HISTORY_KEY = '__gridRestoreId';
+// Tope de rehidratación: 10 páginas × DEFAULT_PAGE_SIZE = 120 productos en una
+// sola petición. Por encima se restaura hasta el tope (ver design.md).
+export const GRID_RESTORE_MAX_PAGES = 10;
+// Pasado este tiempo la instantánea se descarta y el grid arranca desde arriba.
+export const GRID_RESTORE_TTL_MS = 30 * 60 * 1000;
+// Máximo de instantáneas conservadas en sessionStorage; en cada escritura se
+// purgan las caducadas y se recorta a las más recientes.
+export const GRID_RESTORE_MAX_SNAPSHOTS = 10;

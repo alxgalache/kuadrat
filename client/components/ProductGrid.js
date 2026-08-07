@@ -5,18 +5,22 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { PlusIcon } from '@heroicons/react/20/solid'
 
-function ProductGridItem({ product, getImageUrl, baseRoute }) {
+function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen }) {
   const [displayedBasename, setDisplayedBasename] = useState(null)
   const mainBasename = displayedBasename ?? product.thumbnail_basename ?? product.images?.[0]?.basename ?? null
   const detailHref = `${baseRoute}/p/${product.slug}`
   const variationThumbs = product.variation_thumbnails ?? []
   const showVariationsRow = variationThumbs.length >= 2
 
+  // Marca la instantánea de scroll antes de navegar al detalle. El hook ignora
+  // los clics que abren en pestaña nueva.
+  const handleOpen = (e) => onProductOpen?.(product.id, e)
+
   return (
-    <li className="inline-flex w-full flex-col text-center">
+    <li className="inline-flex w-full flex-col text-center" data-product-id={product.id}>
       <div className="group relative">
         <div className="relative aspect-square w-full overflow-hidden rounded-md bg-gray-200">
-          <Link href={detailHref} aria-label={product.name} className="block size-full">
+          <Link href={detailHref} aria-label={product.name} className="block size-full" onClick={handleOpen}>
             {mainBasename && (
               <Image
                 alt={product.name}
@@ -57,7 +61,7 @@ function ProductGridItem({ product, getImageUrl, baseRoute }) {
         <div className="mt-6">
           <p className="text-sm text-gray-500">{product.seller_full_name}</p>
           <h3 className="mt-1 font-semibold text-gray-900">
-            <Link href={detailHref}>{product.name}</Link>
+            <Link href={detailHref} onClick={handleOpen}>{product.name}</Link>
           </h3>
           <p className="mt-1 text-gray-900">€{product.price.toFixed(2)}</p>
         </div>
@@ -66,7 +70,7 @@ function ProductGridItem({ product, getImageUrl, baseRoute }) {
   )
 }
 
-export default function ProductGrid({ products, isFading, getImageUrl, baseRoute }) {
+export default function ProductGrid({ products, isFading, getImageUrl, baseRoute, onProductOpen }) {
   return (
     <div className="relative">
       <div
@@ -83,6 +87,7 @@ export default function ProductGrid({ products, isFading, getImageUrl, baseRoute
               product={product}
               getImageUrl={getImageUrl}
               baseRoute={baseRoute}
+              onProductOpen={onProductOpen}
             />
           ))}
         </ul>

@@ -9,6 +9,7 @@ import AuthorMobileFilter from '@/components/AuthorMobileFilter'
 import ProductGrid from '@/components/ProductGrid'
 import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
+import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
 
 export default function GalleryMasPage() {
   const router = useRouter()
@@ -18,8 +19,11 @@ export default function GalleryMasPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const productListRef = useRef(null)
 
+  // Se invoca ANTES que useGalleryProducts: la instantánea tiene que estar
+  // disponible en el efecto de montaje del listado.
+  const restoration = useGridScrollRestoration()
   const { authors } = useGalleryAuthors('other', selectedAuthorSlug)
-  const { products, loading, error, page, isFading, isLoadingMore } = useGalleryProducts(othersAPI, selectedAuthorSlug)
+  const { products, loading, error, page, isFading, isLoadingMore } = useGalleryProducts(othersAPI, selectedAuthorSlug, restoration)
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)
@@ -104,6 +108,7 @@ export default function GalleryMasPage() {
                 isFading={isFading}
                 getImageUrl={getOthersImageUrl}
                 baseRoute="/tienda"
+                onProductOpen={restoration.onProductOpen}
               />
               {isLoadingMore && (
                 <div className="flex items-center justify-center gap-2 py-8">
