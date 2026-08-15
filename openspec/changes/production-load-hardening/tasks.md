@@ -20,10 +20,11 @@
 ## 3. Proxy (H3, H6)
 
 - [x] 3.1 `deploy/nginx/00-kuadrat-shared.conf`: upstreams con keepalive, mapa `$connection_upgrade`, zonas de `limit_req`/`limit_conn`, `proxy_cache_path`, clave RSC.
-- [x] 3.2 `deploy/nginx/140d.art.conf`: `http2 on`, caché de HTML con `use_stale`, caché de `/_next/image` y `/_next/static`, `limit_req`.
-- [x] 3.3 `deploy/nginx/api.140d.art.conf`: `http2 on`, bloque de Socket.IO, caché de imágenes servidas por la API, sin caché de datos.
-- [x] 3.4 `deploy/nginx/README.md`: instalación, comprobaciones, invalidación y decisiones que no conviene deshacer.
-- [x] 3.5 Validar la sintaxis con nginx real (`nginx -t` en contenedor).
+- [x] 3.2 `deploy/nginx/140d.art.conf`: fichero único con los cinco bloques, `http2 on`, caché de HTML con `use_stale`, caché de `/_next/image` y `/_next/static`, `limit_req`.
+- [x] 3.3 Adaptar a la instalación real de la instancia: un solo certificado multi-SAN en `live/140d.art`, `client_max_body_size 550M` y timeouts de 600 s en la API (subida de vídeo de 500 MB), `www` redirigiendo al apex, `ipv6only=on` una sola vez, y sin `ssl_session_cache` propio (lo define el `options-ssl-nginx.conf` de certbot y duplicarlo aborta el arranque).
+- [x] 3.4 `deploy/nginx/README.md`: instalación, restauración, comprobaciones e invalidación.
+- [x] 3.5 Validar la sintaxis con nginx real (`nginx -t`) replicando el entorno de la instancia.
+- [x] 3.6 Verificar el comportamiento con upstreams simulados: `/admin` nunca cacheado, HTML y RSC sin contaminarse, `STALE` con el origen caído, y `503` explícito del limitador sin conexiones cortadas.
 
 ## 4. Imágenes (H5)
 
