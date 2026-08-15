@@ -140,8 +140,26 @@ afortunada, no un diseño: basta con que un chunk haya sido desalojado por
 `max_size` para que la página se rompa. Purga y no dependas de la suerte.
 
 No hay purga selectiva (haría falta `ngx_cache_purge`, que no viene en el
-paquete de Ubuntu), así que se vacía el directorio entero. Es barato: se vuelve
-a llenar con las primeras visitas.
+paquete de Ubuntu), así que se vacía el directorio entero.
+
+### Recalienta la caché justo después de purgar
+
+```bash
+curl -s -o /dev/null https://140d.art/ https://140d.art/galeria https://140d.art/tienda
+curl -s "https://api.140d.art/api/art?page=1&limit=50" \
+  | python3 -c "import sys,json;[print(p['slug']) for p in json.load(sys.stdin)['products']]" \
+  | while read s; do curl -s -o /dev/null "https://140d.art/galeria/p/$s"; done
+```
+
+Tarda unos segundos y evita el único efecto secundario medido de bajar el
+contenedor del cliente a 0.5 vCPU: con la caché vacía, el render sostiene ~11
+peticiones por segundo, así que un pico de visitas que coincida con el
+despliegue encuentra colas de varios segundos. `proxy_cache_lock` amortigua el
+caso natural —todos los visitantes caen sobre las mismas pocas URLs y sólo se
+renderiza una vez cada una—, pero recalentar a mano lo elimina del todo y no
+depende de esa suerte.
+
+Son unas 31 URLs en total; el bucle las cubre todas.
 
 La caché de imágenes (`kuadrat_img`) **no hay que vaciarla nunca**: sus claves
 llevan el basename UUID del fichero, así que una imagen nueva es una URL nueva.
