@@ -1,6 +1,18 @@
 import { fetchAuthor, truncateText, SITE_URL } from '@/lib/serverApi'
 import GalleryMasAuthorContent from './GalleryMasAuthorContent'
 
+// ISR — ver el comentario en `galeria/p/[id]/page.js`.
+export const revalidate = 300
+
+// `revalidate` solo no basta en un segmento dinámico: hace falta también
+// `generateStaticParams`. Ver el comentario extenso en
+// `client/app/galeria/p/[id]/page.js`.
+export async function generateStaticParams() {
+  return []
+}
+
+export const dynamicParams = true
+
 export async function generateMetadata({ params }) {
   const { authorSlug } = await params
   const author = await fetchAuthor(authorSlug)

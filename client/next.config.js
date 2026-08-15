@@ -8,6 +8,22 @@ const nextConfig = {
   cacheMaxMemorySize: 0,
   images: {
     dangerouslyAllowLocalIP: true,
+    // Los basenames son UUID y una imagen nueva es un fichero nuevo: una URL
+    // /_next/image nunca cambia de contenido, así que puede cachearse un año.
+    // Con el valor por defecto (4 h) el optimizador volvía a descargar el
+    // original del CDN —1,5 MB— y a redimensionarlo tres veces al día por cada
+    // variante, en el mismo vCPU que renderiza las páginas.
+    minimumCacheTTL: 31536000,
+    // El grid pide 25vw y el detalle una imagen grande: con los 8 anchos por
+    // defecto se generan variantes que nadie llega a pedir dos veces, y cada
+    // una cuesta una decodificación completa del original. Cinco cubren
+    // móvil, tablet, escritorio y retina sin pérdida visible.
+    deviceSizes: [640, 828, 1080, 1920, 3840],
+    // Deliberadamente SIN 'image/avif'. Comprime mejor que WebP, pero
+    // codificarlo es varias veces más caro en CPU y esta máquina es un
+    // Graviton de 2 vCPU compartidos con el render y la API. El ahorro de
+    // bytes lo paga el usuario en tiempo de espera de la primera variante.
+    formats: ['image/webp'],
     remotePatterns: [
       { protocol: 'https', hostname: 'api.pre.140d.art'},
       { protocol: 'https', hostname: 'api.140d.art'},

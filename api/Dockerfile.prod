@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Kuadrat API — imagen de producción
+#
+# El `Dockerfile` de al lado es el de desarrollo: hace `npm install` (que puede
+# resolver versiones distintas de las del lockfile) y arranca con nodemon. En
+# producción se venía usando ese mismo fichero con el `command:` sobreescrito
+# desde compose, lo que funciona pero deja dentro de la imagen jest, nodemon y
+# supertest, y hace la build no reproducible.
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+# `npm ci` respeta el lockfile exactamente; --omit=dev deja fuera jest, nodemon
+# y supertest, que nunca se ejecutan bajo `node server.js`.
+RUN npm ci --omit=dev
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# tini como PID 1: Node no reenvía señales a sus hijos ni recoge zombis. Sin
+# esto, el SIGTERM de `docker compose down` no llega limpio al manejador de
+# apagado ordenado de config/shutdown.js y el contenedor muere por timeout.
+RUN apk add --no-cache tini
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# El volumen de uploads se monta encima en compose; los directorios tienen que
+# existir con el dueño correcto para el caso en que no se monte nada.
+RUN mkdir -p /app/uploads/products /app/uploads/authors && \
+    chown -R node:node /app
+
+USER node
+
+EXPOSE 3001
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "server.js"]

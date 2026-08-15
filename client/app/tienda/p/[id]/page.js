@@ -2,6 +2,19 @@ import { fetchOthersProduct, getOthersImageUrl, stripHtml, truncateText, SITE_UR
 import JsonLd from '@/components/JsonLd'
 import OthersProductDetail from './OthersProductDetail'
 
+// ISR — misma razón que en `galeria/p/[id]`: sin este export el segmento
+// dinámico se renderiza en cada petición. Ver el comentario allí.
+export const revalidate = 300
+
+// `revalidate` solo no basta en un segmento dinámico: hace falta también
+// `generateStaticParams`. Ver el comentario extenso en
+// `client/app/galeria/p/[id]/page.js`.
+export async function generateStaticParams() {
+  return []
+}
+
+export const dynamicParams = true
+
 export async function generateMetadata({ params }) {
   const { id } = await params
   const product = await fetchOthersProduct(id)

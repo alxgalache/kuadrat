@@ -11,7 +11,10 @@ services:
   api:
     build:
       context: ./api
-      dockerfile: Dockerfile
+      # Imagen de producción: `npm ci --omit=dev` (build reproducible, sin jest
+      # ni nodemon dentro) y tini como PID 1 para que el SIGTERM llegue al
+      # apagado ordenado. El `Dockerfile` sin sufijo es el de desarrollo.
+      dockerfile: Dockerfile.prod
     container_name: kuadrat-api
     # Bind to localhost only - nginx will handle external traffic
     ports:
@@ -29,14 +32,30 @@ services:
       - no-new-privileges:true
     # Restart policy for production
     restart: unless-stopped
-    command: npm run start
+    # Sin `command:`: el CMD de Dockerfile.prod ya es `node server.js`.
     networks:
       - kuadrat-network
-    # Resource limits to prevent DoS
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    # Límites de recursos.
+    #
+    # La máquina es una t4g.medium: 2 vCPU en total. La asignación anterior
+    # (1.0 + 1.0) entregaba los dos vCPU enteros a los contenedores y dejaba a
+    # nginx —que termina TLS, sirve la caché y ahora absorbe la mayor parte del
+    # tráfico— peleando por los restos. Se reserva ~0,25 vCPU para nginx y el
+    # sistema.
+    #
+    # El reparto favorece al cliente porque ahí está el cuello medido: el render
+    # SSR y el optimizador de imágenes. La API respondía 60 req/s con p95 de
+    # 382 ms sin acercarse a su límite.
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: '0.75'
           memory: 1G
         reservations:
           cpus: '0.25'
@@ -90,11 +109,19 @@ services:
       - api
     networks:
       - kuadrat-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/galeria',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    # El cliente se lleva la parte grande: es donde está el cuello (render SSR +
+    # optimizador de imágenes). Ver la nota en el servicio `api`.
     deploy:
       resources:
         limits:
           cpus: '1.0'
-          memory: 1G
+          memory: 1500M
         reservations:
           cpus: '0.5'
           memory: 512M

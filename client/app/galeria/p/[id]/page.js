@@ -2,6 +2,34 @@ import { fetchArtProduct, getArtImageUrl, stripHtml, truncateText, SITE_URL } fr
 import JsonLd from '@/components/JsonLd'
 import ArtProductDetail from './ArtProductDetail'
 
+// ISR. Sin este export, un segmento dinámico sin `generateStaticParams` se
+// renderiza entero en cada petición y sale con `Cache-Control: no-store` — que
+// era justo el caso de la ruta que más tráfico recibe desde buscadores y redes.
+// Medido en producción: ~25 req/s sanas contra las ~50 req/s del listado, que sí
+// estaba precacheado. Con `revalidate` el render se sirve desde el cacheHandler
+// y sólo se recalcula una vez cada 5 min por obra.
+//
+// El valor coincide con el `next.revalidate` que ya usaban los fetch de
+// `serverApi.js`: la página no puede quedar más fresca que sus propios datos,
+// así que un número menor sólo gastaría CPU sin ganar frescura.
+export const revalidate = 300
+
+// `revalidate` por sí solo NO basta en un segmento dinámico: sin
+// `generateStaticParams` Next lo marca como `ƒ (Dynamic)` y lo renderiza entero
+// en cada petición — comprobado en la tabla de rutas de `next build`.
+//
+// Devolver la lista vacía es deliberado, en lugar de pedir el catálogo a la API
+// aquí. Prerenderizar en build obligaría a que la API esté levantada y
+// respondiendo durante `docker build`, convirtiendo un fallo de red en un
+// despliegue roto; y el beneficio sería sólo ahorrarse el primer render de cada
+// obra. Con la lista vacía, `dynamicParams` hace que cada URL se renderice la
+// primera vez que alguien la pide y se cachee a partir de ahí.
+export async function generateStaticParams() {
+  return []
+}
+
+export const dynamicParams = true
+
 export async function generateMetadata({ params }) {
   const { id } = await params
   const product = await fetchArtProduct(id)
