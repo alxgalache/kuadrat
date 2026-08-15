@@ -43,22 +43,30 @@ services:
       start_period: 40s
     # Límites de recursos.
     #
-    # La máquina es una t4g.medium: 2 vCPU en total. La asignación anterior
-    # (1.0 + 1.0) entregaba los dos vCPU enteros a los contenedores y dejaba a
-    # nginx —que termina TLS, sirve la caché y ahora absorbe la mayor parte del
-    # tráfico— peleando por los restos. Se reserva ~0,25 vCPU para nginx y el
-    # sistema.
+    # La máquina es una t4g.medium: 2 vCPU en total. La suma de los límites se
+    # mantiene en 1.75 para que nginx —que termina TLS y ahora sirve el 98,8 %
+    # del tráfico desde su caché— conserve ~0,25 vCPU garantizado.
     #
-    # El reparto favorece al cliente porque ahí está el cuello medido: el render
-    # SSR y el optimizador de imágenes. La API respondía 60 req/s con p95 de
-    # 382 ms sin acercarse a su límite.
+    # El reparto favorece a la API, y eso es lo contrario de lo que pedía la
+    # primera medición. Entonces el cuello era el render de Next; hoy nginx
+    # sirve lo cacheado sin tocar Node y el render ocurre una vez cada cinco
+    # minutos por página. Medido con los límites por IP levantados:
+    #
+    #   API con consulta a Turso ...  50 req/s   ← el techo del tráfico real
+    #   API sin base de datos ...... 188 req/s
+    #   Página con acierto de ISR .. 108 req/s
+    #   Acierto en la caché de nginx 4878 req/s
+    #
+    # La API es lo único que no se puede cachear (sirve stock de ediciones y
+    # pujas), así que su techo es el techo del sitio. La comparación con
+    # /health sitúa el freno en el trabajo por petición, no en la red.
     deploy:
       resources:
         limits:
-          cpus: '0.75'
+          cpus: '1.25'
           memory: 1G
         reservations:
-          cpus: '0.25'
+          cpus: '0.5'
           memory: 256M
 
   client:
@@ -115,15 +123,23 @@ services:
       timeout: 5s
       retries: 3
       start_period: 40s
-    # El cliente se lleva la parte grande: es donde está el cuello (render SSR +
-    # optimizador de imágenes). Ver la nota en el servicio `api`.
+    # El cliente baja a 0.5 porque su trabajo ya casi no ocurre: nginx cachea el
+    # HTML y las variantes de imagen en disco, así que Next sólo interviene en
+    # los fallos de caché. `proxy_cache_lock` colapsa además las peticiones
+    # simultáneas de una misma URL en un único render, de modo que una avalancha
+    # sobre caché fría no se traduce en N renders sino en uno.
+    #
+    # El caso que sí paga esta reducción es el primer visitante de una obra
+    # recién publicada, cuyas variantes de imagen hay que generar (~0,6-1,2 s
+    # por variante a 0.5 vCPU, una sola vez). Si eso llegara a molestar, este es
+    # el valor que hay que subir — no el de la API. Ver la nota en `api`.
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: '0.5'
           memory: 1500M
         reservations:
-          cpus: '0.5'
+          cpus: '0.25'
           memory: 512M
 
 networks:

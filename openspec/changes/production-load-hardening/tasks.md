@@ -48,14 +48,20 @@
 
 ## 7. Despliegue (manual, en la instancia)
 
-- [ ] 7.1 Comprobar que `client/.env` de producción define `INTERNAL_API_URL=http://api:3001/api`. Sin ella el render sigue saliendo por la URL pública — no rompe nada, pero H7 queda a medias.
-- [ ] 7.2 Instalar la configuración de nginx siguiendo `deploy/nginx/README.md`, con copia de seguridad previa y `nginx -t` antes de recargar.
-- [ ] 7.3 Reconstruir y levantar: `docker compose -f docker-compose.prod.yml up -d --build`.
-- [ ] 7.4 Comprobar las cuatro cosas: HTTP/2 negociado, `Cache-Control: s-maxage` en una ficha de obra, `X-Kuadrat-Cache: HIT` en la segunda petición, y **ninguna** caché en `/admin`.
-- [ ] 7.5 Repetir la rampa de carga y comparar con la línea base (25 / 126 req/s).
+- [x] 7.1 Comprobar que `client/.env` de producción define `INTERNAL_API_URL=http://api:3001/api`. Sin ella el render sigue saliendo por la URL pública — no rompe nada, pero H7 queda a medias.
+- [x] 7.2 Instalar la configuración de nginx siguiendo `deploy/nginx/README.md`, con copia de seguridad previa y `nginx -t` antes de recargar.
+- [x] 7.3 Reconstruir y levantar: `docker compose -f docker-compose.prod.yml up -d --build`.
+- [x] 7.4 Comprobado: HTTP/2 negociado, `s-maxage=300` en la ficha, `X-Kuadrat-Cache: HIT` en la segunda petición. **Corrección a la comprobación de `/admin`**: sí se cachea, y es correcto — es un prerender estático (`○` en la tabla de rutas) cuyo HTML no contiene datos de usuario; la autenticación ocurre en el navegador. Las rutas de admin que sí renderizan en servidor (`/admin/pedidos/[id]`, `/admin/products/[id]/edit`, `/admin/coa/[uid]`) mandan `private, no-store` y nunca se cachean — verificado.
+- [x] 7.5 Repetir la rampa de carga y comparar con la línea base (25 / 126 req/s).
 
 ## 8. Medición del techo de la API (opcional, ventana acotada)
 
-- [ ] 8.1 Subir `GENERAL_RATE_LIMIT_MAX_REQUESTS=1000000` en `api/.env` y recrear sólo el servicio api.
-- [ ] 8.2 Rampa contra `https://api.140d.art/api/art` a 100, 200 y 400 req/s.
-- [ ] 8.3 **Revertir el valor** y volver a levantar. El `warn` del arranque es la red de seguridad, no el procedimiento.
+- [x] 8.1 Subir `GENERAL_RATE_LIMIT_MAX_REQUESTS=1000000` en `api/.env` y recrear sólo el servicio api. Verificado: `RateLimit-Policy: 1000000;w=1800`.
+- [x] 8.2 Medido con los límites levantados. Techo de la API: **~50 req/s** (`/api/art`, con consulta a Turso) y **~188 req/s** (`/health`, sin base de datos). Página con MISS en nginx pero acierto de ISR: **108 req/s**. Render completo sin caché en ningún nivel: **23,5 req/s**. Contenido cacheado en nginx: **4 878 req/s**.
+- [ ] 8.3 **Revertir** `GENERAL_RATE_LIMIT_MAX_REQUESTS` a `1000` y los `rate=` de `00-kuadrat-shared.conf` a `30r/s` (web) y `20r/s` (api). El `warn` del arranque es la red de seguridad, no el procedimiento.
+
+## 9. Derivadas de la medición final
+
+- [x] 9.1 Página de error propia (`deploy/nginx/errors/`) para 502/503/504: HTML con la estética de la galería en el sitio, JSON en la API. Autocontenida (sin fuentes ni CSS externos) porque se sirve justo cuando el origen no responde. Verificada con origen caído y con rechazo del limitador.
+- [x] 9.2 Documentar que la purga de `kuadrat_html` es **obligatoria en cada despliegue del cliente**: las páginas estáticas se cachean un año y su HTML referencia chunks de JS que el build nuevo ya no tiene.
+- [ ] 9.3 **Rebalancear CPU hacia la API.** El reparto actual (api 0.75 / client 1.0) se decidió cuando el cuello era el render. Ya no lo es: nginx sirve lo cacheado y el render ocurre una vez cada 5 min por página, mientras la API —que no se puede cachear— satura a 50 req/s y es hoy el límite del tráfico real. Propuesta: api 1.25 / client 0.5, manteniendo 0.25 para nginx.

@@ -8,6 +8,12 @@ HTTP/2 — ver los hallazgos H3 y H6 del informe de carga.
 |---|---|
 | `00-kuadrat-shared.conf` | `/etc/nginx/conf.d/00-kuadrat-shared.conf` (nuevo) |
 | `140d.art.conf` | `/etc/nginx/sites-available/140d.art` (**sustituye** al existente) |
+| `errors/503.html` | `/var/www/kuadrat-errors/__error.html` |
+| `errors/503.json` | `/var/www/kuadrat-errors/__error.json` |
+
+Ojo con el **nombre de destino** de los dos ficheros de error: en el repo llevan
+un nombre descriptivo, pero nginx los busca como `__error.html` y
+`__error.json`.
 
 `00-kuadrat-shared.conf` **debe cargarse antes** que el otro: define los
 `upstream`, las zonas de caché y los mapas, que viven en el contexto `http`.
@@ -59,7 +65,13 @@ sudo cp /etc/nginx/sites-available/140d.art \
 sudo mkdir -p /var/cache/nginx/kuadrat_html /var/cache/nginx/kuadrat_img
 sudo chown -R www-data:www-data /var/cache/nginx
 
-# 3. Instalar (desde la raíz del repo en la instancia)
+# 3. Páginas de error propias
+sudo mkdir -p /var/www/kuadrat-errors
+sudo cp deploy/nginx/errors/503.html /var/www/kuadrat-errors/__error.html
+sudo cp deploy/nginx/errors/503.json /var/www/kuadrat-errors/__error.json
+sudo chown -R www-data:www-data /var/www/kuadrat-errors
+
+# 4. Instalar la configuración (desde la raíz del repo en la instancia)
 sudo cp deploy/nginx/00-kuadrat-shared.conf /etc/nginx/conf.d/
 sudo cp deploy/nginx/140d.art.conf          /etc/nginx/sites-available/140d.art
 
@@ -108,15 +120,28 @@ Si el punto 4 devuelve `HIT` alguna vez, **recarga la configuración anterior de
 inmediato**: significaría que una página privada se está compartiendo entre
 visitantes.
 
-## Invalidar la caché
-
-No hay purga selectiva (haría falta `ngx_cache_purge`, que no viene en el
-paquete de Ubuntu). Tras un despliegue con cambios de plantilla:
+## Invalidar la caché — OBLIGATORIO EN CADA DESPLIEGUE DEL CLIENTE
 
 ```bash
 sudo rm -rf /var/cache/nginx/kuadrat_html/*
 sudo systemctl reload nginx
 ```
+
+**No es opcional.** Las páginas estáticas (`/`, `/galeria`, `/tienda`, …) salen
+de Next con `s-maxage=31536000`, así que nginx las guarda **un año**. Cada build
+genera nombres de fichero nuevos para los chunks de JavaScript, de modo que un
+HTML viejo servido desde caché apunta a `/_next/static/chunks/<viejo>.js`, que el
+contenedor nuevo ya no tiene. El resultado es una página que carga a medias y no
+hidrata: se ve, pero no funciona.
+
+Hoy el fallo está parcialmente amortiguado porque `/_next/static/` también se
+cachea 30 días y los chunks viejos siguen ahí — pero es una casualidad
+afortunada, no un diseño: basta con que un chunk haya sido desalojado por
+`max_size` para que la página se rompa. Purga y no dependas de la suerte.
+
+No hay purga selectiva (haría falta `ngx_cache_purge`, que no viene en el
+paquete de Ubuntu), así que se vacía el directorio entero. Es barato: se vuelve
+a llenar con las primeras visitas.
 
 La caché de imágenes (`kuadrat_img`) **no hay que vaciarla nunca**: sus claves
 llevan el basename UUID del fichero, así que una imagen nueva es una URL nueva.
