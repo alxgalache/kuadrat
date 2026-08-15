@@ -98,6 +98,9 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## Comprobaciones tras recargar
 
+Todas usan GET (`-o /dev/null -D -`) y no HEAD (`-I`): es lo que hace un
+visitante, y evita depender de cómo la clave de caché trate ambos métodos.
+
 ```bash
 # 1. HTTP/2 (antes negociaba 1.1). Debe imprimir: 2
 curl -sI https://140d.art/galeria --http2 -o /dev/null -w '%{http_version}\n'
@@ -106,11 +109,13 @@ curl -sI https://140d.art/galeria --http2 -o /dev/null -w '%{http_version}\n'
 curl -sI https://140d.art/galeria/p/cor | grep -i cache-control
 
 # 3. La caché responde: MISS la primera vez, HIT la segunda
-curl -sI https://140d.art/galeria/p/cor | grep -i x-kuadrat-cache
-curl -sI https://140d.art/galeria/p/cor | grep -i x-kuadrat-cache
+curl -s -o /dev/null -D - https://140d.art/galeria/p/cor | grep -i x-kuadrat-cache
+curl -s -o /dev/null -D - https://140d.art/galeria/p/cor | grep -i x-kuadrat-cache
 
-# 4. LO PRIVADO NO SE CACHEA. Debe salir MISS las tres veces, nunca HIT
-for i in 1 2 3; do curl -sI https://140d.art/admin | grep -i x-kuadrat-cache; done
+# 4. LO PRIVADO NO SE CACHEA. Debe salir MISS siempre, nunca HIT.
+#    Usa una ruta que renderice en servidor: /admin es un prerender estático
+#    sin datos de usuario y SÍ se cachea, legítimamente.
+for i in 1 2 3; do curl -s -o /dev/null -D - https://140d.art/admin/pedidos/1 | grep -i x-kuadrat-cache; done
 
 # 5. La subida de vídeo sigue admitiendo ficheros grandes (no debe dar 413)
 curl -sI https://api.140d.art/api/art -o /dev/null -w '%{http_code}\n'
@@ -119,6 +124,23 @@ curl -sI https://api.140d.art/api/art -o /dev/null -w '%{http_code}\n'
 Si el punto 4 devuelve `HIT` alguna vez, **recarga la configuración anterior de
 inmediato**: significaría que una página privada se está compartiendo entre
 visitantes.
+
+## Ver qué está haciendo la caché
+
+`kuadrat.access.log` y `kuadrat-api.access.log` incluyen el campo `cache=`, que
+el formato por defecto de Ubuntu no trae:
+
+```bash
+# Reparto de aciertos y fallos
+awk '{for(i=1;i<=NF;i++) if($i ~ /^cache=/) print $i}' /var/log/nginx/kuadrat.access.log \
+  | sort | uniq -c | sort -rn
+
+# Qué URLs están fallando la caché
+grep 'cache=MISS' /var/log/nginx/kuadrat.access.log | awk '{print $7}' | sort | uniq -c | sort -rn | head
+```
+
+Valores: `HIT`, `MISS`, `STALE`, `EXPIRED`, `UPDATING`, `BYPASS`, o `-` cuando
+la petición no pasa por ninguna zona de caché.
 
 ## Invalidar la caché — OBLIGATORIO EN CADA DESPLIEGUE DEL CLIENTE
 
@@ -174,10 +196,14 @@ razonado sobre el papel.
   vendedor: Next los marca `private, no-store` y nginx lo respeta. Verificado:
   tres peticiones consecutivas a `/admin` dan `MISS` las tres y llegan al
   origen.
-- **La clave de caché incluye las cabeceras RSC.** El App Router sirve dos
-  cuerpos distintos en la misma URL (documento y carga RSC del router); con la
-  clave por defecto de nginx, el primero en llegar envenena al otro. Verificado:
-  la variante HTML y la RSC se guardan y sirven por separado.
+- **La clave de caché incluye las cabeceras RSC, y NO incluye `$request_method`.**
+  Lo primero, porque el App Router sirve dos cuerpos distintos en la misma URL
+  (documento y carga RSC del router) y con la clave por defecto de nginx el
+  primero en llegar envenena al otro. Lo segundo, porque nginx sólo cachea GET y
+  HEAD y trae `proxy_cache_convert_head` activado para que compartan entrada:
+  añadir el método anula esa unificación y guarda cada URL dos veces, de modo
+  que un HEAD nunca aprovecha la copia dejada por un GET. Verificado: con el
+  método en la clave, dos URLs ocupaban seis ficheros; sin él, dos.
 - **`proxy_cache_use_stale` incluye `http_500`.** Es el arreglo de la
   degradación sucia. Verificado con el origen completamente muerto: las páginas
   cacheadas siguen respondiendo `200` (`HIT` si están frescas, `STALE` si han

@@ -270,8 +270,20 @@ comprobar "el sitio responde 200"  "$(curl -sS -o /dev/null -w '%{http_code}' "$
 comprobar "la API responde 200"    "$(curl -sS -o /dev/null -w '%{http_code}' "$API/health")"   "200"
 comprobar "HTTP/2 negociado"       "$(curl -sS -o /dev/null -w '%{http_version}' "$SITE/galeria")" "2"
 
-# La caché sirve: tras el recalentado, la siguiente petición debe ser un acierto.
-estado_cache=$(curl -sSI "$SITE/galeria" 2>/dev/null | grep -i '^x-kuadrat-cache:' | tr -d '\r' | awk '{print $2}')
+# La caché sirve. Se usa GET, no HEAD (`curl -I`), porque es lo que hace un
+# visitante — y porque un HEAD contra una entrada recién creada sólo acierta si
+# la clave de caché unifica ambos métodos, que es una propiedad de la
+# configuración de nginx y no algo que este script deba dar por supuesto.
+#
+# Se consulta dos veces: la primera puede ser MISS legítimamente si el
+# recalentado no llegó a esa URL o si la entrada acababa de expirar. Lo que
+# importa es que la SEGUNDA sea un acierto, porque eso es lo que demuestra que
+# la caché está guardando.
+estado_cache=$(curl -sS -o /dev/null -D - "$SITE/galeria" 2>/dev/null | grep -i '^x-kuadrat-cache:' | tr -d '\r' | awk '{print $2}')
+if [ "$estado_cache" != "HIT" ]; then
+  info "primera lectura: $estado_cache — reintentando"
+  estado_cache=$(curl -sS -o /dev/null -D - "$SITE/galeria" 2>/dev/null | grep -i '^x-kuadrat-cache:' | tr -d '\r' | awk '{print $2}')
+fi
 comprobar "la caché de nginx sirve" "$estado_cache" "HIT"
 
 # Una ficha de obra ya no puede salir sin cachear.
