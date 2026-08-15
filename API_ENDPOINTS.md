@@ -73,3 +73,31 @@ All endpoints are prefixed with `/api`.
     - **Body:** `{ "status": "active" | "revoked" | "lost" | "damaged", "notes"?: "string (max 500)" }`.
     - **Response:** `200 OK` with `{ "success": true, "tag": {...updated row} }`.
     - **Notes:** does NOT allow modifying `uid`, `art_id`, `last_counter`, `is_permanently_locked`, or other cryptographically relevant fields. Status changes are logged with `adminId`, `fromStatus`, `toStatus`, `reason`.
+### Art shipping calculator
+
+Admin-only. Quotes an artwork against the four Spanish shipping territories using its **package** measurements and turns the chosen options into `shipping_methods` + `shipping_zones` rows. The checkout is unchanged: it keeps reading zones through the legacy lookup, and this is only where the number in `shipping_zones.cost` comes from.
+
+- **`GET /admin/art-shipping/products?title=&author=&page=&limit=`**
+    - **Description:** Paginated list of art products with their packaging fields (`outside_dimensions`, `outside_weight`, `packaging_cost`), plus `calculated_at` and `generated_zones` summarising what the calculator has already written. `title` and `author` filter with SQL `LIKE`. Default `limit=20`, capped at 100.
+    - **Auth:** Admin only (JWT + adminAuth).
+    - **Response:** `200 OK` with `{ "success": true, "products": [...], "pagination": { page, pages, total, limit } }`.
+
+- **`PATCH /admin/art-shipping/:artId/packaging`**
+    - **Description:** Saves the packaging fields without quoting. The **only** writer of these three columns besides the quote endpoint — they are deliberately absent from the product creation and edit forms and from `GET /admin/products/:id/edit-data`.
+    - **Auth:** Admin only.
+    - **Body:** `{ "outside_dimensions"?: "70x70x8", "outside_weight"?: 5500, "packaging_cost"?: 5 }` — at least one field. `outside_dimensions` must match `/^\d+x\d+x\d+$/` (cm), `outside_weight` is an integer in grams `> 0`, `packaging_cost` is `>= 0`.
+    - **Response:** `200 OK` with `{ "success": true, "product": { id, outside_dimensions, outside_weight, packaging_cost } }`.
+
+- **`POST /admin/art-shipping/:artId/quote`**
+    - **Description:** Persists the packaging fields **before** calling Sendcloud (so the values survive a provider failure), then issues four `POST /v3/shipping-options` calls in parallel — `28001` peninsula, `07001` Baleares, `35001` Canarias, `51001` Ceuta/Melilla. The artwork always travels insured for `art.price` (rounded, clamped to 2–5000 €); the artist's `insurance_type` is never consulted.
+    - **Auth:** Admin only.
+    - **Body:** `{ "outside_dimensions": "70x70x8", "outside_weight": 5500, "packaging_cost"?: 5 }`. Dimensions and weight are **mandatory**: there is no fallback to the artwork's own `dimensions`/`weight`, because the carrier bills the volumetric weight of the box.
+    - **Response:** `200 OK` with `{ "success": true, "artwork": {...}, "groups": { "<zone>": { postalCode, options, noRateOptions, error } }, "saved": { "<zone>": [...] } }`. Each eligible option carries `baseCost`, `breakdown`, `vatAmount`, `packagingCost` and `finalPrice = round(baseCost × 1.21, 2) + packagingCost`. Options with `quotes: []` land in `noRateOptions` (shown but not selectable); options whose total parses to `<= 0` are discarded entirely.
+    - **Failure modes:** `400` when the packaging fields are missing or malformed, or when the artist has no `user_sendcloud_configuration` row; `404` when the artwork does not exist. One zone failing does not fail the request — that group comes back with `error` set and the other three with their options.
+
+- **`POST /admin/art-shipping/:artId/zones`**
+    - **Description:** Replaces the generated zones of **one** zone group with the selection currently on screen. Set semantics, not incremental: the previous generated zones of that group are deleted and the new ones written in a single batch. The delete is bounded by `(product_id, product_type, zone_group, source = 'sendcloud_calculator')`, so zones created by hand and the other three groups are never touched. An empty `selections` array clears that territory.
+    - **Auth:** Admin only.
+    - **Body:** `{ "zone_group": "peninsula" | "baleares" | "canarias" | "ceuta_melilla", "selections": [{ "option_code": "correos:standard", "name"?: "Correos Estandar", "carrier_code"?: "correos", "base_cost": 6.38, "estimated_days"?: 2 }] }`. The priced option travels in the request rather than being re-quoted server-side, so the zone holds exactly the price the admin was looking at.
+    - **Response:** `200 OK` with `{ "success": true, "artId", "zoneGroup", "provinces": [...], "removedMethods": [...], "zones": [{ optionCode, shippingMethodId, baseCost, packagingCost, cost }] }`.
+    - **Method cleanup:** a `shipping_methods` row left without a single `shipping_zones` row anywhere — across every artwork and every zone group — is deleted along with them, and its option code is listed in `removedMethods`. Only rows carrying a `sendcloud_option_code` are ever swept (a hand-made method with no zones is one being configured), and only the codes this save could have orphaned. Selecting the option again recreates the row.

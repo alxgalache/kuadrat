@@ -130,3 +130,63 @@ Audit log for every call to `/api/coa/verify`, successful or not. Used to detect
 | `occurred_at` | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP                                                      | When the verification was attempted.                                                         |
 
 Indexes: `idx_verif_events_uid (uid)`, `idx_verif_events_status (status)`, `idx_verif_events_occurred (occurred_at)`.
+
+---
+### **Tables touched by the art shipping calculator**
+
+### `art` table (shipping-related columns)
+Only the columns that describe how the piece is shipped. `dimensions` and `weight` describe the **artwork**; the `outside_*` pair describes the **package it travels in**, which is what the carrier bills (volumetric weight is computed on the box, not on the canvas). The three columns below are written exclusively by `PATCH /api/admin/art-shipping/:artId/packaging` and `POST /api/admin/art-shipping/:artId/quote`; they do not appear in any product creation or edit form.
+
+| Column               | Type    | Constraints            | Description                                                                    |
+|----------------------|---------|------------------------|--------------------------------------------------------------------------------|
+| `dimensions`         | TEXT    | NULL                   | Artwork dimensions, `LxWxH` in cm.                                             |
+| `weight`             | INTEGER | NULL                   | Artwork weight in grams.                                                       |
+| `outside_dimensions` | TEXT    | NULL                   | Package dimensions, `LxWxH` in cm. Mandatory before a quote can be requested.  |
+| `outside_weight`     | INTEGER | NULL                   | Package weight in grams. Mandatory before a quote can be requested.            |
+| `packaging_cost`     | REAL    | NOT NULL, DEFAULT 0    | Packaging cost in euros, added to the final shipping price after VAT. `0` is a legitimate value (the artist packages the piece). |
+
+### `shipping_methods` table
+A catalog of shipping modalities. Rows created by the calculator carry the Sendcloud option code and are shared by every artwork; rows created by hand leave both columns NULL.
+
+| Column                    | Type      | Constraints                                             | Description                                                    |
+|---------------------------|-----------|---------------------------------------------------------|----------------------------------------------------------------|
+| `id`                      | INTEGER   | PRIMARY KEY AUTOINCREMENT                               | Unique identifier.                                             |
+| `name`                    | TEXT      | NOT NULL                                                | Display name, e.g. `Correos Estandar`.                         |
+| `description`             | TEXT      | NULL                                                    | Free-form description.                                         |
+| `type`                    | TEXT      | NOT NULL, CHECK('delivery','pickup')                    | Delivery to an address, or pickup at the seller's.             |
+| `max_weight`              | INTEGER   | NULL                                                    | Weight ceiling in grams, checked against the product.          |
+| `max_dimensions`          | TEXT      | NULL                                                    | Dimension ceiling, `LxWxH` in cm.                              |
+| `estimated_delivery_days` | INTEGER   | NULL                                                    | Estimated transit time in days.                                |
+| `is_active`               | INTEGER   | NOT NULL, DEFAULT 1, CHECK(0,1)                         | Inactive methods are never offered.                            |
+| `article_type`            | TEXT      | NOT NULL, DEFAULT 'all', CHECK('art','others','all')    | Which catalog the method applies to.                           |
+| `max_articles`            | INTEGER   | NOT NULL, DEFAULT 1, CHECK(>= 1)                        | How many articles fit in one shipment.                         |
+| `sendcloud_option_code`   | TEXT      | NULL, UNIQUE where NOT NULL                             | Sendcloud shipping option code, e.g. `correos:standard`. NULL on hand-made methods. |
+| `sendcloud_carrier_code`  | TEXT      | NULL                                                    | Sendcloud carrier code, e.g. `correos`.                        |
+| `created_at`              | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP                               | Creation timestamp.                                            |
+| `updated_at`              | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP                               | Last update timestamp.                                         |
+
+Indexes: `idx_shipping_methods_sendcloud_option (sendcloud_option_code) WHERE sendcloud_option_code IS NOT NULL` — one catalog row per option code, without forcing uniqueness on the NULLs of the hand-made methods.
+
+### `shipping_zones` table
+The price of a method for a territory, optionally scoped to a single product. Rows written by the calculator carry `source = 'sendcloud_calculator'` plus the frozen breakdown of the price; everything created through the admin shipping screens keeps the `'manual'` default and is never touched by a regeneration.
+
+| Column                    | Type      | Constraints                                                    | Description                                                                 |
+|---------------------------|-----------|----------------------------------------------------------------|-----------------------------------------------------------------------------|
+| `id`                      | INTEGER   | PRIMARY KEY AUTOINCREMENT                                      | Unique identifier.                                                          |
+| `shipping_method_id`      | INTEGER   | NOT NULL, FOREIGN KEY(shipping_methods.id) ON DELETE CASCADE   | The modality this price belongs to.                                         |
+| `seller_id`               | INTEGER   | NOT NULL, FOREIGN KEY(users.id) ON DELETE CASCADE              | The seller the price applies to.                                            |
+| `country`                 | TEXT      | NULL                                                           | ISO country code, e.g. `ES`.                                                |
+| `postal_code`             | TEXT      | NULL                                                           | Legacy single postal code. Territory is normally expressed through `shipping_zones_postal_codes`. |
+| `cost`                    | REAL      | NOT NULL                                                       | **Final** price charged to the buyer, VAT and packaging included.           |
+| `product_id`              | INTEGER   | NULL                                                           | Product this zone is specific to. NULL means it applies to the whole catalog. |
+| `product_type`            | TEXT      | NULL, CHECK('art','other')                                     | Which table `product_id` points at.                                         |
+| `source`                  | TEXT      | NOT NULL, DEFAULT 'manual', CHECK('manual','sendcloud_calculator') | Provenance. A calculator regeneration only ever deletes `sendcloud_calculator` rows. |
+| `zone_group`              | TEXT      | NULL                                                           | `peninsula`, `baleares`, `canarias` or `ceuta_melilla` on generated rows.    |
+| `sendcloud_option_code`   | TEXT      | NULL                                                           | The Sendcloud option the price came from.                                   |
+| `base_cost`               | REAL      | NULL                                                           | Pre-VAT Sendcloud total, as quoted.                                         |
+| `packaging_cost_snapshot` | REAL      | NULL                                                           | `art.packaging_cost` at the moment of the calculation.                      |
+| `calculated_at`           | DATETIME  | NULL                                                           | When the quote was obtained. `cost = round(base_cost × 1.21, 2) + packaging_cost_snapshot`. |
+| `created_at`              | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP                                      | Creation timestamp.                                                         |
+| `updated_at`              | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP                                      | Last update timestamp.                                                      |
+
+Indexes: `idx_shipping_zones_generated (product_id, product_type, zone_group, source)` — the exact shape of the regeneration delete.

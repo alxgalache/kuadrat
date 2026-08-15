@@ -96,6 +96,19 @@ if (!['resend', 'smtp'].includes(emailProvider)) {
   process.exit(1);
 }
 
+// --- Sendcloud authentication mode ---
+// See the `sendcloud.authMode` entry below for what each value means. An
+// unknown value fails startup rather than falling back to the default: the
+// whole point of the variable is to pin the authentication method, so silently
+// ignoring it would defeat its only purpose.
+const sendcloudAuthMode = optional('SENDCLOUD_AUTH_MODE', 'auto');
+if (!['auto', 'oauth2', 'basic'].includes(sendcloudAuthMode)) {
+  console.error(
+    `[ENV] Invalid SENDCLOUD_AUTH_MODE: "${sendcloudAuthMode}". Must be "auto", "oauth2" or "basic".`
+  );
+  process.exit(1);
+}
+
 // --- Marketing email circuit breaker ---
 // MARKETING_EMAILS_ENABLED is a global on/off for marketing broadcasts (Resend).
 // Default OFF (fail-safe): a brand-new environment never emails subscribers until
@@ -370,6 +383,16 @@ const config = {
   sendcloud: {
     apiKey: optional('SENDCLOUD_API_KEY', ''),
     apiSecret: optional('SENDCLOUD_API_SECRET', ''),
+    // How the API client authenticates:
+    //   oauth2 — only OAuth2 client_credentials; an auth failure is an error.
+    //   basic  — only HTTP Basic; the token endpoint is never contacted. This
+    //            is the escape hatch if Sendcloud retires the OAuth2 beta.
+    //   auto   — OAuth2 first, degrading to Basic for the failing request (and
+    //            for the next five minutes) after one failed retry.
+    // Validated above so a typo fails startup instead of silently selecting a
+    // default: picking the wrong authentication method would surface as a wall
+    // of 401s from a live carrier integration.
+    authMode: sendcloudAuthMode,
     webhookSecret: optional('SENDCLOUD_WEBHOOK_SECRET', ''),
     enabledArt: optionalBool('SENDCLOUD_ENABLED_ART', false),
     enabledOthers: optionalBool('SENDCLOUD_ENABLED_OTHERS', false),

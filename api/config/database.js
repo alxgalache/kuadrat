@@ -158,6 +158,14 @@ async function initializeDatabase() {
         -- written together with editions_sold in the same statement.
         edition_size INTEGER NOT NULL DEFAULT 1,
         editions_sold INTEGER NOT NULL DEFAULT 0,
+        -- Shipping package, as opposed to the artwork: dimensions and weight
+        -- above describe the piece, these describe the box it travels in.
+        -- Separate columns because the carrier bills the volumetric weight of
+        -- the package. Written only by the art shipping calculator; they do not
+        -- appear in any product form.
+        outside_dimensions TEXT,
+        outside_weight INTEGER,
+        packaging_cost REAL NOT NULL DEFAULT 0,
         FOREIGN KEY (seller_id) REFERENCES users(id)
       )
     `);
@@ -224,7 +232,11 @@ async function initializeDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         article_type TEXT NOT NULL DEFAULT 'all' CHECK(article_type IN ('art', 'others', 'all')),
-        max_articles INTEGER NOT NULL DEFAULT 1 CHECK(max_articles >= 1)
+        max_articles INTEGER NOT NULL DEFAULT 1 CHECK(max_articles >= 1),
+        -- Catalog of Sendcloud shipping options: one row per option code, shared
+        -- by every artwork. NULL on the methods created by hand.
+        sendcloud_option_code TEXT,
+        sendcloud_carrier_code TEXT
       )
     `);
 
@@ -241,6 +253,19 @@ async function initializeDatabase() {
         product_type TEXT CHECK(product_type IN ('art','other')),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        -- Provenance of the row. source is what protects hand-made zones from
+        -- the calculator: a regeneration deletes on (product_id, product_type,
+        -- zone_group, source='sendcloud_calculator') and never touches a
+        -- 'manual' row.
+        source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual','sendcloud_calculator')),
+        zone_group TEXT,
+        sendcloud_option_code TEXT,
+        -- Frozen breakdown of cost, so the price can still be reconstructed
+        -- once art.packaging_cost has moved on: cost = round(base_cost * 1.21,
+        -- 2) + packaging_cost_snapshot.
+        base_cost REAL,
+        packaging_cost_snapshot REAL,
+        calculated_at DATETIME,
         FOREIGN KEY (shipping_method_id) REFERENCES shipping_methods(id) ON DELETE CASCADE,
         FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE
       )
@@ -838,6 +863,33 @@ async function initializeDatabase() {
     // Unique partial index: a Stripe transfer id can appear at most once.
     await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_withdrawals_stripe_transfer ON withdrawals(stripe_transfer_id) WHERE stripe_transfer_id IS NOT NULL');
     await safeAlter('CREATE INDEX IF NOT EXISTS idx_withdrawals_vat_regime ON withdrawals(vat_regime)');
+
+    // Art shipping calculator (sendcloud-art-shipping-calculator).
+    // `art` gets the package (as opposed to the artwork) it travels in;
+    // `shipping_methods` becomes a catalog keyed by Sendcloud option code; and
+    // `shipping_zones` records where each generated row came from, plus the
+    // frozen breakdown of its cost. Every column has a default, so an existing
+    // database takes them without a single row being rewritten.
+    await safeAlter('ALTER TABLE art ADD COLUMN outside_dimensions TEXT');
+    await safeAlter('ALTER TABLE art ADD COLUMN outside_weight INTEGER');
+    await safeAlter('ALTER TABLE art ADD COLUMN packaging_cost REAL NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE shipping_methods ADD COLUMN sendcloud_option_code TEXT');
+    await safeAlter('ALTER TABLE shipping_methods ADD COLUMN sendcloud_carrier_code TEXT');
+    // SQLite cannot add a CHECK constraint through ALTER TABLE, so an existing
+    // database gets the plain column: the value is only ever written by code
+    // that uses the two literals, and a fresh database still carries the CHECK.
+    await safeAlter("ALTER TABLE shipping_zones ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
+    await safeAlter('ALTER TABLE shipping_zones ADD COLUMN zone_group TEXT');
+    await safeAlter('ALTER TABLE shipping_zones ADD COLUMN sendcloud_option_code TEXT');
+    await safeAlter('ALTER TABLE shipping_zones ADD COLUMN base_cost REAL');
+    await safeAlter('ALTER TABLE shipping_zones ADD COLUMN packaging_cost_snapshot REAL');
+    await safeAlter('ALTER TABLE shipping_zones ADD COLUMN calculated_at DATETIME');
+    // The exact shape of the regeneration delete, so replacing a group's zones
+    // does not scan the table.
+    await safeAlter('CREATE INDEX IF NOT EXISTS idx_shipping_zones_generated ON shipping_zones(product_id, product_type, zone_group, source)');
+    // One catalog row per Sendcloud option code. Partial so the hand-made
+    // methods, which all have NULL here, are not forced into uniqueness.
+    await safeAlter('CREATE UNIQUE INDEX IF NOT EXISTS idx_shipping_methods_sendcloud_option ON shipping_methods(sendcloud_option_code) WHERE sendcloud_option_code IS NOT NULL');
 
     // Auction billing — notes column for idempotency marker
     await safeAlter('ALTER TABLE orders ADD COLUMN notes TEXT');

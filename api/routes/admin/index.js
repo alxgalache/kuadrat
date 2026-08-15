@@ -13,6 +13,9 @@ router.use('/art', require('./artRoutes'));
 router.use('/others', require('./othersRoutes'));
 router.use('/orders', require('./orderRoutes'));
 router.use('/shipping', require('./shippingRoutes'));
+// Art shipping calculator (sendcloud-art-shipping-calculator): quotes an
+// artwork against the four Spanish zones and writes the resulting zones.
+router.use('/art-shipping', require('./artShippingRoutes'));
 router.use('/auctions', require('./auctionRoutes'));
 router.use('/postal-codes', require('./postalCodeRoutes'));
 router.use('/events', require('./eventRoutes'));

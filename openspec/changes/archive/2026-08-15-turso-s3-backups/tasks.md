@@ -61,8 +61,8 @@
 
 ## 8. Despliegue
 
-- [ ] 8.1 Crear el bucket y aplicar bloqueo de acceso público, cifrado, versionado y reglas de ciclo de vida según la guía
-- [ ] 8.2 Añadir el bloque `S3DbBackupPutOnly` a la política del rol IAM de la instancia, sin tocar los bloques `S3ImageUploadAndServe` ni `S3ListBucket` existentes
-- [ ] 8.3 Desplegar con `DB_BACKUP_ENABLED=false`, configurar `AWS_S3_BACKUP_BUCKET` y lanzar un backup manual observado con `docker compose exec api npm run backup:now`
-- [ ] 8.4 Verificar esa primera copia de extremo a extremo: objeto y manifiesto presentes, `sha256sum` coincidente, descompresión correcta y **restauración de prueba sobre una BD auxiliar de Turso** (`turso db create backup-test`), comparando conteos y comprobando que `orders` continúa la numeración
-- [ ] 8.5 Solo tras la verificación, poner `DB_BACKUP_ENABLED=true` y reiniciar; comprobar el objeto de las 04:00 al día siguiente, la copia mensual el día 4 y la caducidad de `daily/` a los 15 días
+- [x] 8.1 Crear el bucket y aplicar bloqueo de acceso público, cifrado, versionado y reglas de ciclo de vida según la guía
+- [x] 8.2 Añadir el bloque `S3DbBackupPutOnly` a la política del rol IAM de la instancia, sin tocar los bloques `S3ImageUploadAndServe` ni `S3ListBucket` existentes
+- [x] 8.3 Desplegar con `DB_BACKUP_ENABLED=false`, configurar `AWS_S3_BACKUP_BUCKET` y lanzar un backup manual observado con `docker compose exec api npm run backup:now`
+- [x] 8.4 Verificar esa primera copia de extremo a extremo: objeto y manifiesto presentes, `sha256sum` coincidente, descompresión correcta y **restauración de prueba sobre una BD auxiliar de Turso** (`turso db create backup-test`), comparando conteos y comprobando que `orders` continúa la numeración
+- [x] 8.5 Solo tras la verificación, poner `DB_BACKUP_ENABLED=true` y reiniciar; comprobar el objeto de las 04:00 al día siguiente, la copia mensual el día 4 y la caducidad de `daily/` a los 15 días

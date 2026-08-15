@@ -37,11 +37,11 @@
 
 - [x] 6.1 Local: arrancar la stack, provocar un error en cliente y en API, confirmar que aparecen en consola/logs y que **no** llega ningún evento nuevo a Sentry.
 - [x] 6.2 Local: repetir con `SENTRY_ENABLE_DEV=true` + `NEXT_PUBLIC_SENTRY_ENABLE_DEV=true` y confirmar que los eventos **sí** llegan, con `environment: development`.
-- [ ] 6.3 Staging: tras desplegar, `curl https://api.pre.140d.art/api/stories/videos` debe devolver `200 {"videos":[]}`; confirmar que `140D-API-1J` deja de recibir eventos nuevos.
-- [ ] 6.4 Staging/producción: provocar (o esperar) un error real y confirmar que sigue llegando a Sentry con el `environment` correcto — el gating no debe haber afectado a estos entornos.
+- [x] 6.3 Staging: tras desplegar, `curl https://api.pre.140d.art/api/stories/videos` debe devolver `200 {"videos":[]}`; confirmar que `140D-API-1J` deja de recibir eventos nuevos.
+- [x] 6.4 Staging/producción: provocar (o esperar) un error real y confirmar que sigue llegando a Sentry con el `environment` correcto — el gating no debe haber afectado a estos entornos.
 
 ## 7. Higiene en Sentry (manual, tras verificar)
 
-- [ ] 7.1 Resolver `140D-CLIENT-1N`, `140D-CLIENT-1Q`, `140D-API-28`, `140D-API-29` y `140D-API-26` como no-defectos, dejando en cada una una nota indicando que son artefactos de HMR / reinicio de nodemon sobre ficheros a medio guardar, y que el entorno de desarrollo ya no reporta.
-- [ ] 7.2 Resolver `140D-API-1J` una vez confirmado en 6.3 que no recibe eventos nuevos.
-- [ ] 7.3 Opcional: revisar si hay alertas configuradas que incluyan `environment: development` y ajustarlas, ahora que ese entorno queda mudo.
+- [x] 7.1 Resolver `140D-CLIENT-1N`, `140D-CLIENT-1Q`, `140D-API-28`, `140D-API-29` y `140D-API-26` como no-defectos, dejando en cada una una nota indicando que son artefactos de HMR / reinicio de nodemon sobre ficheros a medio guardar, y que el entorno de desarrollo ya no reporta.
+- [x] 7.2 Resolver `140D-API-1J` una vez confirmado en 6.3 que no recibe eventos nuevos.
+- [x] 7.3 Opcional: revisar si hay alertas configuradas que incluyan `environment: development` y ajustarlas, ahora que ese entorno queda mudo.

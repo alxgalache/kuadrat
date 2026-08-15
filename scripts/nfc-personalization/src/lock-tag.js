@@ -48,6 +48,12 @@ function bannerStart() {
   console.log('Coloca la pegatina sobre el lector...\n');
 }
 
+/** Select the NDEF application and open an authenticated K0 session. */
+async function authenticate(session, k0) {
+  await session.selectFile(NTAG424_NDEF_AID, isoSelectFileMode.BY_DF_NAME);
+  await session.authenticate(0, k0);
+}
+
 async function processCard(reader) {
   const session = createTagSession(reader);
 
@@ -77,6 +83,36 @@ async function processCard(reader) {
 
     console.log(`Tag ${uidHex} corresponde a la obra: "${tag.art_name}"`);
 
+    const keys = deriveAllKeys(uid);
+    await authenticate(session, keys.K0);
+
+    // Read the chip's current FileSettings BEFORE touching anything.
+    // ChangeFileSettings is itself gated by `change`, so once the lock landed
+    // it can never be issued again: a retry after a run that failed *after*
+    // the write (e.g. the old `settingsAfter.access` bug) must reconcile the
+    // database instead of re-issuing the command.
+    const before = await session.getFileSettings(FILE_NDEF);
+    if (before.accessRights.change === 0xf) {
+      console.log('\nℹ️  El chip YA está bloqueado en hardware, pero la BD no lo refleja.');
+      console.log(`   FileSettings: ${JSON.stringify(before.accessRights)}`);
+      console.log('   No hay nada que escribir en el tag; sólo falta reconciliar la BD.\n');
+
+      const { reconcile } = await prompts({
+        type: 'confirm',
+        name: 'reconcile',
+        message: `¿Marcar ${uidHex} como bloqueado en la BD?`,
+        initial: true,
+      });
+      if (!reconcile) {
+        console.log('Cancelado. La BD sigue sin reflejar el lock.');
+        return;
+      }
+
+      await markAsLocked(uidHex);
+      console.log(`\n✓ BD reconciliada: tag ${uidHex} marcado como bloqueado.`);
+      return;
+    }
+
     const { tapped } = await prompts({
       type: 'confirm',
       name: 'tapped',
@@ -99,23 +135,25 @@ async function processCard(reader) {
       return;
     }
 
-    const keys = deriveAllKeys(uid);
-
-    await session.selectFile(NTAG424_NDEF_AID, isoSelectFileMode.BY_DF_NAME);
-    await session.authenticate(0, keys.K0);
+    // The operator may have taken a while over the two confirmations. Re-auth
+    // so the write never runs on a session the chip has already dropped.
+    await authenticate(session, keys.K0);
 
     console.log('🔒 Aplicando el lock permanente...');
     await session.setFileSettings(FILE_NDEF, SDM_FILE_SETTINGS_LOCKED, NTAG_TAG_PARAMS);
 
     // Verify by reading back FileSettings. A successful lock means change=0xf.
+    // NOTE: getFileSettings returns `accessRights` (GetFileSettings shape);
+    // `access` is the shape setFileSettings *takes*. Reading `.access` here
+    // threw a TypeError after the lock had already been written to hardware.
     const settingsAfter = await session.getFileSettings(FILE_NDEF);
-    if (settingsAfter.access.change !== 0xf) {
+    if (settingsAfter.accessRights.change !== 0xf) {
       throw new Error(
-        `Lock no aplicado correctamente: change=${settingsAfter.access.change} (esperado 0xf). ` +
-        `Estado del chip: ${JSON.stringify(settingsAfter.access)}`,
+        `Lock no aplicado correctamente: change=${settingsAfter.accessRights.change} (esperado 0xf). ` +
+        `Estado del chip: ${JSON.stringify(settingsAfter.accessRights)}`,
       );
     }
-    console.log('✓ FileSettings tras lock:', JSON.stringify(settingsAfter.access));
+    console.log('✓ FileSettings tras lock:', JSON.stringify(settingsAfter.accessRights));
 
     await markAsLocked(uidHex);
     console.log(`\n🔒 Tag ${uidHex} bloqueado permanentemente y registrado en BD.`);
@@ -123,6 +161,8 @@ async function processCard(reader) {
   } catch (err) {
     console.error('✗ Error durante el bloqueo:', err.message);
     console.error('  Revisa con `npm run inspect` el estado actual del tag.');
+    console.error('  Si `lock NDEF` sale como SÍ, el chip quedó bloqueado: vuelve a');
+    console.error('  ejecutar este script y acepta la reconciliación de la BD.');
   }
 }
 

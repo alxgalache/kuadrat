@@ -320,3 +320,50 @@ export const GRID_RESTORE_TTL_MS = 30 * 60 * 1000;
 // Máximo de instantáneas conservadas en sessionStorage; en cada escritura se
 // purgan las caducadas y se recorta a las más recientes.
 export const GRID_RESTORE_MAX_SNAPSHOTS = 10;
+
+// ── Calculadora de envíos de obras (sendcloud-art-shipping-calculator) ──
+
+// Los cuatro territorios de España, en el orden en que se muestran. Baleares va
+// aparte de la península porque no comparten tarifa: sobre el mismo paquete,
+// correos:standard cuesta 6,38 € a Madrid y 8,48 € a Palma, y cada destino
+// tiene opciones que el otro no tiene.
+export const ART_SHIPPING_ZONE_GROUPS = ['peninsula', 'baleares', 'canarias', 'ceuta_melilla'];
+
+export const ART_SHIPPING_ZONE_LABELS = {
+  peninsula: 'Península',
+  baleares: 'Baleares',
+  canarias: 'Canarias',
+  ceuta_melilla: 'Ceuta y Melilla',
+};
+
+// Código postal con el que se cotiza cada grupo; se muestra junto al título del
+// bloque para que el admin sepa contra qué destino se pidió la tarifa.
+export const ART_SHIPPING_ZONE_POSTAL_CODES = {
+  peninsula: '28001',
+  baleares: '07001',
+  canarias: '35001',
+  ceuta_melilla: '51001',
+};
+
+export const ART_SHIPPING_COPY = {
+  // Opción que Sendcloud devuelve sin tarifa (quotes: []): existe y es
+  // anunciable, pero va con contrato propio del vendedor y no tiene precio
+  // publicado. Se muestra en gris en vez de esconderla.
+  noRate: 'Sin tarifa disponible (contrato propio del vendedor)',
+  missingPackaging:
+    'Introduce las dimensiones y el peso del embalaje para poder calcular el envío.',
+  // Sendcloud tarifa el seguro hasta 5000 € y por encima recorta en silencio.
+  insuranceCeiling: (price) =>
+    `Esta obra vale ${price} €, pero Sendcloud solo asegura hasta 5.000 €. El exceso necesita una cobertura aparte.`,
+  noOptions: 'Sendcloud no ofrece ninguna tarifa para este paquete en esta zona.',
+  vatNote: 'IVA del transporte (21 %)',
+};
+
+// Techo del seguro de Sendcloud, en euros. Espeja INSURED_VALUE_MAX de
+// api/services/shipping/sendcloudPricing.js.
+export const ART_SHIPPING_INSURANCE_CEILING = 5000;
+
+// El filtro no dispara petición por debajo de este número de caracteres, pero
+// sí cuando el campo se vacía por completo: si no, borrar el filtro dejaría la
+// lista congelada en el último resultado.
+export const ART_SHIPPING_FILTER_MIN_CHARS = 3;

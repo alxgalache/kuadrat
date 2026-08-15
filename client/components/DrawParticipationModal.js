@@ -3,14 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { XMarkIcon, CheckIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
-import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import Image from 'next/image'
 import { drawsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
+import { getStripePromise } from '@/lib/stripe'
 import usePostalCodeValidation from '@/hooks/usePostalCodeValidation'
 import { useNotification } from '@/contexts/NotificationContext'
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
 
 // ---------------------------------------------------------------------------
 // Flow phases (CHOOSE and VERIFY removed)
@@ -661,7 +659,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
             <p className="text-sm text-gray-600">
               Se verificará tu método de pago sin realizar ningún cargo. Tu tarjeta quedará guardada para el caso de ganar el sorteo.
             </p>
-            <Elements stripe={stripePromise} options={{ clientSecret, locale: 'es' }}>
+            <Elements stripe={getStripePromise()} options={{ clientSecret, locale: 'es' }}>
               <PaymentForm
                 onSuccess={handlePaymentSuccess}
                 onError={(msg) => setError(msg)}

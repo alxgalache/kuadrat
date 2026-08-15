@@ -3,12 +3,10 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { XMarkIcon, CheckIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
-import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { auctionsAPI } from '@/lib/api'
+import { getStripePromise } from '@/lib/stripe'
 import { useNotification } from '@/contexts/NotificationContext'
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
 
 // ---------------------------------------------------------------------------
 // DNI / NIE validation
@@ -818,7 +816,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
         <p className="text-sm text-gray-600">
           Se verificara tu metodo de pago sin realizar ningun cargo. Tu tarjeta quedara guardada para futuros pagos en caso de ganar la subasta.
         </p>
-        <Elements stripe={stripePromise} options={{ clientSecret, locale: 'es' }}>
+        <Elements stripe={getStripePromise()} options={{ clientSecret, locale: 'es' }}>
           <StripePaymentStep
             auctionId={auction.id}
             auctionBuyerId={buyerSession?.auctionBuyerId}

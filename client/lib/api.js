@@ -1397,6 +1397,42 @@ export const adminAPI = {
       return apiDownloadRequest(`/admin/invoices/withdrawal/${withdrawalId}/settlement`);
     },
   },
+
+  // ── Art shipping calculator (sendcloud-art-shipping-calculator) ──
+  artShipping: {
+    listProducts: async ({ title, author, page = 1, limit } = {}) => {
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      if (limit) params.set('limit', String(limit));
+      if (title) params.set('title', title);
+      if (author) params.set('author', author);
+      return apiRequest(`/admin/art-shipping/products?${params.toString()}`);
+    },
+
+    savePackaging: async (artId, packaging) => {
+      return apiRequest(`/admin/art-shipping/${artId}/packaging`, {
+        method: 'PATCH',
+        body: JSON.stringify(packaging),
+      });
+    },
+
+    // Persists the packaging fields and quotes the four Spanish zones.
+    quote: async (artId, packaging) => {
+      return apiRequest(`/admin/art-shipping/${artId}/quote`, {
+        method: 'POST',
+        body: JSON.stringify(packaging),
+      });
+    },
+
+    // Set semantics: `selections` is the complete selection for that zone
+    // group, and an empty array clears the territory.
+    saveZones: async (artId, { zoneGroup, selections }) => {
+      return apiRequest(`/admin/art-shipping/${artId}/zones`, {
+        method: 'POST',
+        body: JSON.stringify({ zone_group: zoneGroup, selections }),
+      });
+    },
+  },
 };
 
 // Public Auctions API (no auth required)

@@ -172,6 +172,17 @@ const getProductEditData = async (req, res, next) => {
     }
 
     const product = result.rows[0];
+
+    // The packaging columns describe the box, not the artwork, and belong to
+    // the art shipping calculator alone (`PATCH /api/admin/art-shipping/...`).
+    // `SELECT *` would hand them to the edit form, where an input for them
+    // would eventually appear and start writing a value the calculator froze
+    // into a price. Dropped here rather than by enumerating every column of two
+    // tables, which would break the form the day a column is added.
+    delete product.outside_dimensions;
+    delete product.outside_weight;
+    delete product.packaging_cost;
+
     await attachProductImages([product], type === 'art' ? 'art' : 'other');
 
     if (type === 'others') {

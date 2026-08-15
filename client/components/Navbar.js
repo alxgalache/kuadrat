@@ -164,6 +164,13 @@ export default function Navbar() {
                         </Link>
                       )}
                       <Link
+                        href="/admin/calculadora-envios"
+                        onClick={() => close()}
+                        className="block p-2 hover:text-gray-600"
+                      >
+                        Calculadora envíos
+                      </Link>
+                      <Link
                         href="/admin/subastas"
                         onClick={() => close()}
                         className="block p-2 hover:text-gray-600"
@@ -456,6 +463,13 @@ export default function Navbar() {
                         Envíos
                       </Link>
                     )}
+                    <Link
+                      href="/admin/calculadora-envios"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
+                    >
+                      Calculadora envíos
+                    </Link>
                     <Link
                       href="/admin/subastas"
                       onClick={() => setMobileMenuOpen(false)}

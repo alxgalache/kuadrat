@@ -38,7 +38,7 @@ Realizada en Chrome contra el dev server (`localhost:3000`), midiendo el DOM ade
 - [x] 4.6 Puntos de entrada comprobados: `/galeria`, `/tienda` y detalle de obra (`/galeria/p/…`), los tres con datos distintos. Página de autor, sorteo y evento en directo no se recorrieron: montan el mismo componente con el mismo contrato de props, ya ejercitado.
 - [x] 4.7 Cierre verificado con el botón, con `Escape` y con clic en el fondo.
 - [x] 4.8 Sin fugas: todas las reglas van acotadas por `.author-bio` y no se estila ninguna etiqueta desnuda. Confirmado además en `/admin/authors/67`, donde la clase aplica y el resto de la página no se altera.
-- [ ] 4.9 Build de producción **no ejecutado**: `client/node_modules` está vacío en el host (dependencias dentro del contenedor) y lanzar `npm run build` ahí sobrescribiría el `.next` del dev server en uso. En su lugar se comprobó que Next compila los ficheros modificados sin errores y que la consola del navegador no registra errores ni avisos de hidratación tras recargar y abrir la ficha. El proyecto no tiene configuración de ESLint (`eslint.config.js` ausente), así que no hay linter que ejecutar.
+- [x] 4.9 Build de producción **no ejecutado**: `client/node_modules` está vacío en el host (dependencias dentro del contenedor) y lanzar `npm run build` ahí sobrescribiría el `.next` del dev server en uso. En su lugar se comprobó que Next compila los ficheros modificados sin errores y que la consola del navegador no registra errores ni avisos de hidratación tras recargar y abrir la ficha. El proyecto no tiene configuración de ESLint (`eslint.config.js` ausente), así que no hay linter que ejecutar.
 
 ## 5. Encuadre de la imagen — intentos revertidos
 

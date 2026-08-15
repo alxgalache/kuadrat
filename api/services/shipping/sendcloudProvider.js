@@ -1,4 +1,5 @@
 const sendcloud = require('./sendcloudApiClient')
+const { insuredValueFor, hasUsableRate } = require('./sendcloudPricing')
 const { db } = require('../../config/database')
 const logger = require('../../config/logger')
 const { ApiError } = require('../../middleware/errorHandler')
@@ -70,9 +71,15 @@ function buildFunctionalities(sellerConfig) {
 
 /**
  * Build parcels array for the Sendcloud shipping-options request.
- * Each parcel has weight and optionally dimensions.
+ * Each parcel has weight, an insured value and optionally dimensions.
+ *
+ * Every parcel travels insured for the value of its goods, with no way to turn
+ * it off. `user_sendcloud_configuration.insurance_type` and
+ * `insurance_fixed_amount` are NOT read: no form writes them, so every row
+ * keeps the `DEFAULT 'none'` and branching on them was branching on a constant.
+ * The columns stay in the table; nothing reads them.
  */
-function buildParcels(parcels, sellerConfig) {
+function buildParcels(parcels) {
   return parcels.map(parcel => {
     const p = {
       weight: {
@@ -93,21 +100,29 @@ function buildParcels(parcels, sellerConfig) {
       }
     }
 
-    // Insurance
-    if (sellerConfig.insurance_type === 'full_value' && parcel.totalValue) {
-      p.additional_insured_price = {
-        value: String(parcel.totalValue.toFixed(2)),
-        currency: 'EUR',
-      }
-    } else if (sellerConfig.insurance_type === 'fixed' && sellerConfig.insurance_fixed_amount) {
-      p.additional_insured_price = {
-        value: String(sellerConfig.insurance_fixed_amount.toFixed(2)),
-        currency: 'EUR',
-      }
-    }
+    // Always insured, for the value of what is inside. A plain integer: this
+    // endpoint rejects both an object and a decimal with HTTP 400.
+    p.additional_insured_price = insuredValueFor(parcel.totalValue)
 
     return p
   })
+}
+
+/**
+ * Build the `from_address` object of a shipping-options request from the
+ * seller's Sendcloud configuration. City and street are included when the
+ * seller filled them in — they are optional to Sendcloud but improve the rate.
+ */
+function buildFromAddress(sellerConfig) {
+  const address = {
+    country_code: sellerConfig.sender_country || 'ES',
+    postal_code: sellerConfig.sender_postal_code,
+  }
+
+  if (sellerConfig.sender_city) address.city = sellerConfig.sender_city
+  if (sellerConfig.sender_address_1) address.address_line_1 = sellerConfig.sender_address_1
+
+  return address
 }
 
 /**
@@ -123,12 +138,16 @@ function buildParcels(parcels, sellerConfig) {
 async function getDeliveryOptions({ sellerId, parcels, buyerAddress }) {
   const sellerConfig = await getSellerConfig(sellerId)
 
+  // `from_address` / `to_address` replace the deprecated flat
+  // from_country_code / from_postal_code / to_country_code / to_postal_code,
+  // and additionally accept city and street, which sharpens the rate.
   const requestBody = {
-    from_country_code: sellerConfig.sender_country || 'ES',
-    from_postal_code: sellerConfig.sender_postal_code,
-    to_country_code: buyerAddress.country,
-    to_postal_code: buyerAddress.postalCode,
-    parcels: buildParcels(parcels, sellerConfig),
+    from_address: buildFromAddress(sellerConfig),
+    to_address: {
+      country_code: buyerAddress.country,
+      postal_code: buyerAddress.postalCode,
+    },
+    parcels: buildParcels(parcels),
     calculate_quotes: true,
   }
 
@@ -163,12 +182,9 @@ async function getDeliveryOptions({ sellerId, parcels, buyerAddress }) {
       if (preferred.length > 0 && opt.code && !preferred.includes(opt.code)) {
         return false
       }
-      // Filter out options without a valid price total
-      const quote = opt.quotes?.[0]
-      if (!quote?.price?.total?.value) {
-        return false
-      }
-      return true
+      // Drop anything with no rate a buyer could be charged: no quotes at all,
+      // or a total that is absent, non-numeric or <= 0.
+      return hasUsableRate(opt)
     })
     .map(opt => normalizeOption(opt))
 
@@ -232,7 +248,7 @@ async function getServicePoints({ carrier, country, postalCode, radius = 5000 })
 
 /**
  * Create shipments in Sendcloud after payment.
- * Creates one shipment per parcel via POST /v3/shipments/announce.
+ * Creates one shipment per parcel via POST /v3/shipments (asynchronous).
  *
  * @param {object} params
  * @param {object} params.order - Order data { id, deliveryAddress, buyerName, buyerEmail, buyerPhone }
@@ -288,6 +304,14 @@ async function createShipments({ order, itemGroups }) {
             value: String((parcel.weight || 1000) / 1000),
             unit: 'kg',
           },
+          // The parcel is announced with the SAME insured value it was quoted
+          // with. Without this the buyer pays a premium in the shipping price
+          // and the goods travel uninsured. Note the shape: this endpoint wants
+          // an object, while shipping-options wants a bare integer.
+          additional_insured_price: {
+            value: insuredValueFor(parcel.totalValue).toFixed(2),
+            currency: 'EUR',
+          },
           parcel_items: (parcel.items || []).map(item => ({
             item_id: String(item.id),
             description: item.name || 'Producto',
@@ -319,9 +343,10 @@ async function createShipments({ order, itemGroups }) {
         }
       }
 
-      // Add service point if selected
+      // Add service point if selected. `to_service_point` is a top-level object
+      // on the shipment; the flat `to_service_point_id` is deprecated.
       if (group.servicePointId) {
-        shipmentBody.to_address.to_service_point = group.servicePointId
+        shipmentBody.to_service_point = { id: Number(group.servicePointId) }
       }
 
       try {

@@ -63,9 +63,15 @@ async function processCard(reader) {
 
     try {
       const settings = await session.getFileSettings(FILE_NDEF);
+      // NOTE: the library uses `access` for the WRITE shape (FileSettings, fed
+      // to setFileSettings) and `accessRights` for the READ shape
+      // (GetFileSettings, returned by getFileSettings). Reading `.access` here
+      // silently printed `undefined`.
+      const ar = settings.accessRights;
       console.log('📄 File 02 FileSettings:');
       console.log(`     commMode:   ${settings.commMode}`);
-      console.log(`     access:     ${JSON.stringify(settings.access)}`);
+      console.log(`     accessRights: ${JSON.stringify(ar)}`);
+      console.log(`     lock NDEF:  ${ar.change === 0xf ? 'SÍ (change=0xF, irreversible)' : `no (change=${ar.change})`}`);
       if (settings.sdmOptions) {
         console.log('     sdmOptions:');
         console.log(`       piccDataOffset:     ${settings.sdmOptions.piccDataOffset}`);

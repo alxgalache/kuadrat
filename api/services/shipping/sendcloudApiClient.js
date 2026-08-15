@@ -1,5 +1,6 @@
 const logger = require('../../config/logger')
 const config = require('../../config/env')
+const sendcloudAuth = require('./sendcloudAuth')
 const { ApiError } = require('../../middleware/errorHandler')
 
 const SENDCLOUD_BASE_URL = 'https://panel.sendcloud.sc/api'
@@ -8,12 +9,80 @@ const TIMEOUT_MS = 10000
 
 /**
  * Low-level HTTP client for the Sendcloud API.
- * Handles Basic Auth, request formatting, timeouts, and error logging.
+ * Handles authentication, request formatting, timeouts, and error logging.
+ *
+ * Nothing here ever logs the `Authorization` header, the API secret or the
+ * access token: this file used to emit a ready-to-paste cURL command at
+ * `logger.info` on every request, credential included, in production too.
  */
 
-function getAuthHeader() {
-  const credentials = Buffer.from(`${config.sendcloud.apiKey}:${config.sendcloud.apiSecret}`).toString('base64')
-  return `Basic ${credentials}`
+/**
+ * Issue a request with the configured authentication, retrying once on an
+ * authentication failure and — in `auto` mode — resolving through Basic Auth if
+ * OAuth2 still fails after that retry.
+ *
+ * The caller passes fully-built options WITHOUT `Authorization` and WITHOUT
+ * `signal`: both are added per attempt (a consumed AbortSignal.timeout cannot be
+ * reused). The serialized body, in contrast, is built once by the caller and
+ * reused verbatim, so the retry cannot diverge from the first attempt.
+ *
+ * @returns {Promise<{ response: Response, errorText: string|null }>} `errorText`
+ *   is the raw body, already read, when the response is not ok — the body of a
+ *   Response can only be consumed once and the retry decision needs it.
+ */
+async function authorizedFetch(url, baseOptions) {
+  const mode = config.sendcloud.authMode
+  let forceBasic = false
+  let retried = false
+
+  for (;;) {
+    const authorization = await sendcloudAuth.getAuthHeader({ forceBasic })
+    const usedOauth = authorization.startsWith('Bearer ')
+
+    const response = await fetch(url, {
+      ...baseOptions,
+      headers: { ...baseOptions.headers, 'Authorization': authorization },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+
+    if (response.ok) return { response, errorText: null }
+
+    const errorText = await response.text()
+
+    // Only 401/403 are credential problems. A 429 or a 5xx is not, so it must
+    // not discard a perfectly good token nor switch authentication method —
+    // neither would make the call succeed, and both would hide the real cause.
+    const isAuthFailure = response.status === 401 || response.status === 403
+
+    if (isAuthFailure && usedOauth) {
+      if (!retried) {
+        retried = true
+        sendcloudAuth.invalidate()
+        continue
+      }
+
+      if (mode === 'auto') {
+        logger.warn(
+          { url, status: response.status, errorBody: errorText },
+          'Sendcloud OAuth2 rejected after retry, falling back to Basic Auth'
+        )
+        sendcloudAuth.suppressOauth2()
+        forceBasic = true
+        continue
+      }
+    }
+
+    return { response, errorText }
+  }
+}
+
+function parseErrorBody(errorText) {
+  if (!errorText) return null
+  try {
+    return JSON.parse(errorText)
+  } catch {
+    return errorText
+  }
 }
 
 async function request(method, path, { body, params, version = 'v3', baseUrl } = {}) {
@@ -31,13 +100,13 @@ async function request(method, path, { body, params, version = 'v3', baseUrl } =
   const options = {
     method,
     headers: {
-      'Authorization': getAuthHeader(),
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
   }
 
+  // Serialized once and reused across the retry, so both attempts send exactly
+  // the same bytes.
   if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
     options.body = JSON.stringify(body)
   }
@@ -47,26 +116,11 @@ async function request(method, path, { body, params, version = 'v3', baseUrl } =
   try {
     logger.debug({ method, url: url.toString() }, 'Sendcloud API request')
 
-    // TODO: Remove after debugging - curl command for Postman import
-    const curlParts = [`curl -X ${method} '${url.toString()}'`]
-    for (const [h, v] of Object.entries(options.headers)) {
-      curlParts.push(`-H '${h}: ${v}'`)
-    }
-    if (options.body) {
-      curlParts.push(`-d '${options.body}'`)
-    }
-    logger.info(curlParts.join(' \\\n  '), 'Sendcloud cURL (Postman-ready)')
-
-    const response = await fetch(url.toString(), options)
+    const { response, errorText } = await authorizedFetch(url.toString(), options)
     const duration = Date.now() - startTime
 
     if (!response.ok) {
-      let errorBody
-      try {
-        errorBody = await response.json()
-      } catch {
-        errorBody = await response.text()
-      }
+      const errorBody = parseErrorBody(errorText)
 
       logger.error({
         method,
@@ -123,10 +177,8 @@ async function getBinary(path, { params, version = 'v3', accept = 'application/p
   const options = {
     method: 'GET',
     headers: {
-      'Authorization': getAuthHeader(),
       'Accept': accept,
     },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
   }
 
   const startTime = Date.now()
@@ -134,7 +186,9 @@ async function getBinary(path, { params, version = 'v3', accept = 'application/p
   try {
     logger.debug({ url: url.toString(), accept }, 'Sendcloud API binary request')
 
-    const response = await fetch(url.toString(), options)
+    // Same authentication path as request(): a label download is as likely to
+    // meet an expired token as any other call.
+    const { response } = await authorizedFetch(url.toString(), options)
     const duration = Date.now() - startTime
 
     if (!response.ok) {

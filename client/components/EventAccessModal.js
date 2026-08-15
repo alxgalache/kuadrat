@@ -3,11 +3,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { XMarkIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
-import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { eventsAPI } from '@/lib/api'
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+import { getStripePromise } from '@/lib/stripe'
 
 const PHASE = {
   CHOOSE: 'choose',
@@ -427,7 +425,7 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         <p className="text-sm text-gray-600">
           Completa el pago de {event.price} {event.currency} para acceder al evento.
         </p>
-        <Elements stripe={stripePromise} options={{ clientSecret, locale: 'es' }}>
+        <Elements stripe={getStripePromise()} options={{ clientSecret, locale: 'es' }}>
           <StripeEventPayment
             eventId={event.id}
             attendeeId={attendeeId}
