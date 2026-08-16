@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { validate } = require('../middleware/validate');
+const { initPaymentSchema } = require('../validators/paymentSchemas');
 const { sensitiveLimiter, paymentVerificationLimiter } = require('../middleware/rateLimiter');
 
 const {
@@ -12,7 +14,7 @@ const {
 
 // Initialise Revolut order (minimal payload: amount + currency, returns token and id)
 // Apply strict rate limiting for order creation
-router.post('/revolut/init-order', sensitiveLimiter, initRevolutOrderEndpoint);
+router.post('/revolut/init-order', sensitiveLimiter, validate(initPaymentSchema), initRevolutOrderEndpoint);
 
 // Webhook endpoint (Revolut -> our server)
 // NO rate limiting - this is server-to-server communication from Revolut

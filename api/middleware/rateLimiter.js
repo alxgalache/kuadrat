@@ -48,7 +48,10 @@ const generalLimiter = rateLimit({
         message: 'Too many requests, please try again later.',
     },
     // Skip successful requests to the health endpoint
-    skip: (req, res) => req.path === '/health' || isInternalRequest(req),
+    // `startsWith` y no igualdad: además de /health existe /health/ready, que
+    // consulta un monitor externo cada minuto. Sujetarlo al límite haría que el
+    // monitor acabara midiendo el limitador en vez del servicio.
+    skip: (req, res) => req.path.startsWith('/health') || isInternalRequest(req),
 });
 
 // Stricter limiter for authentication routes (login, register)

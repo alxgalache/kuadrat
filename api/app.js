@@ -34,6 +34,9 @@ const pinoHttp = require('pino-http');
 // Centralized config and logger
 const config = require('./config/env');
 const logger = require('./config/logger');
+// Sólo para el readiness check de más abajo. `database.js` no arranca nada por
+// importarse: `initializeDatabase()` la invoca server.js, no este módulo.
+const { db } = require('./config/database');
 
 // Import configurations and middleware
 const passport = require('./config/passport');
@@ -166,11 +169,66 @@ app.set('eventSocket', eventSocket);
 const drawSocket = setupDrawSocket(io);
 app.set('drawSocket', drawSocket);
 
-// Health check route
+// Health check route — LIVENESS.
+//
+// Responde 200 en cuanto el proceso acepta peticiones, sin comprobar nada más.
+// Es lo que quiere el healthcheck de Docker: la pregunta que responde es «¿hay
+// que reiniciar este contenedor?», y reiniciarlo porque Turso esté caído sólo
+// añadiría un reinicio en bucle a un problema que no está aquí.
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Kuadrat API is running',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Health check route — READINESS.
+//
+// Responde a una pregunta distinta: «¿puede este servicio atender a un
+// visitante ahora mismo?». Comprueba de verdad la base de datos, porque
+// `/health` devuelve 200 aunque Turso esté completamente inaccesible — un
+// monitor externo apuntado ahí informaría de un sitio sano mientras la galería
+// no puede listar una sola obra.
+//
+// Pensado para que lo consulte un monitor externo cada minuto: una consulta
+// trivial, con timeout propio para que un Turso lento no deje la petición
+// colgada, y sin caché.
+app.get('/health/ready', async (req, res) => {
+  const inicio = Date.now();
+  const checks = {};
+  let sano = true;
+
+  // El temporizador se cancela pase lo que pase. Sin el `clearTimeout`, cada
+  // comprobación deja vivo un timer de 4 s aunque la base de datos conteste al
+  // instante: inocuo a una consulta por minuto, pero basta para que Jest no
+  // cierre al terminar los tests, que es como se detectó.
+  let temporizador;
+  try {
+    // `SELECT 1` no lee ninguna tabla: mide que la conexión existe y responde,
+    // que es justo lo que queremos saber, sin coste de consulta.
+    await Promise.race([
+      db.execute('SELECT 1'),
+      new Promise((_, reject) => {
+        temporizador = setTimeout(() => reject(new Error('timeout')), 4000);
+      }),
+    ]);
+    checks.database = { ok: true, ms: Date.now() - inicio };
+  } catch (err) {
+    sano = false;
+    // Sin detalles del error: este endpoint es público y un mensaje de la capa
+    // de base de datos puede filtrar hostnames o estructura interna.
+    checks.database = { ok: false, error: err.message === 'timeout' ? 'timeout' : 'unreachable' };
+    logger.error({ err }, 'Readiness check failed: database unreachable');
+  } finally {
+    clearTimeout(temporizador);
+  }
+
+  res.set('Cache-Control', 'no-store');
+  res.status(sano ? 200 : 503).json({
+    success: sano,
+    status: sano ? 'ready' : 'degraded',
+    checks,
     timestamp: new Date().toISOString(),
   });
 });

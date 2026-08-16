@@ -1,5 +1,7 @@
 const { db } = require('../config/database');
+const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
+const { resolveShippingOptions } = require('../services/shipping/zoneResolver');
 
 /**
  * Compute total amount (products + shipping) from expanded items.
@@ -159,43 +161,98 @@ function computeShippingTotal(compactItems) {
 }
 
 /**
- * Verify shipping costs server-side by looking up each item's shipping zone cost.
- * For pickup methods, cost must be the zone cost (usually 0).
- * For delivery methods, cost must match the zone for the seller + method + country.
- * Throws ApiError(400) if any cost is manipulated.
+ * Verify each item's shipping cost against the zone that actually applies to
+ * that product, that method and the address the order is being shipped to.
+ *
+ * This does NOT query the database itself. It calls the same resolver that
+ * quoted the buyer (`api/services/shipping/zoneResolver.js`) and looks up the
+ * method the buyer chose in the result, so the price shown and the price
+ * validated are the same number rather than two numbers that have to agree.
+ *
+ * It used to resolve with `WHERE shipping_method_id = ? AND seller_id = ?
+ * LIMIT 1`, which matched every zone group of every artwork sharing a method
+ * and returned an arbitrary one. See the change `shipping-cost-verification`.
+ *
+ * The destination is the ORDER's delivery address, never the postal code the
+ * cart captured when the product was added: that value is client-supplied and
+ * trusting it lets a buyer pay a peninsular rate and ship to the Canaries.
  *
  * @param {Array} compactItems - [{type, id, shipping: {methodId, cost, methodType}}]
  * @param {Map} artMap - from loadProductsDetails
  * @param {Map} otherMap - from loadProductsDetails
+ * @param {object} [options]
+ * @param {{country: string, postalCode: string}} [options.deliveryAddress]
+ * @throws {ApiError} 400 SHIPPING_ADDRESS_REQUIRED | SHIPPING_METHOD_UNAVAILABLE | SHIPPING_COST_OUTDATED
  */
-async function verifyShippingCosts(compactItems, artMap, otherMap) {
+async function verifyShippingCosts(compactItems, artMap, otherMap, options = {}) {
+  const { deliveryAddress } = options;
+
   for (const item of compactItems) {
+    // Items quoted live against Sendcloud arrive with no method on the cart
+    // item, and are priced by their own flow. This guard is what keeps them
+    // out of legacy zone verification entirely.
     if (!item.shipping?.methodId) continue;
 
     const product = item.type === 'art' ? artMap.get(item.id) : otherMap.get(item.id);
     if (!product || !product.seller_id) continue;
 
     const clientCost = item.shipping.cost || 0;
+    const isPickup = item.shipping.methodType === 'pickup';
 
-    // Look up the actual zone cost for this seller + method combination
-    const zoneRes = await db.execute({
-      sql: `SELECT sz.cost
-            FROM shipping_zones sz
-            WHERE sz.shipping_method_id = ?
-              AND sz.seller_id = ?
-            LIMIT 1`,
-      args: [item.shipping.methodId, product.seller_id],
+    // Pickup zones are seller-wide and carry no geographic filter, so a
+    // pickup-only cart legitimately has no delivery address.
+    if (!isPickup && !deliveryAddress?.postalCode) {
+      throw new ApiError(
+        400,
+        'Falta la dirección de entrega para calcular el envío.',
+        'SHIPPING_ADDRESS_REQUIRED'
+      );
+    }
+
+    const { pickup, delivery } = await resolveShippingOptions({
+      productId: item.id,
+      productType: item.type,
+      country: isPickup ? undefined : (deliveryAddress.country || 'ES'),
+      postalCode: isPickup ? undefined : deliveryAddress.postalCode,
     });
 
-    if (zoneRes.rows.length === 0) {
-      throw new ApiError(400, 'Método de envío no válido para este vendedor', 'Envío inválido');
+    const option = [...pickup, ...delivery].find(
+      (candidate) => Number(candidate.methodId) === Number(item.shipping.methodId)
+    );
+
+    if (!option) {
+      throw new ApiError(
+        400,
+        'El método de envío elegido ya no está disponible para esa dirección. Vuelve a seleccionar el envío.',
+        'SHIPPING_METHOD_UNAVAILABLE'
+      );
     }
 
-    const serverCost = zoneRes.rows[0].cost;
-    // Allow a small tolerance for floating point (0.01)
-    if (Math.abs(clientCost - serverCost) > 0.01) {
-      throw new ApiError(400, 'El coste de envío no coincide. Recarga la página.', 'Coste de envío inválido');
+    // One cent of tolerance, compared in integer cents. The obvious
+    // `Math.abs(a - b) > 0.01` does not express that: 15.30 and 15.29 are
+    // 0.010000000000001563 apart in binary floating point, so the boundary the
+    // comparison claims to allow is in fact rejected, at random, depending on
+    // the values.
+    const clientCents = Math.round(clientCost * 100);
+    const serverCents = Math.round(option.cost * 100);
+    if (Math.abs(clientCents - serverCents) > 1) {
+      throw new ApiError(
+        400,
+        `El precio del envío ha cambiado (ahora ${option.cost.toFixed(2)} €). Elimina el producto de la cesta y vuelve a añadirlo para continuar.`,
+        'SHIPPING_COST_OUTDATED'
+      );
     }
+
+    logger.info(
+      {
+        productType: item.type,
+        productId: item.id,
+        methodId: option.methodId,
+        zoneId: option.zoneId,
+        cost: option.cost,
+      },
+      'Shipping cost verified'
+    );
   }
 }
 

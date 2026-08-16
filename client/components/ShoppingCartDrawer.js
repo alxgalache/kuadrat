@@ -18,7 +18,7 @@ import {Elements, useStripe, useElements} from '@stripe/react-stripe-js'
 import StripeCardPayment from './StripeCardPayment'
 import StripeExpressCheckout from './StripeExpressCheckout'
 import ShippingStep from './shipping/ShippingStep'
-import {SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS} from '@/lib/constants'
+import {SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, SHIPPING_VERIFICATION_ERRORS} from '@/lib/constants'
 
 // Key used to persist a pending Revolut order for a given cart in sessionStorage
 const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
@@ -202,6 +202,23 @@ export default function ShoppingCartDrawer({open, onClose}) {
             shipping: item.shipping,
         }))
     ), [])
+
+    // The destination the server prices the shipping against. Sent to the
+    // payment endpoints so the zone is resolved for the address the order is
+    // actually going to, rather than for the postal code the cart captured when
+    // the product was added — that one is ours to edit, so it cannot set a price.
+    const buildPricingAddress = useCallback(() => {
+        if (!deliveryAddress?.postalCode) return null
+        return {
+            country: (deliveryAddress.country || 'ES').toUpperCase(),
+            postalCode: deliveryAddress.postalCode,
+        }
+    }, [deliveryAddress])
+
+    // The API distinguishes shipping rejections with a machine code in `title`;
+    // anything else falls through to the error's own message.
+    const shippingErrorMessage = (err) =>
+        SHIPPING_VERIFICATION_ERRORS[err?.title] || err?.message
 
     const handleQuantityChange = (item, newQuantity) => {
         const qty = parseInt(newQuantity, 10)
@@ -609,7 +626,11 @@ export default function ShoppingCartDrawer({open, onClose}) {
         setIsInitializingPayment(true)
 
         try {
-            const resp = await paymentsAPI.initRevolutOrder(compactItems)
+            const resp = await paymentsAPI.initRevolutOrder({
+                items: compactItems,
+                currency: 'EUR',
+                deliveryAddress: buildPricingAddress(),
+            })
 
             if (!resp || !resp.revolut_order_id || !resp.token) {
                 throw new Error('No se pudo inicializar el pago con Revolut. Por favor, inténtalo de nuevo.')
@@ -639,7 +660,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return { revolutOrderId: resp.revolut_order_id, revolutOrderToken: resp.token }
         } catch (err) {
             console.error('Error inicializando la orden de Revolut:', err)
-            showBanner(err.message || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
+            showBanner(shippingErrorMessage(err) || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
             setSelectedPaymentMethod(null)
             return null
         } finally {
@@ -661,6 +682,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             const resp = await stripeAPI.createPaymentIntent({
                 items: compactItems,
                 currency: 'EUR',
+                deliveryAddress: buildPricingAddress(),
             })
 
             if (!resp || !resp.clientSecret || !resp.paymentIntentId) {
@@ -673,7 +695,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return { clientSecret: resp.clientSecret, paymentIntentId: resp.paymentIntentId }
         } catch (err) {
             console.error('Error inicializando Stripe PaymentIntent:', err)
-            showBanner(err.message || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
+            showBanner(shippingErrorMessage(err) || 'Ha ocurrido un error al iniciar el pago. Inténtalo de nuevo más tarde.')
             setSelectedPaymentMethod(null)
             return null
         } finally {

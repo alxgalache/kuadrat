@@ -1,6 +1,7 @@
 const { db } = require('../config/database');
 const { ApiError } = require('../middleware/errorHandler');
 const { postcodeValidator } = require('postcode-validator');
+const { resolveShippingOptions } = require('../services/shipping/zoneResolver');
 
 // =====================================
 // SHIPPING METHODS CRUD
@@ -614,6 +615,12 @@ const deleteShippingZone = async (req, res, next) => {
 // =====================================
 
 // Get available shipping methods for a product
+//
+// Thin wrapper over the shared zone resolver: this endpoint owns the HTTP
+// contract (its own 'art' | 'others' vocabulary, postal code format checks and
+// the snake_case response shape) and nothing else. Which zone applies to which
+// product and destination lives in one place only — see
+// api/services/shipping/zoneResolver.js for why.
 const getAvailableShipping = async (req, res, next) => {
   try {
     const { productId, productType, country, postalCode } = req.query;
@@ -627,286 +634,46 @@ const getAvailableShipping = async (req, res, next) => {
       throw new ApiError(400, 'Tipo de producto debe ser "art" o "others"', 'Tipo inválido');
     }
 
-    // Get product details including seller_id, weight, and dimensions
-    let productQuery;
-    if (productType === 'art') {
-      productQuery = 'SELECT seller_id, weight, dimensions FROM art WHERE id = ? AND visible = 1';
-    } else {
-      productQuery = 'SELECT seller_id, weight, dimensions FROM others WHERE id = ? AND visible = 1';
+    // Postal code format is an input concern, so it stays on the HTTP edge.
+    if (country && postalCode) {
+      const isValid = postcodeValidator(postalCode, country);
+      if (!isValid) {
+        throw new ApiError(400, `Código postal inválido para ${country}`, 'Código postal inválido');
+      }
     }
 
-    const productResult = await db.execute({
-      sql: productQuery,
-      args: [productId],
+    const { pickup, delivery } = await resolveShippingOptions({
+      productId,
+      productType,
+      country,
+      postalCode,
     });
-
-    if (productResult.rows.length === 0) {
-      throw new ApiError(404, 'Producto no encontrado', 'Producto no encontrado');
-    }
-
-    const product = productResult.rows[0];
-    const sellerId = product.seller_id;
-    const productWeight = product.weight;
-    const productDimensions = product.dimensions;
-
-    // Helper function to check if product fits within shipping method limits
-    const checkProductFits = (maxWeight, maxDimensions) => {
-      // Check weight
-      if (maxWeight && productWeight && productWeight > maxWeight) {
-        return false;
-      }
-
-      // Check dimensions (sorted comparison: largest to largest, middle to middle, smallest to smallest)
-      if (maxDimensions && productDimensions) {
-        const productDims = productDimensions
-          .split('x')
-          .map(Number)
-          .sort((a, b) => b - a);
-        const maxDims = maxDimensions
-          .split('x')
-          .map(Number)
-          .sort((a, b) => b - a);
-
-        for (let i = 0; i < 3; i++) {
-          if (productDims[i] > maxDims[i]) {
-            return false;
-          }
-        }
-      }
-
-      return true;
-    };
-
-    // Normalize product_type for DB comparison ('others' → 'other')
-    const normalizedProductType = productType === 'others' ? 'other' : productType;
-
-    // Helper: apply product-specific priority per shipping method.
-    // For each method_id: if a zone with matching product exists, discard generic zones;
-    // otherwise keep only generic zones (exclude zones for other products).
-    // Within each group, keep lowest cost.
-    const applyProductPriority = (rows) => {
-      const grouped = {};
-      for (const row of rows) {
-        if (!grouped[row.id]) {
-          grouped[row.id] = { specific: [], generic: [] };
-        }
-        if (row.zone_product_id !== null && row.zone_product_id !== undefined) {
-          if (
-            Number(row.zone_product_id) === Number(productId) &&
-            row.zone_product_type === normalizedProductType
-          ) {
-            grouped[row.id].specific.push(row);
-          }
-          // Zones for other products are silently discarded
-        } else {
-          grouped[row.id].generic.push(row);
-        }
-      }
-
-      const result = [];
-      for (const methodId of Object.keys(grouped)) {
-        const { specific, generic } = grouped[methodId];
-        const candidates = specific.length > 0 ? specific : generic;
-        if (candidates.length > 0) {
-          candidates.sort((a, b) => a.cost - b.cost);
-          result.push(candidates[0]);
-        }
-      }
-      return result;
-    };
-
-    // Get pickup methods for this seller
-    const pickupResult = await db.execute({
-      sql: `
-        SELECT DISTINCT
-          sm.id,
-          sm.name,
-          sm.description,
-          sm.type,
-          sm.article_type,
-          sm.max_weight,
-          sm.max_dimensions,
-          sm.max_articles,
-          sm.estimated_delivery_days,
-          sz.cost,
-          sz.product_id as zone_product_id,
-          sz.product_type as zone_product_type,
-          u.pickup_address,
-          u.pickup_city,
-          u.pickup_postal_code,
-          u.pickup_country,
-          u.pickup_instructions
-        FROM shipping_methods sm
-        INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-        INNER JOIN users u ON sz.seller_id = u.id
-        WHERE sm.type = 'pickup'
-          AND sm.is_active = 1
-          AND (sm.article_type = 'all' OR sm.article_type = ?)
-          AND sz.seller_id = ?
-      `,
-      args: [productType, sellerId],
-    });
-
-    const pickupMethods = applyProductPriority(pickupResult.rows)
-      .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
-      .map((method) => ({
-        id: method.id,
-        name: method.name,
-        description: method.description,
-        type: method.type,
-        cost: method.cost,
-        max_articles: method.max_articles,
-        estimated_delivery_days: method.estimated_delivery_days,
-        pickup_address: method.pickup_address,
-        pickup_city: method.pickup_city,
-        pickup_postal_code: method.pickup_postal_code,
-        pickup_country: method.pickup_country,
-        pickup_instructions: method.pickup_instructions,
-      }));
-
-    // Get delivery methods
-    let deliveryMethods = [];
-
-    if (country) {
-      // Validate postal code format if provided
-      if (postalCode) {
-        const isValid = postcodeValidator(postalCode, country);
-        if (!isValid) {
-          throw new ApiError(400, `Código postal inválido para ${country}`, 'Código postal inválido');
-        }
-      }
-
-      // Find delivery methods for this seller+country.
-      // A zone matches if:
-      //   1. It has no postal refs (applies to entire country), OR
-      //   2. It has a postal_code ref that matches the buyer's postal code
-      //   3. It has a province ref and the buyer's postal code belongs to that province
-      //   4. It has a country ref and the buyer's postal code belongs to that country
-      //
-      // Priority: postal_code > province > country > no refs (zone-wide)
-      if (postalCode) {
-        const deliveryResult = await db.execute({
-          sql: `
-            SELECT DISTINCT
-              sm.id,
-              sm.name,
-              sm.description,
-              sm.type,
-              sm.article_type,
-              sm.max_weight,
-              sm.max_dimensions,
-              sm.max_articles,
-              sm.estimated_delivery_days,
-              sz.cost,
-              sz.id as zone_id,
-              sz.product_id as zone_product_id,
-              sz.product_type as zone_product_type
-            FROM shipping_methods sm
-            INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-            WHERE sm.type = 'delivery'
-              AND sm.is_active = 1
-              AND (sm.article_type = 'all' OR sm.article_type = ?)
-              AND sz.seller_id = ?
-              AND sz.country = ?
-              AND (
-                -- Zone has no postal refs (applies to entire country)
-                NOT EXISTS (
-                  SELECT 1 FROM shipping_zones_postal_codes szpc WHERE szpc.shipping_zone_id = sz.id
-                )
-                OR
-                -- Direct postal_code ref match
-                EXISTS (
-                  SELECT 1 FROM shipping_zones_postal_codes szpc
-                  JOIN postal_codes pc ON szpc.postal_code_id = pc.id
-                  WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'postal_code'
-                    AND pc.postal_code = ? AND pc.country = ?
-                )
-                OR
-                -- Province ref match
-                EXISTS (
-                  SELECT 1 FROM shipping_zones_postal_codes szpc
-                  WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'province'
-                    AND EXISTS (
-                      SELECT 1 FROM postal_codes pc
-                      WHERE pc.postal_code = ? AND pc.country = ? AND pc.province = szpc.ref_value
-                    )
-                )
-                OR
-                -- Country ref match
-                EXISTS (
-                  SELECT 1 FROM shipping_zones_postal_codes szpc
-                  WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'country'
-                    AND EXISTS (
-                      SELECT 1 FROM postal_codes pc
-                      WHERE pc.postal_code = ? AND pc.country = szpc.ref_value
-                    )
-                )
-              )
-          `,
-          args: [productType, sellerId, country, postalCode, country, postalCode, country, postalCode],
-        });
-
-        deliveryMethods = applyProductPriority(deliveryResult.rows)
-          .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
-          .map((method) => ({
-            id: method.id,
-            name: method.name,
-            description: method.description,
-            type: method.type,
-            cost: method.cost,
-            max_articles: method.max_articles,
-            estimated_delivery_days: method.estimated_delivery_days,
-          }));
-      } else {
-        // No postal code provided — only return zones with no postal refs (country-wide)
-        const deliveryResult = await db.execute({
-          sql: `
-            SELECT DISTINCT
-              sm.id,
-              sm.name,
-              sm.description,
-              sm.type,
-              sm.article_type,
-              sm.max_weight,
-              sm.max_dimensions,
-              sm.max_articles,
-              sm.estimated_delivery_days,
-              sz.cost,
-              sz.product_id as zone_product_id,
-              sz.product_type as zone_product_type
-            FROM shipping_methods sm
-            INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-            WHERE sm.type = 'delivery'
-              AND sm.is_active = 1
-              AND (sm.article_type = 'all' OR sm.article_type = ?)
-              AND sz.seller_id = ?
-              AND sz.country = ?
-              AND NOT EXISTS (
-                SELECT 1 FROM shipping_zones_postal_codes szpc
-                WHERE szpc.shipping_zone_id = sz.id
-              )
-          `,
-          args: [productType, sellerId, country],
-        });
-
-        deliveryMethods = applyProductPriority(deliveryResult.rows)
-          .filter((method) => checkProductFits(method.max_weight, method.max_dimensions))
-          .map((method) => ({
-            id: method.id,
-            name: method.name,
-            description: method.description,
-            type: method.type,
-            cost: method.cost,
-            max_articles: method.max_articles,
-            estimated_delivery_days: method.estimated_delivery_days,
-          }));
-      }
-    }
 
     res.status(200).json({
       success: true,
-      pickup: pickupMethods,
-      delivery: deliveryMethods,
+      pickup: pickup.map((option) => ({
+        id: option.methodId,
+        name: option.name,
+        description: option.description,
+        type: option.methodType,
+        cost: option.cost,
+        max_articles: option.maxArticles,
+        estimated_delivery_days: option.estimatedDeliveryDays,
+        pickup_address: option.pickupAddress,
+        pickup_city: option.pickupCity,
+        pickup_postal_code: option.pickupPostalCode,
+        pickup_country: option.pickupCountry,
+        pickup_instructions: option.pickupInstructions,
+      })),
+      delivery: delivery.map((option) => ({
+        id: option.methodId,
+        name: option.name,
+        description: option.description,
+        type: option.methodType,
+        cost: option.cost,
+        max_articles: option.maxArticles,
+        estimated_delivery_days: option.estimatedDeliveryDays,
+      })),
     });
   } catch (error) {
     next(error);

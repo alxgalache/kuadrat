@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { sensitiveLimiter, paymentVerificationLimiter } = require('../middleware/rateLimiter');
 const { authenticate, optionalAuthenticate } = require('../middleware/authorization');
+const { validate } = require('../middleware/validate');
+const { initPaymentSchema } = require('../validators/paymentSchemas');
 
 const {
   createPaymentIntentEndpoint,
@@ -11,7 +13,7 @@ const {
 } = require('../controllers/stripePaymentsController');
 
 // Create Stripe PaymentIntent (requires authentication)
-router.post('/create-intent', sensitiveLimiter, createPaymentIntentEndpoint);
+router.post('/create-intent', sensitiveLimiter, validate(initPaymentSchema), createPaymentIntentEndpoint);
 
 // Webhook endpoint (Stripe -> our server)
 // NO auth, NO rate limiting - this is server-to-server communication from Stripe

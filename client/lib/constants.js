@@ -367,3 +367,17 @@ export const ART_SHIPPING_INSURANCE_CEILING = 5000;
 // sí cuando el campo se vacía por completo: si no, borrar el filtro dejaría la
 // lista congelada en el último resultado.
 export const ART_SHIPPING_FILTER_MIN_CHARS = 3;
+
+// Rechazos de la verificación de envío al iniciar el pago. La API los distingue
+// con un código de máquina en `title` (que `lib/api.js` expone como
+// `error.title`), y cada uno tiene una acción distinta: el mensaje anterior,
+// único para todos, decía "Recarga la página", que no arregla nada — el carrito
+// vive en localStorage y recargar no lo toca.
+export const SHIPPING_VERIFICATION_ERRORS = {
+  SHIPPING_ADDRESS_REQUIRED:
+    'Falta la dirección de entrega para calcular el envío. Vuelve al paso anterior y compruébala.',
+  SHIPPING_METHOD_UNAVAILABLE:
+    'El método de envío elegido ya no está disponible para esa dirección. Elimina el producto de la cesta y vuelve a añadirlo eligiendo otro envío.',
+  SHIPPING_COST_OUTDATED:
+    'El precio del envío ha cambiado desde que añadiste el producto a la cesta. Elimínalo y vuelve a añadirlo para continuar.',
+};

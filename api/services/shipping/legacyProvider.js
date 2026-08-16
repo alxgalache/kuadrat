@@ -1,159 +1,77 @@
-const { db } = require('../../config/database')
 const logger = require('../../config/logger')
-const { postcodeValidator } = require('postcode-validator')
+const { resolveShippingOptions, checkProductFits } = require('./zoneResolver')
 
 /**
  * Legacy shipping provider.
- * Wraps the existing DB-based shipping logic into the standard provider interface.
+ * Adapts the database-backed shipping zones to the standard provider interface.
  */
-
-/**
- * Check if a product fits within shipping method limits.
- */
-function checkProductFits(productWeight, productDimensions, maxWeight, maxDimensions) {
-  if (maxWeight && productWeight && productWeight > maxWeight) {
-    return false
-  }
-
-  if (maxDimensions && productDimensions) {
-    const productDims = productDimensions.split('x').map(Number).sort((a, b) => b - a)
-    const maxDims = maxDimensions.split('x').map(Number).sort((a, b) => b - a)
-
-    for (let i = 0; i < 3; i++) {
-      if (productDims[i] > maxDims[i]) return false
-    }
-  }
-
-  return true
-}
 
 /**
  * Get delivery options from the legacy shipping system.
- * Queries shipping_methods, shipping_zones, and shipping_zones_postal_codes.
  *
- * For legacy, this is per-product (not per-seller-group). We adapt it by querying
- * for a representative product from the seller.
+ * Which zone applies is decided by the shared resolver (`zoneResolver.js`), the
+ * same one that quotes the buyer and validates the cost at payment. This module
+ * used to run its own query, without the product filter and with a different
+ * tie-break, which is how three implementations of one rule ended up disagreeing.
+ *
+ * For legacy, pricing is per-product (not per-seller-group), so the first
+ * parcel's first item stands in as the representative product.
+ *
+ * The resolver decides WHICH zones apply and already excludes methods the
+ * product itself does not fit. This module additionally checks the PARCEL
+ * against those limits, which is its own concern: several copacked store items
+ * travel as one box that can exceed a limit no single item does.
  */
 async function getDeliveryOptions({ sellerId, parcels, buyerAddress }) {
   const options = []
 
   // Use the first parcel's product info as representative
   const parcel = parcels[0]
-  const productType = parcel.productType || 'art'
-  const productWeight = parcel.weight
-  const productDimensions = parcel.dimensions
+  const representative = parcel.items && parcel.items[0]
+  if (!representative) return options
 
-  // Get pickup methods
-  const pickupResult = await db.execute({
-    sql: `
-      SELECT DISTINCT
-        sm.id, sm.name, sm.description, sm.type,
-        sm.max_weight, sm.max_dimensions, sm.max_articles,
-        sm.estimated_delivery_days, sz.cost,
-        u.pickup_address, u.pickup_city, u.pickup_postal_code,
-        u.pickup_country, u.pickup_instructions
-      FROM shipping_methods sm
-      INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-      INNER JOIN users u ON sz.seller_id = u.id
-      WHERE sm.type = 'pickup' AND sm.is_active = 1
-        AND (sm.article_type = 'all' OR sm.article_type = ?)
-        AND sz.seller_id = ?
-    `,
-    args: [productType === 'other' ? 'others' : productType, sellerId],
+  // Pickup options are added by shippingOptionsController, not here.
+  if (!buyerAddress.country || !buyerAddress.postalCode) return options
+
+  const { delivery } = await resolveShippingOptions({
+    productId: representative.productId,
+    productType: parcel.productType || 'art',
+    country: buyerAddress.country,
+    postalCode: buyerAddress.postalCode,
   })
 
-  // Note: pickup options are added by the shippingOptionsController, not here
+  // The only thing this provider adds on top of the resolver: legacy methods
+  // price per shipment, so N units of a method that carries `max_articles` at a
+  // time cost `ceil(N / max_articles)` shipments.
+  const totalUnits = parcels.reduce((sum, p) => sum + (p.quantity || 1), 0)
 
-  // Get delivery methods if country is provided
-  if (buyerAddress.country && buyerAddress.postalCode) {
-    const deliveryResult = await db.execute({
-      sql: `
-        SELECT DISTINCT
-          sm.id, sm.name, sm.description, sm.type,
-          sm.max_weight, sm.max_dimensions, sm.max_articles,
-          sm.estimated_delivery_days, sz.cost, sz.id as zone_id
-        FROM shipping_methods sm
-        INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-        WHERE sm.type = 'delivery' AND sm.is_active = 1
-          AND (sm.article_type = 'all' OR sm.article_type = ?)
-          AND sz.seller_id = ?
-          AND sz.country = ?
-          AND (
-            NOT EXISTS (
-              SELECT 1 FROM shipping_zones_postal_codes szpc WHERE szpc.shipping_zone_id = sz.id
-            )
-            OR EXISTS (
-              SELECT 1 FROM shipping_zones_postal_codes szpc
-              JOIN postal_codes pc ON szpc.postal_code_id = pc.id
-              WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'postal_code'
-                AND pc.postal_code = ? AND pc.country = ?
-            )
-            OR EXISTS (
-              SELECT 1 FROM shipping_zones_postal_codes szpc
-              WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'province'
-                AND EXISTS (
-                  SELECT 1 FROM postal_codes pc
-                  WHERE pc.postal_code = ? AND pc.country = ? AND pc.province = szpc.ref_value
-                )
-            )
-            OR EXISTS (
-              SELECT 1 FROM shipping_zones_postal_codes szpc
-              WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'country'
-                AND EXISTS (
-                  SELECT 1 FROM postal_codes pc
-                  WHERE pc.postal_code = ? AND pc.country = szpc.ref_value
-                )
-            )
-          )
-      `,
-      args: [
-        productType === 'other' ? 'others' : productType,
-        sellerId,
-        buyerAddress.country,
-        buyerAddress.postalCode, buyerAddress.country,
-        buyerAddress.postalCode, buyerAddress.country,
-        buyerAddress.postalCode,
-      ],
+  for (const option of delivery) {
+    if (!checkProductFits(parcel.weight, parcel.dimensions, option.maxWeight, option.maxDimensions)) {
+      continue
+    }
+
+    const maxArticles = option.maxArticles || 1
+    const shipmentCount = Math.ceil(totalUnits / maxArticles)
+
+    options.push({
+      id: `legacy_${option.methodId}`,
+      type: 'home_delivery',
+      carrier: { name: option.name, code: '', logoUrl: '' },
+      price: shipmentCount * option.cost,
+      currency: 'EUR',
+      estimatedDays: {
+        min: option.estimatedDeliveryDays || null,
+        max: option.estimatedDeliveryDays || null,
+      },
+      shippingOptionCode: `legacy_${option.methodId}`,
+      requiresServicePoint: false,
+      name: option.name,
+      description: option.description,
+      maxArticles: option.maxArticles,
+      legacyMethodId: option.methodId,
+      legacyCostPerShipment: option.cost,
+      shipmentCount,
     })
-
-    // Deduplicate by method ID (keep cheapest)
-    const groupedByMethod = {}
-    for (const row of deliveryResult.rows) {
-      if (!groupedByMethod[row.id] || row.cost < groupedByMethod[row.id].cost) {
-        groupedByMethod[row.id] = row
-      }
-    }
-
-    for (const method of Object.values(groupedByMethod)) {
-      if (!checkProductFits(productWeight, productDimensions, method.max_weight, method.max_dimensions)) {
-        continue
-      }
-
-      // Calculate total cost for all parcels: ceil(totalUnits / maxArticles) * cost
-      const totalUnits = parcels.reduce((sum, p) => sum + (p.quantity || 1), 0)
-      const maxArticles = method.max_articles || 1
-      const shipmentCount = Math.ceil(totalUnits / maxArticles)
-
-      options.push({
-        id: `legacy_${method.id}`,
-        type: 'home_delivery',
-        carrier: { name: method.name, code: '', logoUrl: '' },
-        price: shipmentCount * method.cost,
-        currency: 'EUR',
-        estimatedDays: {
-          min: method.estimated_delivery_days || null,
-          max: method.estimated_delivery_days || null,
-        },
-        shippingOptionCode: `legacy_${method.id}`,
-        requiresServicePoint: false,
-        name: method.name,
-        description: method.description,
-        maxArticles: method.max_articles,
-        legacyMethodId: method.id,
-        legacyCostPerShipment: method.cost,
-        shipmentCount,
-      })
-    }
   }
 
   return options

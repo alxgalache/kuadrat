@@ -27,14 +27,22 @@ const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art'
 /**
  * POST /api/payments/stripe/create-intent
  * Creates a Stripe PaymentIntent for the given cart items.
- * Body: { items: [...], currency: 'EUR' }
+ * Body: { items: [...], currency: 'EUR', deliveryAddress: { country, postalCode } }
  * Returns: { clientSecret, paymentIntentId, amount, currency }
+ *
+ * `deliveryAddress` is what decides which shipping zone prices the order, so it
+ * is required whenever any item ships to an address. Rejections carry a machine
+ * code in `title` so the client can tell the buyer something actionable:
+ *   SHIPPING_ADDRESS_REQUIRED    — a delivery item arrived with no address
+ *   SHIPPING_METHOD_UNAVAILABLE  — that method does not serve this destination
+ *   SHIPPING_COST_OUTDATED       — the price changed since it went in the cart
  */
 const createPaymentIntentEndpoint = async (req, res, next) => {
   try {
     const {
       items: compactItems,
       currency = 'EUR',
+      deliveryAddress = null,
     } = req.body || {};
 
     if (!Array.isArray(compactItems) || compactItems.length === 0) {
@@ -45,7 +53,7 @@ const createPaymentIntentEndpoint = async (req, res, next) => {
     const { artMap, otherMap } = await loadProductsDetails(compactItems);
 
     // Verify shipping costs server-side before computing total
-    await verifyShippingCosts(compactItems, artMap, otherMap);
+    await verifyShippingCosts(compactItems, artMap, otherMap, { deliveryAddress });
 
     const { productsTotal } = buildLineItems({
       compactItems,

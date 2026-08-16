@@ -73,3 +73,12 @@
 - [x] 9.8 Corregir la clave de caché de páginas: quitar `$request_method`. nginx sólo cachea GET y HEAD y trae `proxy_cache_convert_head` activado para que compartan entrada; incluir el método la anulaba, guardando cada URL dos veces y haciendo que un HEAD nunca aprovechase la copia dejada por un GET. Reproducido en local (dos URLs ocupaban 6 ficheros; ahora 2) y verificado que GET→HEAD y HEAD→GET aciertan. Era la causa del aviso `esperado 'HIT', obtenido 'MISS'` del primer despliegue con script: la verificación usaba `curl -I`.
 - [x] 9.9 Añadir `log_format kuadrat` con `$upstream_cache_status` y `access_log` en ambos vhosts. El formato por defecto de Ubuntu no registra si una respuesta salió de caché, de modo que un fallo así no dejaba rastro que analizar después.
 - [x] 9.10 La verificación del script usa GET en vez de HEAD y reintenta una vez antes de avisar: un MISS en una entrada recién creada es legítimo y no debe alarmar.
+
+## 10. H4 — monitorización
+
+- [x] 10.1 Diagnosticar la ausencia de eventos en Sentry. **No era un fallo de Sentry**: verificado invocando `GET /api/sentry-example-api` en producción, que llegó con el segundo exacto. Los fallos de la prueba de carga (conexiones TCP cortadas, 503 del limitador, 500 de la fontanería interna de Next) no son excepciones de código y no hay nada que capturar. Era una confusión de herramienta, no un defecto.
+- [x] 10.2 `GET /health/ready`: readiness real con `SELECT 1`, timeout propio de 4 s, `503 degraded` si la base de datos no responde, exento del limitador, sin caché y sin filtrar detalles del error. `/health` se mantiene como liveness para el healthcheck de Docker.
+- [x] 10.3 `api/tests/healthReadiness.test.js` — 6 casos, incluidos el degradado, el timeout y la no filtración de hostnames. Ese test destapó una fuga de temporizador en el propio endpoint (el `setTimeout` del `Promise.race` seguía vivo aunque la base de datos contestase), corregida con `clearTimeout` en un `finally`.
+- [x] 10.4 `docs/monitorizacion.md`: las cuatro capas, qué responde cada una y por qué Sentry no es la que faltaba.
+- [ ] 10.5 **Pendiente, en consola:** dar de alta el monitor externo (Sentry Uptime o equivalente) contra `/galeria`, `/health/ready` y una ficha de obra. Es la única capa que sigue viva cuando la máquina no lo está.
+- [ ] 10.6 **Pendiente, en consola:** alarmas de CloudWatch sobre `StatusCheckFailed` y `CPUUtilization` para `i-08f34f1a05a798185`.

@@ -194,12 +194,17 @@ function mapAddressToRevolut(addr) {
 // The full payload (customer, line_items, shipping, description, location_id)
 // will be PATCHed later from the /api/orders/placeOrder endpoint once the
 // buyer has filled in all personal and address information.
+// `deliveryAddress` decides which shipping zone prices the order — same
+// contract as the Stripe endpoint, so both providers validate identically.
+// Rejections carry a machine code in `title`: SHIPPING_ADDRESS_REQUIRED,
+// SHIPPING_METHOD_UNAVAILABLE or SHIPPING_COST_OUTDATED.
 const initRevolutOrderEndpoint = async (req, res, next) => {
   try {
     const {
       // compactItems: [{ type:'art'|'other', id, variantId?, quantity, shipping }]
       items: compactItems,
       currency = 'EUR',
+      deliveryAddress = null,
     } = req.body || {};
 
     if (!Array.isArray(compactItems) || compactItems.length === 0) {
@@ -210,7 +215,7 @@ const initRevolutOrderEndpoint = async (req, res, next) => {
     const { artMap, otherMap } = await loadProductsDetails(compactItems);
 
     // Verify shipping costs server-side before computing total
-    await sharedVerifyShippingCosts(compactItems, artMap, otherMap);
+    await sharedVerifyShippingCosts(compactItems, artMap, otherMap, { deliveryAddress });
 
     const { lineItems, productsTotal } = buildLineItems({ compactItems, artMap, otherMap });
     const shippingTotal = computeShippingTotal(compactItems);
