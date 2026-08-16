@@ -64,6 +64,8 @@ The API SHALL validate that `product_id` is a positive integer or null/absent, a
 ### Requirement: Product-specific shipping zone filtering for buyers
 The `getAvailableShipping` endpoint SHALL filter shipping zones by product. Zones with a `product_id` that does not match the requested product SHALL be excluded. Zones with a matching `product_id` and `product_type` SHALL be included. Zones with `product_id = NULL` (generic) SHALL be included unless overridden by a product-specific zone.
 
+This filtering SHALL be performed by the shared resolver in `api/services/shipping/zoneResolver.js` rather than by logic local to the endpoint, and it SHALL therefore apply identically wherever a zone cost is resolved — including the server-side verification of shipping costs at payment time, which previously ignored it.
+
 #### Scenario: Only generic zones exist
 - **WHEN** buyer requests shipping for product id=10 type='art' and all matching zones have product_id=NULL
 - **THEN** all matching generic zones are returned (existing behavior preserved)
@@ -87,6 +89,14 @@ The `getAvailableShipping` endpoint SHALL filter shipping zones by product. Zone
 #### Scenario: Applies to delivery methods
 - **WHEN** buyer requests shipping and a delivery method has a zone with product_id=10, product_type='art'
 - **THEN** the product filter and priority logic apply to delivery methods
+
+#### Scenario: The same filter applies when verifying the cost at payment
+- **WHEN** the server verifies a cart item's shipping cost during payment initialisation and the artwork has a product-specific zone for the chosen method
+- **THEN** the verification SHALL compare against the product-specific zone's cost, not against a generic zone or a zone belonging to another product
+
+#### Scenario: Cheapest candidate wins within a method
+- **WHEN** several zones of the same method and the same priority tier apply to the product and destination
+- **THEN** the cheapest SHALL be used, both when quoting the buyer and when verifying the cost, since that is the price the buyer was shown
 
 ### Requirement: Admin form shows product select dependent on seller
 The admin shipping zone form SHALL display a "Producto" select input that is populated with products from the selected seller. The select SHALL be disabled or hidden when no seller is selected. When the seller changes, the product list SHALL reload and any previously selected product SHALL be cleared.

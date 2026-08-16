@@ -34,10 +34,11 @@ un detector de humo no avisa de una inundación.
 |---|---|---|---|
 | 1. Sentry | ¿Ha fallado mi código? | Ya configurado | ✅ Funcionando |
 | 2. Endpoint de readiness | ¿Puede el servicio atender a alguien? | `api/app.js` | ✅ Implementado |
-| 3. Monitor externo | ¿Responde el sitio? | Fuera de la instancia | ⬜ **Pendiente: hay que darlo de alta** |
-| 4. Alarmas de AWS | ¿Está viva la máquina? | CloudWatch | ⬜ **Pendiente** |
+| 3. Monitor externo | ¿Responde el sitio? | Fuera de la instancia | ✅ Dado de alta |
+| 4. Alarmas de AWS | ¿Está viva la máquina? | CloudWatch | ✅ Dadas de alta |
 
-Las capas 3 y 4 son configuración de consola, no código, y son las que faltan.
+Las capas 3 y 4 son configuración de consola, no código. Lo que sigue documenta
+cómo se dieron de alta y qué vigilan, para poder rehacerlas o revisarlas.
 
 ## Capa 2 — el endpoint que sí dice la verdad
 
@@ -79,17 +80,41 @@ su destino: el mismo punto ciego que ya está documentado para las copias de
 seguridad (*«un contenedor caído a las 04:00 no produce copia y tampoco
 alerta»*).
 
-Cualquier servicio vale. Los tres a vigilar:
+Cualquier servicio vale. Lo que **no** da igual es qué URL se vigila: las
+mejoras de resiliencia que hacen el sitio robusto lo hacen también más difícil
+de monitorizar desde fuera, porque están diseñadas justamente para que un fallo
+del origen no se note.
 
-| URL | Espera | Frecuencia |
+| URL | Qué detecta | Fuerza |
 |---|---|---|
-| `https://140d.art/galeria` | 200 | 1 min |
-| `https://api.140d.art/health/ready` | 200 | 1 min |
-| `https://140d.art/galeria/p/<slug>` | 200 | 5 min |
+| `https://api.140d.art/health/ready` | API caída (502), base de datos inaccesible (503), máquina caída (timeout) | **Fuerte** |
+| `https://api.140d.art/api/art?page=1&limit=1` | El camino de datos completo, de extremo a extremo | **Fuerte** |
+| `https://140d.art/galeria` | Que nginx atiende | Débil |
+| `https://140d.art/galeria/p/ventanas-y-horizontes-ii` | Que el render responde | Débil |
 
-La tercera importa más de lo que parece: es la ruta que ejercita el render, la
-caché y la API a la vez. Si `/galeria` responde pero una ficha no, el problema
-está en el origen y no en nginx.
+**Las dos primeras son los monitores de verdad.** Ninguna pasa por la caché de
+nginx (`/health/ready` manda `no-store`; el vhost de la API no tiene
+`proxy_cache`), así que un fallo del origen se traduce en un código de error que
+el monitor ve.
+
+Las dos últimas son casi decorativas, y conviene saber por qué antes de confiar
+en ellas:
+
+- **`/galeria` se sirve desde la caché de nginx con `proxy_cache_use_stale`.**
+  Devolvería 200 con el contenedor de Next completamente muerto. Eso es
+  exactamente lo que queremos para los visitantes, y exactamente lo que arruina
+  el valor de la comprobación.
+- **La ficha de obra devuelve 200 aunque la API esté caída.**
+  `client/lib/serverApi.js` traga los errores (`if (!res.ok) return null` y un
+  `catch` que también devuelve `null`), de modo que la página se renderiza
+  igualmente y muestra «Obra no encontrada» — con código 200. Un monitor que
+  sólo mire el código de estado no distingue eso de una página correcta.
+
+Por la misma razón, **da casi igual qué slug se elija**: un slug inexistente
+también responde 200, así que el monitor no dará falsos positivos si algún día
+esa obra se retira del catálogo. Si tu servicio permite comprobar además el
+**cuerpo** de la respuesta, busca un texto que sólo aparezca cuando la ficha se
+renderiza bien (el nombre de la obra) y la comprobación pasa de débil a útil.
 
 **Opción recomendada: Sentry Uptime Monitoring**, si tu plan lo incluye. Ventaja
 concreta: las caídas aparecen en el mismo panel que los errores de código, así

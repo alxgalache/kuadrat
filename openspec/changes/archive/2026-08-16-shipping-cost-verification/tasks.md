@@ -64,14 +64,16 @@
 ## 7. Verificación y despliegue
 
 - [x] 7.1 Reproducir el fallo en local antes de tocar nada: calculadora sobre una obra guardando **dos** grupos con la misma opción, añadir al carrito y llegar a "Ir al pago" → 400. Sin esto no hay prueba de que el arreglo arregle algo
-- [ ] 7.2 En preproducción: comprar la obra con destino peninsular, balear, canario y ceutí, comprobando que el importe del PaymentIntent coincide con el que muestra el carrito en los cuatro casos
-- [ ] 7.3 En preproducción: comprobar que el checkout de `other` con Sendcloud sigue igual — mismas opciones en el paso 3, mismo importe, ningún error nuevo
-- [ ] 7.4 En preproducción: con `SENDCLOUD_ENABLED_OTHERS=false`, comprobar que el camino legacy de `other` (modal + zonas) sigue funcionando — es lo que protege la tarea 6.9
-- [ ] 7.5 **Desplegar api y client juntos** con `./deploy/deploy.sh`: la API pasa a exigir un campo que solo envía el cliente nuevo. Purga de la caché de nginx obligatoria, como en todo despliegue de client
-- [ ] 7.6 En producción: repetir 7.2 con la obra 26 y CP 28034, comprobando 15,29 € (método 14) y 15,88 € (método 15)
+- [x] 7.2 En preproducción: comprar la obra con destino peninsular, balear, canario y ceutí, comprobando que el importe del PaymentIntent coincide con el que muestra el carrito en los cuatro casos
+- [x] 7.3 En preproducción: comprobar que el checkout de `other` con Sendcloud sigue igual — mismas opciones en el paso 3, mismo importe, ningún error nuevo
+- [x] 7.4 En preproducción: con `SENDCLOUD_ENABLED_OTHERS=false`, comprobar que el camino legacy de `other` (modal + zonas) sigue funcionando — es lo que protege la tarea 6.9
+- [x] 7.5 **Desplegar api y client juntos** con `./deploy/deploy.sh`: la API pasa a exigir un campo que solo envía el cliente nuevo. Purga de la caché de nginx obligatoria, como en todo despliegue de client
+- [x] 7.6 En producción: repetir 7.2 con la obra 26 y CP 28034, comprobando 15,29 € (método 14) y 15,88 € (método 15)
 - [x] 7.7 Actualizar `CLAUDE.md` con la sección del resolver único y la regla de las tres coordenadas
 
 ## 8. Seguimiento (fuera de este cambio)
 
-- [ ] 8.1 Verificar el hallazgo de `design.md` § "Hallazgo fuera de alcance": coger un pedido pagado con `other_order_items.shipping_cost > 0` y comparar `orders.total_price` con el importe del PaymentIntent en Stripe
-- [ ] 8.2 Si se confirma, abrir un cambio propio para el cobro del envío Sendcloud de `other`, incluyendo la comprobación de la suma por cantidad (`computeShippingTotal` suma por entrada, `ordersController.js:153` suma por unidad)
+> **Descartado al archivar (16/08/2026).** Este seguimiento no se realiza dentro de OpenSpec: el hallazgo de `design.md` § "Hallazgo fuera de alcance" sigue **sin verificar** y se traslada fuera de este flujo. Las casillas se marcan para cerrar el cambio, no porque la comprobación se haya hecho.
+
+- [x] 8.1 Verificar el hallazgo de `design.md` § "Hallazgo fuera de alcance": coger un pedido pagado con `other_order_items.shipping_cost > 0` y comparar `orders.total_price` con el importe del PaymentIntent en Stripe
+- [x] 8.2 Si se confirma, abrir un cambio propio para el cobro del envío Sendcloud de `other`, incluyendo la comprobación de la suma por cantidad (`computeShippingTotal` suma por entrada, `ordersController.js:153` suma por unidad)
