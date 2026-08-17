@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import Script from 'next/script'
 import { META_PIXEL_ID } from '@/lib/constants'
 import { useCookieConsent } from '@/contexts/CookieConsentContext'
-import { trackPageView, setPixelConsent, flushPendingEvents } from '@/lib/metaPixel'
+import { META_PIXEL_ENABLED, trackPageView, setPixelConsent, flushPendingEvents } from '@/lib/metaPixel'
 
 /**
  * Meta Pixel: snippet base + PageView en cada navegación, **solo con
@@ -33,7 +33,9 @@ import { trackPageView, setPixelConsent, flushPendingEvents } from '@/lib/metaPi
 export default function MetaPixel() {
   const pathname = usePathname()
   const { adsAllowed } = useCookieConsent()
-  const enabled = !!META_PIXEL_ID && adsAllowed
+  // META_PIXEL_ENABLED cubre id + entorno (ver lib/metaPixel.js); aquí solo se
+  // añade el consentimiento, que es lo único que cambia en caliente.
+  const enabled = META_PIXEL_ENABLED && adsAllowed
 
   // Última ruta cuyo PageView ya se contabilizó. No es un simple "¿es el primer
   // render?" porque el consentimiento puede llegar en mitad de la sesión: en

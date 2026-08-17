@@ -400,6 +400,35 @@ const config = {
     maxAnnouncementRetries: optionalInt('SENDCLOUD_MAX_ANNOUNCEMENT_RETRIES', 3),
   },
 
+  // --- Meta Conversions API (server-side events for Instagram/Facebook Ads) ---
+  // Envío servidor→servidor de los mismos eventos que emite el píxel del
+  // navegador, deduplicados por `event_id`. Existe porque los bloqueadores de
+  // anuncios cortan `fbevents.js` en una parte apreciable de las visitas y esas
+  // conversiones nunca llegan a Meta.
+  //
+  // Activación DELIBERADAMENTE explícita y apagada por defecto: hacen falta el
+  // flag, el id del conjunto de datos y el token. Igual que en el píxel, un
+  // `.env` copiado a preproducción no debe empezar a alimentar el conjunto de
+  // datos real — y aquí `isProduction` no sirve para distinguirlos, porque
+  // staging también corre con NODE_ENV=production.
+  meta: {
+    enabled:
+      optionalBool('META_CAPI_ENABLED', false) &&
+      !!optional('META_PIXEL_ID', '') &&
+      !!optional('META_CAPI_ACCESS_TOKEN', '') &&
+      !isTest,
+    pixelId: optional('META_PIXEL_ID', ''),
+    accessToken: optional('META_CAPI_ACCESS_TOKEN', ''),
+    // Versión del Graph API. Meta retira versiones cada ~2 años; fijarla evita
+    // que un cambio de comportamiento llegue solo por el paso del tiempo.
+    apiVersion: optional('META_CAPI_API_VERSION', 'v21.0'),
+    // Código de "Eventos de prueba" del Administrador de eventos. Cuando está
+    // relleno, Meta encamina los eventos a la pestaña de pruebas y NO los
+    // cuenta como conversiones. Es la única forma segura de probar contra el
+    // conjunto de datos real; déjalo vacío en producción.
+    testEventCode: optional('META_CAPI_TEST_EVENT_CODE', ''),
+  },
+
   // --- AWS S3 ---
   aws: {
     s3Bucket: optional('AWS_S3_BUCKET', ''),

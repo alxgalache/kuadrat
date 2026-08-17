@@ -63,7 +63,10 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ "$SOLO_CACHE" = "1" ] && { HACER_PULL=0; HACER_BUILD=0; }
-TOTAL_PASOS=$([ "$SOLO_CACHE" = "1" ] && echo 3 || echo 8)
+# Son 9 en todos los modos: las opciones no saltan pasos, los vacían (el paso
+# imprime "omitido" y sigue). El valor anterior para --cache-only era 3, así que
+# ese modo terminaba anunciando "[9/3]".
+TOTAL_PASOS=9
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 REPO="$PWD"
@@ -94,38 +97,6 @@ for f in "$REPO/.env" "$REPO/api/.env" "$REPO/client/.env"; do
 done
 ok "los tres .env están presentes"
 
-# Variables nuevas en los .example que aún no están en los .env reales. Es el
-# fallo clásico de este proyecto: un NEXT_PUBLIC_* que falta en la build se
-# incrusta VACÍO en el bundle y el síntoma aparece en el navegador, lejos de
-# aquí. Se avisa, no se aborta: puede haber variables opcionales.
-faltantes_totales=0
-comparar_env() {
-  local ejemplo="$1" real="$2"
-  [ -f "$ejemplo" ] || return 0
-  local faltan
-  faltan=$(comm -23 \
-    <(grep -oE '^[A-Z][A-Z0-9_]*=' "$ejemplo" | tr -d '=' | sort -u) \
-    <(grep -oE '^[A-Z][A-Z0-9_]*=' "$real"    | tr -d '=' | sort -u) || true)
-  if [ -n "$faltan" ]; then
-    aviso "$(basename "$(dirname "$real")")/$(basename "$real") no define: $(echo "$faltan" | tr '\n' ' ')"
-    faltantes_totales=$((faltantes_totales+1))
-  fi
-}
-comparar_env "$REPO/.env.example"        "$REPO/.env"
-comparar_env "$REPO/api/.env.example"    "$REPO/api/.env"
-comparar_env "$REPO/client/.env.example" "$REPO/client/.env"
-[ "$faltantes_totales" -eq 0 ] && ok "los .env cubren todas las variables de los .example"
-
-if [ "$SOLO_CACHE" = "1" ]; then
-  printf '\n%sModo --cache-only:%s sólo se purgará y recalentará la caché.\n' "$B" "$R"
-else
-  if [ "$CONFIRMAR" = "1" ]; then
-    printf '\n   Se va a %sreconstruir y reiniciar producción%s. ¿Continuar? [s/N] ' "$B" "$R"
-    read -r respuesta
-    case "$respuesta" in [sSyY]*) ;; *) printf '   Cancelado.\n\n'; exit 0 ;; esac
-  fi
-fi
-
 # ═══ 2. Código ═══════════════════════════════════════════════════════════════
 if [ "$HACER_PULL" = "1" ]; then
   paso "Actualizando el código"
@@ -154,7 +125,67 @@ else
   info "omitido (--no-pull); se despliega $(git rev-parse --short HEAD)"
 fi
 
-# ═══ 3. nginx ════════════════════════════════════════════════════════════════
+# ═══ 3. Variables de entorno ═════════════════════════════════════════════════
+paso "Variables de entorno"
+# Variables nuevas en los .example que aún no están en los .env reales. Es el
+# fallo clásico de este proyecto: un NEXT_PUBLIC_* que falta en la build se
+# incrusta VACÍO en el bundle y el síntoma aparece en el navegador, lejos de
+# aquí.
+#
+# ESTE PASO VA DESPUÉS DEL `git pull`, Y ES LO ÚNICO QUE LO HACE ÚTIL. Los
+# `.env.example` viven en el repositorio y el pull es quien los actualiza; los
+# `.env` reales están fuera de git. Comparándolos antes de actualizar el código
+# se contrastaba la lista de variables ANTERIOR contra los `.env` — es decir,
+# sólo se detectaban las variables introducidas en despliegues previos, nunca
+# las del que se está haciendo, que son justo las que faltan. La comprobación
+# pasaba en verde y la build salía con la variable vacía.
+#
+# Se avisa, no se aborta: hay variables legítimamente opcionales (códigos de
+# prueba, escotillas de desarrollo). Por eso la confirmación viene inmediatamente
+# después: quien despliega decide con los avisos delante.
+faltantes_totales=0
+comparar_env() {
+  local ejemplo="$1" real="$2"
+  [ -f "$ejemplo" ] || return 0
+  local faltan
+  faltan=$(comm -23 \
+    <(grep -oE '^[A-Z][A-Z0-9_]*=' "$ejemplo" | tr -d '=' | sort -u) \
+    <(grep -oE '^[A-Z][A-Z0-9_]*=' "$real"    | tr -d '=' | sort -u) || true)
+  if [ -n "$faltan" ]; then
+    aviso "$(basename "$(dirname "$real")")/$(basename "$real") no define: $(echo "$faltan" | tr '\n' ' ')"
+    faltantes_totales=$((faltantes_totales+1))
+  fi
+}
+comparar_env "$REPO/.env.example"        "$REPO/.env"
+comparar_env "$REPO/api/.env.example"    "$REPO/api/.env"
+comparar_env "$REPO/client/.env.example" "$REPO/client/.env"
+if [ "$faltantes_totales" -eq 0 ]; then
+  ok "los .env cubren todas las variables de los .example"
+else
+  aviso "revisa lo anterior antes de continuar: una NEXT_PUBLIC_* ausente se incrusta vacía en el bundle"
+fi
+
+if [ "$SOLO_CACHE" = "1" ]; then
+  printf '\n%sModo --cache-only:%s sólo se purgará y recalentará la caché.\n' "$B" "$R"
+else
+  if [ "$CONFIRMAR" = "1" ]; then
+    printf '\n   Se va a %sreconstruir y reiniciar producción%s. ¿Continuar? [s/N] ' "$B" "$R"
+    read -r respuesta
+    case "$respuesta" in
+      [sSyY]*) ;;
+      # Al cancelar aquí el código YA está actualizado en el directorio: el pull
+      # ocurre antes para que esta pregunta se responda con los commits y los
+      # avisos de entorno delante. No afecta a producción —los contenedores
+      # siguen ejecutando las imágenes construidas antes—, pero conviene decirlo
+      # para que nadie dé por hecho que el repositorio quedó como estaba.
+      *) printf '   Cancelado. El código ya está actualizado en el directorio;\n'
+         printf '   producción sigue con las imágenes anteriores.\n\n'
+         exit 0 ;;
+    esac
+  fi
+fi
+
+# ═══ 4. nginx ════════════════════════════════════════════════════════════════
 paso "Configuración de nginx"
 nginx_cambiado=0
 sincronizar_nginx() {
@@ -191,7 +222,7 @@ else
   ok "sin cambios"
 fi
 
-# ═══ 4. Contenedores ═════════════════════════════════════════════════════════
+# ═══ 5. Contenedores ═════════════════════════════════════════════════════════
 paso "Construyendo y levantando los contenedores"
 # Deliberadamente SIN `down --rmi all`: borrar las imágenes obliga a
 # reconstruir desde cero en cada despliegue y —lo importante— deja el sitio
@@ -206,7 +237,7 @@ else
 fi
 ok "contenedores en marcha"
 
-# ═══ 5. Salud ════════════════════════════════════════════════════════════════
+# ═══ 6. Salud ════════════════════════════════════════════════════════════════
 paso "Esperando a que respondan"
 # Este paso va ANTES de purgar la caché a propósito. Mientras los contenedores
 # reinician, nginx sigue sirviendo copias cacheadas (`proxy_cache_use_stale`),
@@ -225,7 +256,7 @@ esperar() {
 esperar "$LOCAL_API/health" "api"
 esperar "$LOCAL_CLIENT/"    "client"
 
-# ═══ 6. Caché ════════════════════════════════════════════════════════════════
+# ═══ 7. Caché ════════════════════════════════════════════════════════════════
 paso "Purgando la caché de páginas"
 # Obligatorio en cada despliegue del cliente: las páginas estáticas se cachean
 # un año y su HTML referencia chunks de JS con nombres que el build nuevo ya no
@@ -238,7 +269,7 @@ sudo rm -rf "${NGINX_CACHE_HTML:?}"/* 2>/dev/null || true
 sudo systemctl reload nginx
 ok "caché de páginas vacía"
 
-# ═══ 7. Recalentado ══════════════════════════════════════════════════════════
+# ═══ 8. Recalentado ══════════════════════════════════════════════════════════
 paso "Recalentando la caché"
 # Con la caché vacía el render sostiene ~11 req/s, así que un pico de visitas
 # justo después del despliegue encontraría colas de varios segundos. Recorrer
@@ -257,7 +288,7 @@ done
 printf '\n'
 ok "URLs públicas recorridas ('.' = servida, 'x' = fallo)"
 
-# ═══ 8. Verificación ═════════════════════════════════════════════════════════
+# ═══ 9. Verificación ═════════════════════════════════════════════════════════
 paso "Verificación final"
 errores=0
 comprobar() {

@@ -1920,6 +1920,37 @@ export const inquiriesAPI = {
   },
 };
 
+export const insightsAPI = {
+  /**
+   * Reenvía un evento de publicidad a la Conversions API de Meta a través de
+   * nuestra API. Es la copia que sobrevive a los bloqueadores de anuncios.
+   *
+   * Nunca rechaza: la medición es accesoria y no puede ensuciar la consola del
+   * visitante ni interrumpir una compra. Tampoco se usa la deduplicación de
+   * peticiones del cliente (`apiRequest` la aplica a GET), porque dos eventos
+   * legítimos pueden ser idénticos salvo por su `eventId`.
+   */
+  trackEvent: async ({ eventName, eventId, eventSourceUrl, orderId, customData, fbp, fbc }) => {
+    try {
+      return await apiRequest('/insights/events', {
+        method: 'POST',
+        skipAuthHandling: true,
+        body: JSON.stringify({
+          eventName,
+          eventId,
+          eventSourceUrl,
+          ...(orderId ? { orderId } : {}),
+          ...(customData ? { customData } : {}),
+          ...(fbp ? { fbp } : {}),
+          ...(fbc ? { fbc } : {}),
+        }),
+      });
+    } catch (err) {
+      return null;
+    }
+  },
+};
+
 export const newsletterAPI = {
   // `topics` is an array of stable topic keys (live_events, auctions_draws,
   // new_authors, newsletter); the backend maps them to Resend topic IDs.
