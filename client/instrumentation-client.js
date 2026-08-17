@@ -33,6 +33,45 @@ Sentry.init({
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
+
+  // --- Ruido de navegadores in-app (Instagram / Facebook en Android) ---
+  //
+  // Estos navegadores inyectan sus propios scripts de telemetría en la página
+  // y los comunican con la app nativa a través del puente JS<->Java del
+  // WebView (`@JavascriptInterface`). Cuando ese puente se rompe —el objeto
+  // Java se ha recolectado, o su método lanza— el script inyectado lanza una
+  // excepción que acaba en `window.onerror` o dentro de un listener que
+  // nuestro SDK envuelve, y Sentry la atribuye a la página que la hospeda.
+  //
+  // No es un defecto nuestro y no tiene efecto observable para el usuario: lo
+  // que falla es la propia instrumentación de Meta, no el render, la
+  // navegación ni el formulario. Se descarta en el navegador, antes de
+  // consumir cuota.
+  ignoreErrors: [
+    // "Error invoking postMessage: Java object is gone"
+    // "Error invoking postMessage: Java exception was raised during method
+    //  invocation"
+    // El mensaje lo genera la capa de reflexión del WebView de Android, no
+    // JavaScript. Nada de lo que servimos habla con un puente nativo (cero
+    // usos de postMessage/Worker/MessageChannel en el cliente), así que esta
+    // cadena no puede originarse en nuestro código. Cuando falla el
+    // `postMessage` DEL NAVEGADOR el mensaje es otro —"Failed to execute
+    // 'postMessage' on 'Window': …"— y por eso el patrón va ANCLADO: no debe
+    // casar con un error que sólo mencione postMessage por dentro.
+    /^Error invoking postMessage:/,
+  ],
+
+  denyUrls: [
+    // Origen de los scripts inyectados por el navegador in-app
+    // (`app://navigation_performance_logger_android` y familia).
+    //
+    // OJO con el lookahead, es lo único que hace este patrón seguro: el SDK de
+    // Sentry para Next.js reescribe NUESTROS propios frames a `app:///_next/…`
+    // —tres barras—, mientras que los scripts inyectados viven en
+    // `app://<nombre>` —dos—. Sin `(?!\/)` este `denyUrls` descartaría todos
+    // los eventos de la aplicación.
+    /^app:\/\/(?!\/)/,
+  ],
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
