@@ -19,6 +19,25 @@ function getClientIp(req) {
 
 const EVENTS_VIDEOS_DIR = path.join(__dirname, '..', 'uploads', 'events');
 
+/**
+ * Whether this attendee still owes money for this event.
+ *
+ * Staff attendees (the gallery admin sitting in an event they did not host)
+ * are exempt: charging the owner of the platform to watch a stream organised
+ * from their own panel makes no sense. Every OTHER check — event active, room
+ * available, email ban, IP ban — still applies to them, so this predicate is
+ * deliberately narrow.
+ *
+ * One helper rather than the same condition inlined at five call sites: the
+ * five must agree, and a divergence would show up as the admin getting a
+ * whiteboard token but not being able to upload to it.
+ */
+function requiresPayment(event, attendee) {
+  if (event.access_type !== 'paid') return false;
+  if (Number(attendee.is_staff) === 1) return false;
+  return !['paid', 'joined'].includes(attendee.status);
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/events?from=YYYY-MM-DD&to=YYYY-MM-DD
 // ---------------------------------------------------------------------------
@@ -233,6 +252,52 @@ const confirmPayment = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
+// POST /api/events/:id/admin-access
+// Let the gallery admin sit in any event as an ordinary participant, with no
+// registration, no OTP and no payment. Returns the same
+// { attendeeId, accessToken } pair EventAccessModal produces, so every
+// downstream endpoint works without knowing an admin is involved.
+//
+// The admin joins as a PARTICIPANT, not as host: host powers still require
+// req.user.id === event.host_user_id in getHostToken.
+// ---------------------------------------------------------------------------
+const getAdminAccess = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!req.user || req.user.role !== 'admin') {
+      throw new ApiError(403, 'Solo el administrador puede usar este acceso', 'Acceso denegado');
+    }
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
+    const { attendee, accessToken } = await eventService.createOrGetStaffAttendee(id, {
+      email: req.user.email,
+      fullName: req.user.full_name,
+    });
+
+    logger.info({ eventId: id, adminId: req.user.id }, 'Admin joined event as staff attendee');
+
+    res.status(200).json({
+      success: true,
+      attendeeId: attendee.id,
+      accessToken,
+      attendee: {
+        id: attendee.id,
+        first_name: attendee.first_name,
+        last_name: attendee.last_name,
+        email: attendee.email,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /api/events/:id/token
 // Get a LiveKit viewer token for an attendee
 // ---------------------------------------------------------------------------
@@ -260,8 +325,8 @@ const getViewerToken = async (req, res, next) => {
       throw new ApiError(403, 'Token de acceso inválido', 'Acceso denegado');
     }
 
-    // For paid events, check payment status
-    if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+    // Paid events require payment — staff (admin) are exempt.
+    if (requiresPayment(event, attendee)) {
       throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
     }
 
@@ -433,7 +498,7 @@ const renewToken = async (req, res, next) => {
       if (!attendee || attendee.id !== attendeeId) {
         throw new ApiError(403, 'Token de acceso inválido', 'Acceso denegado');
       }
-      if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+      if (requiresPayment(event, attendee)) {
         throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
       }
       if (await eventService.isEmailBanned(id, attendee.email)) {
@@ -563,7 +628,7 @@ const getWhiteboardToken = async (req, res, next) => {
     if (!attendee || attendee.id !== attendeeId) {
       throw new ApiError(403, 'Token de acceso inválido', 'Acceso denegado');
     }
-    if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+    if (requiresPayment(event, attendee)) {
       throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
     }
     if (await eventService.isEmailBanned(id, attendee.email)) {
@@ -653,7 +718,7 @@ const uploadWhiteboardImage = async (req, res, next) => {
       if (!attendee || String(attendee.id) !== String(attendeeId)) {
         throw new ApiError(403, 'Token de acceso inválido', 'Acceso denegado');
       }
-      if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+      if (requiresPayment(event, attendee)) {
         throw new ApiError(403, 'Se requiere pago para acceder', 'Pago requerido');
       }
       if (await eventService.isEmailBanned(id, attendee.email)) {
@@ -961,7 +1026,7 @@ const getVideoToken = async (req, res, next) => {
     if (attendeeId && accessToken) {
       const attendee = await eventService.getAttendeeByAccessToken(id, accessToken);
       if (attendee && attendee.id === attendeeId) {
-        if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+        if (requiresPayment(event, attendee)) {
           throw new ApiError(403, 'Se requiere pago para acceder al vídeo', 'Pago requerido');
         }
         subject = attendeeId;
@@ -1327,6 +1392,7 @@ const verifyPassword = async (req, res, next) => {
 module.exports = {
   getEvents,
   getEventBySlug,
+  getAdminAccess,
   getVideoToken,
   getEventVideo,
   registerAttendee,

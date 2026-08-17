@@ -255,6 +255,7 @@ async function loadPendingEventAttendees(hostUserId, restrictIds) {
       AND e.access_type = 'paid'
       AND ea.status IN ('paid', 'joined')
       AND ea.host_credited_at IS NOT NULL
+      AND ea.is_staff = 0
       ${whereIds}
       AND NOT EXISTS (
         SELECT 1
@@ -404,7 +405,7 @@ async function loadEventsCreditState(hostUserId) {
              COUNT(CASE WHEN ea.status IN ('paid', 'joined') THEN 1 END) AS paid_attendees,
              COALESCE(SUM(CASE WHEN ea.status IN ('paid', 'joined') THEN ea.amount_paid ELSE 0 END), 0) AS total_amount
       FROM events e
-      LEFT JOIN event_attendees ea ON ea.event_id = e.id
+      LEFT JOIN event_attendees ea ON ea.event_id = e.id AND ea.is_staff = 0
       WHERE e.host_user_id = ?
         AND e.access_type = 'paid'
       GROUP BY e.id

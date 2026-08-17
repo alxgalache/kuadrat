@@ -79,6 +79,17 @@ async function initializeDatabase() {
         pickup_instructions TEXT,
         password_setup_token TEXT DEFAULT NULL,
         password_setup_token_expires DATETIME DEFAULT NULL,
+        -- Admin-initiated password reset. Distinct from the activation token
+        -- above: that one only ever opens an account whose password_hash is
+        -- still empty, which is what stops a leaked invitation from reopening
+        -- a live account. Stored HASHED (sha256 of the token) — the plaintext
+        -- exists only inside the email, so a database dump is worthless here.
+        password_reset_token_hash TEXT DEFAULT NULL,
+        password_reset_token_expires DATETIME DEFAULT NULL,
+        -- Set by EVERY statement that writes password_hash. The JWT strategy
+        -- rejects tokens issued before it, which is what actually signs out
+        -- sessions opened with the old password. NULL = invalidate nothing.
+        password_changed_at DATETIME DEFAULT NULL,
         available_withdrawal REAL NOT NULL DEFAULT 0,
         withdrawal_recipient TEXT,
         withdrawal_iban TEXT,
@@ -615,6 +626,15 @@ async function initializeDatabase() {
         verification_code_expires_at DATETIME,
         agora_uid INTEGER,
         speaker_granted INTEGER NOT NULL DEFAULT 0,
+        -- The admin joining an event they did not host. Takes part exactly
+        -- like any attendee (chat, video, presence) but must be excluded from
+        -- every count and every money query, or it shows up as a 0 € line in
+        -- the artist's payout. Five places filter it: getAttendeeCount,
+        -- eventCreditScheduler.loadUncreditedAttendees, the payout detail in
+        -- stripeConnectPayoutsController, the seller revenue listing in
+        -- sellerRoutes, and generateEventAttendeeInvoice. listAttendees does
+        -- NOT filter it — the admin panel should show who was in the room.
+        is_staff INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
       )
     `);
@@ -895,6 +915,17 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE orders ADD COLUMN notes TEXT');
     // Auction buyers — dni column for existing DBs
     await safeAlter('ALTER TABLE auction_buyers ADD COLUMN dni TEXT');
+
+    // Admin-initiated password reset + session invalidation
+    // (admin-password-reset-and-event-access). See the users CREATE TABLE for
+    // the semantics; password_changed_at starts NULL on every existing row,
+    // which is what makes deploying this not sign anybody out.
+    await safeAlter('ALTER TABLE users ADD COLUMN password_reset_token_hash TEXT DEFAULT NULL');
+    await safeAlter('ALTER TABLE users ADD COLUMN password_reset_token_expires DATETIME DEFAULT NULL');
+    await safeAlter('ALTER TABLE users ADD COLUMN password_changed_at DATETIME DEFAULT NULL');
+    // The admin attending an event they do not host — excluded from counts,
+    // host credit, payouts and invoicing. See the event_attendees CREATE TABLE.
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0');
 
     // Stripe Connect (Change #2) — polymorphic pivot table linking a payout to
     // the concrete items (art/other/event_attendee) it covers, with per-item
@@ -1178,6 +1209,7 @@ async function initializeDatabase() {
 
     // Users
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_users_password_setup_token ON users(password_setup_token)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_users_password_reset_token_hash ON users(password_reset_token_hash)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
 
     // Auctions

@@ -1434,6 +1434,224 @@ Una vez dentro, podrás empezar a subir tus artículos y gestionar tu catálogo 
   }
 };
 
+/**
+ * Send an admin-initiated password reset link to an artist.
+ *
+ * Distinct from sendPasswordSetupEmail: that one welcomes a brand-new account,
+ * this one tells an existing artist the gallery administrator started a reset.
+ * The plaintext token exists only inside this email — never in an API response
+ * and never in a log line.
+ *
+ * @param {Object} params
+ * @param {string} params.email - Artist email
+ * @param {string} params.fullName - Artist full name
+ * @param {string} params.token - Plaintext password reset token
+ * @param {string} params.expiresIn - Human-readable expiration (e.g. "24 horas")
+ * @returns {Promise<{success: boolean, messageId?: string}>}
+ */
+const sendPasswordResetEmail = async ({ email, fullName, token, expiresIn = '24 horas' }) => {
+  const logoAttachment = getLogoAttachment();
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const resetUrl = `${clientUrl}/restablecer-password/${token}`;
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <style>
+    body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    a { color: #000000 !important; }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 40px 20px; text-align: center; background-color: #ffffff;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <!-- Content -->
+          <tr>
+            <td style="padding: 20px 40px 40px; background-color: #ffffff;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">¡Hola, ${fullName}!</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #374151;">
+                El administrador de la galería ha iniciado el cambio de contraseña de tu cuenta. Por seguridad, necesitamos que establezcas una contraseña nueva que solo tú conozcas.
+              </p>
+              <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #374151;">
+                Haz clic en el siguiente botón para elegir tu nueva contraseña. No necesitas recordar la anterior:
+              </p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetUrl}" style="display: inline-block; padding: 14px 32px; background-color: #000000; color: #ffffff !important; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 6px;">
+                  Cambiar mi contraseña
+                </a>
+              </div>
+              <p style="margin: 30px 0 20px; font-size: 14px; line-height: 1.6; color: #6b7280;">
+                Si el botón no funciona, copia y pega este enlace en tu navegador:
+              </p>
+              <p style="margin: 0 0 30px; font-size: 14px; line-height: 1.6; color: #6b7280; word-break: break-all;">
+                ${resetUrl}
+              </p>
+              <div style="background-color: #fef3c7; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #92400e;">
+                  <strong>Importante:</strong> Este enlace expirará en ${expiresIn} y solo puede usarse una vez. Al establecer la contraseña nueva, se cerrarán todas las sesiones abiertas de tu cuenta.
+                </p>
+              </div>
+              <p style="margin: 20px 0 0; font-size: 14px; line-height: 1.6; color: #6b7280;">
+                Si crees que este mensaje no debería haberte llegado, ponte en contacto con la galería antes de usar el enlace.
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280; text-align: center;">
+                © ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const textContent = `¡Hola, ${fullName}!
+
+El administrador de la galería ha iniciado el cambio de contraseña de tu cuenta. Por seguridad, necesitamos que establezcas una contraseña nueva que solo tú conozcas.
+
+Visita el siguiente enlace para elegir tu nueva contraseña. No necesitas recordar la anterior:
+${resetUrl}
+
+Importante: Este enlace expirará en ${expiresIn} y solo puede usarse una vez. Al establecer la contraseña nueva, se cerrarán todas las sesiones abiertas de tu cuenta.
+
+Si crees que este mensaje no debería haberte llegado, ponte en contacto con la galería antes de usar el enlace.
+
+© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.`;
+
+  try {
+    const result = await sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: 'Cambia tu contraseña en 140d',
+      text: textContent,
+      html: htmlContent,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending password reset email');
+    return { success: false };
+  }
+};
+
+/**
+ * Notify an artist that their password has just changed.
+ *
+ * Sent after every successful change, whether it came from an admin-initiated
+ * reset or from the artist's own profile page. This is what turns a silent
+ * account takeover into something the owner notices.
+ *
+ * @param {Object} params
+ * @param {string} params.email - Artist email
+ * @param {string} params.fullName - Artist full name
+ * @returns {Promise<{success: boolean, messageId?: string}>}
+ */
+const sendPasswordChangedEmail = async ({ email, fullName }) => {
+  const logoAttachment = getLogoAttachment();
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <style>
+    body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    a { color: #000000 !important; }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 40px 20px; text-align: center; background-color: #ffffff;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <!-- Content -->
+          <tr>
+            <td style="padding: 20px 40px 40px; background-color: #ffffff;">
+              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Hola, ${fullName}</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #374151;">
+                La contraseña de tu cuenta en 140d acaba de cambiar. Ya puedes acceder a la plataforma con tu correo electrónico y la contraseña nueva.
+              </p>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #374151;">
+                Por seguridad, todas las sesiones que tuvieras abiertas se han cerrado.
+              </p>
+              <div style="background-color: #fee2e2; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #991b1b;">
+                  <strong>¿No has sido tú?</strong> Ponte en contacto con la galería lo antes posible respondiendo a este correo.
+                </p>
+              </div>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280; text-align: center;">
+                © ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const textContent = `Hola, ${fullName}
+
+La contraseña de tu cuenta en 140d acaba de cambiar. Ya puedes acceder a la plataforma con tu correo electrónico y la contraseña nueva.
+
+Por seguridad, todas las sesiones que tuvieras abiertas se han cerrado.
+
+¿No has sido tú? Ponte en contacto con la galería lo antes posible respondiendo a este correo.
+
+© ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.`;
+
+  try {
+    const result = await sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: 'Tu contraseña en 140d ha cambiado',
+      text: textContent,
+      html: htmlContent,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending password changed email');
+    return { success: false };
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Auction Email Templates
 // ---------------------------------------------------------------------------
@@ -4020,6 +4238,9 @@ module.exports = {
   sendItemsSentEmail,
   sendPasswordSetupEmail,
   sendAccountActivatedEmail,
+  // Admin-initiated password reset
+  sendPasswordResetEmail,
+  sendPasswordChangedEmail,
   sendBidConfirmationEmail,
   sendOutbidNotificationEmail,
   sendAuctionWonEmail,

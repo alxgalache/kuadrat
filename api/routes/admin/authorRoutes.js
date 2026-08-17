@@ -8,7 +8,12 @@ const { db } = require('../../config/database')
 const config = require('../../config/env')
 const logger = require('../../config/logger')
 const s3Service = require('../../services/s3Service')
-const { sendPasswordSetupEmail } = require('../../services/emailService')
+const { sendPasswordSetupEmail, sendPasswordResetEmail } = require('../../services/emailService')
+const {
+  generateResetToken,
+  hashResetToken,
+  resetTokenExpiry,
+} = require('../../utils/passwordSecurity')
 const { getSendcloudConfig, createSendcloudConfig, updateSendcloudConfig, getShippingMethods } = require('../../controllers/sendcloudConfigController')
 const { createSendcloudConfigSchema, updateSendcloudConfigSchema } = require('../../validators/sendcloudConfigSchemas')
 const { updateAuthorSchema } = require('../../validators/authorSchemas')
@@ -38,6 +43,36 @@ const TOKEN_EXPIRATION_MS = 48 * 60 * 60 * 1000
  */
 function generateSecureToken() {
   return crypto.randomBytes(32).toString('hex')
+}
+
+/**
+ * Issue an admin-initiated password reset link for an activated artist and
+ * email it to them.
+ *
+ * Only the SHA-256 of the token is stored; the plaintext lives exclusively in
+ * the message body. Writing it overwrites whatever was there, which is how the
+ * "one live link per account" invariant holds without a separate table.
+ *
+ * @returns {Promise<boolean>} whether the email actually went out
+ */
+async function issuePasswordReset(author) {
+  const token = generateResetToken()
+
+  await db.execute({
+    sql: `UPDATE users
+          SET password_reset_token_hash = ?, password_reset_token_expires = ?
+          WHERE id = ?`,
+    args: [hashResetToken(token), resetTokenExpiry(), author.id]
+  })
+
+  const result = await sendPasswordResetEmail({
+    email: author.email,
+    fullName: author.full_name || author.email,
+    token,
+    expiresIn: '24 horas'
+  })
+
+  return result.success === true
 }
 
 /**
@@ -196,6 +231,66 @@ router.get('/', async (req, res) => {
 router.get('/shipping-methods', getShippingMethods)
 
 /**
+ * POST /api/admin/authors/send-password-reset-all
+ * Send a password reset link to every activated author.
+ *
+ * Must stay above the `/:id` routes below — Express matches in declaration
+ * order, so `send-password-reset-all` would otherwise be read as an id.
+ *
+ * Sends sequentially, never with Promise.all: the SMTP provider rate-limits,
+ * a partial failure has to be legible artist by artist, and Promise.all would
+ * abort on the first rejection leaving half the roster with a freshly issued
+ * token and no email — the worst state, because their old link is dead too.
+ */
+router.post('/send-password-reset-all', async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: `SELECT id, email, full_name
+            FROM users
+            WHERE role = 'seller' AND password_hash != ''
+            ORDER BY full_name ASC`,
+      args: []
+    })
+
+    const authors = result.rows
+    const failed = []
+    let sent = 0
+
+    for (const author of authors) {
+      try {
+        if (await issuePasswordReset(author)) {
+          sent += 1
+        } else {
+          failed.push(author.email)
+        }
+      } catch (error) {
+        logger.error({ err: error, authorId: author.id }, 'Bulk password reset failed for author')
+        failed.push(author.email)
+      }
+    }
+
+    logger.info({ sent, failed: failed.length, total: authors.length }, 'Bulk password reset dispatched')
+
+    // 200 even with failures: the operation ran, and the caller needs the
+    // breakdown to retry the stragglers individually.
+    res.json({
+      title: 'Enviado',
+      message: `Se han enviado ${sent} de ${authors.length} emails`,
+      sent,
+      failed: failed.length,
+      total: authors.length,
+      failedEmails: failed
+    })
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending bulk password reset')
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudieron enviar los emails de cambio de contraseña'
+    })
+  }
+})
+
+/**
  * GET /api/admin/authors/:id
  * Get author details by ID
  */
@@ -310,6 +405,67 @@ router.post('/:id/resend-invitation', async (req, res) => {
     res.status(500).json({
       title: 'Error del servidor',
       message: 'No se pudo reenviar la invitacion'
+    })
+  }
+})
+
+/**
+ * POST /api/admin/authors/:id/send-password-reset
+ * Send an activated author a link to set a new password without knowing the
+ * old one. The counterpart for accounts that never activated is
+ * /:id/resend-invitation above.
+ */
+router.post('/:id/send-password-reset', async (req, res) => {
+  try {
+    const authorId = req.params.id
+
+    const result = await db.execute({
+      sql: `SELECT id, email, full_name, password_hash
+            FROM users
+            WHERE id = ? AND role = 'seller'`,
+      args: [authorId]
+    })
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        title: 'No encontrado',
+        message: 'Autor no encontrado'
+      })
+    }
+
+    const author = result.rows[0]
+
+    // An artist with no password has nothing to reset — that account belongs
+    // to the invitation flow, and sending both would be two contradictory
+    // emails.
+    if (!author.password_hash || author.password_hash.length === 0) {
+      return res.status(400).json({
+        title: 'Error',
+        message: 'Este autor todavía no ha configurado su contraseña. Usa "Reenviar" para enviarle la invitación.'
+      })
+    }
+
+    const emailSent = await issuePasswordReset(author)
+
+    if (!emailSent) {
+      return res.status(500).json({
+        title: 'Error',
+        message: 'No se pudo enviar el email de cambio de contraseña'
+      })
+    }
+
+    logger.info({ authorId: author.id }, 'Password reset link sent to author')
+
+    res.json({
+      title: 'Enviado',
+      message: 'Se ha enviado el email para cambiar la contraseña',
+      emailSent: true
+    })
+  } catch (error) {
+    logger.error({ err: error }, 'Error sending password reset')
+    res.status(500).json({
+      title: 'Error del servidor',
+      message: 'No se pudo enviar el email de cambio de contraseña'
     })
   }
 })

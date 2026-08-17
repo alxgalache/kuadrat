@@ -30,6 +30,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const pinoHttp = require('pino-http');
+const { redactUrl } = require('./utils/redactUrl');
 
 // Centralized config and logger
 const config = require('./config/env');
@@ -129,7 +130,10 @@ app.use(pinoHttp({
     req(req) {
       return {
         method: req.method,
-        url: req.url,
+        // Several routes carry a credential as a path segment (activation
+        // link, password reset link, public order token). Logging req.url
+        // verbatim puts those in every log sink. See utils/redactUrl.js.
+        url: redactUrl(req.url),
         ...(req.headers['user-agent'] && { userAgent: req.headers['user-agent'] }),
       };
     },

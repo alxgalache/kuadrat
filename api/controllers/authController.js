@@ -5,6 +5,16 @@ const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
 const validator = require('validator');
 const { db } = require('../config/database');
+const { hashResetToken } = require('../utils/passwordSecurity');
+
+// Machine-readable codes carried in the ApiError `title`, same pattern as
+// SHIPPING_ADDRESS_REQUIRED / CAPTCHA_UNAVAILABLE. The es-ES copy lives in
+// client/lib/constants.js, so the page never has to match Spanish prose.
+const RESET_ERRORS = {
+  INVALID: 'RESET_TOKEN_INVALID',
+  EXPIRED: 'RESET_TOKEN_EXPIRED',
+  WEAK: 'RESET_PASSWORD_WEAK',
+};
 
 // Login user
 const login = async (req, res, next) => {
@@ -216,10 +226,13 @@ const setPassword = async (req, res, next) => {
     // Hash the new password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Update user: set password and clear the token
+    // Update user: set password and clear the token. password_changed_at is
+    // stamped for consistency with every other password write — no session
+    // can predate it here, since the account had no password until now.
     await db.execute({
       sql: `UPDATE users
-            SET password_hash = ?, password_setup_token = NULL, password_setup_token_expires = NULL
+            SET password_hash = ?, password_changed_at = CURRENT_TIMESTAMP,
+                password_setup_token = NULL, password_setup_token_expires = NULL
             WHERE id = ?`,
       args: [hashedPassword, user.id],
     });
@@ -258,6 +271,168 @@ const setPassword = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Admin-initiated password reset
+//
+// Separate from the activation flow above on purpose: that one only ever opens
+// an account whose password_hash is still empty, and relaxing it would let a
+// leaked invitation reopen a live account. These two endpoints work the other
+// way round — they exist precisely for accounts that already have a password.
+// ---------------------------------------------------------------------------
+
+/**
+ * Look a reset token up, distinguishing "never existed / already used" from
+ * "existed but expired".
+ *
+ * Expiry is evaluated inside SQLite rather than in JavaScript: the stored
+ * value is written in the same zone-less UTC shape CURRENT_TIMESTAMP produces,
+ * and parsing it with Node's Date would read it as local time. The cost is
+ * that a miss cannot tell the two cases apart, so the second query runs only
+ * when the first finds nothing — the distinction matters to the artist, who
+ * needs to know whether to ask the admin for a new link.
+ *
+ * @returns {Promise<{user?: object, expired?: boolean}>}
+ */
+async function findUserByResetToken(token) {
+  const tokenHash = hashResetToken(token);
+
+  const live = await db.execute({
+    sql: `SELECT id, email, full_name
+          FROM users
+          WHERE password_reset_token_hash = ?
+            AND password_reset_token_expires IS NOT NULL
+            AND datetime(password_reset_token_expires) > datetime('now')`,
+    args: [tokenHash],
+  });
+
+  if (live.rows.length > 0) return { user: live.rows[0] };
+
+  const stale = await db.execute({
+    sql: 'SELECT id FROM users WHERE password_reset_token_hash = ?',
+    args: [tokenHash],
+  });
+
+  return stale.rows.length > 0 ? { expired: true } : {};
+}
+
+// Validate a password reset token — GET /api/auth/validate-reset-token/:token
+const validateResetToken = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+
+    if (!token) {
+      throw new ApiError(400, 'Token no proporcionado', RESET_ERRORS.INVALID);
+    }
+
+    const { user, expired } = await findUserByResetToken(token);
+
+    if (expired) {
+      throw new ApiError(
+        410,
+        'El enlace ha expirado. Pide al administrador que te envíe uno nuevo.',
+        RESET_ERRORS.EXPIRED
+      );
+    }
+
+    if (!user) {
+      throw new ApiError(
+        404,
+        'El enlace no es válido o ya ha sido utilizado',
+        RESET_ERRORS.INVALID
+      );
+    }
+
+    // Only the name travels back. Returning the email would turn a stolen
+    // link into confirmation of which account it opens.
+    res.status(200).json({
+      success: true,
+      user: { full_name: user.full_name },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Consume a password reset token — POST /api/auth/reset-password
+const resetPassword = async (req, res, next) => {
+  try {
+    const { token, password, confirmPassword } = req.body;
+
+    if (!token) {
+      throw new ApiError(400, 'Token no proporcionado', RESET_ERRORS.INVALID);
+    }
+
+    if (!password || !confirmPassword) {
+      throw new ApiError(400, 'La contraseña y su confirmación son obligatorias', 'Error de validación');
+    }
+
+    if (password !== confirmPassword) {
+      throw new ApiError(400, 'Las contraseñas no coinciden', 'Error de validación');
+    }
+
+    const validation = validatePassword(password);
+    if (!validation.isValid) {
+      throw new ApiError(400, validation.errors.join('. '), RESET_ERRORS.WEAK);
+    }
+
+    const { user, expired } = await findUserByResetToken(token);
+
+    if (expired) {
+      throw new ApiError(
+        410,
+        'El enlace ha expirado. Pide al administrador que te envíe uno nuevo.',
+        RESET_ERRORS.EXPIRED
+      );
+    }
+
+    if (!user) {
+      throw new ApiError(
+        404,
+        'El enlace no es válido o ya ha sido utilizado',
+        RESET_ERRORS.INVALID
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // One conditional statement: sets the password, stamps the session
+    // cut-off and burns the token together. Still guarded by the token hash,
+    // so two requests carrying the same link cannot both set a password —
+    // the loser sees rowsAffected = 0 and gets a 404, not a 500.
+    const updated = await db.execute({
+      sql: `UPDATE users
+            SET password_hash = ?, password_changed_at = CURRENT_TIMESTAMP,
+                password_reset_token_hash = NULL, password_reset_token_expires = NULL
+            WHERE id = ? AND password_reset_token_hash = ?`,
+      args: [hashedPassword, user.id, hashResetToken(token)],
+    });
+
+    if (updated.rowsAffected === 0) {
+      throw new ApiError(
+        404,
+        'El enlace no es válido o ya ha sido utilizado',
+        RESET_ERRORS.INVALID
+      );
+    }
+
+    logger.info({ userId: user.id }, 'Password reset completed');
+
+    const { sendPasswordChangedEmail } = require('../services/emailService');
+    sendPasswordChangedEmail({ email: user.email, fullName: user.full_name })
+      .catch((err) => logger.warn({ err }, 'Failed to send password changed email'));
+
+    // Deliberately no JWT: unlike the activation flow, the account already
+    // exists and may be in dispute, so mailbox access must not be enough to
+    // hand out a session. The artist signs in with the new password.
+    res.status(200).json({
+      success: true,
+      message: 'Contraseña actualizada correctamente',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get password requirements (for frontend validation)
 const getPasswordRequirements = async (req, res) => {
   res.status(200).json({
@@ -271,6 +446,8 @@ module.exports = {
   registrationRequest,
   validateSetupToken,
   setPassword,
+  validateResetToken,
+  resetPassword,
   getPasswordRequirements,
   validatePassword,
 };

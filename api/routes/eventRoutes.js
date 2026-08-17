@@ -71,6 +71,14 @@ router.post('/:id/pay', eventController.createPayment);
 router.post('/:id/confirm-payment', eventController.confirmPayment);
 
 /**
+ * POST /api/events/:id/admin-access
+ * Admin-only: join any event as an ordinary participant, skipping
+ * registration, email verification and payment. Returns the same
+ * { attendeeId, accessToken } pair the registration modal produces.
+ */
+router.post('/:id/admin-access', authenticate, eventController.getAdminAccess);
+
+/**
  * POST /api/events/:id/token
  * Get LiveKit viewer token for an attendee
  */

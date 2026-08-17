@@ -272,7 +272,7 @@ async function generateEventAttendeeInvoice(attendeeId) {
   const result = await db.execute({
     sql: `
       SELECT ea.id, ea.first_name, ea.last_name, ea.email,
-             ea.amount_paid, ea.status,
+             ea.amount_paid, ea.status, ea.is_staff,
              e.title AS event_title
       FROM event_attendees ea
       JOIN events e ON ea.event_id = e.id
@@ -288,6 +288,16 @@ async function generateEventAttendeeInvoice(attendeeId) {
   }
 
   const attendee = result.rows[0];
+
+  // Staff (the admin sitting in an event) never paid, so there is nothing to
+  // invoice. Checked explicitly rather than relying on the status check below:
+  // should a staff row ever reach 'joined', a 0 € invoice would burn a number
+  // from series P, and invoice numbers are not recycled.
+  if (Number(attendee.is_staff) === 1) {
+    const err = new Error('Este asistente es personal de la galería y no genera factura');
+    err.statusCode = 400;
+    throw err;
+  }
 
   if (!['paid', 'joined'].includes(attendee.status)) {
     const err = new Error('El asistente no ha realizado el pago');

@@ -6,7 +6,7 @@ const { db } = require('../config/database');
 const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
 const { sendSuccess } = require('../utils/response');
-const { sendWithdrawalNotificationEmail } = require('../services/emailService');
+const { sendWithdrawalNotificationEmail, sendPasswordChangedEmail } = require('../services/emailService');
 const { validate } = require('../middleware/validate');
 const { changePasswordSchema } = require('../validators/sellerSchemas');
 const { validatePassword } = require('../controllers/authController');
@@ -74,12 +74,21 @@ router.put('/profile/password', validate(changePasswordSchema), async (req, res,
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
+    // password_changed_at travels in the same statement as password_hash, so
+    // a password can never change without the matching session cut-off. This
+    // signs the seller out of this very tab too — which is what the UI has
+    // been announcing all along ("Inicia sesión de nuevo").
     await db.execute({
-      sql: 'UPDATE users SET password_hash = ? WHERE id = ?',
+      sql: 'UPDATE users SET password_hash = ?, password_changed_at = CURRENT_TIMESTAMP WHERE id = ?',
       args: [hashedPassword, req.user.id],
     });
 
     logger.info({ userId: req.user.id }, 'Seller password changed');
+
+    // Same notification as the admin-initiated reset: a password that changes
+    // without the owner hearing about it is the failure mode worth catching.
+    sendPasswordChangedEmail({ email: req.user.email, fullName: req.user.full_name })
+      .catch((err) => logger.warn({ err }, 'Failed to send password changed email'));
 
     sendSuccess(res, {}, 200, 'Contraseña actualizada correctamente');
   } catch (error) {
@@ -461,7 +470,7 @@ router.get('/paid-events', async (req, res, next) => {
                COUNT(CASE WHEN ea.status IN ('paid', 'joined') THEN 1 END) AS paid_attendees,
                COALESCE(SUM(CASE WHEN ea.status IN ('paid', 'joined') THEN ea.amount_paid ELSE 0 END), 0) AS total_amount
         FROM events e
-        LEFT JOIN event_attendees ea ON ea.event_id = e.id
+        LEFT JOIN event_attendees ea ON ea.event_id = e.id AND ea.is_staff = 0
         WHERE e.host_user_id = ?
           AND e.access_type = 'paid'
         GROUP BY e.id
@@ -479,7 +488,10 @@ router.get('/paid-events', async (req, res, next) => {
       else state = 'upcoming';
 
       return {
-        id: Number(row.id),
+        // events.id is a TEXT UUID, not an integer. Number() on it yielded NaN,
+        // which JSON serialises as null, so every row came back with id: null
+        // and the client keyed its table rows on null.
+        id: row.id,
         title: row.title,
         status: row.status,
         event_datetime: row.event_datetime,

@@ -24,6 +24,21 @@ function AuthorProfilePageContent({ params }) {
   // Modal states
   const [confirmDialog, setConfirmDialog] = useState({ open: false, type: '', product: null })
   const [variationModal, setVariationModal] = useState({ open: false, product: null })
+  const [sendingPasswordReset, setSendingPasswordReset] = useState(false)
+
+  const handleSendPasswordReset = async () => {
+    if (sendingPasswordReset) return
+
+    setSendingPasswordReset(true)
+    try {
+      await adminAPI.authors.sendPasswordReset(unwrappedParams.id)
+      showSuccess('Enviado', 'Se ha enviado el email para cambiar la contraseña')
+    } catch (err) {
+      showApiError(err)
+    } finally {
+      setSendingPasswordReset(false)
+    }
+  }
 
   useEffect(() => {
     loadAuthorData()
@@ -191,6 +206,19 @@ function AuthorProfilePageContent({ params }) {
               >
                   Editar
               </Link>
+              {/* Only for activated accounts: an artist with no password has
+                  nothing to reset, and the API refuses those with a 400. */}
+              {author.is_activated && (
+                <button
+                  type="button"
+                  onClick={handleSendPasswordReset}
+                  disabled={sendingPasswordReset}
+                  title="Enviar al artista un enlace para cambiar su contraseña"
+                  className="inline-flex items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {sendingPasswordReset ? 'Enviando...' : 'Cambiar contraseña'}
+                </button>
+              )}
           </div>
         </div>
 

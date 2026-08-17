@@ -54,6 +54,10 @@ async function loadEligibleEvents() {
  * `paid` → `joined` at the moment they request their LiveKit viewer token
  * (see `eventController.getViewerToken`). Either state means the attendee
  * completed payment; only `cancelled`/`registered` are excluded.
+ *
+ * Staff attendees (the admin sitting in) are excluded too: their `amount_paid`
+ * is NULL, so they would credit the host 0 € while still consuming a
+ * `host_credited_at` stamp and showing up as a line in the payout detail.
  */
 async function loadUncreditedAttendees(eventId) {
   const result = await db.execute({
@@ -63,6 +67,7 @@ async function loadUncreditedAttendees(eventId) {
       WHERE event_id = ?
         AND status IN ('paid', 'joined')
         AND host_credited_at IS NULL
+        AND is_staff = 0
     `,
     args: [eventId],
   });

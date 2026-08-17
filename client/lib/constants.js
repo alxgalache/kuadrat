@@ -381,3 +381,22 @@ export const SHIPPING_VERIFICATION_ERRORS = {
   SHIPPING_COST_OUTDATED:
     'El precio del envío ha cambiado desde que añadiste el producto a la cesta. Elimínalo y vuelve a añadirlo para continuar.',
 };
+
+// Rechazos del enlace de cambio de contraseña que envía el administrador. La
+// API los distingue con un código de máquina en `title` (expuesto por
+// `lib/api.js` como `error.title`), igual que SHIPPING_VERIFICATION_ERRORS.
+// La página nunca compara texto en castellano: cada código lleva a una acción
+// distinta — pedir otro enlace al admin frente a "este enlace ya lo usaste".
+export const PASSWORD_RESET_ERRORS = {
+  RESET_TOKEN_INVALID:
+    'Este enlace no es válido o ya se ha utilizado. Pide al administrador de la galería que te envíe uno nuevo.',
+  RESET_TOKEN_EXPIRED:
+    'Este enlace ha caducado. Los enlaces son válidos durante 24 horas. Pide al administrador de la galería que te envíe uno nuevo.',
+  RESET_PASSWORD_WEAK:
+    'La contraseña no cumple los requisitos de seguridad.',
+};
+
+// Texto genérico cuando la API responde algo que no es ninguno de los códigos
+// anteriores (fallo de red, 500, etc.).
+export const PASSWORD_RESET_GENERIC_ERROR =
+  'No se ha podido validar el enlace. Inténtalo de nuevo en unos minutos.';

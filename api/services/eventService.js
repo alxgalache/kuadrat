@@ -205,6 +205,60 @@ async function registerAttendee(eventId, { first_name, last_name, email }) {
   return { attendee: attendee.rows[0], accessToken, isExisting: false };
 }
 
+/**
+ * Find or create the attendee row an admin uses to sit in an event they do
+ * not host, and hand back a fresh access token for it.
+ *
+ * Deliberately produces a REAL attendee, not a parallel path: that identity is
+ * what getViewerToken, renewToken, getWhiteboardToken, getVideoToken,
+ * report-spam and the authenticated Socket.IO room all re-derive. Special-
+ * casing the admin in each of them would be six places to keep in step.
+ *
+ * `status` stays 'registered' even for a paid event — writing 'paid' with
+ * amount_paid = 0 would be a lie in a table the invoicing and payout queries
+ * read. The payment gate is skipped on is_staff instead.
+ *
+ * A new token on every call, mirroring verifyAttendeePassword: the stored one
+ * is a hash, so there is nothing to read back.
+ */
+async function createOrGetStaffAttendee(eventId, { email, fullName }) {
+  const [firstName, ...rest] = String(fullName || '').trim().split(/\s+/);
+  const first_name = firstName || 'Admin';
+  const last_name = rest.join(' ') || 'Galería';
+
+  const accessToken = generateAccessToken();
+  const accessTokenHash = hashAccessToken(accessToken);
+
+  const existing = await db.execute({
+    sql: 'SELECT * FROM event_attendees WHERE event_id = ? AND email = ?',
+    args: [eventId, email],
+  });
+
+  if (existing.rows.length > 0) {
+    const attendee = existing.rows[0];
+    await db.execute({
+      sql: 'UPDATE event_attendees SET access_token_hash = ?, is_staff = 1, email_verified = 1 WHERE id = ?',
+      args: [accessTokenHash, attendee.id],
+    });
+    return { attendee: { ...attendee, is_staff: 1, email_verified: 1 }, accessToken };
+  }
+
+  const id = generateUUID();
+  await db.execute({
+    sql: `INSERT INTO event_attendees
+            (id, event_id, first_name, last_name, email, access_token_hash, is_staff, email_verified, status)
+          VALUES (?, ?, ?, ?, ?, ?, 1, 1, 'registered')`,
+    args: [id, eventId, first_name, last_name, email, accessTokenHash],
+  });
+
+  const created = await db.execute({
+    sql: 'SELECT * FROM event_attendees WHERE id = ?',
+    args: [id],
+  });
+
+  return { attendee: created.rows[0], accessToken };
+}
+
 async function getAttendeeByAccessToken(eventId, accessToken) {
   const hash = hashAccessToken(accessToken);
   const result = await db.execute({
@@ -252,9 +306,13 @@ async function listAttendees(eventId) {
 }
 
 async function getAttendeeCount(eventId) {
+  // The public "N asistentes" figure — staff (the admin sitting in) must not
+  // inflate it. listAttendees above deliberately does NOT filter: the admin
+  // panel should show who was actually in the room.
   const result = await db.execute({
     sql: `SELECT COUNT(*) as count FROM event_attendees
-          WHERE event_id = ? AND status IN ('registered', 'paid', 'joined')`,
+          WHERE event_id = ? AND status IN ('registered', 'paid', 'joined')
+            AND is_staff = 0`,
     args: [eventId],
   });
   return result.rows[0].count;
@@ -521,6 +579,7 @@ module.exports = {
   listEvents,
   getEventsByDateRange,
   registerAttendee,
+  createOrGetStaffAttendee,
   getAttendeeByAccessToken,
   getAttendeeById,
   updateAttendeePayment,

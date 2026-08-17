@@ -5,15 +5,21 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { adminAPI, getAuthorImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { useNotification } from '@/contexts/NotificationContext'
-import { PencilIcon, EyeIcon, PlusIcon, EnvelopeIcon } from '@heroicons/react/20/solid'
+import { PencilIcon, EyeIcon, PlusIcon, EnvelopeIcon, KeyIcon } from '@heroicons/react/20/solid'
 
 function AdminPageContent() {
   const [authors, setAuthors] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [resendingFor, setResendingFor] = useState(null)
+  const [resettingFor, setResettingFor] = useState(null)
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
+  const [bulkSending, setBulkSending] = useState(false)
   const { showSuccess, showError, showApiError } = useNotification()
+
+  const activatedCount = authors.filter((a) => a.is_activated).length
 
   useEffect(() => {
     loadAuthors()
@@ -48,6 +54,49 @@ function AdminPageContent() {
     }
   }
 
+  const handleSendPasswordReset = async (authorId, e) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (resettingFor) return
+
+    setResettingFor(authorId)
+    try {
+      await adminAPI.authors.sendPasswordReset(authorId)
+      showSuccess('Enviado', 'Se ha enviado el email para cambiar la contraseña')
+    } catch (err) {
+      showApiError(err)
+    } finally {
+      setResettingFor(null)
+    }
+  }
+
+  const handleSendPasswordResetAll = async () => {
+    setBulkDialogOpen(false)
+    if (bulkSending) return
+
+    setBulkSending(true)
+    try {
+      const result = await adminAPI.authors.sendPasswordResetAll()
+
+      if (result.failed > 0) {
+        // The failed addresses go in the `errors` list so the admin can retry
+        // those one by one with the individual button.
+        showError(
+          'Envío incompleto',
+          `Se han enviado ${result.sent} de ${result.total} emails. Reenvía los siguientes de forma individual:`,
+          result.failedEmails
+        )
+      } else {
+        showSuccess('Enviado', `Se han enviado ${result.sent} de ${result.total} emails`)
+      }
+    } catch (err) {
+      showApiError(err)
+    } finally {
+      setBulkSending(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
@@ -74,13 +123,26 @@ function AdminPageContent() {
               Gestiona los autores y sus productos
             </p>
           </div>
-          <Link
-            href="/admin/autores/nuevo"
-            className="inline-flex items-center gap-x-2 rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-          >
-            <PlusIcon className="size-5" aria-hidden="true" />
-            Nuevo autor
-          </Link>
+          <div className="flex items-center gap-x-3">
+            {activatedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setBulkDialogOpen(true)}
+                disabled={bulkSending}
+                className="inline-flex items-center gap-x-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <KeyIcon className="size-5 text-gray-400" aria-hidden="true" />
+                {bulkSending ? 'Enviando...' : 'Enviar cambio de contraseña a todos'}
+              </button>
+            )}
+            <Link
+              href="/admin/autores/nuevo"
+              className="inline-flex items-center gap-x-2 rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            >
+              <PlusIcon className="size-5" aria-hidden="true" />
+              Nuevo autor
+            </Link>
+          </div>
         </div>
 
         <ul role="list" className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -124,6 +186,8 @@ function AdminPageContent() {
                     </Link>
                   </div>
                   {!author.is_activated ? (
+                    // Never activated: the invitation is what they need, not a
+                    // password reset — they have no password to reset.
                     <div className="-ml-px flex w-0 flex-1">
                       <button
                         onClick={(e) => handleResendInvitation(author.id, e)}
@@ -135,15 +199,28 @@ function AdminPageContent() {
                       </button>
                     </div>
                   ) : (
-                    <div className="-ml-px flex w-0 flex-1">
-                      <Link
-                        href={`/admin/authors/${author.id}/edit`}
-                        className="relative inline-flex w-0 flex-1 items-center justify-center gap-x-3 rounded-br-lg border border-transparent py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                      >
-                        <PencilIcon aria-hidden="true" className="size-5 text-gray-400" />
-                        Editar
-                      </Link>
-                    </div>
+                    <>
+                      <div className="-ml-px flex w-0 flex-1">
+                        <Link
+                          href={`/admin/authors/${author.id}/edit`}
+                          className="relative inline-flex w-0 flex-1 items-center justify-center gap-x-2 border border-transparent py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                        >
+                          <PencilIcon aria-hidden="true" className="size-5 text-gray-400" />
+                          Editar
+                        </Link>
+                      </div>
+                      <div className="-ml-px flex w-0 flex-1">
+                        <button
+                          onClick={(e) => handleSendPasswordReset(author.id, e)}
+                          disabled={resettingFor === author.id}
+                          title="Enviar al artista un enlace para cambiar su contraseña"
+                          className="relative inline-flex w-0 flex-1 items-center justify-center gap-x-2 rounded-br-lg border border-transparent py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <KeyIcon aria-hidden="true" className="size-5 text-gray-400" />
+                          {resettingFor === author.id ? 'Enviando...' : 'Contraseña'}
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -157,6 +234,20 @@ function AdminPageContent() {
           </div>
         )}
       </div>
+
+      {/* Issuing a new link overwrites the previous one, so a second click
+          kills any link the artists are holding. That has to be said out loud
+          before the request goes out. */}
+      <ConfirmDialog
+        open={bulkDialogOpen}
+        onClose={() => setBulkDialogOpen(false)}
+        onConfirm={handleSendPasswordResetAll}
+        title="Enviar cambio de contraseña a todos los artistas"
+        message={`Se enviará un email a los ${activatedCount} artistas que ya tienen contraseña configurada, con un enlace válido durante 24 horas. Cualquier enlace enviado anteriormente dejará de funcionar.`}
+        confirmText="Enviar a todos"
+        cancelText="Cancelar"
+        type="warning"
+      />
     </div>
   )
 }

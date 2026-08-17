@@ -264,6 +264,27 @@ export const authAPI = {
     return data;
   },
 
+  // Validate an admin-initiated password reset link
+  validateResetToken: async (token) => {
+    return apiRequest(`/auth/validate-reset-token/${token}`, {
+      skipAuthHandling: true,
+    });
+  },
+
+  // Set a new password using a reset token.
+  //
+  // Unlike setPassword above, this deliberately does NOT log the user in: the
+  // account already exists and may be in dispute, so access to the mailbox
+  // must not be enough to hand out a session. Nothing is written to
+  // localStorage — the artist signs in with the new password.
+  resetPassword: async (token, password, confirmPassword) => {
+    return apiRequest('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password, confirmPassword }),
+      skipAuthHandling: true,
+    });
+  },
+
   // Get password requirements
   getPasswordRequirements: async () => {
     return apiRequest('/auth/password-requirements', {
@@ -728,6 +749,23 @@ export const adminAPI = {
 
     resendInvitation: async (id) => {
       return apiRequest(`/admin/authors/${id}/resend-invitation`, {
+        method: 'POST',
+      });
+    },
+
+    // Send an activated artist a link to set a new password without knowing
+    // the old one. The counterpart for accounts that never activated is
+    // resendInvitation above.
+    sendPasswordReset: async (id) => {
+      return apiRequest(`/admin/authors/${id}/send-password-reset`, {
+        method: 'POST',
+      });
+    },
+
+    // Same, for every activated artist at once. Returns
+    // { sent, failed, total, failedEmails }.
+    sendPasswordResetAll: async () => {
+      return apiRequest('/admin/authors/send-password-reset-all', {
         method: 'POST',
       });
     },
@@ -1607,6 +1645,17 @@ export const eventsAPI = {
 
   getHostToken: async (eventId) => {
     return apiRequest(`/events/${eventId}/host-token`, {
+      method: 'POST',
+    });
+  },
+
+  // Admin-only: join any event as an ordinary participant, skipping
+  // registration, email verification and payment. Returns the same
+  // { attendeeId, accessToken } pair EventAccessModal produces, so the caller
+  // stores it under the usual localStorage key and everything downstream
+  // (viewer token, chat, video token) proceeds unchanged.
+  getAdminAccess: async (eventId) => {
+    return apiRequest(`/events/${eventId}/admin-access`, {
       method: 'POST',
     });
   },

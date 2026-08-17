@@ -84,6 +84,22 @@ export default function EventDetail({ params }) {
   const [videoToken, setVideoToken] = useState(null)
   const [videoTokenFilename, setVideoTokenFilename] = useState(null)
   const [serverTimeOffset, setServerTimeOffset] = useState(0)
+  const [adminJoining, setAdminJoining] = useState(false)
+  const [adminJoinError, setAdminJoinError] = useState('')
+
+  // The gallery admin can sit in any event without registering or paying —
+  // charging the owner of the platform to watch a stream organised from their
+  // own panel makes no sense. Hidden once they hold a session, and never shown
+  // to the host, who already has their own path in.
+  //
+  // Compared against event.host_user_id directly rather than relying on the
+  // isHost state, which is set in an effect a tick later: otherwise an admin
+  // who IS the host would see the shortcut flash on first render.
+  const canUseAdminShortcut =
+    user?.role === 'admin' &&
+    !isHost &&
+    !hasAccess &&
+    !(event && user.id === event.host_user_id)
 
   // Real-time event status and chat via Socket.IO
   const { eventStarted, eventEnded, chatMessages, sendChatMessage } = useEventSocket(event?.id)
@@ -197,6 +213,37 @@ export default function EventDetail({ params }) {
     }
     // Video format events will auto-render since hasAccess is now true
   }
+
+  const handleAdminJoin = useCallback(async () => {
+    if (!event?.id || adminJoining) return
+
+    setAdminJoining(true)
+    setAdminJoinError('')
+
+    try {
+      const data = await eventsAPI.getAdminAccess(event.id)
+
+      // Same localStorage shape EventAccessModal writes, including the name
+      // the chat panel reads — from here on nothing downstream can tell this
+      // session apart from a registered attendee's.
+      storeSession(event.id, {
+        attendeeId: data.attendeeId,
+        accessToken: data.accessToken,
+        firstName: data.attendee?.first_name || 'Admin',
+        lastName: data.attendee?.last_name || '',
+      })
+
+      setHasAccess(true)
+
+      if (event.status === 'active' && event.format !== 'video') {
+        connectAsViewer()
+      }
+    } catch (err) {
+      setAdminJoinError(err?.message || 'No se ha podido acceder al evento.')
+    } finally {
+      setAdminJoining(false)
+    }
+  }, [event?.id, event?.status, event?.format, adminJoining, connectAsViewer])
 
   const handleKicked = useCallback(() => {
     setKicked(true)
@@ -573,6 +620,23 @@ export default function EventDetail({ params }) {
                         : 'Podrás conectar cuando el administrador inicie el evento.'}
                     </p>
                   </div>
+                ) : canUseAdminShortcut ? (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleAdminJoin}
+                      disabled={adminJoining}
+                      className="flex w-full items-center justify-center rounded-md bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900 disabled:opacity-50"
+                    >
+                      {adminJoining ? 'Accediendo...' : 'Entrar como administrador'}
+                    </button>
+                    <p className="mt-2 text-sm text-gray-500">
+                      Accedes como un participante más, sin registro ni pago.
+                    </p>
+                    {adminJoinError && (
+                      <p className="mt-2 text-sm text-red-600">{adminJoinError}</p>
+                    )}
+                  </div>
                 ) : (
                   <button
                     type="button"
@@ -680,5 +744,16 @@ function getStoredSession(eventId) {
     return raw ? JSON.parse(raw) : null
   } catch {
     return null
+  }
+}
+
+// Mirrors storeSession in EventAccessModal — same key, same shape, so an admin
+// session is indistinguishable from a registered attendee's downstream.
+function storeSession(eventId, session) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(`event_attendee_${eventId}`, JSON.stringify(session))
+  } catch {
+    // Silently ignore
   }
 }

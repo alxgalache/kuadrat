@@ -4,6 +4,7 @@ const JwtStrategy = require('passport-jwt').Strategy;
 const ExtractJwt = require('passport-jwt').ExtractJwt;
 const bcrypt = require('bcrypt');
 const { db } = require('./database');
+const { isJwtIssuedBeforePasswordChange } = require('../utils/passwordSecurity');
 
 // Local Strategy for email/password login
 passport.use(
@@ -68,6 +69,15 @@ passport.use(
       const user = result.rows[0];
 
       if (!user) {
+        return done(null, false);
+      }
+
+      // Sessions opened with a password that has since been changed stop
+      // working here. Without this, changing a password leaves every JWT
+      // issued with the old one valid for up to JWT_EXPIRES_IN (7 days) —
+      // which is precisely the exposure an admin-initiated reset exists to
+      // close. No extra query: the row is already loaded above.
+      if (isJwtIssuedBeforePasswordChange(jwtPayload.iat, user.password_changed_at)) {
         return done(null, false);
       }
 
