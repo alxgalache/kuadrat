@@ -19,6 +19,7 @@ import StripeCardPayment from './StripeCardPayment'
 import StripeExpressCheckout from './StripeExpressCheckout'
 import ShippingStep from './shipping/ShippingStep'
 import {SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, SHIPPING_VERIFICATION_ERRORS} from '@/lib/constants'
+import {trackInitiateCheckout, cartToContents} from '@/lib/metaPixel'
 
 // Key used to persist a pending Revolut order for a given cart in sessionStorage
 const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
@@ -439,6 +440,11 @@ export default function ShoppingCartDrawer({open, onClose}) {
             email: user?.email || prev.email,
             phone: user?.phone || prev.phone,
         }))
+
+        // Meta Pixel — InitiateCheckout. Se emite después de las validaciones,
+        // no al pulsar el botón: un carrito vacío o sin método de envío no
+        // avanza de paso, y contarlo como inicio de checkout infla el embudo.
+        trackInitiateCheckout({items: cart, value: getTotalPrice()})
 
         setCurrentStep(STEP_ADDRESS)
     }
@@ -882,6 +888,11 @@ export default function ShoppingCartDrawer({open, onClose}) {
                     email: personalInfo.email,
                     provider: 'stripe',
                     stripePaymentIntentId: paymentIntentId || stripePaymentIntentId,
+                    // Importe y líneas para el evento Purchase del píxel: se
+                    // capturan AQUÍ porque el `clearCart()` de dos líneas más
+                    // abajo deja la página de confirmación sin carrito que leer.
+                    pixelTotal: getTotalPrice(),
+                    pixelContents: cartToContents(cart),
                 }))
             }
 
@@ -978,6 +989,9 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 sessionStorage.setItem(`order_token_${tokenKey}`, JSON.stringify({
                     orderId: createdOrderId,
                     email: personalInfo.email,
+                    // Ver la nota equivalente en handleStripePaymentSuccess.
+                    pixelTotal: getTotalPrice(),
+                    pixelContents: cartToContents(cart),
                 }))
             }
 
@@ -1172,6 +1186,10 @@ export default function ShoppingCartDrawer({open, onClose}) {
                                     revolutOrderToken: revolutOrderToken,
                                     email: personalInfo.email,
                                     timestamp: Date.now(),
+                                    // Importe y líneas para el evento Purchase
+                                    // del píxel tras la redirección de Revolut Pay.
+                                    pixelTotal: getTotalPrice(),
+                                    pixelContents: cartToContents(cart),
                                 }
                                 window.sessionStorage.setItem('kuadrat_pending_revolut_pay_order', JSON.stringify(pendingOrderInfo))
                             }

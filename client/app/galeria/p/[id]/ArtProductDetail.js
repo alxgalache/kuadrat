@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { artAPI, ordersAPI, authAPI, authorsAPI } from '@/lib/api'
@@ -14,6 +14,7 @@ import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
 import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY, PAYMENT_ENABLED, ART_BUY_AVAILABLE, EDITION_COPY } from '@/lib/constants'
+import { trackViewContent } from '@/lib/metaPixel'
 
 const ArtProductInquiryModal = dynamic(
   () => import('@/components/ArtProductInquiryModal'),
@@ -58,6 +59,13 @@ export default function ArtProductDetail({ params }) {
   const { showBanner } = useBannerNotification()
   const router = useRouter()
 
+  // Meta Pixel: id de la obra cuyo ViewContent ya se emitió. El efecto de
+  // montaje que dispara loadProduct() se ejecuta dos veces (StrictMode en
+  // desarrollo, y cualquier remontaje en producción), y sin esta guarda la
+  // misma visita cuenta dos veces en el embudo de Meta. Verificado en el
+  // navegador: sin ella la cola de fbq contenía dos ViewContent idénticos.
+  const viewContentTrackedRef = useRef(null)
+
   useEffect(() => {
     const currentUser = authAPI.getCurrentUser()
     setUser(currentUser)
@@ -78,6 +86,20 @@ export default function ArtProductDetail({ params }) {
     try {
       const data = await artAPI.getById(unwrappedParams.id)
       setProduct(data.product)
+
+      // Meta Pixel — ViewContent. Se emite tras cargar la obra, no al montar:
+      // hasta aquí no conocemos ni el precio ni el nombre, y un ViewContent sin
+      // `value` no sirve para optimizar a conversión. Si la carga falla no se
+      // emite nada, que es lo correcto: el visitante no ha visto la obra.
+      if (data?.product && viewContentTrackedRef.current !== data.product.id) {
+        viewContentTrackedRef.current = data.product.id
+        trackViewContent({
+          productType: 'art',
+          productId: data.product.id,
+          name: data.product.name,
+          price: data.product.price,
+        })
+      }
     } catch (err) {
       setError('No se pudo cargar la obra')
     } finally {

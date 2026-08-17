@@ -1,90 +1,34 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useCookieConsent } from '@/contexts/CookieConsentContext'
 
-const STORAGE_KEY = 'cookie_consent'
-// Roughly one month in milliseconds
-const CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000
-
-function loadConsent() {
-  if (typeof window === 'undefined') return null
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return null
-
-    const { value, expiresAt } = parsed
-
-    // If we have an expiry and it is in the past, clear and treat as not set
-    if (typeof expiresAt === 'number' && Date.now() > expiresAt) {
-      window.localStorage.removeItem(STORAGE_KEY)
-      return null
-    }
-
-    return value || null
-  } catch (e) {
-    // If localStorage or JSON parsing fails, behave as if no consent was stored
-    return null
-  }
-}
-
-function saveConsent(value) {
-  if (typeof window === 'undefined') return
-
-  try {
-    const payload = {
-      value,
-      expiresAt: Date.now() + CONSENT_TTL_MS,
-    }
-
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  } catch (e) {
-    // Ignore storage errors; we still hide the banner for this session
-  }
-}
-
+/**
+ * Banner de consentimiento de cookies.
+ *
+ * Los dos botones tienen el MISMO peso visual a propósito. La versión anterior
+ * ofrecía "Aceptar todas" como botón sólido y el rechazo como enlace de texto;
+ * la guía de la AEPD exige que rechazar sea tan sencillo como aceptar, y un
+ * enlace discreto frente a un botón negro no lo es. Por el mismo motivo no hay
+ * aspa de cerrar: cerrar sin decidir dejaría al visitante sin elección y sin
+ * banner, y el estado resultante ("no ha decidido") no autoriza nada, con lo
+ * que solo serviría para esconder la pregunta.
+ *
+ * El estado vive en CookieConsentContext; este componente es solo la interfaz.
+ */
 export default function CookieBanner() {
-  const [visible, setVisible] = useState(false)
+  const { bannerVisible, acceptAll, acceptNecessaryOnly } = useCookieConsent()
 
-  useEffect(() => {
-    const consent = loadConsent()
-    if (consent === 'accepted') {
-      setVisible(false)
-    } else {
-      // If there is no stored consent or it is expired/invalid, show the banner
-      setVisible(true)
-    }
-  }, [])
+  if (!bannerVisible) return null
 
-  const handleAccept = () => {
-    // Persist consent for approximately one month so it survives
-    // browser/tab closes, but will eventually expire.
-    saveConsent('accepted')
-    setVisible(false)
-  }
-
-  const handleReject = () => {
-    // Do not persist anything; banner will reappear on reload as requested
-    setVisible(false)
-  }
-
-  // Disabled: site only uses technically necessary cookies (Stripe/Sentry).
-  // Remove this line to re-enable if analytics or advertising cookies are added.
-  return null
-
-  if (!visible) return null
-
-  // Markup and Tailwind classes copied exactly from the provided snippet
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 px-6 pb-6">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-6 pb-6">
       <div className="pointer-events-auto max-w-xl border border-gray-300 rounded-xl bg-white p-6 shadow-lg outline-1 outline-gray-900/10">
         <p className="text-sm/6 text-gray-900">
-            Usamos cookies propias y de terceros para mejorar tu experiencia de navegación, analizar tu uso del sitio web y mostrarte publicidad relevante.
-            Puedes aceptar todas las cookies, rechazarlas o configurar tus preferencias. Más información en nuestra {' '}
+          Usamos cookies propias y de terceros. Las necesarias hacen funcionar el sitio
+          (sesión, carrito y pagos) y no se pueden desactivar. Las de publicidad nos permiten
+          medir los resultados de nuestras campañas. Puedes aceptarlas
+          todas o quedarte solo con las necesarias. Más información en nuestra{' '}
           <Link
             href="/legal/politica-de-cookies"
             target="_blank"
@@ -95,20 +39,20 @@ export default function CookieBanner() {
           </Link>
           .
         </p>
-        <div className="mt-4 flex items-center gap-x-5">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <button
             type="button"
-            onClick={handleAccept}
+            onClick={acceptAll}
             className="rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
           >
             Aceptar todas
           </button>
           <button
             type="button"
-            onClick={handleReject}
-            className="text-sm/6 font-semibold text-gray-900 hover:text-gray-700"
+            onClick={acceptNecessaryOnly}
+            className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
           >
-            Rechazar todas
+            Solo las necesarias
           </button>
         </div>
       </div>

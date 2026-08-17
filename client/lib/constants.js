@@ -42,6 +42,12 @@ export const SENDCLOUD_ENABLED = SENDCLOUD_ENABLED_ART || SENDCLOUD_ENABLED_OTHE
 export const PAYMENT_ENABLED = process.env.NEXT_PUBLIC_PAYMENT_ENABLED !== 'false';
 export const ART_BUY_AVAILABLE = process.env.NEXT_PUBLIC_ART_BUY_AVAILABLE !== 'false';
 
+// Meta Pixel (Facebook/Instagram Ads). Build-time id del conjunto de datos.
+// Fail-safe INVERSO al resto de flags: vacío = desactivado. Sin id no se
+// inyecta el script ni se emite ningún evento, así que un despliegue que
+// olvide la variable no envía datos a Meta en lugar de romperse.
+export const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID || '';
+
 // Newsletter signup chip (navbar, non-logged users). Fail-safe: unset = enabled,
 // only the literal 'false' hides it. Backend signup is gated separately by
 // MARKETING_EMAILS_ENABLED.

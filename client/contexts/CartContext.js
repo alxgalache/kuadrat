@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
+import { trackAddToCart } from '@/lib/metaPixel'
 
 const CartContext = createContext()
 
@@ -130,6 +131,12 @@ export function CartProvider({ children }) {
         }]
       }
     })
+
+    // Meta Pixel — AddToCart. Se emite aquí y no en cada ficha de producto
+    // porque `addToCart` es el único punto por el que entra un artículo al
+    // carrito (6 llamadas entre obra y tienda, con y sin modal de envío):
+    // instrumentar los puntos de llamada obligaría a mantenerlos sincronizados.
+    trackAddToCart({ productId, productType, name, price, quantity, variantId })
 
     // Trigger animation
     setAnimationTrigger(prev => prev + 1)

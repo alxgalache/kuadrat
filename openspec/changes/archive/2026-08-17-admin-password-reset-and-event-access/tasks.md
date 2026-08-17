@@ -78,10 +78,10 @@
 ## 9. Verificación y despliegue
 
 - [x] 9.1 Ejecutar `npm test` en `api/` y comprobar que pasa la suite completa, incluida `testEnvironmentIsolation.test.js`
-- [ ] 9.2 Prueba manual del restablecimiento de punta a punta con un artista de prueba: botón → email → enlace → contraseña nueva → inicio de sesión correcto → la sesión antigua devuelve 401
-- [ ] 9.3 Prueba manual del acceso del administrador en un evento de pago activo: entra sin pagar, aparece en la lista de asistentes del panel con `is_staff = 1`, no suma en el contador público
-- [ ] 9.4 Revisar el aspecto de los dos emails nuevos en un cliente de correo real, comparándolos con el email de alta
-- [ ] 9.5 Desplegar api y cliente juntos con `./deploy/deploy.sh` (el email apunta a una ruta del cliente: desplegar solo la api dejaría los enlaces en 404)
-- [ ] 9.6 Tras el despliegue, confirmar que ninguna sesión existente se ha caído (`password_changed_at` NULL en todas las filas) antes de lanzar el envío masivo
-- [ ] 9.7 Lanzar el envío masivo y reenviar individualmente a los artistas que aparezcan en la lista de fallidos
+- [x] 9.2 Prueba manual del restablecimiento de punta a punta con un artista de prueba: botón → email → enlace → contraseña nueva → inicio de sesión correcto → la sesión antigua devuelve 401
+- [x] 9.3 Prueba manual del acceso del administrador en un evento de pago activo: entra sin pagar, aparece en la lista de asistentes del panel con `is_staff = 1`, no suma en el contador público
+- [x] 9.4 Revisar el aspecto de los dos emails nuevos en un cliente de correo real, comparándolos con el email de alta
+- [x] 9.5 Desplegar api y cliente juntos con `./deploy/deploy.sh` (el email apunta a una ruta del cliente: desplegar solo la api dejaría los enlaces en 404)
+- [x] 9.6 Tras el despliegue, confirmar que ninguna sesión existente se ha caído (`password_changed_at` NULL en todas las filas) antes de lanzar el envío masivo
+- [x] 9.7 Lanzar el envío masivo y reenviar individualmente a los artistas que aparezcan en la lista de fallidos
 - [x] 9.8 Actualizar `CLAUDE.md` con una sección sobre la invalidación de sesiones (`password_changed_at` se escribe siempre junto a `password_hash`) y sobre `event_attendees.is_staff` y las cinco consultas que deben excluirlo

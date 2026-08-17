@@ -4,6 +4,7 @@ import JsonLd from '@/components/JsonLd'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { CartProvider } from '@/contexts/CartContext'
 import { NotificationProvider } from '@/contexts/NotificationContext'
+import { CookieConsentProvider } from '@/contexts/CookieConsentContext'
 import { BannerNotificationProvider } from '@/contexts/BannerNotificationContext'
 import NotificationContainer from '@/components/Notification'
 import BannerNotification from '@/components/BannerNotification'
@@ -12,6 +13,7 @@ import NewsletterBanner from '@/components/NewsletterBanner'
 import RateLimitHandler from '@/components/RateLimitHandler'
 import TestAccessGate from '@/components/TestAccessGate'
 import LayoutWrapper from '@/components/LayoutWrapper'
+import MetaPixel from '@/components/MetaPixel'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
@@ -135,27 +137,33 @@ export default function RootLayout({ children }) {
   return (
     <html lang="es" className="h-full">
       <body className="h-full flex flex-col">
-        <JsonLd data={organizationSchema} />
-        <JsonLd data={websiteSchema} />
-        <NotificationProvider>
-          <BannerNotificationProvider>
-            <RateLimitHandler />
-            <AuthProvider>
-              <CartProvider>
-                <TestAccessGate gateEnabled={WEB_APP_HIDDEN}>
-                  {/* <ShippingBanner /> */}
-                  <LayoutWrapper isPublished={IS_PUBLISHED}>
-                    {children}
-                  </LayoutWrapper>
-                  <NotificationContainer />
-                  <BannerNotification />
-                  <CookieBanner />
-                  <NewsletterBanner />
-                </TestAccessGate>
-              </CartProvider>
-            </AuthProvider>
-          </BannerNotificationProvider>
-        </NotificationProvider>
+        {/* CookieConsentProvider envuelve todo el árbol: el píxel de Meta lee de
+            él si puede cargarse, el banner escribe la decisión y el pie de
+            página lo reabre para cambiarla. */}
+        <CookieConsentProvider>
+          <MetaPixel />
+          <JsonLd data={organizationSchema} />
+          <JsonLd data={websiteSchema} />
+          <NotificationProvider>
+            <BannerNotificationProvider>
+              <RateLimitHandler />
+              <AuthProvider>
+                <CartProvider>
+                  <TestAccessGate gateEnabled={WEB_APP_HIDDEN}>
+                    {/* <ShippingBanner /> */}
+                    <LayoutWrapper isPublished={IS_PUBLISHED}>
+                      {children}
+                    </LayoutWrapper>
+                    <NotificationContainer />
+                    <BannerNotification />
+                    <CookieBanner />
+                    <NewsletterBanner />
+                  </TestAccessGate>
+                </CartProvider>
+              </AuthProvider>
+            </BannerNotificationProvider>
+          </NotificationProvider>
+        </CookieConsentProvider>
       </body>
     </html>
   )

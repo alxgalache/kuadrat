@@ -23,7 +23,7 @@ export default function CookiePolicyPage() {
           Política de Cookies
         </h1>
         <p className="mt-2 text-sm text-gray-500">
-          Última actualización: Mayo 2026
+          Última actualización: Agosto 2026
         </p>
 
         <div className="mt-10 space-y-8 text-sm leading-7 text-gray-700">
@@ -57,6 +57,13 @@ export default function CookiePolicyPage() {
                 (como tu nombre de usuario, idioma o la región en la que te encuentras) y proporcione funciones mejoradas
                 y más personales, como el carrito de compra.
               </li>
+              <li>
+                <strong>Cookies de publicidad:</strong> Son las del píxel de Meta (Facebook e Instagram). Nos permiten
+                medir los resultados de nuestras campañas publicitarias —saber qué anuncios llevan a ver una obra o a
+                completar una compra— y mostrar anuncios a personas con intereses similares a los de quienes ya visitan
+                la galería. <strong>Solo se instalan si las aceptas expresamente</strong> en el aviso de cookies; si
+                eliges &laquo;Solo las necesarias&raquo;, el píxel no llega a cargarse.
+              </li>
             </ul>
           </section>
 
@@ -72,6 +79,10 @@ export default function CookiePolicyPage() {
               <li>Gestionar el carrito de compra durante tu navegación.</li>
               <li>Analizar el uso del sitio web para mejorar nuestros servicios.</li>
               <li>Detectar y prevenir actividades fraudulentas.</li>
+              <li>
+                Medir la eficacia de nuestra publicidad en Facebook e Instagram y mostrar anuncios relevantes
+                (solo con tu consentimiento).
+              </li>
             </ul>
           </section>
 
@@ -80,7 +91,15 @@ export default function CookiePolicyPage() {
             <p className="mt-3">
               Nuestro sitio web puede utilizar servicios de terceros que establecen sus propias cookies. Estos servicios
               incluyen procesadores de pago (Stripe), herramientas de monitorización de errores (Sentry) y servicios
-              de streaming en directo (LiveKit) para los eventos en vivo de la galería.
+              de streaming en directo (LiveKit) para los eventos en vivo de la galería. Todos ellos son necesarios para
+              el funcionamiento del sitio.
+            </p>
+            <p className="mt-3">
+              Además, si aceptas las cookies de publicidad, utilizamos el <strong>píxel de Meta Platforms Ireland
+              Limited</strong> (Facebook e Instagram), que registra las páginas de obras que visitas y las compras que
+              completas para atribuirlas a nuestras campañas. Puedes consultar cómo trata Meta estos datos en su
+              política de datos y revocar tu consentimiento en cualquier momento desde el enlace
+              &laquo;Configurar cookies&raquo; del pie de página.
             </p>
             <p className="mt-3">
               No tenemos control sobre las cookies de terceros. Te recomendamos consultar las políticas de privacidad
@@ -91,9 +110,14 @@ export default function CookiePolicyPage() {
           <section>
             <h2 className="text-lg font-semibold text-gray-900">5. ¿Cómo gestionar las cookies?</h2>
             <p className="mt-3">
-              Puedes gestionar tus preferencias de cookies en cualquier momento. La mayoría de los navegadores web
-              permiten controlar las cookies a través de sus configuraciones. A continuación te indicamos cómo
-              gestionar las cookies en los navegadores más comunes:
+              La primera vez que visitas el sitio te mostramos un aviso donde puedes aceptar todas las cookies o
+              quedarte solo con las necesarias. <strong>Puedes cambiar tu decisión cuando quieras</strong> desde el
+              enlace &laquo;Configurar cookies&raquo; que encontrarás en el pie de cualquier página: retirar el
+              consentimiento es tan sencillo como darlo.
+            </p>
+            <p className="mt-3">
+              Además, la mayoría de los navegadores web permiten controlar las cookies a través de sus configuraciones.
+              A continuación te indicamos cómo gestionar las cookies en los navegadores más comunes:
             </p>
             <ul className="mt-3 list-disc pl-5 space-y-2">
               <li>
@@ -127,8 +151,8 @@ export default function CookiePolicyPage() {
               </li>
               <li>
                 <strong>Cookies persistentes:</strong> Permanecen en tu dispositivo durante un período determinado
-                o hasta que las elimines manualmente. Por ejemplo, la cookie de consentimiento se almacena durante
-                aproximadamente 30 días.
+                o hasta que las elimines manualmente. Tu decisión sobre las cookies se conserva durante
+                aproximadamente 6 meses, tanto si aceptas como si rechazas; pasado ese plazo volveremos a preguntarte.
               </li>
             </ul>
           </section>

@@ -96,6 +96,12 @@ const nextConfig = {
       'wss://*.agoralab.co',
       // white-web-sdk loads its modules from blob: URLs (script inject + fetch)
       'blob:',
+      // Meta Pixel: fbevents.js se descarga de connect.facebook.net y envía los
+      // eventos por XHR/beacon a www.facebook.com/tr. Sin el segundo origen el
+      // píxel carga pero NO registra ninguna conversión, y el fallo solo se ve
+      // en la consola del navegador.
+      'https://connect.facebook.net',
+      'https://www.facebook.com',
     ].join(' ');
 
     const csp = [
@@ -106,13 +112,18 @@ const nextConfig = {
       // virtual background extension compiles a base64-embedded WASM module at
       // runtime. Replacing it with a stricter directive requires keeping at least
       // 'wasm-unsafe-eval' or camera background effects stop working.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com https://connect.facebook.net",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `img-src 'self' data: https: http: blob: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
       // *.netless.link serves the whiteboard fonts (convertcdn.netless.link/fonts)
       "font-src 'self' https://fonts.gstatic.com https://*.netless.link",
       `connect-src ${cspConnectSrc}`,
-      "frame-src 'self' https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com",
+      // www.facebook.com en frame-src: fbevents.js inserta un iframe oculto
+      // contra ese origen para sincronizar las cookies de terceros (_fbp/_fbc).
+      // No es el canal por el que viajan los eventos —esos van por /tr, que
+      // cubren img-src y connect-src—, así que bloquearlo no rompe nada de
+      // forma visible: solo degrada la atribución, en silencio.
+      "frame-src 'self' https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com https://www.facebook.com",
       `media-src 'self' blob: https: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
       "worker-src 'self' blob:",
     ].join('; ');

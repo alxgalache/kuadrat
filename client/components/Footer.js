@@ -2,6 +2,7 @@
 
 import { EnvelopeIcon } from '@heroicons/react/24/solid'
 import { NEWSLETTER_ENABLED, NEWSLETTER_COPY } from '@/lib/constants'
+import { useCookieConsent } from '@/contexts/CookieConsentContext'
 
 const navigation = [
   {
@@ -55,6 +56,8 @@ const navigation = [
 ]
 
 export default function Footer() {
+  const { openPreferences } = useCookieConsent()
+
   return (
     <footer className="bg-white">
       <div className="mx-auto max-w-7xl px-6 py-12 md:flex md:items-center md:justify-between lg:px-8">
@@ -94,6 +97,12 @@ export default function Footer() {
           <a href="/preguntas-frecuentes" className="hover:text-gray-800">FAQ</a>
           {' · '}
           <a href="/legal/politica-de-cookies" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Política de cookies</a>
+          {' · '}
+          {/* Retirar el consentimiento tiene que ser tan fácil como darlo: este
+              enlace reabre el banner desde cualquier página del sitio. */}
+          <button type="button" onClick={openPreferences} className="hover:text-gray-800 underline-offset-2 hover:underline">
+            Configurar cookies
+          </button>
         </span>
       </div>
     </footer>

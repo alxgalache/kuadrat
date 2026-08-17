@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { othersAPI, ordersAPI, authAPI, authorsAPI } from '@/lib/api'
 import { useCart } from '@/contexts/CartContext'
@@ -13,6 +13,7 @@ import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
 import { SENDCLOUD_ENABLED_OTHERS, PAYMENT_ENABLED } from '@/lib/constants'
+import { trackViewContent } from '@/lib/metaPixel'
 
 export default function OthersProductDetail({ params }) {
   const unwrappedParams = use(params)
@@ -32,6 +33,10 @@ export default function OthersProductDetail({ params }) {
   const { showSuccess } = useNotification()
   const { showBanner } = useBannerNotification()
   const router = useRouter()
+
+  // Ver la nota equivalente en ArtProductDetail: sin esta guarda el efecto de
+  // montaje emite dos ViewContent para la misma visita.
+  const viewContentTrackedRef = useRef(null)
 
   useEffect(() => {
     const currentUser = authAPI.getCurrentUser()
@@ -61,6 +66,19 @@ export default function OthersProductDetail({ params }) {
         } else {
           setSelectedVariant(data.product.variations[0])
         }
+      }
+
+      // Meta Pixel — ViewContent. El id es el del producto, sin variante: la
+      // variante todavía no la ha elegido el visitante (la seleccionamos
+      // nosotros por defecto), así que atribuirle la vista sería inventar.
+      if (data?.product && viewContentTrackedRef.current !== data.product.id) {
+        viewContentTrackedRef.current = data.product.id
+        trackViewContent({
+          productType: 'other',
+          productId: data.product.id,
+          name: data.product.name,
+          price: data.product.price,
+        })
       }
     } catch (err) {
       setError('No se pudo cargar el producto')

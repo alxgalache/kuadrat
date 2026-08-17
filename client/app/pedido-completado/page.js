@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCart } from '@/contexts/CartContext'
 import { paymentsAPI, ordersAPI, stripeAPI } from '@/lib/api'
+import { trackPurchase } from '@/lib/metaPixel'
 import { CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/20/solid'
 
 const PAYMENT_PROVIDER = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER || 'revolut'
@@ -29,6 +30,17 @@ function PedidoCompletadoContent() {
 
   // Ref to prevent multiple executions (React StrictMode, dependency changes)
   const hasStartedRef = useRef(false)
+
+  // Meta Pixel — Purchase se emite una sola vez por montaje. La segunda línea
+  // de defensa es el `eventID` del propio evento (`order_<id>`), que deduplica
+  // en Meta si el usuario recarga esta página o vuelve a ella desde el correo.
+  const purchaseTrackedRef = useRef(false)
+
+  const trackPurchaseOnce = useCallback(({ orderId, value, contents }) => {
+    if (purchaseTrackedRef.current) return
+    purchaseTrackedRef.current = true
+    trackPurchase({ orderId, value, contents })
+  }, [])
 
   // Get URL params
   const token = searchParams.get('token')
@@ -110,6 +122,14 @@ function PedidoCompletadoContent() {
           if (statusResp.status === 'succeeded') {
             // Payment succeeded - order should already be confirmed by webhook
             if (statusResp.order?.status === 'paid') {
+              // Meta Pixel — Purchase tras la redirección 3DS. El importe viene
+              // del PaymentIntent (`amount` en céntimos), que es la cifra
+              // realmente cobrada; el desglose de líneas se perdió con la
+              // redirección y `trackPurchase` lo omite.
+              trackPurchaseOnce({
+                orderId: statusResp.order.id,
+                value: (statusResp.amount || 0) / 100,
+              })
               clearCart()
               setReady(true)
               setIsProcessing(false)
@@ -148,7 +168,7 @@ function PedidoCompletadoContent() {
       setReady(true)
       return true
     }
-  }, [stripePaymentIntentFromUrl, clearCart])
+  }, [stripePaymentIntentFromUrl, clearCart, trackPurchaseOnce])
 
   // Check for Revolut Pay redirect and handle payment confirmation
   const handleRevolutPayRedirect = useCallback(async () => {
@@ -228,6 +248,16 @@ function PedidoCompletadoContent() {
       }
 
       if (orderConfirmed) {
+        // Meta Pixel — Purchase tras la redirección de Revolut Pay. Solo se
+        // emite con el pago ya confirmado por el webhook: los caminos de más
+        // abajo muestran la página de éxito "por si acaso", y facturar una
+        // conversión sobre un pago sin confirmar corrompe la optimización.
+        trackPurchaseOnce({
+          orderId: orderData?.order_id || pendingOrderInfo?.orderId,
+          value: pendingOrderInfo?.pixelTotal,
+          contents: pendingOrderInfo?.pixelContents,
+        })
+
         // Payment confirmed, clear cart and show success
         clearCart()
         setReady(true)
@@ -248,6 +278,15 @@ function PedidoCompletadoContent() {
             await ordersAPI.updatePayment({
               orderId: pendingOrderInfo.orderId,
               paymentId: paymentResp.payment_id,
+            })
+
+            // Meta Pixel — Purchase: la confirmación manual acaba de marcar el
+            // pedido como pagado, así que la conversión es tan real como la del
+            // camino del webhook.
+            trackPurchaseOnce({
+              orderId: pendingOrderInfo.orderId,
+              value: pendingOrderInfo.pixelTotal,
+              contents: pendingOrderInfo.pixelContents,
             })
 
             // Clear cart and show success
@@ -274,7 +313,7 @@ function PedidoCompletadoContent() {
       setIsProcessing(false)
       setReady(true)
     }
-  }, [isCheckingAccess, isValidAccess, revolutOrderIdFromUrl, clearCart])
+  }, [isCheckingAccess, isValidAccess, revolutOrderIdFromUrl, clearCart, trackPurchaseOnce])
 
   useEffect(() => {
     if (isCheckingAccess || !isValidAccess) return
@@ -297,10 +336,25 @@ function PedidoCompletadoContent() {
       const storedData = sessionStorage.getItem(storageKey)
       if (storedData) {
         sessionStorage.removeItem(storageKey)
+
+        // Meta Pixel — Purchase del flujo normal (tarjeta Stripe/Revolut sin
+        // redirección). El importe y las líneas los guardó el carrito junto al
+        // token, justo antes de vaciarse.
+        try {
+          const orderData = JSON.parse(storedData)
+          trackPurchaseOnce({
+            orderId: orderData?.orderId,
+            value: orderData?.pixelTotal,
+            contents: orderData?.pixelContents,
+          })
+        } catch (e) {
+          // Un token ilegible no debe impedir vaciar el carrito.
+        }
+
         clearCart()
       }
     }
-  }, [token, clearCart, isValidAccess, isCheckingAccess])
+  }, [token, clearCart, isValidAccess, isCheckingAccess, trackPurchaseOnce])
 
   // Show nothing while checking access
   if (isCheckingAccess) {

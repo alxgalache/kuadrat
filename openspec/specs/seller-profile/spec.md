@@ -94,8 +94,11 @@ The endpoint SHALL:
 2. Validate that `newPassword` matches `confirmPassword`
 3. Validate `newPassword` meets password requirements (min 8 chars, uppercase, lowercase, number)
 4. Hash the new password with `bcrypt.hash(password, 10)`
-5. Update `password_hash` in the database
-6. Return success response
+5. Update `password_hash` **and** `password_changed_at` in the same SQL statement, which invalidates every JWT issued before this moment
+6. Send the password-change notification email without blocking the response
+7. Return success response
+
+Step 5 is what turns the client's existing "Inicia sesión de nuevo" message into the server's actual behaviour: before this change the seller's own session — and any other session opened with the old password — stayed valid until the JWT expired.
 
 #### Scenario: Successful password change
 - **WHEN** an authenticated seller sends a valid password change request
@@ -112,6 +115,16 @@ The endpoint SHALL:
 #### Scenario: Passwords do not match
 - **WHEN** `newPassword` does not equal `confirmPassword`
 - **THEN** the API SHALL return 400 with "Las contraseñas no coinciden"
+
+#### Scenario: Sessions opened with the old password stop working
+- **WHEN** a seller changes their password successfully
+- **AND** a request arrives carrying a JWT issued before the change
+- **THEN** the API SHALL answer 401
+
+#### Scenario: Seller is notified of the change
+- **WHEN** a seller changes their password successfully
+- **THEN** a notification email SHALL be sent to their address
+- **AND** a failure sending it SHALL NOT turn the successful change into an error response
 
 ### Requirement: Request validation with Zod
 The `PUT /api/seller/profile/password` endpoint SHALL validate the request body using a Zod schema applied via the `validate()` middleware. The schema SHALL require `currentPassword`, `newPassword`, and `confirmPassword` as non-empty strings.
