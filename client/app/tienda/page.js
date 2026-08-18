@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { Suspense, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { othersAPI, getOthersImageUrl } from '@/lib/api'
 import AuthorModal from '@/components/AuthorModal'
@@ -11,7 +11,7 @@ import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
 import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
 
-export default function GalleryMasPage() {
+function GalleryMasPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const selectedAuthorSlug = searchParams.get('author')
@@ -132,5 +132,32 @@ export default function GalleryMasPage() {
         onClose={() => setModalOpen(false)}
       />
     </div>
+  )
+}
+
+/**
+ * `useSearchParams()` obliga a una frontera de Suspense por encima del
+ * componente que lo llama. Antes no hacía falta porque `TestAccessGate`
+ * devolvía `null` en el servidor y este árbol no llegaba a renderizarse nunca
+ * durante el prerenderizado; ahora que la página se sirve renderizada, el
+ * `next build` falla sin ella. Es el mismo patrón que ya usan
+ * `/pago-fallido`, `/pago-cancelado`, `/pedido-completado` y
+ * `/order-confirmation`.
+ *
+ * El fallback reproduce la pantalla de carga que la propia página muestra
+ * mientras pide los productos, para que el HTML prerenderizado y el primer
+ * render del cliente enseñen lo mismo.
+ */
+export default function GalleryMasPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="bg-white min-h-screen flex items-center justify-center">
+          <p className="text-gray-500">Cargando...</p>
+        </div>
+      }
+    >
+      <GalleryMasPageContent />
+    </Suspense>
   )
 }

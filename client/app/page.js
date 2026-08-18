@@ -17,6 +17,14 @@ export default async function Home() {
   } catch {
     // Story videos are decorative — fail silently
   }
+
+  // El sorteo se hace aquí, en el servidor, y no dentro de StoryVideo: si lo
+  // hiciera el cliente, elegiría un vídeo distinto del que trae el HTML y
+  // React reportaría una discrepancia de hidratación en el `src`. Ver
+  // components/StoryVideo.js.
+  const storyVideo = storyVideos.length > 0
+    ? storyVideos[Math.floor(Math.random() * storyVideos.length)]
+    : null
   // Coming soon page (shown when app is not published)
   if (!IS_PUBLISHED) {
     return (
@@ -64,7 +72,7 @@ export default async function Home() {
           </div>
         </div>
         <div className="lg:mt-12 flex-1 flex justify-center">
-          <StoryVideo videos={storyVideos} />
+          <StoryVideo video={storyVideo} />
         </div>
       </div>
     </div>
