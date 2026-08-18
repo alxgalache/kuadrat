@@ -22,7 +22,10 @@ export default function CookieBanner() {
   if (!bannerVisible) return null
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-6 pb-6">
+    // `data-cookie-banner` es el asidero de la regla de globals.css que lo
+    // oculta antes del primer pintado a quien ya decidió; el banner viaja en el
+    // HTML del servidor para no ser el elemento que retrasa el LCP.
+    <div data-cookie-banner className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-6 pb-6">
       <div className="pointer-events-auto max-w-xl border border-gray-300 rounded-xl bg-white p-6 shadow-lg outline-1 outline-gray-900/10">
         <p className="text-sm/6 text-gray-900">
           Usamos cookies propias y de terceros. Las necesarias hacen funcionar el sitio

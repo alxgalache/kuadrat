@@ -108,6 +108,8 @@ export default function GalleryAuthorContent({ params }) {
                 getImageUrl={getArtImageUrl}
                 baseRoute="/galeria"
                 onProductOpen={restoration.onProductOpen}
+                authors={authors}
+                onViewAuthorBio={handleViewAuthorBio}
               />
             </div>
           </main>

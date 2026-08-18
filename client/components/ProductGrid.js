@@ -1,16 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { PlusIcon } from '@heroicons/react/20/solid'
+import { authorsAPI } from '@/lib/api'
 
-function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen }) {
+function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen, onAuthorClick }) {
   const [displayedBasename, setDisplayedBasename] = useState(null)
   const mainBasename = displayedBasename ?? product.thumbnail_basename ?? product.images?.[0]?.basename ?? null
   const detailHref = `${baseRoute}/p/${product.slug}`
   const variationThumbs = product.variation_thumbnails ?? []
   const showVariationsRow = variationThumbs.length >= 2
+
+  // El nombre solo es interactivo si la página ha pasado un manejador Y el
+  // producto trae el slug del vendedor, que es la clave con la que se resuelve
+  // la ficha del autor. Sin él no hay nada que abrir y un botón muerto es peor
+  // que un texto plano.
+  const authorClickable = Boolean(onAuthorClick && product.seller_slug)
 
   // Marca la instantánea de scroll antes de navegar al detalle. El hook ignora
   // los clics que abren en pestaña nueva.
@@ -59,7 +66,22 @@ function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen }) {
           )}
         </div>
         <div className="mt-6">
-          <p className="text-sm text-gray-500">{product.seller_full_name}</p>
+          {/* El subrayado se limita a `hover:hover`: en táctil el estado hover
+              queda "pegado" tras el tap y el nombre se quedaría subrayado sin
+              que nada lo esté señalando, igual que en la imagen de arriba. */}
+          <p className="text-sm text-gray-500">
+            {authorClickable ? (
+              <button
+                type="button"
+                onClick={() => onAuthorClick(product)}
+                className="rounded-sm underline-offset-2 [@media(hover:hover)]:hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              >
+                {product.seller_full_name}
+              </button>
+            ) : (
+              product.seller_full_name
+            )}
+          </p>
           <h3 className="mt-1 font-semibold text-gray-900">
             <Link href={detailHref} onClick={handleOpen}>{product.name}</Link>
           </h3>
@@ -70,7 +92,49 @@ function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen }) {
   )
 }
 
-export default function ProductGrid({ products, isFading, getImageUrl, baseRoute, onProductOpen }) {
+/**
+ * Rejilla de productos.
+ *
+ * `authors` y `onViewAuthorBio` son opcionales y van juntos: sin ellos el
+ * nombre del artista se pinta como texto plano (es lo que hace, por ejemplo,
+ * cualquier consumidor que no tenga a mano el listado de autores).
+ *
+ * La resolución del autor mira primero el listado que ya tiene la página —el
+ * mismo que alimenta los badges de filtro, así que el modal abre sin esperar a
+ * la red— y solo cae en `authorsAPI.getBySlug` si el autor todavía no está: el
+ * listado y los productos se cargan en peticiones independientes y durante ese
+ * hueco un clic no puede quedarse sin respuesta.
+ */
+export default function ProductGrid({
+  products,
+  isFading,
+  getImageUrl,
+  baseRoute,
+  onProductOpen,
+  authors,
+  onViewAuthorBio,
+}) {
+  const authorsBySlug = useMemo(() => {
+    const map = new Map()
+    for (const author of authors ?? []) map.set(author.slug, author)
+    return map
+  }, [authors])
+
+  const handleAuthorClick = useCallback(async (product) => {
+    const known = authorsBySlug.get(product.seller_slug)
+    if (known) {
+      onViewAuthorBio(known)
+      return
+    }
+
+    try {
+      const data = await authorsAPI.getBySlug(product.seller_slug)
+      if (data?.author) onViewAuthorBio(data.author)
+    } catch (err) {
+      console.error('Failed to load author:', err)
+    }
+  }, [authorsBySlug, onViewAuthorBio])
+
   return (
     <div className="relative">
       <div
@@ -88,6 +152,7 @@ export default function ProductGrid({ products, isFading, getImageUrl, baseRoute
               getImageUrl={getImageUrl}
               baseRoute={baseRoute}
               onProductOpen={onProductOpen}
+              onAuthorClick={onViewAuthorBio ? handleAuthorClick : null}
             />
           ))}
         </ul>

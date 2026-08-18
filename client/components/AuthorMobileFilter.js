@@ -28,11 +28,13 @@ export default function AuthorMobileFilter({
             <button
               type="button"
               onClick={() => onViewAuthorBio(author)}
+              aria-label={`Ver información de ${author.full_name}`}
               className="hover:opacity-80"
             >
-              <InformationCircleIcon className="size-4" />
+              <InformationCircleIcon aria-hidden="true" className="size-4" />
             </button>
             <button
+              type="button"
               onClick={() => onFilterByAuthor(author.slug)}
               className="hover:opacity-80"
             >
@@ -45,7 +47,7 @@ export default function AuthorMobileFilter({
                 className="ml-1 hover:opacity-80"
                 aria-label="Limpiar filtro de autor"
               >
-                <XMarkIcon className="size-4" />
+                <XMarkIcon aria-hidden="true" className="size-4" />
               </button>
             )}
           </div>

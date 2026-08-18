@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Configuración de nodemon — SOLO desarrollo local.",
+    "nodemon únicamente se ejecuta con `npm run dev` (docker-compose.local.yml).",
+    "Staging arranca con `npm run start` y producción con Dockerfile.prod, que ni",
+    "siquiera instala nodemon (`npm ci --omit=dev`): este fichero es inerte allí.",
+    "",
+    "Sin estas exclusiones nodemon vigila también uploads/ (758 MB, 568 ficheros),",
+    "coverage/ (regenerado por `npm test`) y .tmp/ (la BD SQLite de los tests),",
+    "gastando descriptores inotify y provocando reinicios espurios de la API.",
+    "",
+    "Si aun así falla con `EMFILE: too many open files, watch '/app'`, el problema",
+    "es el pool de inotify del host, no este fichero: ver docs/desarrollo-local.md."
+  ],
+  "watch": ["."],
+  "ext": "js,mjs,cjs,json",
+  "ignore": [
+    "node_modules/**",
+    "uploads/**",
+    "coverage/**",
+    ".tmp/**",
+    "tests/**",
+    "assets/**",
+    "*.db",
+    "*.log"
+  ]
+}

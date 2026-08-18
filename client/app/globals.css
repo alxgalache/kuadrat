@@ -163,3 +163,13 @@ body {
     display: none;
   }
 }
+
+/* Consentimiento de cookies: el banner se sirve ya renderizado en el HTML (si
+   esperase a la hidratación sería un bloque de texto grande pintando ~2,8 s
+   tarde, y eso es exactamente lo que mide el LCP). Para quien ya decidió, el
+   script de arranque de app/layout.js marca el documento antes del primer
+   pintado y esta regla lo retira sin que llegue a verse. Ver
+   lib/cookieConsent.js. */
+html[data-cookie-consent='set'] [data-cookie-banner] {
+  display: none;
+}

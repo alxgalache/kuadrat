@@ -47,8 +47,24 @@ function saveAccessFlag(value) {
 }
 
 export default function TestAccessGate({ gateEnabled, children }) {
-  const [authorized, setAuthorized] = useState(false)
-  const [checking, setChecking] = useState(true)
+  // El estado inicial depende de `gateEnabled`, y eso es lo único que hace que
+  // el sitio se renderice en el servidor.
+  //
+  // Antes arrancaba siempre en `checking = true`, y como `checking` solo se
+  // apaga dentro de un efecto —que en el servidor no corre— el render de
+  // servidor devolvía `null` para TODO el árbol: navbar, página, banner y pie.
+  // El HTML de producción llegaba con el `<body>` vacío y la página entera
+  // pintaba después de hidratar. Eso es lo que PageSpeed medía como "retraso de
+  // renderizado de elementos: 2800 ms", atribuido al banner de cookies solo
+  // porque era el bloque de texto más grande de los que aparecían de golpe.
+  //
+  // Con la puerta desactivada (producción) no hay nada que comprobar, así que
+  // no hay motivo para ocultar nada: se sirve el HTML ya renderizado. Con la
+  // puerta activada (preproducción) el comportamiento es exactamente el de
+  // antes — se sigue devolviendo `null` hasta comprobar el permiso, para no
+  // enseñar el contenido antes de la contraseña.
+  const [authorized, setAuthorized] = useState(!gateEnabled)
+  const [checking, setChecking] = useState(gateEnabled)
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')

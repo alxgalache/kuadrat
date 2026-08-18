@@ -32,11 +32,13 @@ export default function AuthorSidebar({
                       <button
                         type="button"
                         onClick={() => onViewAuthorBio(author)}
+                        aria-label={`Ver información de ${author.full_name}`}
                         className="group/icon flex-shrink-0"
                       >
-                        <InformationCircleIcon className="size-5 text-gray-400 group-hover/icon:text-black" />
+                        <InformationCircleIcon aria-hidden="true" className="size-5 text-gray-400 group-hover/icon:text-black" />
                       </button>
                       <button
+                        type="button"
                         onClick={() => onFilterByAuthor(author.slug)}
                         className="flex gap-x-3 items-center flex-1 text-left min-w-0"
                       >
@@ -49,7 +51,7 @@ export default function AuthorSidebar({
                             onClick={onClearFilter}
                             aria-label="Limpiar filtro de autor"
                           >
-                            <XMarkIcon className="size-5 text-gray-400 group-hover/icon:text-black" />
+                            <XMarkIcon aria-hidden="true" className="size-5 text-gray-400 group-hover/icon:text-black" />
                           </button>
                         )}
                       </div>

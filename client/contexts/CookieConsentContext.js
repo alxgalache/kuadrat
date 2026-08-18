@@ -6,6 +6,7 @@ import {
   saveConsent,
   CONSENT_ACCEPTED,
   CONSENT_NECESSARY,
+  CONSENT_BOOTSTRAP_ATTR,
 } from '@/lib/cookieConsent'
 
 const CookieConsentContext = createContext()
@@ -36,7 +37,12 @@ export function CookieConsentProvider({ children }) {
   const [preferencesOpen, setPreferencesOpen] = useState(false)
 
   useEffect(() => {
-    setConsent(loadConsent())
+    const stored = loadConsent()
+    // Defensa por si el script de arranque y esta lectura no coincidieran
+    // (la decisión caducó justo entre una y otra): quitar la marca devuelve el
+    // control del banner al CSS por defecto, que es mostrarlo.
+    if (stored === null) document.documentElement.removeAttribute(CONSENT_BOOTSTRAP_ATTR)
+    setConsent(stored)
   }, [])
 
   const decide = useCallback((value) => {
@@ -47,13 +53,23 @@ export function CookieConsentProvider({ children }) {
 
   const acceptAll = useCallback(() => decide(CONSENT_ACCEPTED), [decide])
   const acceptNecessaryOnly = useCallback(() => decide(CONSENT_NECESSARY), [decide])
-  const openPreferences = useCallback(() => setPreferencesOpen(true), [])
+  const openPreferences = useCallback(() => {
+    // El script de arranque oculta el banner por CSS para quien ya decidió, y
+    // esa regla gana a cualquier render. Reabrirlo desde el pie exige retirar
+    // la marca; se hace aquí y no en el montaje para que no haya ninguna
+    // ventana en la que el banner pueda parpadear.
+    document.documentElement.removeAttribute(CONSENT_BOOTSTRAP_ATTR)
+    setPreferencesOpen(true)
+  }, [])
 
   const value = useMemo(() => ({
     consent,
-    // El banner se muestra cuando ya se leyó el almacenamiento y no hay
-    // decisión, o cuando el visitante pide cambiarla desde el pie.
-    bannerVisible: (consent === null) || preferencesOpen,
+    // El banner se muestra mientras no conste una decisión —incluido el
+    // `undefined` previo a leer localStorage, para que viaje en el HTML del
+    // servidor y no pinte tarde— o cuando el visitante pide cambiarla desde el
+    // pie. Para quien ya decidió, el CSS lo oculta antes del primer pintado y
+    // este render deja de producirlo en cuanto corre el efecto de montaje.
+    bannerVisible: consent === undefined || consent === null || preferencesOpen,
     adsAllowed: consent === CONSENT_ACCEPTED,
     acceptAll,
     acceptNecessaryOnly,

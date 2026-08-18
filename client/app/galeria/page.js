@@ -109,6 +109,8 @@ export default function GalleryPage() {
                 getImageUrl={getArtImageUrl}
                 baseRoute="/galeria"
                 onProductOpen={restoration.onProductOpen}
+                authors={authors}
+                onViewAuthorBio={handleViewAuthorBio}
               />
               {isLoadingMore && (
                 <div className="flex items-center justify-center gap-2 py-8">

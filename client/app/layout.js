@@ -14,6 +14,7 @@ import RateLimitHandler from '@/components/RateLimitHandler'
 import TestAccessGate from '@/components/TestAccessGate'
 import LayoutWrapper from '@/components/LayoutWrapper'
 import MetaPixel from '@/components/MetaPixel'
+import { CONSENT_BOOTSTRAP_SCRIPT } from '@/lib/cookieConsent'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
@@ -135,8 +136,21 @@ const websiteSchema = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es" className="h-full">
+    // `suppressHydrationWarning` cubre EXACTAMENTE un atributo: el
+    // `data-cookie-consent` que el script de arranque escribe en <html> antes
+    // de que React hidrate. El servidor no puede emitirlo —depende de
+    // localStorage— así que React lo ve como una discrepancia y avisa. Solo
+    // afecta a los atributos de este nodo, no a su contenido.
+    <html lang="es" className="h-full" suppressHydrationWarning>
       <body className="h-full flex flex-col">
+        {/* Script bloqueante, deliberadamente el primer nodo del body: corre
+            antes de que el navegador pinte el banner de cookies —que ahora
+            viaja renderizado en el HTML para no retrasar el LCP— y lo oculta
+            por CSS si ya hay una decisión guardada. Ver lib/cookieConsent.js. */}
+        <script
+          id="cookie-consent-bootstrap"
+          dangerouslySetInnerHTML={{ __html: CONSENT_BOOTSTRAP_SCRIPT }}
+        />
         {/* CookieConsentProvider envuelve todo el árbol: el píxel de Meta lee de
             él si puede cargarse, el banner escribe la decisión y el pie de
             página lo reabre para cambiarla. */}

@@ -5,9 +5,11 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon --inspect=0.0.0.0:9229 server.js",
+    "dev:poll": "nodemon --legacy-watch --inspect=0.0.0.0:9229 server.js",
     "pre": "nodemon server.js",
     "start": "node server.js",
     "backup:now": "node scripts/runBackup.js",
+    "s3:cache-headers": "node scripts/setMediaCacheHeaders.js",
     "test": "NODE_ENV=test jest --coverage --detectOpenHandles",
     "test:watch": "NODE_ENV=test jest --watch"
   },
