@@ -47,6 +47,11 @@ necesitan y si exigen desplegar antes:
 | **B. Política de CloudFront** | consola de AWS | No | ninguno nuevo |
 | **C. `npm run s3:cache-headers`** | dentro del contenedor `api` | **Sí** | los mismos que A |
 
+La vía A necesita el AWS CLI instalado en la instancia; **la B y la C no**. En
+esta instancia el CLI no está instalado, así que si eliges la C, la verificación
+se hace con el propio script y la invalidación desde la consola — ambas cosas
+están en su apartado.
+
 Si quieres arreglarlo hoy y sin tocar nada más, ve a la **B**: es la única que no
 depende de los permisos del rol de la instancia. La **C** existe sobre todo como
 herramienta repetible una vez el código esté desplegado.
@@ -207,8 +212,66 @@ Ojo con dos cosas:
 Si el simulacro escupe `AccessDenied` en cada fichero, al rol de la instancia le
 falta `s3:GetObject` sobre el bucket de medios: o se añade, o se usa la vía B.
 
-Después de `--apply` sigue haciendo falta **invalidar CloudFront** (paso 4 de la
-vía A). El propio script lo recuerda al terminar.
+### Verificar el resultado en el origen — sin AWS CLI
+
+**Vuelve a lanzar el simulacro.** Es la misma consulta que haría
+`aws s3api head-object`, hecha con el SDK que la aplicación ya lleva dentro, así
+que esta vía no necesita el CLI en ningún momento:
+
+```console
+docker compose -f docker-compose.prod.yml exec api npm run s3:cache-headers -- --prefix stories/
+```
+
+Cada fichero debe salir ahora con el mensaje *"ya tiene el Cache-Control
+correcto, no haría nada"* y con:
+
+```json
+"cacheControlActual": "public, max-age=31536000, immutable"
+"contentType": "video/mp4"
+```
+
+Si `cacheControlActual` sigue en `null`, la escritura no llegó a hacerse — mira
+el error del paso `--apply` antes de seguir.
+
+**Este paso es el que separa dos fallos que de otro modo se confunden**: "el
+script no escribió" y "CloudFront sigue sirviendo la copia vieja". Comprobar
+solo con `curl` contra `cdn.140d.art` no distingue entre los dos, porque hasta
+que no invalides el CDN responde lo mismo en ambos casos.
+
+### Invalidar CloudFront
+
+Sin CLI, desde la **consola de AWS** (el propio script lo recuerda al terminar):
+
+1. Consola → **CloudFront**. Es un servicio global: el selector de región dirá
+   *Global*, no `eu-west-1`.
+2. **Distributions** → la que tenga `cdn.140d.art` en *Alternate domain names* →
+   pincha en su ID.
+3. Pestaña **Invalidations** → **Create invalidation**.
+4. En *Add object paths*, exactamente `/stories/*`. **La barra inicial es
+   obligatoria**: `stories/*` no coincide con nada y la invalidación se completa
+   sin haber hecho nada, sin dar ningún aviso.
+5. **Create invalidation**. Pasa de *In progress* a *Completed* en 1–5 minutos.
+
+`/stories/*` cuenta como **una sola ruta**, no como un objeto por fichero, y las
+primeras 1000 al mes son gratis: no hay nada que optimizar.
+
+### Comprobar en el borde
+
+Desde donde quieras, tu portátil incluido:
+
+```console
+curl -sI https://cdn.140d.art/stories/14543304.mp4 | grep -i 'cache-control\|content-type\|x-cache'
+```
+
+```
+cache-control: public, max-age=31536000, immutable
+content-type: video/mp4
+x-cache: Miss from cloudfront
+```
+
+`Miss from cloudfront` en la primera petición es la señal de que la invalidación
+funcionó: el edge tuvo que ir a buscar el objeto otra vez. Después volverá a
+`Hit` y reaparecerá `age`, ya sin importancia.
 
 ---
 
