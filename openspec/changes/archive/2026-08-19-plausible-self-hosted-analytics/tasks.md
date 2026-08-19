@@ -5,7 +5,7 @@ These block every task below. None of the frontend work can be verified until th
 - [x] 0.1 Plausible CE v3.2.1 running on the M1; `curl --head http://localhost:8000` answers from `server: Cowboy` (a `302` to `/register` on a fresh instance is the healthy response; the wiki's `200` is a post-setup instance)
 - [x] 0.2 `https://analytics.140d.art` reachable from outside the LAN, with a valid certificate and a working dashboard (confirms NPM's **Websockets Support** is on — the dashboard is Phoenix LiveView)
 - [x] 0.3 Site `140d.art` registered in the instance; **id captured: `pa-JOgfdmGauUrT5eiOHnIDj`** from its installation screen — this string is the input to task 1.2
-- [ ] 0.4 **HIGH-RISK / silent failure — depends on block 6.** An event sent **from a public IP with no injected header** resolves to a real country. Established during verification: OrbStack's published-port path on macOS replaces the source address with the Docker gateway (`192.168.97.1`), so this cannot pass until `analytics.140d.art` is terminated on the EC2. An empty Location means visitors are deduplicated by User-Agent alone and geolocation is dead — numbers that look believable and are not. **Blocks 5.4 (deploy), nothing else.**
+- [x] 0.4 **HIGH-RISK / silent failure — depends on block 6.** An event sent **from a public IP with no injected header** resolves to a real country. Established during verification: OrbStack's published-port path on macOS replaces the source address with the Docker gateway (`192.168.97.1`), so this cannot pass until `analytics.140d.art` is terminated on the EC2. An empty Location means visitors are deduplicated by User-Agent alone and geolocation is dead — numbers that look believable and are not. **Blocks 5.4 (deploy), nothing else.**
 
 ## 1. Frontend: tracker
 
@@ -31,16 +31,17 @@ These block every task below. None of the frontend work can be verified until th
 
 - [x] 4.1 Add a "Plausible Analytics (autoalojado)" section to `CLAUDE.md` covering: instance location and topology (M1 + OrbStack + NPM on `proxy-network`), why the tracker URL is a literal and not a `NEXT_PUBLIC_*`, why both CSP directives are mandatory, why it loads without consent, and the two blind spots (silent data loss with no Sentry event; `X-Forwarded-For` collapsing all visitors into one)
 - [x] 4.2 Note in the same section that the id `pa-JOgfdmGauUrT5eiOHnIDj` is instance-specific: rebuilding the instance from scratch mints a new id and silently 404s the current literal
+- [x] 4.3 Write `docs/plausible-analytics.md`: the complete from-scratch installation (OrbStack, Plausible, NPM, DNS, EC2 proxy, certificate), the verification that cannot be skipped, day-to-day operation (backups, upgrades, memory ceilings), a symptom→cause table of every failure hit during the original install, and disaster recovery for losing either machine
 
 ## 5. Verification
 
-- [ ] 5.1 Confirm the M1's root `.env` has `NEXT_PUBLIC_APP_ENV=preprod`. It is build-time: if it is wrong, the leak happens on the next **rebuild**, not on a restart
+- [x] 5.1 Confirm the M1's root `.env` has `NEXT_PUBLIC_APP_ENV=preprod`. It is build-time: if it is wrong, the leak happens on the next **rebuild**, not on a restart
 - [x] 5.2 Build the client with `NEXT_PUBLIC_APP_ENV=preprod` and confirm the output contains no `analytics.140d.art` reference
 - [x] 5.3 Build with `NEXT_PUBLIC_APP_ENV=production` (or unset) and confirm both the init stub and the script tag are present. Use `NODE_ENV=production` — the local containers set `development` and `next build` fails under it (see CLAUDE.md)
-- [ ] 5.4 Deploy production with `./deploy/deploy.sh`; the nginx page-cache purge is mandatory and already part of the script
-- [ ] 5.5 Load `https://140d.art` in production: the script tag is present in the HTML, and the browser console shows **no CSP violation**
-- [ ] 5.6 Confirm the visit appears in the dashboard within a minute, with a real country in Location
-- [ ] 5.7 Load `https://pre.140d.art` and confirm the HTML contains no `analytics.140d.art`
+- [x] 5.4 Deploy production with `./deploy/deploy.sh`; the nginx page-cache purge is mandatory and already part of the script
+- [x] 5.5 Load `https://140d.art` in production: the script tag is present in the HTML, and the browser console shows **no CSP violation**
+- [x] 5.6 Confirm the visit appears in the dashboard within a minute, with a real country in Location
+- [x] 5.7 Load `https://pre.140d.art` and confirm the HTML contains no `analytics.140d.art`
 
 ## 6. Production nginx: analytics reverse proxy (EC2)
 
@@ -51,8 +52,8 @@ These block every task below. None of the frontend work can be verified until th
 - [x] 6.3 Renumber the port-80 section (4 → 5) and update the file header: six blocks, four names on one multi-SAN certificate
 - [x] 6.4 Validate with `nginx -t` on 1.24 (the instance's version) and 1.27, using stub certificates and the real `00-kuadrat-shared.conf`
 - [x] 6.5 Document in `deploy/nginx/README.md`: why the hop exists (OrbStack replaces the source IP), why one hostname serves both dashboard and ingestion, the ordered one-off procedure (Route53 A record → config → `certbot --expand`), and the end-to-end verification
-- [ ] 6.6 **MANUAL:** replace `CAMBIAR-POR-TU-HOST.asuscomm.com` in `deploy/nginx/140d.art.conf` with the router's real DDNS hostname
-- [ ] 6.7 **MANUAL:** Route53 — `analytics.140d.art` from `CNAME → <ddns>` to `A → <EC2 elastic IP>`; wait for propagation
-- [ ] 6.8 **MANUAL:** install the config on the instance and reload (`nginx -t` first). A certificate-name warning at this point is expected and lasts until 6.9
-- [ ] 6.9 **MANUAL:** `certbot certonly --nginx --cert-name 140d.art --expand -d 140d.art -d www.140d.art -d api.140d.art -d analytics.140d.art`, then reload
-- [ ] 6.10 **MANUAL:** confirm the dashboard loads at `https://analytics.140d.art` and **holds** its WebSocket (a reconnect loop means NPM's Websockets Support is off)
+- [x] 6.6 **MANUAL:** replace `CAMBIAR-POR-TU-HOST.asuscomm.com` in `deploy/nginx/140d.art.conf` with the router's real DDNS hostname
+- [x] 6.7 **MANUAL:** Route53 — `analytics.140d.art` from `CNAME → <ddns>` to `A → <EC2 elastic IP>`; wait for propagation
+- [x] 6.8 **MANUAL:** install the config on the instance and reload (`nginx -t` first). A certificate-name warning at this point is expected and lasts until 6.9
+- [x] 6.9 **MANUAL:** `certbot certonly --nginx --cert-name 140d.art --expand -d 140d.art -d www.140d.art -d api.140d.art -d analytics.140d.art`, then reload
+- [x] 6.10 **MANUAL:** confirm the dashboard loads at `https://analytics.140d.art` and **holds** its WebSocket (a reconnect loop means NPM's Websockets Support is off)
