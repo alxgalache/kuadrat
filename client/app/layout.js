@@ -1,5 +1,6 @@
 import './globals.css'
 // import ShippingBanner from '@/components/ShippingBanner'
+import Script from 'next/script'
 import JsonLd from '@/components/JsonLd'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { CartProvider } from '@/contexts/CartContext'
@@ -15,6 +16,7 @@ import TestAccessGate from '@/components/TestAccessGate'
 import LayoutWrapper from '@/components/LayoutWrapper'
 import MetaPixel from '@/components/MetaPixel'
 import { CONSENT_BOOTSTRAP_SCRIPT } from '@/lib/cookieConsent'
+import { IS_PROD } from '@/lib/env'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
@@ -178,6 +180,46 @@ export default function RootLayout({ children }) {
             </BannerNotificationProvider>
           </NotificationProvider>
         </CookieConsentProvider>
+        {/* Plausible Analytics — solo en producción (IS_PROD, ver lib/env.js).
+
+            La instancia es AUTOALOJADA en analytics.140d.art: los datos de
+            visita no se ceden a un tercero. Por eso la política de cookies la
+            declara aparte del píxel de Meta y no bajo el mismo consentimiento.
+
+            NO va detrás del banner, a propósito. El tracker no escribe cookie
+            ni identificador persistente en el equipo del visitante, así que
+            queda fuera del art. 22.2 LSSI. Condicionarlo a `adsAllowed`
+            descartaría a todo el que elige «Solo las necesarias», que es
+            exactamente el coste que se evita usando analítica sin cookies.
+
+            El id `pa-…` lo emite NUESTRA instancia para el sitio 140d.art y va
+            literal a propósito: es un valor de tiempo de compilación, así que
+            una variable NEXT_PUBLIC_* exigiría la misma reconstrucción del
+            cliente sin aportar ninguna flexibilidad —solo cuatro sitios más
+            que mantener sincronizados—. Contrapartida: si la instancia se
+            recrea desde cero, el id cambia y este <script> pasa a dar 404 sin
+            ningún error visible. */}
+        {IS_PROD && (
+          <>
+            {/* Stub de cola asíncrona: permite llamar a window.plausible()
+                antes de que el script externo cargue. No hace falta para los
+                pageviews —el propio script los emite—, pero sin él cualquier
+                evento personalizado disparado en esa ventana se pierde de
+                forma intermitente: un fallo que depende de la latencia y que
+                por tanto no se reproduce en local. */}
+            <Script
+              id="plausible-init"
+              strategy="beforeInteractive"
+              dangerouslySetInnerHTML={{
+                __html: `window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()`,
+              }}
+            />
+            <Script
+              strategy="afterInteractive"
+              src="https://analytics.140d.art/js/pa-JOgfdmGauUrT5eiOHnIDj.js"
+            />
+          </>
+        )}
       </body>
     </html>
   )

@@ -102,6 +102,13 @@ const nextConfig = {
       // en la consola del navegador.
       'https://connect.facebook.net',
       'https://www.facebook.com',
+      // Plausible autoalojado. Hacen falta LAS DOS directivas y ninguna basta
+      // sola: script-src permite descargar el tracker, y este connect-src
+      // permite el POST de cada evento a /api/event en el mismo origen. Sin
+      // esta línea el script carga, se ejecuta, y NO registra ni un evento —
+      // la única evidencia queda en la consola del visitante. Mismo fallo que
+      // documenta el comentario del píxel de Meta aquí arriba.
+      'https://analytics.140d.art',
     ].join(' ');
 
     const csp = [
@@ -112,7 +119,7 @@ const nextConfig = {
       // virtual background extension compiles a base64-embedded WASM module at
       // runtime. Replacing it with a stricter directive requires keeping at least
       // 'wasm-unsafe-eval' or camera background effects stop working.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com https://connect.facebook.net",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://maps.googleapis.com https://*.revolut.com https://js.stripe.com https://challenges.cloudflare.com https://connect.facebook.net https://analytics.140d.art",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `img-src 'self' data: https: http: blob: ${apiOrigin}${cdnOrigin ? ' ' + cdnOrigin : ''}`,
       // *.netless.link serves the whiteboard fonts (convertcdn.netless.link/fonts)

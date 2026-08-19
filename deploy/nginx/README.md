@@ -29,12 +29,12 @@ sigue apuntando bien.
 `140d.art.conf` no es genérico. Reproduce decisiones de la instalación real que
 romperían cosas si se «normalizaran»:
 
-- **Un solo fichero con los cinco bloques** (sitio, API, www, y los tres
-  redirectores del puerto 80), porque eso es lo que hay y lo que apunta el
-  symlink. No existe `sites-available/api.140d.art`.
+- **Un solo fichero con los seis bloques** (sitio, API, www, analytics, y los
+  cuatro redirectores del puerto 80), porque eso es lo que hay y lo que apunta
+  el symlink. No existe `sites-available/api.140d.art`.
 - **Un único certificado multi-SAN** en `/etc/letsencrypt/live/140d.art/` para
-  los tres nombres. No existe `live/api.140d.art/`: referenciarlo impide
-  arrancar nginx.
+  los cuatro nombres. No existe `live/api.140d.art/` ni
+  `live/analytics.140d.art/`: referenciarlos impide arrancar nginx.
 - **`client_max_body_size 550M` y timeouts de 600 s en la API.** La subida de
   vídeo de eventos acepta 500 MB en multer
   (`api/routes/admin/eventRoutes.js`). Bajarlos rompe esa subida con un 413 a
@@ -53,6 +53,117 @@ romperían cosas si se «normalizaran»:
   ambas. Validado con `nginx -t` sobre 1.24 (limpio) y 1.27 (correcto, con un
   aviso de obsolescencia). Si algún día actualizas por encima de 1.25.1 y
   quieres quitar el aviso, cambia los `listen ... http2` por `http2 on;`.
+
+## `analytics.140d.art` — por qué la analítica pasa por esta instancia
+
+Plausible **no corre aquí**: corre en el Mac mini M1, bajo OrbStack, detrás de
+Nginx Proxy Manager. Este bloque es un proxy hacia allí, y existe por una razón
+que no se deduce leyendo la configuración.
+
+En macOS, la publicación de puertos de OrbStack (igual que la de Docker Desktop)
+entra por un proxy en espacio de usuario que **sustituye la IP de origen** por
+la puerta de enlace de la red Docker. Medido: toda petición llegaba a NPM como
+`192.168.97.1`, incluidas las lanzadas desde el EC2. No es un ajuste mal puesto
+—`network_mode: host` tampoco lo evita, [orbstack#1727]— y ninguna configuración
+de NPM puede recuperar una IP que nunca le llega.
+
+Consecuencia si no se hiciera este salto: Plausible identifica visitantes únicos
+con `hash(sal_diaria, IP, User-Agent, dominio)`. Con la IP constante, **los
+visitantes quedarían deduplicados sólo por User-Agent** —dos personas con el
+mismo Chrome son una— y la geolocalización sería siempre vacía. No serían datos
+imprecisos: serían datos falsos.
+
+Aquí nginx corre sobre Linux y sí ve la IP real. La escribe en
+`X-Forwarded-For`, y Plausible toma el valor **de más a la izquierda**
+(`lib/plausible_web/remote_ip.ex`, `List.first`), así que la que añade OrbStack
+después queda detrás y es inofensiva.
+
+**Un solo nombre para el panel y para la ingesta, y no es opcional.** El
+endpoint viaja cocido dentro del script generado como `BASE_URL/api/event`, y
+`BASE_URL` gobierna además dónde vive el dashboard y la comprobación CSWSH de
+los WebSockets. Separarlos en dos subdominios dejaría el panel cargando páginas
+pero con el LiveView rechazado por origen: reconexión infinita.
+
+**Los timeouts están separados por ruta a propósito.** `/api/event` usa 5 s
+(el beacon es dispara-y-olvida, pero una conexión colgada consume recursos en
+la instancia que sirve la galería); `/live/websocket` usa 3600 s, porque con los
+5 s del beacon el WebSocket del panel moriría cada cinco segundos.
+
+`$remote_addr` y **no** `$proxy_add_x_forwarded_for`: el segundo antepone lo que
+mande el cliente y, como Plausible coge el primer valor sin verificar nada,
+cualquier visitante podría declarar su país. Comprobado antes de arreglarlo: un
+`curl` con `X-Forwarded-For: 1.1.1.1` se registró como Australia.
+
+[orbstack#1727]: https://github.com/orbstack/orbstack/issues/1727
+
+### Puesta en marcha (una sola vez, en este orden)
+
+El orden importa: certbot necesita que el nombre resuelva a esta instancia y que
+exista un bloque en el puerto 80 antes de poder emitir.
+
+```bash
+# 1. Route53: analytics.140d.art  →  A  →  <IP elástica del EC2>
+#    (sustituye al CNAME que apuntaba al DDNS del router)
+#    Espera a que propague:
+dig +short analytics.140d.art
+
+# 2. ⚠️ EDITA el placeholder del DDNS en deploy/nginx/140d.art.conf
+#    set $plausible_casa https://CAMBIAR-POR-TU-HOST.asuscomm.com;
+
+# 3. Instala la configuración y valida
+sudo cp deploy/nginx/140d.art.conf /etc/nginx/sites-available/140d.art
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+En este punto `analytics.140d.art` responde con el certificado de `140d.art`,
+que todavía **no** lleva ese SAN: el navegador avisará de nombre incorrecto.
+Es esperado y dura lo que tardes en el paso siguiente.
+
+```bash
+# 4. Amplía el certificado EXISTENTE. --cert-name mantiene la misma lineage,
+#    así que la ruta /etc/letsencrypt/live/140d.art/ NO cambia y la
+#    configuración no hay que tocarla.
+sudo certbot certonly --nginx --cert-name 140d.art --expand \
+  -d 140d.art -d www.140d.art -d api.140d.art -d analytics.140d.art
+
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+```bash
+# 5. Verificación de extremo a extremo
+curl -sI https://analytics.140d.art/ -o /dev/null -w '%{http_code} %{ssl_verify_result}\n'
+# El panel debe cargar y MANTENER el WebSocket (si reconecta en bucle,
+# revisa que Websockets Support siga activo en el Proxy Host de NPM).
+```
+
+Y la comprobación que da sentido a todo el bloque — desde una IP pública,
+**sin** inyectar ninguna cabecera:
+
+```bash
+curl -sS -X POST https://analytics.140d.art/api/event \
+  -H 'Content-Type: application/json' \
+  -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' \
+  -d '{"name":"pageview","url":"https://140d.art/verificacion","domain":"140d.art"}'
+```
+
+En el Mac mini, el país debe salir relleno:
+
+```bash
+docker compose exec plausible_events_db clickhouse-client --query \
+  "SELECT pathname, country_code FROM plausible_events_db.events_v2
+    ORDER BY timestamp DESC LIMIT 3 FORMAT Vertical"
+```
+
+`country_code` vacío significa que la cadena sigue rota; **no despliegues el
+tracker hasta que salga relleno**, porque los datos recogidos así no se pueden
+reconstruir: la IP no se almacena, se convierte en un hash con la sal del día.
+
+### Endurecimiento opcional
+
+Con el DNS ya apuntando al EC2, nada más necesita alcanzar el 443 de tu casa
+desde internet. Restringir ese reenvío del router a la IP elástica del EC2
+reduce la superficie a un solo origen. Ojo: si esa IP cambiara, la analítica
+deja de funcionar sin más aviso que un 502 en `kuadrat-analytics.access.log`.
 
 ## Instalación
 

@@ -48,9 +48,13 @@ export default function CookiePolicyPage() {
                 correctamente.
               </li>
               <li>
-                <strong>Cookies de rendimiento y análisis:</strong> Nos permiten contar las visitas y fuentes de tráfico
-                para poder medir y mejorar el rendimiento de nuestro sitio. Nos ayudan a saber qué páginas son las más
-                y menos populares y ver cómo se mueven los visitantes por el sitio.
+                <strong>Medición de audiencia (sin cookies):</strong> Contamos las visitas y las fuentes de tráfico para
+                saber qué obras despiertan más interés y mejorar el sitio, pero <strong>no utilizamos cookies
+                anal&iacute;ticas</strong>. La medici&oacute;n la realiza Plausible Analytics, una herramienta
+                autoalojada en nuestra propia infraestructura que no instala cookies ni identificadores persistentes en
+                tu dispositivo. Al no almacenar ni acceder a informaci&oacute;n de tu equipo, queda fuera del
+                &aacute;mbito del art&iacute;culo 22.2 de la LSSI y no requiere tu consentimiento previo, lo que no nos
+                exime de inform&aacute;rtelo.
               </li>
               <li>
                 <strong>Cookies de funcionalidad:</strong> Permiten que el sitio web recuerde las elecciones que realizas
@@ -100,6 +104,14 @@ export default function CookiePolicyPage() {
               completas para atribuirlas a nuestras campañas. Puedes consultar cómo trata Meta estos datos en su
               política de datos y revocar tu consentimiento en cualquier momento desde el enlace
               &laquo;Configurar cookies&raquo; del pie de página.
+            </p>
+            <p className="mt-3">
+              <strong>Plausible Analytics es un caso distinto y no depende de tu consentimiento.</strong> A diferencia
+              del p&iacute;xel de Meta, la instancia que usamos para medir audiencia est&aacute; <strong>autoalojada en
+              infraestructura propia</strong>: los datos de visita no se ceden a ning&uacute;n tercero ni salen de
+              nuestros sistemas. Adem&aacute;s <strong>no instala cookies ni identificadores persistentes</strong> en tu
+              dispositivo, por lo que no le resulta aplicable el art&iacute;culo 22.2 de la LSSI. No recogemos ni
+              almacenamos tu direcci&oacute;n IP de forma identificable.
             </p>
             <p className="mt-3">
               No tenemos control sobre las cookies de terceros. Te recomendamos consultar las políticas de privacidad
