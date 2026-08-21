@@ -11,14 +11,40 @@ import { DEFAULT_PAGE_SIZE, GRID_RESTORE_MAX_PAGES } from '@/lib/constants'
  * huecos ni solapes. Sin instantánea el comportamiento es exactamente el de
  * siempre: primera página y parte superior.
  */
-export function useGalleryProducts(productAPI, authorSlug = null, restoration = null) {
-  const [products, setProducts] = useState([])
-  const [loading, setLoading] = useState(true)
+export function useGalleryProducts(
+  productAPI,
+  authorSlug = null,
+  restoration = null,
+  initialProducts = null,
+) {
+  // `initialProducts` lo resuelve el componente de servidor. Sirve para UNA
+  // cosa concreta y medible: que los enlaces `<a href>` a cada obra existan en
+  // el HTML servido.
+  //
+  // Antes de esto, NINGUNA página del sitio servía un solo enlace a una ficha
+  // de obra sin JavaScript —comprobado en producción sobre /, /galeria,
+  // /galeria/artistas, /tienda y las fichas de artista: cero en todas—. Las
+  // obras estaban en el sitemap, pero huérfanas de enlaces internos: un
+  // rastreador que no ejecuta JavaScript podía recorrer el sitio entero sin
+  // llegar jamás a una obra.
+  //
+  // Sembrar aquí NO cambia el comportamiento tras montar: el efecto de montaje
+  // sigue llamando a `loadProducts(true)` igual que siempre, así que el scroll
+  // infinito y la restauración de posición funcionan exactamente como antes.
+  // Lo único que cambia es lo que hay en el HTML antes de que el navegador
+  // ejecute nada.
+  const sembrado = Array.isArray(initialProducts) && initialProducts.length > 0
+
+  const [products, setProducts] = useState(sembrado ? initialProducts : [])
+  const [loading, setLoading] = useState(!sembrado)
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [isFading, setIsFading] = useState(true)
+  // Con datos sembrados el grid arranca visible. Dejarlo a opacidad 0 habría
+  // sustituido el «Cargando...» por un hueco en blanco hasta el fundido, que
+  // para el visitante es peor que lo que hay hoy.
+  const [isFading, setIsFading] = useState(!sembrado)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [pendingRestore, setPendingRestore] = useState(false)
 

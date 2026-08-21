@@ -11,7 +11,7 @@ import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
 import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
 
-export default function GalleryAuthorContent({ params }) {
+export default function GalleryAuthorContent({ params, initialProducts = null }) {
   const router = useRouter()
   const resolvedParams = use(params)
   const authorSlug = resolvedParams.authorSlug
@@ -23,7 +23,7 @@ export default function GalleryAuthorContent({ params }) {
   // disponible en el efecto de montaje del listado.
   const restoration = useGridScrollRestoration()
   const { authors } = useGalleryAuthors('art', authorSlug)
-  const { products, loading, error, page, isFading } = useGalleryProducts(artAPI, authorSlug, restoration)
+  const { products, loading, error, page, isFading } = useGalleryProducts(artAPI, authorSlug, restoration, initialProducts)
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)

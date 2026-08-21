@@ -129,7 +129,16 @@ export function buildOrganization() {
     // no existe es la clase de dato que un asistente repite a un comprador.
     areaServed: { '@type': 'Country', name: 'España' },
     knowsAbout: SITE.knowsAbout,
-    inLanguage: SITE.language,
+    // SIN `inLanguage`. schema.org la define sobre CreativeWork y sobre Event,
+    // no sobre Organization — y ArtGallery y OnlineStore son subtipos de
+    // Organization. El validador lo señalaba en TODAS las páginas, porque este
+    // nodo va en el layout raíz.
+    //
+    // No se pierde nada al quitarla: el idioma ya se declara donde sí
+    // corresponde — en `<html lang="es">`, en `WebSite.inLanguage`, en cada
+    // nodo CreativeWork (VisualArtwork, Article, FAQPage, AboutPage) y, para el
+    // canal de contacto, en `availableLanguage` de aquí debajo, que sí es una
+    // propiedad válida de ContactPoint.
     contactPoint: {
       '@type': 'ContactPoint',
       email: SITE.email,

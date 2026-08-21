@@ -115,7 +115,11 @@ export default async function GalleryMasAuthorPage({ params }) {
           previsto para eso: el nodo Person de datos estructurados, unas líneas
           más abajo. */}
       <h1 className="sr-only">{author.full_name}</h1>
-      <GalleryMasAuthorContent params={params} />
+      {/* Las mismas obras que alimentan el ItemList de arriba: no se pide
+          nada nuevo a la API. Al sembrarlas, sus enlaces `<a href>` pasan a
+          existir en el HTML servido, que es lo que permite a un rastreador
+          sin JavaScript llegar desde el artista hasta cada obra. */}
+      <GalleryMasAuthorContent params={params} initialProducts={products} />
     </>
   )
 }

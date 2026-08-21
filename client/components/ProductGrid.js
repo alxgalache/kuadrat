@@ -6,7 +6,23 @@ import Link from 'next/link'
 import { PlusIcon } from '@heroicons/react/20/solid'
 import { authorsAPI } from '@/lib/api'
 
-function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen, onAuthorClick }) {
+// Cuántas imágenes de la rejilla se marcan como prioritarias.
+//
+// Cuatro, que es exactamente una fila en escritorio (`lg:grid-cols-4`) y dos en
+// móvil (`grid-cols-2`): lo que cabe sobre la línea de flotación. `priority`
+// no es «cargar más rápido», es «adelantar ESTAS a costa del resto»: añade un
+// <link rel="preload"> y pone fetchpriority="high", así que marcar de más
+// reparte el ancho de banda entre imágenes que nadie está mirando y retrasa
+// justo la que mide el LCP. Next avisa cuando se abusa.
+//
+// Por qué hacía falta: desde que la ficha de artista sirve su rejilla ya
+// renderizada, la primera imagen es el elemento que marca el LCP y llegaba con
+// `loading="lazy"`. En /galeria y /tienda la rejilla la sigue pintando el
+// navegador —`useSearchParams()` las saca a cliente al prerenderizar—, así que
+// allí esto no añade un preload al HTML, pero tampoco estorba.
+const IMAGENES_PRIORITARIAS = 4
+
+function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen, onAuthorClick, priority = false }) {
   const [displayedBasename, setDisplayedBasename] = useState(null)
   const mainBasename = displayedBasename ?? product.thumbnail_basename ?? product.images?.[0]?.basename ?? null
   const detailHref = `${baseRoute}/p/${product.slug}`
@@ -35,6 +51,7 @@ function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen, onAut
                 fill
                 className="object-cover [@media(hover:hover)]:group-hover:opacity-75"
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                priority={priority}
               />
             )}
           </Link>
@@ -145,7 +162,7 @@ export default function ProductGrid({
           role="list"
           className="px-6 grid grid-cols-2 gap-4 sm:px-6 sm:gap-8 lg:px-0 lg:grid-cols-4"
         >
-          {products.map((product) => (
+          {products.map((product, i) => (
             <ProductGridItem
               key={product.id}
               product={product}
@@ -153,6 +170,7 @@ export default function ProductGrid({
               baseRoute={baseRoute}
               onProductOpen={onProductOpen}
               onAuthorClick={onViewAuthorBio ? handleAuthorClick : null}
+              priority={i < IMAGENES_PRIORITARIAS}
             />
           ))}
         </ul>

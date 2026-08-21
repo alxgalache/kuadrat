@@ -7,6 +7,16 @@ Uso:
     python3 scripts/check-seo.py https://140d.art/galeria/p/mi-obra
     python3 scripts/check-seo.py http://localhost:3000            # local
 
+    python3 scripts/check-seo.py --texto https://140d.art/galeria/p/mi-obra
+
+`--texto` muestra la página TAL Y COMO LA LEE UN RASTREADOR QUE NO EJECUTA
+JAVASCRIPT (GPTBot, ClaudeBot, PerplexityBot, CCBot…): descarta los <script>,
+quita el marcado y deja el texto. Si ahí no aparece la descripción de la obra,
+no existe para esos rastreadores por muy bien que se vea en el navegador.
+Imprime además las descripciones que viajan en los datos estructurados, que es
+donde va la biografía del artista —su ficha no la muestra en pantalla a
+propósito—.
+
 Sin segunda URL recorre el conjunto de rutas públicas de referencia. Con una
 ruta concreta, comprueba sólo esa.
 
@@ -69,6 +79,64 @@ TIPOS_RUIDO = {
     "ListItem", "Question", "Answer", "Offer", "QuantitativeValue",
     "ContactPoint", "PostalAddress", "Place", "Country",
 }
+
+
+# User-Agent de un rastreador que no ejecuta JavaScript. Se declara de verdad
+# para que la petición sea la misma que hace él, no una imitación a medias.
+UA_RASTREADOR = "Mozilla/5.0 (compatible; GPTBot/1.0; +https://openai.com/gptbot)"
+
+
+def texto_visible(html):
+    """El texto que queda al descartar los <script> y <style> y quitar el
+    marcado. Es, literalmente, lo que puede leer un rastreador sin JavaScript."""
+    sin = re.sub(r"<(script|style)\b.*?</\1>", " ", html, flags=re.S | re.I)
+    sin = re.sub(r"<!--.*?-->", " ", sin, flags=re.S)
+    plano = re.sub(r"<[^>]+>", " ", sin)
+    import html as _html
+    return re.sub(r"\s+", " ", _html.unescape(plano)).strip()
+
+
+def modo_texto(url):
+    req = urllib.request.Request(url, headers={"User-Agent": UA_RASTREADOR})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        pagina = r.read().decode("utf-8", "replace")
+
+    cuerpo = re.sub(r"<script.*?</script>", "", pagina, flags=re.S)
+    h1 = re.findall(r"<h1[^>]*>(.*?)</h1>", cuerpo, re.S)
+    texto = texto_visible(pagina)
+
+    print(f"\n{url}")
+    print(f"  (petición hecha como {UA_RASTREADOR.split(';')[1].strip()})\n")
+    print("  <h1>:", [re.sub(r"<[^>]+>", "", x).strip() for x in h1] or "NINGUNO")
+
+    # «Cargando...» no siempre es un fallo: significa que ESA parte de la página
+    # la pinta el navegador. En la ficha de obra sería un fallo —su texto tiene
+    # que estar servido—; en la ficha de artista es lo esperado, porque su
+    # rejilla de obras sigue siendo cliente a propósito (tiene scroll infinito y
+    # restauración de posición) y la biografía viaja en los datos estructurados.
+    if "Cargando..." in texto:
+        print("  «Cargando...»: presente — parte de la página la pinta el navegador")
+    else:
+        print("  «Cargando...»: no aparece")
+
+    enlaces = len(set(re.findall(r'href="(/galeria/p/[^"]+|/tienda/p/[^"]+)"', cuerpo)))
+    print(f"  enlaces a fichas de producto en el HTML: {enlaces}")
+    print(f"  caracteres de texto legible: {len(texto)}")
+    print("\n  --- texto que lee el rastreador ---")
+    print("  " + (texto[:900] + ("…" if len(texto) > 900 else "")))
+
+    datos, _ = bloques_jsonld(pagina)
+    descripciones = []
+    for d in datos:
+        tipo = d.get("@type")
+        tipo = "+".join(tipo) if isinstance(tipo, list) else tipo
+        if d.get("description") and tipo not in ("OnlineStore+ArtGallery", "WebSite"):
+            descripciones.append((tipo, d["description"]))
+    if descripciones:
+        print("\n  --- descripciones en datos estructurados ---")
+        for tipo, desc in descripciones:
+            print(f"  [{tipo}] {desc[:400]}{'…' if len(desc) > 400 else ''}")
+
 
 
 def descargar(url):
@@ -161,6 +229,14 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
+
+    if sys.argv[1] == "--texto":
+        if len(sys.argv) < 3:
+            print("Uso: check-seo.py --texto <url>")
+            sys.exit(1)
+        for u in sys.argv[2:]:
+            modo_texto(u)
+        sys.exit(0)
 
     base = sys.argv[1].rstrip("/")
     if len(sys.argv) > 2:

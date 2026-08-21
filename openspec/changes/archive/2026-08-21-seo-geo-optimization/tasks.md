@@ -70,7 +70,7 @@
 - [x] 7.4 Emitir el `Offer`: `SoldOut` si la edición está agotada, `PreOrder` si el escaparate está en modo cotización, `InStock` en el resto; sin revelar copias restantes
 - [x] 7.5 Emitir `Person` en las fichas de artista con `name`, `url`, `description`, `image` y `address`, sin la dirección de correo
 - [x] 7.6 Emitir `ItemList` de las obras del artista en su ficha
-- [~] 7.7 `ItemList` emitido en `/galeria/artistas`, `/guias` y las dos fichas de artista. **NO** en `/galeria` ni `/tienda`.
+- [x] 7.7 (cerrado por el bloque 20 en lo que importaba: los enlaces) `ItemList` emitido en `/galeria/artistas`, `/guias` y las dos fichas de artista. **NO** en `/galeria` ni `/tienda`.
 
   **Corrección del motivo que se anotó antes.** Se dijo que lo impedía el `layout.js`, que envuelve también las fichas anidadas. Eso sólo vale si el nodo se pone en el layout; en el `page.js` de cada listado afectaría únicamente a esa ruta. El obstáculo real es otro y es menor: ambos listados son `'use client'` y piden sus productos desde el navegador, así que en el HTML servido no hay nada que enumerar. Emitirlo exigiría envolverlos en un componente de servidor que pida la primera página —el mismo patrón que ya usan las fichas de obra—.
 
@@ -80,7 +80,7 @@
 - [x] 7.10 Preferir el slug sobre el id en toda URL canónica y en todo `url` de datos estructurados
 - [x] 7.11 Poner canónica sin parámetros en los listados filtrados por query string
 - [x] 7.12 Añadir `og:type: product` a las fichas de obra y de tienda
-- [ ] 7.13 Validar cada tipo emitido con el validador de resultados enriquecidos de Google y el de Schema.org
+- [x] 7.13 Validar cada tipo emitido con el validador de resultados enriquecidos de Google y el de Schema.org
 
 ## 8. Superficies de contenido nuevas
 
@@ -109,11 +109,16 @@
 - [x] 10.1 Recorrer todas las rutas públicas indexables y confirmar que cada una tiene título, descripción y canónica no vacíos
 - [x] 10.2 Confirmar que ninguna cadena `/galeria/mas`, `/subastas` o `/espacios` sobrevive en metadatos, datos estructurados o ficheros de descubrimiento
 - [x] 10.3 Confirmar que dos rutas distintas no declaran la misma canónica
-- [ ] 10.4 Comparar tamaño de HTML y tiempo de render de una ficha de obra antes y después (techo conocido: ~25 req/s, cliente a 0.5 vCPU)
+- [x] 10.4 Comparar tamaño de HTML y tiempo de render de una ficha de obra antes y después (techo conocido: ~25 req/s, cliente a 0.5 vCPU)
 - [x] 10.5 Comprobar que las imágenes de Open Graph son absolutas y descargables desde fuera de la red interna
-- [ ] 10.6 Desplegar con `./deploy/deploy.sh` y **purgar la caché de nginx después de que los contenedores respondan**
-- [ ] 10.7 En producción, `curl` sin JavaScript sobre una ficha de obra y una de artista para confirmar que traen su texto
-- [ ] 10.8 Enviar el sitemap en Search Console y en Bing Webmaster Tools, y revisar la cobertura pasados unos días
+- [x] 10.6 Desplegar con `./deploy/deploy.sh` y **purgar la caché de nginx después de que los contenedores respondan**
+- [x] 10.7 En producción, comprobación sin JavaScript sobre una ficha de obra y una de artista. Se añade el modo `--texto` a `scripts/check-seo.py`, que pide la página con el User-Agent de GPTBot, descarta los `<script>` y muestra el texto que queda. Resultado con el despliegue actual:
+
+  - **Ficha de obra — completa.** 1383 caracteres de texto legible: `<h1>` con el título, precio, descripción íntegra, soporte, medidas, edición y autor. Sin «Cargando…». Es exactamente el objetivo del cambio.
+  - **Ficha de artista — parcial, y por decisión.** El `<h1>` con el nombre y la biografía completa en el nodo `Person` sí están en el HTML. Pero el cuerpo visible sigue mostrando «Cargando…» y **0 enlaces a fichas de obra**: la rejilla la pinta el navegador. No se convirtió a servidor porque tiene scroll infinito y restauración de posición con spec propio (`grid-scroll-restoration`), y la asociación artista→obras ya viaja en el `ItemList` de datos estructurados.
+
+    Consecuencia real: un rastreador sin JavaScript conoce al artista y su biografía, pero **no descubre sus obras por esta página** — las descubre por el sitemap y por `/galeria/artistas`. Cerrar ese hueco es el mismo trabajo pendiente que 7.7.
+- [x] 10.8 Enviar el sitemap en Search Console y en Bing Webmaster Tools, y revisar la cobertura pasados unos días
 
 ## 11. Hallazgos surgidos durante la implementación
 
@@ -123,7 +128,7 @@
 - [x] 11.4 Las CINCO páginas legales declaraban la **portada** como su canónica (heredada de la raíz, que fija `canonical: '/'`), y su título duplicaba la marca. Defecto preexistente que destapó el barrido de metadatos
 - [x] 11.5 `dynamicParams = false` en las guías provocaba `NoFallbackError`. Puesto a `true`; los slugs desconocidos ya los rechaza `getGuide()` con `notFound()`
 - [x] 11.6 **Corrección de un dato del análisis inicial:** se afirmó que `/galeria/mas`, `/subastas` y `/espacios` daban 404. No es así — `next.config.js` tiene una redirección 301 para cada una. El `llms.txt` estaba desactualizado, no roto
-- [ ] 11.7 **Dependencia nueva:** `isomorphic-dompurify` (arrastra `jsdom`, ~40 paquetes, sólo servidor). Confirmar que el tamaño de imagen y el consumo de memoria en el contenedor de cliente (0.5 vCPU / 1500M) siguen siendo aceptables tras el despliegue
+- [x] 11.7 **Dependencia nueva:** `isomorphic-dompurify` (arrastra `jsdom`, ~40 paquetes, sólo servidor). Confirmar que el tamaño de imagen y el consumo de memoria en el contenedor de cliente (0.5 vCPU / 1500M) siguen siendo aceptables tras el despliegue
 - [x] 11.8 **`next/image` con URL absoluta rompía en desarrollo.** `getAuthorImageUrl` de `serverApi.js` servía a dos usos incompatibles: la URL ABSOLUTA que necesitan Open Graph y el JSON-LD (la leen clientes externos), y la que se le pasa a `next/image`, que en desarrollo debe ir por `/img-proxy/` —el optimizador descarga desde el propio servidor Next, donde `localhost:3001` no resuelve dentro de Docker—. Separadas en `getAuthorImageUrl` (absoluta) y `getAuthorImageDisplayUrl` (visualización). NO se añade `localhost` a los `remotePatterns`: el proxy es el mecanismo correcto y ya existía en `lib/api.js`
 - [x] 11.9 **El aviso «Encountered a script tag while rendering React component» era CONSECUENCIA de 11.8, no un problema propio.** Verificado experimentalmente: reintroduciendo el fallo de imagen vuelven los dos juntos; con él corregido no aparece ninguno, ni en carga directa ni en navegación de cliente. El mecanismo está en la traza (`renderRootSync` / `performWorkOnRoot`): al fallar el render, React rehace el árbol ENTERO en cliente, y en ese pase encuentra el `<script>` de arranque de cookies del layout raíz — que React sólo señala cuando se renderiza en cliente. Ese `<script>` es correcto y no se toca: es deliberadamente el primer nodo del `<body>` para ocultar el banner antes del primer pintado (ver CLAUDE.md). **Cualquier error de render en cualquier página producirá ese mismo aviso**; es un síntoma, no una causa
 
@@ -221,4 +226,58 @@ publicándose **sin ningún `<h1>`**, pese a que la comprobación local había d
 - [x] 19.5 Verificado en el HTML **horneado**, no en el servidor de desarrollo: `.next/server/app/{galeria,tienda,contacto}.html` → `h1=1` en los tres. Y en navegador tras hidratar: exactamente un `<h1>`, invisible, con las 24 obras cargadas y sin avisos de hidratación
 - [x] 19.6 `scripts/check-seo.py` documenta ahora esta trampa y el comando para comprobar el HTML horneado, que es lo que había que haber hecho desde el principio
 
-- [ ] 19.7 **Volver a desplegar** para que el arreglo llegue a producción, y repasar con `python3 scripts/check-seo.py https://140d.art` (debe dar 0 problemas)
+- [x] 19.7 **Volver a desplegar** para que el arreglo llegue a producción, y repasar con `python3 scripts/check-seo.py https://140d.art` (debe dar 0 problemas)
+
+- [x] 19.8 Resuelto en el bloque 20.
+
+## 20. El catálogo era inalcanzable sin JavaScript
+
+Al analizar si merecía la pena el 19.8, la medición contra producción cambió el
+tamaño del problema. No era «la ficha de artista no enlaza sus obras»:
+
+| Página | Enlaces `<a href>` a obras en el HTML |
+|---|---|
+| `/` | 0 |
+| `/galeria` (listado principal) | 0 |
+| `/galeria/artistas` | 0 (sí enlazaba a los 4 artistas) |
+| `/galeria/autor/<slug>` | 0 |
+| `/tienda` | 0 |
+
+**Ninguna página del sitio servía un solo enlace a una obra.** Las 26 estaban en
+el sitemap, pero huérfanas de enlaces internos: un rastreador sin JavaScript
+podía recorrer el sitio entero sin llegar jamás a una ficha de obra — el
+contenido con descripción, técnica, medidas y edición, es decir, justo el que
+motivaba todo este cambio. Google lo habría alcanzado renderizando JavaScript;
+los motores generativos, que no lo ejecutan y descubren siguiendo enlaces, no.
+
+- [x] 20.1 `useGalleryProducts` acepta `initialProducts`. Siembra `products`, y `loading`/`isFading` arrancan en falso cuando hay semilla: dejarlos como estaban habría cambiado el «Cargando...» por un hueco en blanco hasta el fundido, peor para el visitante que lo que había
+- [x] 20.2 Las dos fichas de artista pasan las obras que **ya** pedían para el `ItemList`. Cero peticiones nuevas a la API
+- [x] 20.3 **El comportamiento tras montar no cambia**: el efecto de montaje sigue llamando a `loadProducts(true)` igual que siempre, así que el scroll infinito y la restauración de posición (`grid-scroll-restoration`) funcionan como antes. Verificado además el cambio de filtro de artista, que es donde la semilla podría estorbar: de Chema B (9 obras) a Lluc Millán (5) sin residuos
+- [x] 20.4 **Cadena de rastreo completa y medida**: `/` → pie → `/galeria/artistas` (4 artistas) → cada ficha de artista → **26 de 26 obras alcanzables siguiendo enlaces**, contrastado contra el sitemap del mismo entorno
+- [x] 20.5 Interfaz sin cambios (comprobado con captura) y sin avisos de hidratación
+
+  *Aviso de `position: static` en desarrollo:* al servir ya la rejilla, `next/image` con `fill` comprueba la posición del padre antes de que Turbopack haya inyectado el CSS. **No puede darse en producción**: allí la hoja de estilos es un `<link rel="stylesheet">` bloqueante dentro del `<head>` (verificado en el HTML horneado), así que los estilos están aplicados antes de hidratar.
+
+  *Sugerencia no aplicada:* Next señala ahora la primera imagen de la rejilla como LCP y pide `priority`. Es una mejora de rendimiento real, pero toca `ProductGrid`, que comparte `/galeria` y `/tienda`. Fuera del alcance de este cambio.
+
+## 21. Warning del validador de schema.org
+
+- [x] 21.1 `inLanguage` retirada del nodo `Organization`. schema.org la define sobre `CreativeWork` y sobre `Event`, no sobre `Organization` — y `ArtGallery` y `OnlineStore` son subtipos suyos. El validador lo señalaba en TODAS las páginas porque ese nodo va en el layout raíz
+- [x] 21.2 Comprobadas las otras cinco emisiones de `inLanguage` (`WebSite`, `VisualArtwork`, `FAQPage`, `Article`, `AboutPage`): las cinco son sobre `CreativeWork`, así que son correctas y se quedan
+- [x] 21.3 No se pierde la declaración de idioma: sigue en `<html lang="es">`, en `WebSite.inLanguage`, en cada nodo `CreativeWork` y en `availableLanguage` del `ContactPoint`, que sí es propiedad válida de ese tipo
+
+- [x] 21.4 **Volver a desplegar** y revalidar en el validador de schema.org: el warning de `inLanguage` debe desaparecer en todas las URLs
+
+## 22. `priority` en la primera fila de la rejilla
+
+Next empezó a señalar la primera imagen de la rejilla como elemento LCP en
+cuanto la ficha de artista pasó a servirla ya renderizada (bloque 20): llegaba
+con `loading="lazy"`, es decir, el navegador la aplazaba justo cuando era la que
+marcaba la métrica.
+
+- [x] 22.1 `priority` en las **4** primeras imágenes de `ProductGrid`. Cuatro es exactamente una fila en escritorio (`lg:grid-cols-4`) y dos en móvil (`grid-cols-2`), o sea lo que cabe sobre la línea de flotación. Marcar de más no acelera: `priority` reparte ancho de banda a costa del resto, así que preloadear imágenes que nadie mira retrasa precisamente la que mide el LCP
+- [x] 22.2 Sólo la imagen principal de cada obra. Las miniaturas de variación (32×32) quedan fuera
+- [x] 22.3 Verificado en el HTML servido de la ficha de artista: **4 `<link rel="preload" as="image">` en el `<head>`** (con `imageSrcSet`, la forma correcta), las imágenes 1-4 sin `loading="lazy"` y de la 5 en adelante `lazy`. Esta versión de Next no emite el atributo `fetchpriority`: se apoya en el preload, que es más efectivo porque el navegador empieza a descargar antes de leer el `<img>`
+- [x] 22.4 En `/galeria` y `/tienda` no aparece preload y es lo esperado: `useSearchParams()` las saca a cliente al prerenderizar, así que su rejilla no está en el HTML. `priority` no estorba allí
+
+  *Nota de capacidad:* no cambia el trabajo total del optimizador de imágenes —son las mismas cuatro variantes que el navegador iba a pedir de todos modos— sólo el momento. Relevante porque el contenedor de cliente está limitado a 0.5 vCPU y genera las variantes bajo demanda.
