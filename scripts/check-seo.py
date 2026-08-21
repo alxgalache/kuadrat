@@ -27,6 +27,18 @@ Qué mira, y por qué cada cosa:
 NO sustituye al validador de resultados enriquecidos de Google: eso comprueba
 que el schema cumpla los requisitos de cada tipo de resultado. Esto comprueba
 que lo que sale por el cable es lo que crees que sale.
+
+AVISO, y está aquí porque ya costó un despliegue: pasarlo contra `next dev` NO
+equivale a pasarlo contra producción. El servidor de desarrollo renderiza de
+otra forma que el prerenderizado estático. En las páginas con `useSearchParams()`
+—/galeria y /tienda— Next se sale a cliente al prerenderizar y hornea en el HTML
+el FALLBACK del Suspense, no el contenido: en desarrollo salía un <h1> que en el
+HTML estático no existía. Para comprobar de verdad lo que se va a publicar:
+
+    docker compose exec -e NODE_ENV=production client npm run build
+    docker compose exec client grep -c "<h1" .next/server/app/galeria.html
+
+o simplemente pasar este script contra el dominio ya desplegado.
 """
 
 import json

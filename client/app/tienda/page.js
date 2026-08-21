@@ -45,13 +45,6 @@ function GalleryMasPageContent() {
   if (loading && page === 1) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
-      {/* El <h1> también en esta rama, no sólo en la de contenido.
-          El listado carga sus productos en el cliente, así que el HTML que
-          sirve el servidor —y el único que ven los rastreadores que no ejecutan
-          JavaScript— es SIEMPRE esta pantalla de carga. El h1 existía más
-          abajo, pero nunca llegaba a salir: la página se publicaba sin ningún
-          encabezado. Invisible (`sr-only`), como el de /eventos. */}
-      <h1 className="sr-only">Tienda de los artistas</h1>
         <p className="text-gray-500">Cargando...</p>
       </div>
     )
@@ -89,7 +82,6 @@ function GalleryMasPageContent() {
 
   return (
     <div className="bg-white">
-      <h1 className="sr-only">Más Productos</h1>
       <AuthorMobileFilter
         authors={authors}
         selectedAuthorSlug={selectedAuthorSlug}
@@ -157,6 +149,20 @@ function GalleryMasPageContent() {
  */
 export default function GalleryMasPage() {
   return (
+    <>
+      {/* El <h1> vive AQUÍ, fuera del Suspense, y es el único de la página.
+          Estaba dentro, y por eso el HTML estático salía sin ningún encabezado
+          pese a que en `next dev` sí aparecía —una diferencia entre el servidor
+          de desarrollo y el prerenderizado que hizo pasar la comprobación local
+          y falló en producción—.
+          La causa: `useSearchParams()` obliga a esta página a salirse a cliente
+          durante el prerenderizado, así que lo que Next hornea en el HTML no es
+          el contenido ni su pantalla de carga, sino el FALLBACK de esta
+          frontera. Todo lo que esté dentro del Suspense es invisible para quien
+          no ejecute JavaScript.
+          Fuera de la frontera se renderiza siempre: en el HTML estático, en el
+          fallback y tras hidratar. Y al ser el único, no puede duplicarse. */}
+      <h1 className="sr-only">Tienda de los artistas</h1>
     <Suspense
       fallback={
         <div className="bg-white min-h-screen flex items-center justify-center">
@@ -165,6 +171,7 @@ export default function GalleryMasPage() {
       }
     >
       <GalleryMasPageContent />
-    </Suspense>
+      </Suspense>
+    </>
   )
 }

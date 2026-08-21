@@ -207,3 +207,18 @@ desordenada. Tres causas, no una:
 
 **`EventCountdown` NO se ha tocado**: lo comparte la ficha de evento
 (`/live/[slug]`), y modificarlo habría cambiado también esa pantalla.
+
+## 19. Corrección tras el despliegue: el `<h1>` de `/galeria` y `/tienda`
+
+`check-seo.py` contra producción encontró 2 problemas: ambos listados seguían
+publicándose **sin ningún `<h1>`**, pese a que la comprobación local había dado
+1. No era caché: el build de producción tampoco lo emitía.
+
+- [x] 19.1 **Causa.** `useSearchParams()` obliga a estas dos páginas a salirse a cliente durante el prerenderizado, así que lo que Next hornea en el HTML estático es el **fallback del `Suspense`**, no el contenido ni su pantalla de carga. El `<h1>` estaba DENTRO de la frontera —tanto el preexistente del render de contenido como el que se añadió en 12.5— y por tanto nunca llegaba al HTML servido
+- [x] 19.2 **Por qué la comprobación local no lo vio.** Se hizo contra `next dev`, que renderiza de otra forma que el prerenderizado estático: en desarrollo el `<h1>` sí aparecía. Comprobar SEO contra el servidor de desarrollo no equivale a comprobarlo contra lo que se publica
+- [x] 19.3 **Arreglo.** Un único `<h1 className="sr-only">` por página, **fuera** del `Suspense`. Fuera de la frontera se renderiza siempre: en el HTML estático, mientras se muestra el fallback y tras hidratar. Se retiran los dos que había dentro, así que no puede duplicarse
+- [x] 19.4 De paso, el `<h1>` de `/tienda` decía «Más Productos», nombre anterior al renombrado de rutas del spec `navigation-naming`. Ahora dice «Tienda de los artistas»
+- [x] 19.5 Verificado en el HTML **horneado**, no en el servidor de desarrollo: `.next/server/app/{galeria,tienda,contacto}.html` → `h1=1` en los tres. Y en navegador tras hidratar: exactamente un `<h1>`, invisible, con las 24 obras cargadas y sin avisos de hidratación
+- [x] 19.6 `scripts/check-seo.py` documenta ahora esta trampa y el comando para comprobar el HTML horneado, que es lo que había que haber hecho desde el principio
+
+- [ ] 19.7 **Volver a desplegar** para que el arreglo llegue a producción, y repasar con `python3 scripts/check-seo.py https://140d.art` (debe dar 0 problemas)
