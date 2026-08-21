@@ -59,6 +59,18 @@ export const metadata = {
   creator: '140d',
   publisher: '140d Galería de Arte',
 
+  // Declarar `icons` aquí ANULA la convención de fichero de Next para `icon` y
+  // `apple-icon` (app/icon*.*, app/apple-icon.*): esos ficheros dejan de emitir
+  // su <link> aunque sigan existiendo. Por eso se borraron; si algún día se
+  // quita este bloque, la convención se reactiva y cualquier app/icon* vuelve a
+  // ser el favicon real. `app/favicon.ico` es la excepción: Next lo emite
+  // siempre, así que /favicon.ico aparece dos veces en el <head>.
+  //
+  // Los tres iconos de pestaña son la pastilla redondeada con las esquinas a
+  // alfa 0. `apple-touch-icon` y los del manifest van aparte y deben seguir
+  // siendo cuadrados y opacos: iOS aplana la transparencia sobre negro y los
+  // `maskable` tienen que llenar el lienzo. Se regeneran desde el maestro
+  // public/brand/favicon-master-512.png — procedimiento en docs/favicon.md.
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
