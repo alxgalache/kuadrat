@@ -11,7 +11,9 @@
 - [x] 1.9 Añadir `export const metadata` a `client/app/page.js` con canónica `/` y descripción propia de la home
 - [x] 1.10 Añadir `robots: { index: false }` a las rutas transaccionales y con token: `pago-cancelado`, `pago-fallido`, `pedido-completado`, `order-confirmation`, `pedido/[token]`, `user-activation/[token]`, `restablecer-password/[token]`
 - [x] 1.11 Añadir `CDN_BASE_URL` a `client/.env.example` documentando que `lib/serverApi.js` la usa para las imágenes de Open Graph y JSON-LD, y su relación con `NEXT_PUBLIC_CDN_URL`
-- [x] 1.12 ~~Añadir `CDN_BASE_URL` a los compose~~ — NO hace falta: al no ser `NEXT_PUBLIC_*` se lee en runtime y ya llega por `env_file: ./client/.env`. Basta con documentarla (1.11) y que el operador la ponga en `client/.env`
+- [x] 1.12 ~~Añadir `CDN_BASE_URL` a los compose~~ — NO hace falta, y tampoco al `.env` de la raíz. Ese fichero sólo alimenta la interpolación de `${VAR}` en los `build.args`, donde únicamente entran variables de tiempo de compilación; por eso `NEXT_PUBLIC_CDN_URL` sí está en la raíz y ésta no.
+
+  **Pero cada entorno lee un fichero de runtime distinto**, y eso no estaba dicho en ninguna parte: producción `client/.env` (prod), preproducción y M1 `client/.env.staging` (pre2 y m1), local `client/.env.local`. `client/.env.example` es una plantilla que **ningún compose lee**, así que documentarla ahí no la activa: hay que copiar la línea al fichero real de cada máquina. Recogido ya en el propio `.env.example`
 
 ## 2. Sitemap completo
 
