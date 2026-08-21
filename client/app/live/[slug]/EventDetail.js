@@ -60,14 +60,37 @@ function formatDateShort(datetimeStr) {
   return `${day} ${month}`
 }
 
-export default function EventDetail({ params }) {
+// `initialEvent` lo resuelve page.js en el servidor: título, descripción y
+// fecha viajan así dentro del HTML en lugar de aparecer sólo tras hidratar.
+//
+// Se siembran el evento y el recuento de asistentes, pero NO
+// `serverTimeOffset`, y la diferencia importa:
+//
+//   · `attendeeCount` es un número que se muestra. Sin sembrarlo, el servidor
+//     pintaba «0 registrados» y saltaba al número real al hidratar: un
+//     parpadeo de dato falso en cada evento con asistentes. Viene de la misma
+//     respuesta cacheada 300 s que el resto de la página, así que como mucho
+//     va igual de desfasado que todo lo demás —y el `loadEvent()` del montaje
+//     lo corrige—. Un número algo viejo se acerca más a la verdad que un cero.
+//   · `serverTimeOffset` es un RELOJ, y gobierna la sincronía del reproductor
+//     de vídeo. Hornear en el HTML un desfase calculado hace hasta cinco
+//     minutos daría una sincronía mal por ese margen. Arranca en 0 y sólo lo
+//     fija `loadEvent()`, ya en el navegador y contra la hora real.
+//
+// El HTML servido no contiene ningún token: los de LiveKit y Agora se piden
+// desde efectos, contra endpoints autenticados, y en el servidor no hay sesión.
+export default function EventDetail({
+  params,
+  initialEvent = null,
+  initialAttendeeCount = 0,
+}) {
   const resolvedParams = use(params)
   const { slug } = resolvedParams
   const { user } = useAuth()
 
-  const [event, setEvent] = useState(null)
-  const [attendeeCount, setAttendeeCount] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [event, setEvent] = useState(initialEvent)
+  const [attendeeCount, setAttendeeCount] = useState(initialAttendeeCount)
+  const [loading, setLoading] = useState(!initialEvent)
   const [error, setError] = useState('')
 
   const [modalOpen, setModalOpen] = useState(false)

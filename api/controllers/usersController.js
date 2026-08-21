@@ -8,6 +8,12 @@ const path = require('path');
 const AUTHORS_IMAGES_DIR = path.join(__dirname, '..', 'uploads', 'authors');
 
 // Get all visible authors (users with visible = 1), optionally filtered by category
+// Ni getVisibleAuthors ni getAuthorBySlug devuelven ya `email`. Son endpoints
+// públicos sin autenticar (GET /api/users/authors y /api/users/authors/:slug) y
+// esa columna es el correo de la CUENTA del artista, no un canal de contacto
+// público — para eso está `email_contact`, que el artista rellena a sabiendas.
+// El panel de administración usa sus propias rutas (/api/admin/authors/:id), que
+// sí lo siguen devolviendo.
 const getVisibleAuthors = async (req, res, next) => {
   try {
     const category = req.query.category; // 'art' or 'other'
@@ -20,7 +26,6 @@ const getVisibleAuthors = async (req, res, next) => {
       query = `
         SELECT DISTINCT
           u.id,
-          u.email,
           u.full_name,
           u.slug,
           u.profile_img,
@@ -38,7 +43,6 @@ const getVisibleAuthors = async (req, res, next) => {
       query = `
         SELECT DISTINCT
           u.id,
-          u.email,
           u.full_name,
           u.slug,
           u.profile_img,
@@ -58,7 +62,6 @@ const getVisibleAuthors = async (req, res, next) => {
       query = `
         SELECT DISTINCT
           u.id,
-          u.email,
           u.full_name,
           u.slug,
           u.profile_img,
@@ -100,7 +103,6 @@ const getAuthorBySlug = async (req, res, next) => {
       sql: `
         SELECT
           id,
-          email,
           full_name,
           slug,
           profile_img,

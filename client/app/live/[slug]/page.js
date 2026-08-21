@@ -1,4 +1,5 @@
-import { fetchEvent, truncateText, SITE_URL } from '@/lib/serverApi'
+import { notFound } from 'next/navigation'
+import { fetchEvent, fetchEventPayload, truncateText, SITE_URL } from '@/lib/serverApi'
 import JsonLd from '@/components/JsonLd'
 import EventDetail from './EventDetail'
 
@@ -10,12 +11,36 @@ const categoryLabels = {
   video: 'Vídeo',
 }
 
+// `events.event_datetime` se guarda como hora local sin marcador de zona
+// («2026-08-21T19:52»), que es tal cual la que muestra la página.
+//
+// El `endDate` se calculaba con `.toISOString()`, y eso mezclaba dos marcos
+// temporales en el mismo nodo: `startDate` iba en local ingenuo y `endDate` en
+// UTC absoluto. Un consumidor que leyera los dos —Google, por ejemplo, para el
+// resultado enriquecido de evento— deduciría una duración desplazada por el
+// desfase horario del servidor: con Europe/Madrid en agosto, dos horas de más.
+//
+// Se calcula y se emite en el MISMO marco que `startDate`: se interpreta y se
+// vuelve a formatear con los mismos captadores locales, así que la ida y la
+// vuelta se cancelan y el resultado no depende de la zona del contenedor.
+function finalEnLocal(inicio, minutos) {
+  if (!inicio || !minutos) return null
+  const d = new Date(inicio)
+  if (Number.isNaN(d.getTime())) return null
+  d.setMinutes(d.getMinutes() + minutos)
+  const dd = (n) => String(n).padStart(2, '0')
+  return (
+    `${d.getFullYear()}-${dd(d.getMonth() + 1)}-${dd(d.getDate())}` +
+    `T${dd(d.getHours())}:${dd(d.getMinutes())}`
+  )
+}
+
 export async function generateMetadata({ params }) {
   const { slug } = await params
   const event = await fetchEvent(slug)
 
   if (!event) {
-    return { title: 'Evento no encontrado' }
+    return { title: 'Evento no encontrado', robots: { index: false } }
   }
 
   const categoryLabel = categoryLabels[event.category] || event.category
@@ -57,7 +82,12 @@ export async function generateMetadata({ params }) {
 
 export default async function EventDetailPage({ params }) {
   const { slug } = await params
-  const event = await fetchEvent(slug)
+  const payload = await fetchEventPayload(slug)
+  const event = payload?.event || null
+
+  // 404 real en lugar de un 200 con «Evento no encontrado» pintado por el
+  // cliente.
+  if (!event) notFound()
 
   const eventSchema = event ? {
     '@context': 'https://schema.org',
@@ -65,9 +95,9 @@ export default async function EventDetailPage({ params }) {
     name: event.title,
     description: event.description || '',
     startDate: event.event_datetime,
-    ...(event.event_datetime && event.duration_minutes ? {
-      endDate: new Date(new Date(event.event_datetime).getTime() + event.duration_minutes * 60000).toISOString(),
-    } : {}),
+    ...(finalEnLocal(event.event_datetime, event.duration_minutes)
+      ? { endDate: finalEnLocal(event.event_datetime, event.duration_minutes) }
+      : {}),
     eventStatus: event.status === 'cancelled'
       ? 'https://schema.org/EventCancelled'
       : 'https://schema.org/EventScheduled',
@@ -118,7 +148,11 @@ export default async function EventDetailPage({ params }) {
     <>
       {eventSchema && <JsonLd data={eventSchema} />}
       {breadcrumbSchema && <JsonLd data={breadcrumbSchema} />}
-      <EventDetail params={params} />
+      <EventDetail
+        params={params}
+        initialEvent={event}
+        initialAttendeeCount={payload?.attendeeCount ?? 0}
+      />
     </>
   )
 }

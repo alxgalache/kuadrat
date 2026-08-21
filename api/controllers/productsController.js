@@ -7,6 +7,11 @@ const { imageSize } = require('image-size');
 const slugify = require('slugify');
 
 // Get all products (public) with pagination and optional author/category filtering
+// El correo de la cuenta del artista NO viaja en las respuestas públicas de
+// catálogo. Estos endpoints no exigen autenticación, así que cualquiera podía
+// leer la dirección de cada vendedor. Ningún consumidor la usaba: ni el cliente,
+// ni la propia API —que para notificar al vendedor tiene sus propias consultas
+// en los schedulers, el webhook de Sendcloud y las rutas de admin—.
 const getAllProducts = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
@@ -19,7 +24,6 @@ const getAllProducts = async (req, res, next) => {
     let query = `
       SELECT
         p.*,
-        u.email as seller_email,
         u.full_name as seller_full_name,
         u.slug as seller_slug
       FROM products p
@@ -75,8 +79,7 @@ const getProductById = async (req, res, next) => {
         sql: `
           SELECT
             p.*,
-            u.email as seller_email,
-            u.full_name as seller_full_name
+                u.full_name as seller_full_name
           FROM products p
           LEFT JOIN users u ON p.seller_id = u.id
           WHERE p.id = ? AND p.visible = 1
@@ -89,8 +92,7 @@ const getProductById = async (req, res, next) => {
         sql: `
           SELECT
             p.*,
-            u.email as seller_email,
-            u.full_name as seller_full_name
+                u.full_name as seller_full_name
           FROM products p
           LEFT JOIN users u ON p.seller_id = u.id
           WHERE p.slug = ? AND p.visible = 1
@@ -374,8 +376,7 @@ const getProductsByAuthorSlug = async (req, res, next) => {
       sql: `
         SELECT
           p.*,
-          u.email as seller_email,
-          u.full_name as seller_name
+            u.full_name as seller_name
         FROM products p
         LEFT JOIN users u ON p.seller_id = u.id
         WHERE p.seller_id = ? AND p.visible = 1 AND p.is_sold = 0

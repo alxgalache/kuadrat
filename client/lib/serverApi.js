@@ -49,17 +49,27 @@ export async function fetchOthersProduct(idOrSlug) {
   }
 }
 
-export async function fetchEvent(slug) {
+// Payload completo de `/events/:slug`: además del evento trae `attendeeCount` y
+// `serverNow`. `fetchEvent` se queda con el evento, que es lo que necesitan los
+// metadatos; quien necesite el resto usa esta.
+//
+// Llamar a las dos en el mismo render NO duplica peticiones: Next deduplica los
+// fetch idénticos dentro de un render.
+export async function fetchEventPayload(slug) {
   try {
     const res = await fetch(`${DATA_API_URL}/events/${encodeURIComponent(slug)}`, {
       next: { revalidate: 300 },
     })
     if (!res.ok) return null
-    const data = await res.json()
-    return data.event || null
+    return await res.json()
   } catch {
     return null
   }
+}
+
+export async function fetchEvent(slug) {
+  const data = await fetchEventPayload(slug)
+  return data?.event || null
 }
 
 export async function fetchAuction(id) {
@@ -101,7 +111,97 @@ export async function fetchAuthor(slug) {
   }
 }
 
+// Listado de autores visibles. `category` filtra a los que tienen al menos una
+// obra ('art') o un producto ('other') publicado; sin categoría devuelve todos.
+// Lo usan el índice de artistas y el sitemap.
+export async function fetchAuthors(category = null) {
+  try {
+    const qs = category ? `?category=${encodeURIComponent(category)}` : ''
+    const res = await fetch(`${DATA_API_URL}/users/authors${qs}`, {
+      next: { revalidate: 300 },
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.authors || []
+  } catch {
+    return []
+  }
+}
+
+// Obras de un autor, para la ficha de artista.
+//
+// El límite alto es deliberado: esto alimenta el ItemList de datos
+// estructurados, que describe la obra del artista al completo, no una página de
+// resultados. El grid visible sigue paginando por su cuenta.
+export async function fetchAuthorArtProducts(authorSlug, limit = 100) {
+  try {
+    const res = await fetch(
+      `${DATA_API_URL}/art?author_slug=${encodeURIComponent(authorSlug)}&page=1&limit=${limit}`,
+      { next: { revalidate: 300 } },
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.products || []
+  } catch {
+    return []
+  }
+}
+
+export async function fetchAuthorOtherProducts(authorSlug, limit = 100) {
+  try {
+    const res = await fetch(
+      `${DATA_API_URL}/others?author_slug=${encodeURIComponent(authorSlug)}&page=1&limit=${limit}`,
+      { next: { revalidate: 300 } },
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.products || []
+  } catch {
+    return []
+  }
+}
+
 const CDN_BASE_URL = process.env.CDN_BASE_URL || ''
+
+// En desarrollo el optimizador de imágenes de Next descarga el original desde
+// el PROPIO servidor Next, y ahí `localhost:3001` no resuelve: dentro de Docker
+// la API es `api:3001`. Por eso las imágenes se piden por una ruta del mismo
+// origen, `/img-proxy/…`, que `next.config.js` reescribe a INTERNAL_API_URL.
+// Es el mismo mecanismo que ya usaba `lib/api.js` en el cliente.
+const DEV_IMAGE_PROXY = process.env.NODE_ENV === 'development' && !CDN_BASE_URL
+
+// Imagen de perfil del artista. Vive en un prefijo distinto al de los productos
+// (`authors/`) y la sube el panel de administración.
+//
+// Hay DOS funciones y no una porque los dos usos necesitan cosas incompatibles,
+// y mezclarlos fue justo el error:
+//
+//   · getAuthorImageUrl        → SIEMPRE absoluta. Va dentro del HTML, en las
+//     imágenes de Open Graph y en el JSON-LD, y la lee un cliente externo
+//     (el rastreador de X, WhatsApp, un buscador). Una ruta relativa o un
+//     `/img-proxy/` no significan nada fuera de este servidor.
+//   · getAuthorImageDisplayUrl → la que se le pasa a `next/image`. En
+//     desarrollo tiene que ser la del proxy del mismo origen; en producción
+//     coincide con la absoluta.
+//
+// Usar la absoluta para pintar reventaba en desarrollo con «hostname localhost
+// is not configured under images», porque `localhost` no está en los
+// remotePatterns de next.config.js —y no debe estarlo: la solución correcta es
+// el proxy, no abrir el optimizador a un host arbitrario—.
+export function getAuthorImageUrl(basename) {
+  if (!basename) return null
+  return CDN_BASE_URL
+    ? `${CDN_BASE_URL}/authors/${encodeURIComponent(basename)}`
+    : `${API_URL}/users/authors/images/${encodeURIComponent(basename)}`
+}
+
+export function getAuthorImageDisplayUrl(basename) {
+  if (!basename) return null
+  return DEV_IMAGE_PROXY
+    ? `/img-proxy/users/authors/images/${encodeURIComponent(basename)}`
+    : getAuthorImageUrl(basename)
+}
+
 
 export function getArtImageUrl(basename) {
   return CDN_BASE_URL

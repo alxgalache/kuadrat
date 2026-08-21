@@ -2,7 +2,19 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Términos y Condiciones - 140d',
+  // Antes sólo declaraba `title`, así que `description` y `alternates` caían a
+  // las de la raíz: las CINCO páginas legales declaraban la portada como su
+  // canónica, es decir, le decían al buscador que eran la home y que no debía
+  // indexarlas por separado.
+  //
+  // El título tampoco repite la marca: la plantilla de la raíz ya añade
+  // «| 140d», y ponerlo aquí daba «Términos y condiciones - 140d | 140d».
+  title: 'Términos y condiciones',
+  description:
+    'Términos y condiciones de compra en 140d: proceso de pedido, precios, pagos, envíos, desistimiento y devoluciones de obra de arte original.',
+  alternates: {
+    canonical: '/legal/terminos-y-condiciones',
+  },
 }
 
 export default function TermsPage() {

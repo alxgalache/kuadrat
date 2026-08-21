@@ -1,0 +1,133 @@
+## ADDED Requirements
+
+### Requirement: AI crawlers are declared explicitly in robots.txt
+
+`robots.txt` SHALL contain an explicit group for each of the following user agents, in addition to the existing wildcard group: `GPTBot`, `OAI-SearchBot`, `ChatGPT-User`, `ClaudeBot`, `Claude-SearchBot`, `PerplexityBot`, `Google-Extended`, `CCBot`, `Applebot-Extended` and `Bingbot`.
+
+Each such group SHALL allow the public site and SHALL carry the same disallow list as the wildcard group, so that private, transactional and token-bearing routes are excluded from AI crawlers exactly as they are from search engines.
+
+#### Scenario: An AI crawler reads robots.txt
+
+- **WHEN** `GET /robots.txt` is requested
+- **THEN** the response SHALL contain a group for each declared AI user agent, each permitting the public site
+
+#### Scenario: Private routes stay private for AI crawlers
+
+- **WHEN** any explicit AI crawler group is read
+- **THEN** it SHALL disallow the same paths the wildcard group disallows, with no path allowed to one class of crawler and denied to the other
+
+#### Scenario: The site is hidden
+
+- **WHEN** the deployment is configured as hidden
+- **THEN** `robots.txt` SHALL disallow the entire site for every user agent, including the AI crawlers, and SHALL NOT emit permissive AI groups
+
+---
+
+### Requirement: llms.txt is generated from the application, not stored as a static file
+
+`/llms.txt` SHALL be served by an application route that derives its content from the site's real structure, and SHALL be served as UTF-8 plain text.
+
+The previously committed static file SHALL be removed so that only one source of this document exists.
+
+#### Scenario: Every link resolves
+
+- **WHEN** `GET /llms.txt` is requested and each site-relative link in the response is followed
+- **THEN** every link SHALL resolve to a route that returns HTTP 200
+
+#### Scenario: Superseded paths are gone
+
+- **WHEN** the response body is inspected
+- **THEN** it SHALL NOT contain `/galeria/mas`, `/subastas` or `/espacios`
+
+#### Scenario: Served as plain text
+
+- **WHEN** `GET /llms.txt` is requested
+- **THEN** the response `Content-Type` SHALL be `text/plain` with a UTF-8 charset
+
+#### Scenario: No static duplicate remains
+
+- **WHEN** the client's public asset directory is inspected
+- **THEN** it SHALL NOT contain a committed `llms.txt`
+
+---
+
+### Requirement: llms.txt states attributable facts about the gallery
+
+`/llms.txt` SHALL present the gallery's identity, its public sections, how buying and selling work, and where to find the entity and guide pages.
+
+Every statement SHALL be either verifiable in the product or confirmed by the gallery operator. The document SHALL NOT state a founding date, artist count, price range, address or any other figure that has not been confirmed.
+
+#### Scenario: The document identifies the gallery
+
+- **WHEN** the response is read
+- **THEN** it SHALL state the gallery's name, canonical URL, language, contact address and social profiles
+
+#### Scenario: The document points at the answer surfaces
+
+- **WHEN** the response is read
+- **THEN** it SHALL link to the entity page, the artist index, the FAQ and each published guide
+
+#### Scenario: No unconfirmed figures
+
+- **WHEN** the response is read
+- **THEN** it SHALL contain no numeric claim about the gallery's size, age or catalogue that is not confirmed by the operator
+
+---
+
+### Requirement: The sitemap covers every indexable public URL
+
+`sitemap.xml` SHALL include the home page, both listings, the events hub, the live section, the entity page, the artist index, the FAQ, every published guide, every legal page, every visible artwork, every visible store product, every visible artist, every event, every auction and every draw.
+
+#### Scenario: Draws are present
+
+- **WHEN** the sitemap is generated while at least one draw exists
+- **THEN** each draw's detail URL SHALL appear
+
+#### Scenario: All legal pages are present
+
+- **WHEN** the sitemap is generated
+- **THEN** it SHALL include every page under the legal section, including the legal notice and the cookie policy
+
+#### Scenario: Slugs are preferred
+
+- **WHEN** an entity has a slug
+- **THEN** its sitemap URL SHALL use the slug form, matching the route's canonical
+
+---
+
+### Requirement: The sitemap declares artwork images
+
+Each artwork and store product entry in the sitemap SHALL declare its associated image URLs, so the catalogue is discoverable through image search.
+
+#### Scenario: An artwork with images
+
+- **WHEN** an artwork has one or more images
+- **THEN** its sitemap entry SHALL declare each image's absolute URL
+
+#### Scenario: An artwork without images
+
+- **WHEN** an artwork has no image
+- **THEN** its sitemap entry SHALL be emitted without image declarations rather than omitted
+
+---
+
+### Requirement: Sitemap generation degrades without producing a wrong sitemap
+
+Sitemap generation SHALL tolerate partial failure of its data sources: a source that fails SHALL contribute no entries while the remaining sources still contribute theirs.
+
+Generation SHALL terminate even if a paginated source never reports the end of its results.
+
+#### Scenario: One data source fails
+
+- **WHEN** the events source returns an error and every other source succeeds
+- **THEN** the sitemap SHALL still be produced, containing all other URLs
+
+#### Scenario: Pagination is bounded
+
+- **WHEN** a paginated source keeps reporting that more results exist
+- **THEN** generation SHALL stop at a fixed page ceiling and SHALL NOT loop indefinitely
+
+#### Scenario: Every source fails
+
+- **WHEN** no data source can be reached
+- **THEN** the sitemap SHALL still list the static routes and SHALL NOT return an error response

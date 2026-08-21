@@ -1,7 +1,22 @@
 'use client'
 
 import { useMemo } from 'react'
-import DOMPurify from 'dompurify'
+// `isomorphic-dompurify` y no `dompurify` a secas: es EL MISMO DOMPurify, pero
+// resuelve una implementación de DOM cuando no hay navegador (jsdom en el
+// servidor, el DOM nativo en el cliente). Con el paquete base, `DOMPurify.sanitize`
+// simplemente no existe fuera del navegador.
+//
+// Hasta ahora daba igual, porque este componente nunca llegaba a renderizarse en
+// el servidor: la ficha de obra pintaba la rama «Cargando...» —el producto valía
+// null— y la descripción sólo aparecía tras hidratar. Al servir el producto desde
+// el servidor, este camino se ejecuta ahí por primera vez y reventaba con
+// `sanitize is not a function`, un 500 en la ruta de compra. Es la misma clase de
+// fallo que documentó `TestAccessGate`: cosas que el render en blanco tapaba.
+//
+// Que sea la misma librería con la misma configuración en ambos lados es lo que
+// garantiza que servidor y cliente produzcan el MISMO HTML y no haya discrepancia
+// de hidratación. Dos sanitizadores distintos habrían sido dos salidas distintas.
+import DOMPurify from 'isomorphic-dompurify'
 
 /**
  * SafeHTML Component

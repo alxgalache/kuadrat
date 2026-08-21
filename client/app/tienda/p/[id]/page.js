@@ -1,6 +1,18 @@
-import { fetchOthersProduct, getOthersImageUrl, stripHtml, truncateText, SITE_URL } from '@/lib/serverApi'
+import { notFound } from 'next/navigation'
+import { fetchOthersProduct, getOthersImageUrl, truncateText, SITE_URL } from '@/lib/serverApi'
 import JsonLd from '@/components/JsonLd'
+import { buildProduct, buildBreadcrumb, stripHtml } from '@/lib/schema'
+import { PAYMENT_ENABLED } from '@/lib/constants'
 import OthersProductDetail from './OthersProductDetail'
+
+// Todas las imágenes del producto, no sólo la miniatura: schema.org admite
+// varias y cada una es una oportunidad más en la búsqueda de imágenes.
+function productImageUrls(product) {
+  const basenames = (product.images || []).map((i) => i?.basename).filter(Boolean)
+  if (basenames.length > 0) return basenames.map(getOthersImageUrl)
+  const single = product.thumbnail_basename
+  return single ? [getOthersImageUrl(single)] : []
+}
 
 // ISR — misma razón que en `galeria/p/[id]`: sin este export el segmento
 // dinámico se renderiza en cada petición. Ver el comentario allí.
@@ -20,7 +32,7 @@ export async function generateMetadata({ params }) {
   const product = await fetchOthersProduct(id)
 
   if (!product) {
-    return { title: 'Producto no encontrado' }
+    return { title: 'Producto no encontrado', robots: { index: false } }
   }
 
   const plainDescription = stripHtml(product.description)
@@ -28,8 +40,7 @@ export async function generateMetadata({ params }) {
     `${product.name} por ${product.seller_full_name || 'artista'}. ${plainDescription}`,
     160,
   )
-  const thumbBasename = product.thumbnail_basename || product.images?.[0]?.basename || null
-  const imageUrl = thumbBasename ? getOthersImageUrl(thumbBasename) : null
+  const images = productImageUrls(product)
   const canonical = `/tienda/p/${product.slug || product.id}`
 
   return {
@@ -41,65 +52,56 @@ export async function generateMetadata({ params }) {
     openGraph: {
       title: `${product.name} | 140d`,
       description: metaDescription,
+      // NO 'product': Next valida `openGraph.type` contra la lista de tipos que
+      // soporta (website, article, book, profile, music.*, video.*) y lanza
+      // «Invalid OpenGraph type» en tiempo de render — un 500, no un aviso.
+      // La naturaleza de producto ya la expresa el JSON-LD, que es lo que leen
+      // buscadores y motores generativos.
       type: 'website',
-      ...(imageUrl ? { images: [{ url: imageUrl, alt: product.name }] } : {}),
+      ...(images.length > 0 ? { images: images.map((url) => ({ url, alt: product.name })) } : {}),
       url: `${SITE_URL}${canonical}`,
     },
     twitter: {
       card: 'summary_large_image',
       title: `${product.name} | 140d`,
       description: metaDescription,
-      ...(imageUrl ? { images: [imageUrl] } : {}),
+      ...(images.length > 0 ? { images: [images[0]] } : {}),
     },
   }
 }
 
 export default async function OthersProductDetailPage({ params }) {
   const { id } = await params
+
+  // Misma llamada que generateMetadata; Next deduplica los fetch idénticos
+  // dentro de un render, así que no se añade ningún viaje a la API.
   const product = await fetchOthersProduct(id)
-  const thumbBasename = product?.thumbnail_basename || product?.images?.[0]?.basename || null
-  const schemaImageUrl = thumbBasename ? getOthersImageUrl(thumbBasename) : null
 
-  const productSchema = product ? {
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name: product.name,
-    description: stripHtml(product.description),
-    ...(schemaImageUrl ? { image: schemaImageUrl } : {}),
-    brand: {
-      '@type': 'Person',
-      name: product.seller_full_name || '140d',
-    },
-    offers: {
-      '@type': 'Offer',
-      price: product.price,
-      priceCurrency: 'EUR',
-      availability: product.is_sold
-        ? 'https://schema.org/SoldOut'
-        : 'https://schema.org/InStock',
-      url: `${SITE_URL}/tienda/p/${product.slug || product.id}`,
-      seller: {
-        '@type': 'Organization',
-        name: '140d',
-      },
-    },
-  } : null
+  // 404 real, en lugar de un 200 con «No se pudo cargar el producto» dentro.
+  if (!product) notFound()
 
-  const breadcrumbSchema = product ? {
-    '@context': 'https://schema.org',
-    '@type': 'BreadcrumbList',
-    itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Inicio', item: SITE_URL },
-      { '@type': 'ListItem', position: 2, name: 'Tienda', item: `${SITE_URL}/tienda` },
-      { '@type': 'ListItem', position: 3, name: product.name },
-    ],
-  } : null
+  const canonical = `/tienda/p/${product.slug || product.id}`
+
+  const productSchema = buildProduct({
+    product,
+    url: canonical,
+    imageUrls: productImageUrls(product),
+    purchasable: PAYMENT_ENABLED,
+  })
+
+  const breadcrumbSchema = buildBreadcrumb([
+    { name: 'Inicio', url: '/' },
+    { name: 'Tienda', url: '/tienda' },
+    // Sin el artista: la miga VISIBLE de esta ficha no lo muestra, y los datos
+    // estructurados no pueden declarar un recorrido que el visitante no ve.
+    { name: product.name },
+  ])
 
   return (
     <>
-      {productSchema && <JsonLd data={productSchema} />}
-      {breadcrumbSchema && <JsonLd data={breadcrumbSchema} />}
-      <OthersProductDetail params={params} />
+      <JsonLd data={productSchema} />
+      <JsonLd data={breadcrumbSchema} />
+      <OthersProductDetail params={params} initialProduct={product} />
     </>
   )
 }

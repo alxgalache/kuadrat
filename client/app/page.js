@@ -5,6 +5,21 @@ import StoryVideo from '@/components/StoryVideo'
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
+// La portada no declaraba metadatos propios: heredaba los de la raíz, que sí
+// están bien, pero no declaraba canónica. Sin ella, cualquier variante con
+// parámetros de campaña (?utm_source=…) es una URL distinta para el buscador.
+export const metadata = {
+  title: {
+    absolute: '140d | Galería de arte online: obra original de artistas emergentes',
+  },
+  description:
+    'Galería de arte online española. Descubre y compra obra original de artistas ' +
+    'contemporáneos emergentes, y acompaña su proceso creativo en directo. Envío a toda España.',
+  alternates: {
+    canonical: '/',
+  },
+}
+
 export default async function Home() {
   // Fetch story videos from the API (S3-backed)
   let storyVideos = []

@@ -2,6 +2,7 @@ import './globals.css'
 // import ShippingBanner from '@/components/ShippingBanner'
 import Script from 'next/script'
 import JsonLd from '@/components/JsonLd'
+import { buildOrganization, buildWebSite } from '@/lib/schema'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { CartProvider } from '@/contexts/CartContext'
 import { NotificationProvider } from '@/contexts/NotificationContext'
@@ -35,15 +36,23 @@ export const metadata = {
   metadataBase: new URL(SITE_URL),
 
   title: {
-    default: '140d - Galería de Arte Online | Compra Arte Original',
+    default: '140d | Galería de arte online: obra original de artistas emergentes',
     template: '%s | 140d',
   },
-  description: 'Descubre y compra obras de arte originales directamente de artistas emergentes y consagrados. Galería de arte online con obras únicas, subastas en vivo y eventos culturales. Democratizamos el arte.',
+  description:
+    'Galería de arte online española especializada en arte contemporáneo emergente. ' +
+    'Compra obra original de artistas jóvenes con certificado de autenticidad y envío a ' +
+    'toda España, y acompaña su proceso creativo en directos, charlas y talleres.',
 
+  // `keywords` no pesa en el ranking de Google desde hace años. Se conserva
+  // porque sí lo leen algunos rastreadores de IA y agregadores como señal de
+  // tema, que es justo el objetivo GEO. No se rellena de sinónimos: una lista
+  // larga y genérica describe peor que una corta y exacta.
   keywords: [
-    'galería de arte online', 'comprar arte original', 'artistas emergentes',
-    'arte contemporáneo', 'subastas de arte', 'eventos de arte', 'comprar cuadros online',
-    'arte digital', 'ilustraciones originales', 'galería de arte España', '140d',
+    'galería de arte online', 'comprar arte original', 'arte contemporáneo español',
+    'artistas emergentes', 'arte joven', 'comprar cuadros online',
+    'obra original certificada', 'ediciones limitadas', 'subastas de arte online',
+    'galería de arte España', '140d',
   ],
 
   authors: [{ name: '140d' }],
@@ -70,8 +79,8 @@ export const metadata = {
     locale: 'es_ES',
     url: SITE_URL,
     siteName: '140d',
-    title: '140d - Galería de Arte Online',
-    description: 'Descubre y compra obras de arte originales directamente de artistas. Galería online, subastas en vivo y eventos culturales.',
+    title: '140d - Galería de arte online',
+    description: 'Obra original de artistas contemporáneos emergentes, con certificado de autenticidad y envío a toda España.',
     images: [
       {
         url: '/brand/og-image.jpg',
@@ -84,8 +93,8 @@ export const metadata = {
 
   twitter: {
     card: 'summary_large_image',
-    title: '140d - Galería de Arte Online',
-    description: 'Descubre y compra obras de arte originales directamente de artistas. Galería online, subastas en vivo y eventos culturales.',
+    title: '140d - Galería de arte online',
+    description: 'Obra original de artistas contemporáneos emergentes, con certificado de autenticidad y envío a toda España.',
     images: ['/brand/og-image.jpg'],
   },
 
@@ -106,35 +115,12 @@ export const metadata = {
     : {}),
 }
 
-const organizationSchema = {
-  '@context': 'https://schema.org',
-  '@type': 'Organization',
-  name: '140d',
-  alternateName: '140d Galería de Arte',
-  url: SITE_URL,
-  logo: `${SITE_URL}/brand/140d.png`,
-  sameAs: [
-    'https://www.facebook.com/140dart',
-    'https://www.instagram.com/140dart',
-    'https://x.com/140dart',
-  ],
-  description: 'Galería de arte online que democratiza el acceso al arte. Obras originales de artistas emergentes y consagrados.',
-  contactPoint: {
-    '@type': 'ContactPoint',
-    email: 'info@140d.art',
-    contactType: 'customer service',
-    availableLanguage: 'Spanish',
-  },
-}
-
-const websiteSchema = {
-  '@context': 'https://schema.org',
-  '@type': 'WebSite',
-  name: '140d',
-  url: SITE_URL,
-  inLanguage: 'es',
-  description: 'Galería de arte online con obras originales, subastas en vivo y eventos culturales.',
-}
+// Los dos nodos raíz. Antes eran literales aquí mismo; ahora salen de
+// lib/schema.js, que es el único sitio donde se decide qué se publica sobre la
+// galería y qué no. Los hechos vienen de lib/siteInfo.js — todos confirmados
+// por el operador.
+const organizationSchema = buildOrganization()
+const websiteSchema = buildWebSite()
 
 export default function RootLayout({ children }) {
   return (

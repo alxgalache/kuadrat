@@ -45,6 +45,13 @@ function GalleryPageContent() {
   if (loading && page === 1) {
     return (
       <div className="bg-white min-h-screen flex items-center justify-center">
+      {/* El <h1> también en esta rama, no sólo en la de contenido.
+          El listado carga sus productos en el cliente, así que el HTML que
+          sirve el servidor —y el único que ven los rastreadores que no ejecutan
+          JavaScript— es SIEMPRE esta pantalla de carga. El h1 existía más
+          abajo, pero nunca llegaba a salir: la página se publicaba sin ningún
+          encabezado. Invisible (`sr-only`), como el de /eventos. */}
+      <h1 className="sr-only">Galería de Arte</h1>
         <p className="text-gray-500">Cargando...</p>
       </div>
     )

@@ -140,12 +140,28 @@ export default function EspaciosPage() {
             href={`/live/${event.slug}`}
             className="block group"
           >
-            {/* Item 2: horizontal card with image on right + gradient — Item 3: no hover shadow */}
-            <div className="rounded-lg border border-gray-200 overflow-hidden flex flex-row">
-              {/* Content left (60%) */}
-              <div className="flex-1 min-w-0 p-5">
-                {/* Badges row */}
-                <div className="flex items-center gap-x-2 mb-2">
+            {/* Tarjeta horizontal: texto a la izquierda, imagen difuminada a la
+                derecha. Sin sombra al pasar el puntero, a propósito.
+
+                Tres arreglos sobre la versión anterior:
+
+                · La imagen ocupaba el 50 % y ahogaba el texto en la otra mitad:
+                  la fila de metadatos no cabía y partía CADA dato en dos líneas
+                  («21 de agosto de / 2026», «60 / min»). Baja al 40 % y los
+                  datos llevan `whitespace-nowrap`, así que se parten entre
+                  ellos, nunca por dentro.
+                · «En directo» salía DOS veces: como insignia arriba y otra vez
+                  en el contador. Las insignias se quedan con lo que el evento
+                  ES (categoría) y lo que CUESTA (precio); el estado temporal
+                  —en directo, cuenta atrás, finalizado, cancelado— es del
+                  contador, que además es el único que cambia solo.
+                · El anfitrión estaba metido a presión en la fila de metadatos,
+                  que es de tiempo. Ahora tiene su propia línea. */}
+            <div className="flex flex-row overflow-hidden rounded-lg border border-gray-200 transition-colors [@media(hover:hover)]:group-hover:border-gray-300">
+              {/* Contenido */}
+              <div className="min-w-0 flex-1 p-5 sm:p-6">
+                {/* Qué es y cuánto cuesta */}
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
                     {categoryLabels[event.category] || event.category}
                   </span>
@@ -158,38 +174,48 @@ export default function EspaciosPage() {
                       Gratis
                     </span>
                   )}
-                  {event.status === 'active' && (
-                    <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                      En directo
-                    </span>
-                  )}
                 </div>
 
-                {/* Title */}
-                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-gray-600">
+                <h3 className="mt-3 text-lg font-semibold tracking-tight text-gray-900 [@media(hover:hover)]:group-hover:text-gray-600">
                   {event.title}
                 </h3>
 
-                {/* Description excerpt */}
                 {event.description && (
-                  <p className="mt-1 text-sm text-gray-600 line-clamp-2">
+                  <p className="mt-1.5 line-clamp-2 text-sm text-gray-600">
                     {event.description}
                   </p>
                 )}
 
-                {/* Meta row — short date on mobile, full on sm+ */}
-                <div className="mt-3 flex items-center justify-between sm:justify-start sm:gap-x-4 text-sm text-gray-500">
-                  <span className="hidden sm:inline">{formatDate(event.event_datetime)}</span>
-                  <span className="sm:hidden">{formatDateShort(event.event_datetime)}</span>
-                  <span>{formatTime(event.event_datetime)}</span>
-                  <span>{event.duration_minutes} min</span>
-                  {event.host_name && (
-                    <span>por <span className="font-medium text-gray-700">{event.host_name}</span></span>
+                {/* Cuándo. Los puntos medios van marcados como decorativos: un
+                    lector de pantalla no debe leer «punto» entre la fecha y la
+                    hora. */}
+                <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500">
+                  <span className="hidden whitespace-nowrap sm:inline">
+                    {formatDate(event.event_datetime)}
+                  </span>
+                  <span className="whitespace-nowrap sm:hidden">
+                    {formatDateShort(event.event_datetime)}
+                  </span>
+                  <span aria-hidden="true" className="text-gray-300">·</span>
+                  <span className="whitespace-nowrap">{formatTime(event.event_datetime)}</span>
+                  {event.duration_minutes && (
+                    <>
+                      <span aria-hidden="true" className="text-gray-300">·</span>
+                      <span className="whitespace-nowrap">{event.duration_minutes} min</span>
+                    </>
                   )}
                 </div>
 
-                {/* Countdown / Status */}
-                <div className="mt-3">
+                {/* Quién */}
+                {event.host_name && (
+                  <p className="mt-1 truncate text-sm text-gray-500">
+                    por <span className="font-medium text-gray-700">{event.host_name}</span>
+                  </p>
+                )}
+
+                {/* Estado. Separado por un filete: es información de otra
+                    naturaleza —cambia sola— y conviene que se lea aparte. */}
+                <div className="mt-4 border-t border-gray-100 pt-3">
                   <EventCountdown
                     eventDatetime={event.event_datetime}
                     status={event.status}
@@ -197,17 +223,18 @@ export default function EspaciosPage() {
                 </div>
               </div>
 
-              {/* Image right (50%) — stretches to match text content height */}
+              {/* Imagen. El degradado de tres paradas la funde con el texto de
+                  forma gradual; con dos, el corte se veía. */}
               {event.cover_image_url && (
-                <div className="relative w-[50%] hidden sm:block self-stretch">
+                <div className="relative hidden w-2/5 self-stretch sm:block">
                   <Image
                     src={event.cover_image_url}
                     alt={event.title}
                     fill
                     className="object-cover"
-                    sizes="50vw"
+                    sizes="(min-width: 640px) 40vw, 0px"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-white via-white/40 to-transparent" />
                 </div>
               )}
             </div>

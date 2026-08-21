@@ -2,7 +2,19 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Política de Cookies - 140d',
+  // Antes sólo declaraba `title`, así que `description` y `alternates` caían a
+  // las de la raíz: las CINCO páginas legales declaraban la portada como su
+  // canónica, es decir, le decían al buscador que eran la home y que no debía
+  // indexarlas por separado.
+  //
+  // El título tampoco repite la marca: la plantilla de la raíz ya añade
+  // «| 140d», y ponerlo aquí daba «Política de cookies - 140d | 140d».
+  title: 'Política de cookies',
+  description:
+    'Política de cookies de 140d: qué cookies utiliza el sitio, con qué finalidad, cómo se gestiona el consentimiento y cómo revocarlo.',
+  alternates: {
+    canonical: '/legal/politica-de-cookies',
+  },
 }
 
 export default function CookiePolicyPage() {

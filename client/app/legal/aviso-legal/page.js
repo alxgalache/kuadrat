@@ -2,7 +2,19 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Aviso Legal - 140d',
+  // Antes sólo declaraba `title`, así que `description` y `alternates` caían a
+  // las de la raíz: las CINCO páginas legales declaraban la portada como su
+  // canónica, es decir, le decían al buscador que eran la home y que no debía
+  // indexarlas por separado.
+  //
+  // El título tampoco repite la marca: la plantilla de la raíz ya añade
+  // «| 140d», y ponerlo aquí daba «Aviso legal - 140d | 140d».
+  title: 'Aviso legal',
+  description:
+    'Aviso legal de 140d: datos identificativos del titular del sitio, condiciones de uso y propiedad intelectual de la galería de arte online.',
+  alternates: {
+    canonical: '/legal/aviso-legal',
+  },
 }
 
 export default function LegalNoticePage() {

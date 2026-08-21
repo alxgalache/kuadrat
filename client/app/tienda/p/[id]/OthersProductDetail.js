@@ -15,14 +15,29 @@ import ProductImageCarousel from '@/components/ProductImageCarousel'
 import { SENDCLOUD_ENABLED_OTHERS, PAYMENT_ENABLED } from '@/lib/constants'
 import { trackViewContent } from '@/lib/metaPixel'
 
-export default function OthersProductDetail({ params }) {
+// Variante preseleccionada. Se calcula con una función pura para poder
+// aplicarla en el inicializador de useState: el servidor y el cliente parten
+// del mismo producto y ejecutan la misma regla, así que eligen la misma
+// variante y no hay discrepancia de hidratación. Con una elección no
+// determinista aquí —o leída de localStorage— React no repara el atributo y el
+// precio mostrado podría no ser el de la variante marcada.
+function defaultVariant(prod) {
+  if (!prod || !prod.variations || prod.variations.length === 0) return null
+  return prod.variations.find((v) => v.stock > 0) || prod.variations[0]
+}
+
+// `initialProduct` lo resuelve page.js en el servidor. Ver el comentario
+// extenso en galeria/p/[id]/ArtProductDetail.js: es lo que hace que el
+// contenido del producto viaje dentro del HTML en lugar de aparecer sólo tras
+// hidratar.
+export default function OthersProductDetail({ params, initialProduct = null }) {
   const unwrappedParams = use(params)
-  const [product, setProduct] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [product, setProduct] = useState(initialProduct)
+  const [loading, setLoading] = useState(!initialProduct)
   const [error, setError] = useState('')
   const [purchasing, setPurchasing] = useState(false)
   const [user, setUser] = useState(null)
-  const [selectedVariant, setSelectedVariant] = useState(null)
+  const [selectedVariant, setSelectedVariant] = useState(() => defaultVariant(initialProduct))
   const [quantity, setQuantity] = useState(1)
   const [selectedAuthor, setSelectedAuthor] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -41,7 +56,14 @@ export default function OthersProductDetail({ params }) {
   useEffect(() => {
     const currentUser = authAPI.getCurrentUser()
     setUser(currentUser)
-    loadProduct()
+
+    // El producto ya viene servido: no se vuelve a pedir. Sólo queda el
+    // ViewContent, que antes colgaba de la respuesta de esa petición.
+    if (initialProduct) {
+      trackViewContentOnce(initialProduct)
+    } else {
+      loadProduct()
+    }
 
     // Detect if device supports hover (desktop with mouse)
     // Touch-only devices will have (hover: none)
@@ -54,32 +76,29 @@ export default function OthersProductDetail({ params }) {
     return () => hoverQuery.removeEventListener('change', handleHoverChange)
   }, [])
 
+  // Meta Pixel — ViewContent. El id es el del producto, sin variante: la
+  // variante todavía no la ha elegido el visitante (la seleccionamos nosotros
+  // por defecto), así que atribuirle la vista sería inventar. La guarda por id
+  // evita el doble conteo bajo StrictMode y en cualquier remontaje.
+  const trackViewContentOnce = (prod) => {
+    if (!prod || viewContentTrackedRef.current === prod.id) return
+    viewContentTrackedRef.current = prod.id
+    trackViewContent({
+      productType: 'other',
+      productId: prod.id,
+      name: prod.name,
+      price: prod.price,
+    })
+  }
+
+  // Camino de respaldo: sólo se usa si el componente se monta sin
+  // `initialProduct`. En la ruta normal ya no se ejecuta.
   const loadProduct = async () => {
     try {
       const data = await othersAPI.getById(unwrappedParams.id)
       setProduct(data.product)
-      // Set first available variant as default
-      if (data.product.variations && data.product.variations.length > 0) {
-        const firstAvailable = data.product.variations.find(v => v.stock > 0)
-        if (firstAvailable) {
-          setSelectedVariant(firstAvailable)
-        } else {
-          setSelectedVariant(data.product.variations[0])
-        }
-      }
-
-      // Meta Pixel — ViewContent. El id es el del producto, sin variante: la
-      // variante todavía no la ha elegido el visitante (la seleccionamos
-      // nosotros por defecto), así que atribuirle la vista sería inventar.
-      if (data?.product && viewContentTrackedRef.current !== data.product.id) {
-        viewContentTrackedRef.current = data.product.id
-        trackViewContent({
-          productType: 'other',
-          productId: data.product.id,
-          name: data.product.name,
-          price: data.product.price,
-        })
-      }
+      setSelectedVariant(defaultVariant(data.product))
+      trackViewContentOnce(data?.product)
     } catch (err) {
       setError('No se pudo cargar el producto')
     } finally {

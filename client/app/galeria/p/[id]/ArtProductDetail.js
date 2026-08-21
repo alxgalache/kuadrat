@@ -40,10 +40,23 @@ function getArtCta() {
   return 'quote'
 }
 
-export default function ArtProductDetail({ params }) {
+// `initialProduct` lo resuelve el componente de servidor (page.js) y llega ya
+// poblado en el primer render.
+//
+// Esto es lo que pone el contenido de la obra dentro del HTML. El problema
+// nunca fue el 'use client' —un componente cliente TAMBIÉN se renderiza en el
+// servidor para producir el HTML inicial; 'use client' sólo dice que además
+// hidrata—, sino que el dato llegaba por `useEffect`, que en el servidor no se
+// ejecuta. Así que `product` valía null al renderizar y salía la rama
+// «Cargando...»: eso, y sólo eso, era lo que veían Google en su primera pasada
+// y los rastreadores de IA siempre.
+//
+// El valor por defecto `null` conserva el comportamiento anterior si alguien
+// monta el componente sin la prop.
+export default function ArtProductDetail({ params, initialProduct = null }) {
   const unwrappedParams = use(params)
-  const [product, setProduct] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [product, setProduct] = useState(initialProduct)
+  const [loading, setLoading] = useState(!initialProduct)
   const [error, setError] = useState('')
   const [purchasing, setPurchasing] = useState(false)
   const [user, setUser] = useState(null)
@@ -69,7 +82,15 @@ export default function ArtProductDetail({ params }) {
   useEffect(() => {
     const currentUser = authAPI.getCurrentUser()
     setUser(currentUser)
-    loadProduct()
+
+    // Con el producto ya servido no se vuelve a pedir: era una segunda petición
+    // por visita para un dato que el HTML ya traía. Sólo queda emitir el
+    // ViewContent, que antes colgaba de la respuesta de esa petición.
+    if (initialProduct) {
+      trackViewContentOnce(initialProduct)
+    } else {
+      loadProduct()
+    }
 
     // Detect if device supports hover (desktop with mouse)
     // Touch-only devices will have (hover: none)
@@ -82,24 +103,27 @@ export default function ArtProductDetail({ params }) {
     return () => hoverQuery.removeEventListener('change', handleHoverChange)
   }, [])
 
+  // Meta Pixel — ViewContent. La guarda por id sigue siendo necesaria: el efecto
+  // de montaje corre dos veces bajo StrictMode y en cualquier remontaje, y sin
+  // ella la misma visita cuenta dos veces en el embudo de Meta.
+  const trackViewContentOnce = (prod) => {
+    if (!prod || viewContentTrackedRef.current === prod.id) return
+    viewContentTrackedRef.current = prod.id
+    trackViewContent({
+      productType: 'art',
+      productId: prod.id,
+      name: prod.name,
+      price: prod.price,
+    })
+  }
+
+  // Camino de respaldo: sólo se usa si el componente se monta sin
+  // `initialProduct`. En la ruta normal ya no se ejecuta.
   const loadProduct = async () => {
     try {
       const data = await artAPI.getById(unwrappedParams.id)
       setProduct(data.product)
-
-      // Meta Pixel — ViewContent. Se emite tras cargar la obra, no al montar:
-      // hasta aquí no conocemos ni el precio ni el nombre, y un ViewContent sin
-      // `value` no sirve para optimizar a conversión. Si la carga falla no se
-      // emite nada, que es lo correcto: el visitante no ha visto la obra.
-      if (data?.product && viewContentTrackedRef.current !== data.product.id) {
-        viewContentTrackedRef.current = data.product.id
-        trackViewContent({
-          productType: 'art',
-          productId: data.product.id,
-          name: data.product.name,
-          price: data.product.price,
-        })
-      }
+      trackViewContentOnce(data?.product)
     } catch (err) {
       setError('No se pudo cargar la obra')
     } finally {

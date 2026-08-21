@@ -16,6 +16,11 @@ const {
 } = require('../utils/productValidation');
 
 // Get all others products (public) with pagination and optional author filtering
+// El correo de la cuenta del artista NO viaja en las respuestas públicas de
+// catálogo. Estos endpoints no exigen autenticación, así que cualquiera podía
+// leer la dirección de cada vendedor. Ningún consumidor la usaba: ni el cliente,
+// ni la propia API —que para notificar al vendedor tiene sus propias consultas
+// en los schedulers, el webhook de Sendcloud y las rutas de admin—.
 const getAllOthersProducts = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
@@ -27,7 +32,6 @@ const getAllOthersProducts = async (req, res, next) => {
     let query = `
       SELECT
         o.*,
-        u.email as seller_email,
         u.full_name as seller_full_name,
         u.slug as seller_slug
       FROM others o
@@ -91,8 +95,7 @@ const getOthersProductById = async (req, res, next) => {
         sql: `
           SELECT
             o.*,
-            u.email as seller_email,
-            u.full_name as seller_full_name,
+                u.full_name as seller_full_name,
             u.slug as seller_slug
           FROM others o
           LEFT JOIN users u ON o.seller_id = u.id
@@ -106,8 +109,7 @@ const getOthersProductById = async (req, res, next) => {
         sql: `
           SELECT
             o.*,
-            u.email as seller_email,
-            u.full_name as seller_full_name,
+                u.full_name as seller_full_name,
             u.slug as seller_slug
           FROM others o
           LEFT JOIN users u ON o.seller_id = u.id
@@ -556,8 +558,7 @@ const getOthersProductsByAuthorSlug = async (req, res, next) => {
       sql: `
         SELECT
           o.*,
-          u.email as seller_email,
-          u.full_name as seller_name
+            u.full_name as seller_name
         FROM others o
         LEFT JOIN users u ON o.seller_id = u.id
         WHERE o.seller_id = ? AND o.visible = 1 AND o.is_sold = 0 AND o.status = 'approved' AND o.removed = 0

@@ -2,7 +2,19 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Normas de Participación en Eventos en Directo - 140d',
+  // Antes sólo declaraba `title`, así que `description` y `alternates` caían a
+  // las de la raíz: las CINCO páginas legales declaraban la portada como su
+  // canónica, es decir, le decían al buscador que eran la home y que no debía
+  // indexarlas por separado.
+  //
+  // El título tampoco repite la marca: la plantilla de la raíz ya añade
+  // «| 140d», y ponerlo aquí daba «Normas de los eventos - 140d | 140d».
+  title: 'Normas de los eventos',
+  description:
+    'Normas de participación en los eventos en directo de 140d: acceso, comportamiento en el chat, moderación y cancelaciones.',
+  alternates: {
+    canonical: '/legal/normas-eventos',
+  },
 }
 
 export default function EventRulesPage() {

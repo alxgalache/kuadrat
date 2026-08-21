@@ -88,13 +88,24 @@ export default function Footer() {
         <span className="mt-8 text-center text-sm/6 text-gray-600 md:order-1 md:mt-0">
           &copy; 2026 140d Galería de Arte.
           {' · '}
+          {/* Estos tres enlaces están en el pie a propósito, no sólo por
+              comodidad: aparecen en TODAS las páginas, que es lo que saca al
+              índice de artistas —y con él a cada ficha de artista— de ser
+              páginas huérfanas, alcanzables sólo filtrando el listado por una
+              query string o a través del sitemap. */}
+          <a href="/galeria/artistas" className="hover:text-gray-800">Artistas</a>
+          {' · '}
+          <a href="/sobre-140d" className="hover:text-gray-800">Sobre 140d</a>
+          {' · '}
+          <a href="/guias" className="hover:text-gray-800">Guías</a>
+          {' · '}
           <a href="/legal/aviso-legal" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Aviso Legal</a>
           {' · '}
           <a href="/legal/terminos-y-condiciones" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Términos y condiciones</a>
           {' · '}
           <a href="/legal/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Política de privacidad</a>
           {' · '}
-          <a href="/preguntas-frecuentes" className="hover:text-gray-800">FAQ</a>
+          <a href="/preguntas-frecuentes" className="hover:text-gray-800">Preguntas frecuentes</a>
           {' · '}
           <a href="/legal/politica-de-cookies" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">Política de cookies</a>
           {' · '}

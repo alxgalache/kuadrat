@@ -17,6 +17,11 @@ const { sendNewProductNotificationEmail } = require('../services/emailService');
 const { attachProductImages } = require('../utils/productImages');
 
 // Get all art products (public) with pagination and optional author filtering
+// El correo de la cuenta del artista NO viaja en las respuestas públicas de
+// catálogo. Estos endpoints no exigen autenticación, así que cualquiera podía
+// leer la dirección de cada vendedor. Ningún consumidor la usaba: ni el cliente,
+// ni la propia API —que para notificar al vendedor tiene sus propias consultas
+// en los schedulers, el webhook de Sendcloud y las rutas de admin—.
 const getAllArtProducts = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
@@ -28,7 +33,6 @@ const getAllArtProducts = async (req, res, next) => {
     let query = `
       SELECT
         a.*,
-        u.email as seller_email,
         u.full_name as seller_full_name,
         u.slug as seller_slug
       FROM art a
@@ -81,8 +85,7 @@ const getArtProductById = async (req, res, next) => {
         sql: `
           SELECT
             a.*,
-            u.email as seller_email,
-            u.full_name as seller_full_name,
+                u.full_name as seller_full_name,
             u.slug as seller_slug
           FROM art a
           LEFT JOIN users u ON a.seller_id = u.id
@@ -96,8 +99,7 @@ const getArtProductById = async (req, res, next) => {
         sql: `
           SELECT
             a.*,
-            u.email as seller_email,
-            u.full_name as seller_full_name,
+                u.full_name as seller_full_name,
             u.slug as seller_slug
           FROM art a
           LEFT JOIN users u ON a.seller_id = u.id
@@ -401,8 +403,7 @@ const getArtProductsByAuthorSlug = async (req, res, next) => {
       sql: `
         SELECT
           a.*,
-          u.email as seller_email,
-          u.full_name as seller_name
+            u.full_name as seller_name
         FROM art a
         LEFT JOIN users u ON a.seller_id = u.id
         WHERE a.seller_id = ? AND a.visible = 1 AND a.is_sold = 0 AND a.status = 'approved' AND a.removed = 0

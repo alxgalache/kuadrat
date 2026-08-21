@@ -42,9 +42,14 @@ export default function RegistroPage() {
   return (
     <div className="bg-white py-16 sm:py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance text-gray-900 sm:text-4xl">
+        {/* <h1>, no <h2>: es el encabezado principal de la página y no había
+            ninguno por encima, así que la jerarquía empezaba en el nivel 2.
+            El renderizado es idéntico —`@tailwind base` iguala el tamaño y el
+            grosor de h1..h6, y aquí el aspecto lo fijan las clases—, de modo
+            que no cambia un solo píxel. */}
+        <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance text-gray-900 sm:text-4xl">
           ¿Quieres vender tu arte? Solicita tu registro como artista.
-        </h2>
+        </h1>
         <form onSubmit={handleSubmit} className="mt-10 max-w-md">
           <div className="flex gap-x-4">
             <label htmlFor="email-address" className="sr-only">
