@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
-import { fetchArtProduct, getArtImageUrl, truncateText, SITE_URL } from '@/lib/serverApi'
+import { fetchArtProduct, getArtImageUrl, truncateText } from '@/lib/serverApi'
+import { buildOpenGraph, buildTwitter, socialImageUrl } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
 import { buildVisualArtwork, buildBreadcrumb, stripHtml } from '@/lib/schema'
 import { PAYMENT_ENABLED, ART_BUY_AVAILABLE } from '@/lib/constants'
@@ -69,24 +70,26 @@ export async function generateMetadata({ params }) {
     alternates: {
       canonical,
     },
-    openGraph: {
+    // `socialImageUrl` sirve la obra por el optimizador de Next. El original de
+    // una obra medida en producción pesaba 2 MB y **WhatsApp descarta la vista
+    // previa por encima de 500 KB**: el enlace de la ficha —la página que más
+    // se comparte— salía sin miniatura. Por el optimizador son 214 KB, a la
+    // resolución nativa y en JPEG. Ver `lib/metadata.js`.
+    //
+    // Sin `og:image:width`/`height`: el optimizador recorta al ancho del
+    // original y no guardamos las dimensiones de cada obra, así que declararlas
+    // sería inventárselas. Sólo ahorran una pasada al scraper.
+    openGraph: buildOpenGraph({
       title: `${product.name} | 140d`,
       description: metaDescription,
-      // NO 'product': Next valida `openGraph.type` contra la lista de tipos que
-      // soporta (website, article, book, profile, music.*, video.*) y lanza
-      // «Invalid OpenGraph type» en tiempo de render — un 500, no un aviso.
-      // La naturaleza de producto ya la expresa el JSON-LD, que es lo que leen
-      // buscadores y motores generativos.
-      type: 'website',
-      ...(images.length > 0 ? { images: images.map((url) => ({ url, alt: product.name })) } : {}),
-      url: `${SITE_URL}${canonical}`,
-    },
-    twitter: {
-      card: 'summary_large_image',
+      path: canonical,
+      images: images.map((url) => ({ url: socialImageUrl(url), alt: product.name })),
+    }),
+    twitter: buildTwitter({
       title: `${product.name} | 140d`,
       description: metaDescription,
-      ...(images.length > 0 ? { images: [images[0]] } : {}),
-    },
+      images: images.length > 0 ? [socialImageUrl(images[0])] : [],
+    }),
   }
 }
 

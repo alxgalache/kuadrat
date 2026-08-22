@@ -1,21 +1,25 @@
 import Link from 'next/link'
+import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
 import { buildItemList, buildBreadcrumb } from '@/lib/schema'
 import { GUIDES } from '@/lib/guides'
-import { SITE_URL } from '@/lib/siteInfo'
 
 export const metadata = {
   title: 'Guías',
+  // 142 caracteres, desde 169.
   description:
     'Guías de 140d para comprar y vender arte: cómo comprar obra original online, ' +
-    'qué es una edición limitada, cómo se autentica una obra y cómo vender en una ' +
-    'galería online.',
+    'qué es una edición limitada y cómo se autentica una obra con NFC.',
   alternates: { canonical: '/guias' },
-  openGraph: {
+  openGraph: buildOpenGraph({
     title: 'Guías | 140d',
     description: 'Cómo comprar arte original online, ediciones limitadas, autenticidad y venta de obra.',
-    url: `${SITE_URL}/guias`,
-  },
+    path: '/guias',
+  }),
+  twitter: buildTwitter({
+    title: 'Guías | 140d',
+    description: 'Cómo comprar arte original online, ediciones limitadas, autenticidad y venta de obra.',
+  }),
 }
 
 export default function GuiasPage() {

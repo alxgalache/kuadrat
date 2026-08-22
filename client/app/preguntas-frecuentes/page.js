@@ -1,24 +1,32 @@
 import Link from 'next/link'
+import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
 import { buildFaqPage, buildBreadcrumb } from '@/lib/schema'
-import { SITE_URL } from '@/lib/siteInfo'
 
 export const metadata = {
   title: 'Preguntas Frecuentes',
+  // 149 caracteres. Medía 195 y perdía «y cómo vender tu obra», que es la
+  // mitad del público de esta página. Se acortan los preliminares y se recorta
+  // la enumeración, no los temas que sí tienen sección propia.
   description:
-    'Resuelve tus dudas sobre 140d: cómo comprar arte original, envíos y devoluciones, ' +
-    'certificado de autenticidad, ediciones limitadas, subastas, sorteos, encuentros en ' +
-    'directo y cómo vender tu obra.',
+    'Cómo comprar arte original en 140d, envíos y devoluciones, certificado de ' +
+    'autenticidad, ediciones limitadas, subastas, sorteos y cómo vender tu obra.',
   alternates: {
     canonical: '/preguntas-frecuentes',
   },
-  openGraph: {
+  openGraph: buildOpenGraph({
     title: 'Preguntas Frecuentes | 140d',
     description:
       'Comprar arte original, envíos, devoluciones, autenticidad, ediciones limitadas, ' +
       'subastas y venta de obra.',
-    url: `${SITE_URL}/preguntas-frecuentes`,
-  },
+    path: '/preguntas-frecuentes',
+  }),
+  twitter: buildTwitter({
+    title: 'Preguntas Frecuentes | 140d',
+    description:
+      'Comprar arte original, envíos, devoluciones, autenticidad, ediciones limitadas, ' +
+      'subastas y venta de obra.',
+  }),
 }
 
 // La FAQ está organizada en SECCIONES, no en una lista plana.

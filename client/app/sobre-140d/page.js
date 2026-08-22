@@ -1,7 +1,8 @@
 import Link from 'next/link'
+import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
 import { buildAboutPage, buildBreadcrumb } from '@/lib/schema'
-import { SITE, SITE_URL } from '@/lib/siteInfo'
+import { SITE } from '@/lib/siteInfo'
 
 // Página de entidad. Es el documento que un asistente cita cuando le preguntan
 // «¿qué es 140d?», así que está escrita para poder extraerse por partes: un
@@ -15,19 +16,27 @@ import { SITE, SITE_URL } from '@/lib/siteInfo'
 
 export const metadata = {
   title: 'Sobre 140d',
+  // 154 caracteres. Salamanca y 2026 se quedan: son los hechos de entidad
+  // confirmados en `lib/siteInfo.js` y lo que un asistente cita al responder
+  // «¿qué es 140d?». Lo que se recorta es la enumeración final, que no aporta
+  // ningún dato y era justo lo que Google cortaba.
   description:
     'Qué es 140d: galería de arte online española, con sede en Salamanca y activa desde ' +
-    '2026, especializada en arte contemporáneo emergente. Cómo comprar, cómo vender y ' +
-    'quién está detrás.',
+    '2026, especializada en arte contemporáneo emergente. Quién está detrás.',
   alternates: { canonical: '/sobre-140d' },
-  openGraph: {
+  openGraph: buildOpenGraph({
     title: 'Sobre 140d',
     description:
       'Galería de arte online española especializada en arte contemporáneo emergente. ' +
       'Qué es, cómo funciona y quién está detrás.',
-    url: `${SITE_URL}/sobre-140d`,
-    type: 'website',
-  },
+    path: '/sobre-140d',
+  }),
+  twitter: buildTwitter({
+    title: 'Sobre 140d',
+    description:
+      'Galería de arte online española especializada en arte contemporáneo emergente. ' +
+      'Qué es, cómo funciona y quién está detrás.',
+  }),
 }
 
 export default function SobrePage() {

@@ -18,6 +18,7 @@ import LayoutWrapper from '@/components/LayoutWrapper'
 import MetaPixel from '@/components/MetaPixel'
 import { CONSENT_BOOTSTRAP_SCRIPT } from '@/lib/cookieConsent'
 import { IS_PROD } from '@/lib/env'
+import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
@@ -30,6 +31,12 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://140d.art'
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Tiñe la barra del navegador en móvil. `manifest.json` ya declaraba
+  // `theme_color: #ffffff`, pero el manifest sólo gobierna la aplicación
+  // instalada: en una visita normal el color sale de ESTA etiqueta, y sin ella
+  // Android pintaba su gris por defecto. Blanco porque el sitio es de tema
+  // claro únicamente, así que la barra continúa la página en vez de cortarla.
+  themeColor: '#ffffff',
 }
 
 export const metadata = {
@@ -39,10 +46,13 @@ export const metadata = {
     default: '140d | Galería de arte online: obra original de artistas emergentes',
     template: '%s | 140d',
   },
+  // 140 caracteres. Google corta la descripción alrededor de los 155-160 y esta
+  // es la POR DEFECTO: la hereda toda ruta que no declare la suya, así que si se
+  // pasa de largo el recorte se propaga a varias páginas a la vez. La versión
+  // anterior medía 238 y perdía sus últimas cuatro palabras en cada una.
   description:
-    'Galería de arte online española especializada en arte contemporáneo emergente. ' +
-    'Compra obra original de artistas jóvenes con certificado de autenticidad y envío a ' +
-    'toda España, y acompaña su proceso creativo en directos, charlas y talleres.',
+    'Galería de arte online española de arte contemporáneo emergente. ' +
+    'Obra original certificada, envío a toda España y directos con los artistas.',
 
   // `keywords` no pesa en el ranking de Google desde hace años. Se conserva
   // porque sí lo leen algunos rastreadores de IA y agregadores como señal de
@@ -86,29 +96,20 @@ export const metadata = {
     canonical: '/',
   },
 
-  openGraph: {
-    type: 'website',
-    locale: 'es_ES',
-    url: SITE_URL,
-    siteName: '140d',
+  // Estos dos bloques ya no son los valores «heredados» por el resto del sitio:
+  // Next SUSTITUYE `openGraph` y `twitter` en cuanto un hijo los declara, nunca
+  // los fusiona. La herencia real la da `lib/metadata.js`, que cada ruta invoca.
+  // Ver el comentario extenso de ese fichero.
+  openGraph: buildOpenGraph({
     title: '140d - Galería de arte online',
     description: 'Obra original de artistas contemporáneos emergentes, con certificado de autenticidad y envío a toda España.',
-    images: [
-      {
-        url: '/brand/og-image.jpg',
-        width: 1200,
-        height: 630,
-        alt: '140d - Galería de Arte Online',
-      },
-    ],
-  },
+    path: '/',
+  }),
 
-  twitter: {
-    card: 'summary_large_image',
+  twitter: buildTwitter({
     title: '140d - Galería de arte online',
     description: 'Obra original de artistas contemporáneos emergentes, con certificado de autenticidad y envío a toda España.',
-    images: ['/brand/og-image.jpg'],
-  },
+  }),
 
   appleWebApp: {
     title: '140d',

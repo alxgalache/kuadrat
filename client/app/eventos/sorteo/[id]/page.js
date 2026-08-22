@@ -1,4 +1,5 @@
 import { fetchDraw, truncateText, SITE_URL, getArtImageUrl, getOthersImageUrl } from '@/lib/serverApi'
+import { buildOpenGraph, buildTwitter, socialImageUrl } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
 import DrawDetail from './DrawDetail'
 
@@ -30,12 +31,17 @@ export async function generateMetadata({ params }) {
     alternates: {
       canonical,
     },
-    openGraph: {
+    openGraph: buildOpenGraph({
       title: `${draw.name} | Sorteo 140d`,
       description: metaDescription,
-      url: `${SITE_URL}${canonical}`,
-      ...(imageUrl ? { images: [{ url: imageUrl }] } : {}),
-    },
+      path: canonical,
+      images: imageUrl ? [{ url: socialImageUrl(imageUrl), alt: draw.name }] : [],
+    }),
+    twitter: buildTwitter({
+      title: `${draw.name} | Sorteo 140d`,
+      description: metaDescription,
+      images: imageUrl ? [socialImageUrl(imageUrl)] : [],
+    }),
   }
 }
 

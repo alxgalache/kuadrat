@@ -12,9 +12,12 @@ export const metadata = {
   title: {
     absolute: '140d | Galería de arte online: obra original de artistas emergentes',
   },
+  // 155 caracteres. La anterior medía 167 y Google le cortaba «Envío a toda
+  // España», que es una de las dos objeciones que resuelve quien compra arte
+  // por internet (la otra, la autenticidad, va en la de la raíz).
   description:
-    'Galería de arte online española. Descubre y compra obra original de artistas ' +
-    'contemporáneos emergentes, y acompaña su proceso creativo en directo. Envío a toda España.',
+    'Galería de arte online española. Compra obra original de artistas ' +
+    'contemporáneos emergentes y acompaña su proceso creativo en directo. Envío a toda España.',
   alternates: {
     canonical: '/',
   },

@@ -220,7 +220,21 @@ export function stripHtml(html) {
   return html.replace(/<[^>]*>/g, '').trim()
 }
 
+// Corta por la última palabra completa, no por el carácter exacto. Cortando a
+// medias salían descripciones como «…para convertirse en un es…» en el
+// resultado de búsqueda y en la vista previa de WhatsApp: el lector ve una
+// palabra rota, que es la señal de un texto generado sin cuidado.
+//
+// El límite inferior (60 % del máximo) cubre el caso patológico de un texto sin
+// espacios en su tramo final —una URL larga, por ejemplo—: ahí es preferible
+// cortar por el carácter que devolver un fragmento demasiado corto.
+//
+// Elipsis tipográfica «…» (un carácter) en vez de tres puntos: cuenta como uno
+// frente al límite de Google y es lo correcto en es-ES.
 export function truncateText(text, maxLength = 155) {
   if (!text || text.length <= maxLength) return text || ''
-  return text.substring(0, maxLength - 3) + '...'
+  const cut = text.substring(0, maxLength - 1)
+  const lastSpace = cut.lastIndexOf(' ')
+  const base = lastSpace > maxLength * 0.6 ? cut.substring(0, lastSpace) : cut
+  return base.replace(/[\s,;:.\-—]+$/, '') + '…'
 }

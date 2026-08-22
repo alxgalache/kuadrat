@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { fetchEvent, fetchEventPayload, truncateText, SITE_URL } from '@/lib/serverApi'
+import { buildOpenGraph, buildTwitter, socialImageUrl } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
 import EventDetail from './EventDetail'
 
@@ -62,21 +63,26 @@ export async function generateMetadata({ params }) {
     alternates: {
       canonical,
     },
-    openGraph: {
+    // `cover_image_url` es una columna TEXT libre y puede traer una URL de
+    // cualquier host. `socialImageUrl` sólo pasa por el optimizador los hosts
+    // que están en `images.remotePatterns`; con cualquier otro devolvería 400 y
+    // el evento se quedaría sin imagen, así que ahí deja la URL intacta.
+    openGraph: buildOpenGraph({
       title: `${event.title} | 140d Live`,
       description: metaDescription,
-      type: 'website',
-      ...(event.cover_image_url ? {
-        images: [{ url: event.cover_image_url, alt: event.title }],
-      } : {}),
-      url: `${SITE_URL}${canonical}`,
-    },
-    twitter: {
-      card: event.cover_image_url ? 'summary_large_image' : 'summary',
+      path: canonical,
+      images: event.cover_image_url
+        ? [{ url: socialImageUrl(event.cover_image_url), alt: event.title }]
+        : [],
+    }),
+    // La condición anterior (`summary` sin portada) dejaba la tarjeta pequeña
+    // Y sin imagen alguna. Ahora sin portada se cae a la del sitio, apaisada
+    // 1200x630, así que la tarjeta grande es correcta en ambos casos.
+    twitter: buildTwitter({
       title: `${event.title} | 140d Live`,
       description: metaDescription,
-      ...(event.cover_image_url ? { images: [event.cover_image_url] } : {}),
-    },
+      images: event.cover_image_url ? [socialImageUrl(event.cover_image_url)] : [],
+    }),
   }
 }
 

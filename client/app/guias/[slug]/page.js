@@ -1,11 +1,11 @@
 import Link from 'next/link'
+import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
 import { notFound } from 'next/navigation'
 import JsonLd from '@/components/JsonLd'
 import { buildArticle, buildBreadcrumb, buildFaqPage } from '@/lib/schema'
 import { GUIDES, getGuide } from '@/lib/guides'
 import { getGuideContent, isPlaceholder } from '@/lib/guideContent'
 import { renderInlineLinks, stripInlineLinks } from '@/lib/inlineLinks'
-import { SITE_URL } from '@/lib/siteInfo'
 
 // Las guías son contenido estático: se prerenderizan todas en el build. A
 // diferencia de las fichas de obra, aquí sí se puede —el catálogo de guías es
@@ -37,12 +37,16 @@ export async function generateMetadata({ params }) {
     description: guide.summary,
     keywords: guide.keywords,
     alternates: { canonical: `/guias/${guide.slug}` },
-    openGraph: {
+    openGraph: buildOpenGraph({
       type: 'article',
       title: `${guide.title} | 140d`,
       description: guide.summary,
-      url: `${SITE_URL}/guias/${guide.slug}`,
-    },
+      path: `/guias/${guide.slug}`,
+    }),
+    twitter: buildTwitter({
+      title: `${guide.title} | 140d`,
+      description: guide.summary,
+    }),
     // Una guía todavía sin redactar no se indexa. Ver isPlaceholder() en
     // lib/guideContent.js: publicar una página con texto de marcador es peor
     // que no publicarla.

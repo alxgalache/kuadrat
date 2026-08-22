@@ -4,8 +4,8 @@ import {
   fetchAuthorOtherProducts,
   getAuthorImageUrl,
   truncateText,
-  SITE_URL,
 } from '@/lib/serverApi'
+import { buildOpenGraph, buildTwitter, socialImageUrl } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
 import { buildPerson, buildItemList, buildBreadcrumb, stripHtml } from '@/lib/schema'
 import GalleryMasAuthorContent from './GalleryMasAuthorContent'
@@ -44,19 +44,34 @@ export async function generateMetadata({ params }) {
     title: `${author.full_name} — productos y ediciones`,
     description: metaDescription,
     alternates: { canonical },
-    openGraph: {
+    // El retrato se sirve por el optimizador de Next: el original medido en
+    // producción pesaba 587 KB y **WhatsApp no pinta la vista previa por encima
+    // de 500 KB**; por el optimizador son 44 KB. Ver `lib/metadata.js`.
+    //
+    // LO QUE ESTO **NO** ARREGLA, y es deliberado: LinkedIn exige 1200 px de
+    // ancho para su tarjeta grande y este retrato mide 787. El optimizador
+    // recorta al ancho del original y NUNCA amplía —comprobado: `w=828` y
+    // `w=1080` devuelven exactamente los mismos bytes—, así que por aquí no
+    // tiene solución. La única sería subir retratos más anchos. Se asume:
+    // LinkedIn seguirá mostrando miniatura pequeña en las fichas de artista.
+    openGraph: buildOpenGraph({
       type: 'profile',
       title: `${author.full_name} | 140d`,
       description: metaDescription,
-      url: `${SITE_URL}${canonical}`,
-      ...(imageUrl ? { images: [{ url: imageUrl, alt: author.full_name }] } : {}),
-    },
-    twitter: {
-      card: 'summary',
+      path: canonical,
+      images: imageUrl ? [{ url: socialImageUrl(imageUrl), alt: author.full_name }] : [],
+    }),
+    // 'summary' (tarjeta pequeña) SÓLO cuando hay retrato, porque es vertical y
+    // la tarjeta grande de X lo recortaría por el centro, decapitando a la
+    // persona. Sin retrato se cae a la tarjeta del sitio, que es apaisada 1200x630
+    // y ahí sí corresponde 'summary_large_image'. Mismo criterio condicional que
+    // ya usaba `live/[slug]`.
+    twitter: buildTwitter({
+      card: imageUrl ? 'summary' : 'summary_large_image',
       title: `${author.full_name} | 140d`,
       description: metaDescription,
-      ...(imageUrl ? { images: [imageUrl] } : {}),
-    },
+      images: imageUrl ? [socialImageUrl(imageUrl)] : [],
+    }),
   }
 }
 

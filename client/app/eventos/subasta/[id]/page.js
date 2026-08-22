@@ -1,4 +1,5 @@
 import { fetchAuction, truncateText, SITE_URL } from '@/lib/serverApi'
+import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
 import AuctionDetail from './AuctionDetail'
 
@@ -26,11 +27,18 @@ export async function generateMetadata({ params }) {
     alternates: {
       canonical,
     },
-    openGraph: {
+    // Sin imagen propia: la subasta agrupa varias obras y ninguna la representa
+    // mejor que otra, así que se cae a la tarjeta del sitio en lugar de elegir
+    // una arbitrariamente.
+    openGraph: buildOpenGraph({
       title: `${auction.name} | Subastas 140d`,
       description: metaDescription,
-      url: `${SITE_URL}${canonical}`,
-    },
+      path: canonical,
+    }),
+    twitter: buildTwitter({
+      title: `${auction.name} | Subastas 140d`,
+      description: metaDescription,
+    }),
   }
 }
 

@@ -1,11 +1,11 @@
 import Image from 'next/image'
+import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
 import Link from 'next/link'
 import {
   fetchAuthors,
   fetchAuthorArtProducts,
   getAuthorImageUrl,
   getAuthorImageDisplayUrl,
-  SITE_URL,
 } from '@/lib/serverApi'
 import JsonLd from '@/components/JsonLd'
 import { buildItemList, buildBreadcrumb, buildPerson } from '@/lib/schema'
@@ -39,12 +39,17 @@ export const metadata = {
     'Los artistas de 140d: arte contemporáneo emergente español. Conoce su ' +
     'trayectoria y descubre su obra original disponible, con envío a toda España.',
   alternates: { canonical: '/galeria/artistas' },
-  openGraph: {
+  openGraph: buildOpenGraph({
     title: 'Artistas | 140d',
     description:
       'Los artistas de 140d: arte contemporáneo emergente español. Conoce su trayectoria y su obra.',
-    url: `${SITE_URL}/galeria/artistas`,
-  },
+    path: '/galeria/artistas',
+  }),
+  twitter: buildTwitter({
+    title: 'Artistas | 140d',
+    description:
+      'Los artistas de 140d: arte contemporáneo emergente español. Conoce su trayectoria y su obra.',
+  }),
 }
 
 export default async function ArtistasPage() {
