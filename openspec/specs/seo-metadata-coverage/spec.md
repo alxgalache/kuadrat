@@ -80,6 +80,8 @@ Every indexable route SHALL declare Open Graph title, description, URL and type,
 
 Where the route has a representative image, that image SHALL be declared with an absolute URL served from the public origin or the CDN, never from an origin only reachable inside the internal network.
 
+The image declared SHALL suit the shape of a social card, which is landscape, rather than the shape the same image happens to have on the site's own layout. On artist pages this inverts the site's own preference: the landscape variant (`profile_img_mobile`, uploaded for the artist modal's mobile band) SHALL be preferred over the vertical portrait (`profile_img`), which SHALL be used only as a fallback for artists who have no landscape variant. `hide_profile_img_mobile` SHALL NOT be consulted — it governs the modal's layout, not the file's suitability.
+
 #### Scenario: An artwork's social preview
 
 - **WHEN** an artwork detail page declares an Open Graph image
@@ -89,6 +91,16 @@ Where the route has a representative image, that image SHALL be declared with an
 
 - **WHEN** a route has no image of its own
 - **THEN** it SHALL inherit the site's default social image rather than declaring a broken or empty one
+
+#### Scenario: An artist's social preview uses the landscape variant
+
+- **WHEN** an artist page declares its Open Graph image and the artist has a `profile_img_mobile`
+- **THEN** that landscape variant SHALL be the declared image, and the Twitter card SHALL be `summary_large_image`
+
+#### Scenario: An artist with a single image
+
+- **WHEN** an artist page declares its Open Graph image and the artist has no `profile_img_mobile`
+- **THEN** the main portrait SHALL be the declared image, and the Twitter card SHALL be `summary`
 
 #### Scenario: Open Graph type is one the framework accepts
 

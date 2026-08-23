@@ -202,6 +202,46 @@ export function getAuthorImageDisplayUrl(basename) {
     : getAuthorImageUrl(basename)
 }
 
+// Imagen del artista para las VISTAS PREVIAS SOCIALES (Open Graph y Twitter
+// Card). Prefiere `profile_img_mobile` y sólo cae a `profile_img` cuando el
+// artista no tiene la segunda.
+//
+// La inversión respecto al resto de la aplicación es deliberada y es el motivo
+// entero de que esta función exista. Las dos imágenes se subieron para el modal
+// de artista, cuyas dos maquetas tienen proporciones opuestas: la columna de
+// escritorio es alta y estrecha —`profile_img`, vertical— y la banda de móvil
+// es ancha y baja —`profile_img_mobile`, apaisada—. Una tarjeta social es lo
+// segundo, no lo primero: Open Graph pide 1,91:1 y la tarjeta grande de X pide
+// 16:9. Medido sobre un artista real en producción, las dos variantes son
+// 787 × 1180 y 2097 × 1180 de la MISMA fotografía; la vertical la recortaba
+// cada plataforma por su cuenta y con criterios distintos.
+//
+// Y arregla de paso el techo que el comentario de `galeria/autor/[authorSlug]`
+// daba por asumido: LinkedIn exige 1200 px de ancho para su tarjeta grande, el
+// optimizador de Next nunca amplía, y la vertical mide 787. La apaisada sale a
+// 1920 × 1080 por el optimizador (36 KB). Para los artistas que tengan las dos,
+// la tarjeta grande de LinkedIn deja de ser inalcanzable.
+//
+// `landscape` viaja de vuelta porque la ruta lo necesita para elegir el tipo de
+// tarjeta de X: 'summary_large_image' cuando hay apaisada, y el 'summary'
+// pequeño de siempre cuando se cae al retrato vertical, que la tarjeta grande
+// recortaría por el centro decapitando a la persona.
+//
+// `hide_profile_img_mobile` NO se consulta a propósito: ese indicador dice «no
+// pintes ninguna imagen en pantallas pequeñas dentro del modal», que es una
+// decisión de maqueta sobre el sitio propio, no un juicio sobre el fichero. Un
+// artista que lo activa es además, casi por definición, uno que no ha subido
+// variante apaisada, así que aquí ya cae al retrato por la vía normal.
+export function getAuthorSocialImage(author) {
+  if (!author) return { url: null, landscape: false }
+  const basename = author.profile_img_mobile || author.profile_img
+  if (!basename) return { url: null, landscape: false }
+  return {
+    url: getAuthorImageUrl(basename),
+    landscape: Boolean(author.profile_img_mobile),
+  }
+}
+
 
 export function getArtImageUrl(basename) {
   return CDN_BASE_URL

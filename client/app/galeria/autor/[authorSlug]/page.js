@@ -3,6 +3,7 @@ import {
   fetchAuthor,
   fetchAuthorArtProducts,
   getAuthorImageUrl,
+  getAuthorSocialImage,
   truncateText,
 } from '@/lib/serverApi'
 import { buildOpenGraph, buildTwitter, socialImageUrl } from '@/lib/metadata'
@@ -38,39 +39,42 @@ export async function generateMetadata({ params }) {
     160,
   )
   const canonical = `/galeria/autor/${author.slug}`
-  const imageUrl = getAuthorImageUrl(author.profile_img)
+  const { url: socialImage, landscape } = getAuthorSocialImage(author)
+  const socialImageOptimized = socialImageUrl(socialImage)
 
   return {
     title: `${author.full_name} — obra original`,
     description: metaDescription,
     alternates: { canonical },
-    // El retrato se sirve por el optimizador de Next: el original medido en
-    // producción pesaba 587 KB y **WhatsApp no pinta la vista previa por encima
-    // de 500 KB**; por el optimizador son 44 KB. Ver `lib/metadata.js`.
+    // La imagen social es la variante APAISADA del artista
+    // (`profile_img_mobile`), no el retrato vertical: ver `getAuthorSocialImage`
+    // en `lib/serverApi.js` para el porqué de la inversión. Cae al retrato
+    // cuando el artista no tiene la segunda, que es el comportamiento anterior.
     //
-    // LO QUE ESTO **NO** ARREGLA, y es deliberado: LinkedIn exige 1200 px de
-    // ancho para su tarjeta grande y este retrato mide 787. El optimizador
-    // recorta al ancho del original y NUNCA amplía —comprobado: `w=828` y
-    // `w=1080` devuelven exactamente los mismos bytes—, así que por aquí no
-    // tiene solución. La única sería subir retratos más anchos. Se asume:
-    // LinkedIn seguirá mostrando miniatura pequeña en las fichas de artista.
+    // Se sirve por el optimizador de Next: el retrato original medido en
+    // producción pesaba 587 KB y **WhatsApp no pinta la vista previa por encima
+    // de 500 KB**. Ver `lib/metadata.js`.
     openGraph: buildOpenGraph({
       type: 'profile',
       title: `${author.full_name} | 140d`,
       description: metaDescription,
       path: canonical,
-      images: imageUrl ? [{ url: socialImageUrl(imageUrl), alt: author.full_name }] : [],
+      images: socialImageOptimized
+        ? [{ url: socialImageOptimized, alt: author.full_name }]
+        : [],
     }),
-    // 'summary' (tarjeta pequeña) SÓLO cuando hay retrato, porque es vertical y
-    // la tarjeta grande de X lo recortaría por el centro, decapitando a la
-    // persona. Sin retrato se cae a la tarjeta del sitio, que es apaisada 1200x630
-    // y ahí sí corresponde 'summary_large_image'. Mismo criterio condicional que
-    // ya usaba `live/[slug]`.
+    // El tipo de tarjeta de X se deriva de la imagen que haya salido:
+    // 'summary_large_image' con la apaisada, que es lo que esa tarjeta pide;
+    // 'summary' (tarjeta pequeña) cuando se cae al retrato vertical, porque la
+    // grande lo recortaría por el centro decapitando a la persona. Sin ninguna
+    // imagen se hereda la tarjeta del sitio, apaisada 1200x630, y ahí vuelve a
+    // corresponder la grande. Mismo criterio condicional que ya usaba
+    // `live/[slug]`.
     twitter: buildTwitter({
-      card: imageUrl ? 'summary' : 'summary_large_image',
+      card: socialImageOptimized && !landscape ? 'summary' : 'summary_large_image',
       title: `${author.full_name} | 140d`,
       description: metaDescription,
-      images: imageUrl ? [socialImageUrl(imageUrl)] : [],
+      images: socialImageOptimized ? [socialImageOptimized] : [],
     }),
   }
 }
@@ -92,8 +96,15 @@ export default async function GalleryAuthorPage({ params }) {
   // mundos.
   if (!author) notFound()
 
-  // Solo la absoluta: la consumen el JSON-LD y los metadatos, que leen clientes
-  // externos. Ya no se pinta ninguna imagen en esta página.
+  // Solo la absoluta: la consume el JSON-LD, que leen clientes externos. Ya no
+  // se pinta ninguna imagen en esta página.
+  //
+  // Aquí SÍ es el retrato principal, y no la variante apaisada que usan las
+  // vistas previas sociales: `image` de un nodo Person de schema.org identifica
+  // a la persona ante un buscador, sin recorte a una proporción fija de por
+  // medio, así que la imagen que el artista declaró como principal es la que
+  // corresponde. La inversión de `getAuthorSocialImage` existe por la
+  // proporción de la tarjeta, que aquí no interviene.
   const imageUrl = getAuthorImageUrl(author.profile_img)
   const canonical = `/galeria/autor/${author.slug}`
 
