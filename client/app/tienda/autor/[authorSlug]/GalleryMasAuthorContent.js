@@ -7,6 +7,7 @@ import AuthorModal from '@/components/AuthorModal'
 import AuthorSidebar from '@/components/AuthorSidebar'
 import AuthorMobileFilter from '@/components/AuthorMobileFilter'
 import ProductGrid from '@/components/ProductGrid'
+import GridLoadMore from '@/components/GridLoadMore'
 import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
 import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
@@ -23,7 +24,7 @@ export default function GalleryMasAuthorContent({ params, initialProducts = null
   // disponible en el efecto de montaje del listado.
   const restoration = useGridScrollRestoration()
   const { authors } = useGalleryAuthors('other', authorSlug)
-  const { products, loading, error, page, isFading } = useGalleryProducts(othersAPI, authorSlug, restoration, initialProducts)
+  const { products, loading, error, page, isFading, loadMoreProps } = useGalleryProducts(othersAPI, authorSlug, restoration, initialProducts)
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)
@@ -111,6 +112,7 @@ export default function GalleryMasAuthorContent({ params, initialProducts = null
                 authors={authors}
                 onViewAuthorBio={handleViewAuthorBio}
               />
+              <GridLoadMore {...loadMoreProps} variant="other" gridName="tienda-autor" />
             </div>
           </main>
         </div>

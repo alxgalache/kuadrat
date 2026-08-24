@@ -327,6 +327,48 @@ export const GRID_RESTORE_TTL_MS = 30 * 60 * 1000;
 // purgan las caducadas y se recorta a las más recientes.
 export const GRID_RESTORE_MAX_SNAPSHOTS = 10;
 
+// ── Carga incremental de las rejillas (grid-infinite-scroll) ──
+//
+// Margen de anticipación del IntersectionObserver: la carga se dispara cuando el
+// centinela entra en esta franja por debajo del área visible, no cuando el
+// visitante topa con el final.
+//
+// El observador es el mecanismo principal precisamente porque NO mide nada: con
+// `root: null` su marco de referencia es el viewport del documento, el mismo
+// contra el que el navegador calcula el recorrido de scroll. La implementación
+// anterior comparaba `window.innerHeight` (viewport VISUAL, que encoge cuando la
+// barra del navegador está a la vista) con `document.documentElement.scrollHeight`
+// (medido contra el viewport de MAQUETACIÓN, que no cambia), con tolerancia cero.
+// Con la barra visible esa condición es inalcanzable, y como en el fondo de la
+// página ya no se emiten más eventos de scroll, no había segundo intento.
+export const GRID_INFINITE_SCROLL_ROOT_MARGIN_PX = 600;
+
+// Umbral del vigía de respaldo (scroll + resize). Mismo valor que el margen del
+// observador para que ambos disparadores coincidan. Nunca comparar contra el
+// fondo exacto: ese es el defecto que este cambio corrige.
+export const GRID_INFINITE_SCROLL_FALLBACK_PX = 600;
+
+// Evento de analítica que emite el botón manual. Es la única señal disponible
+// sobre si la carga automática funciona en los navegadores donde la incidencia
+// no es reproducible: si funciona, casi nadie pulsa el botón. Hay que darlo de
+// alta como objetivo en el panel de Plausible o se descarta en silencio.
+export const GRID_LOAD_MORE_EVENT = 'GridLoadMoreManual';
+
+// Textos del pie de rejilla. Dos variantes de vocabulario porque la galería
+// habla de «obras» y la tienda de «productos»; el resto es idéntico.
+export const GRID_LOAD_MORE_COPY = {
+  art: {
+    boton: 'Cargar más obras',
+    error: 'No se pudieron cargar más obras.',
+  },
+  other: {
+    boton: 'Cargar más productos',
+    error: 'No se pudieron cargar más productos.',
+  },
+  cargando: 'Cargando...',
+  reintentar: 'Reintentar',
+};
+
 // ── Calculadora de envíos de obras (sendcloud-art-shipping-calculator) ──
 
 // Los cuatro territorios de España, en el orden en que se muestran. Baleares va

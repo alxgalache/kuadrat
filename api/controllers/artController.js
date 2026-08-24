@@ -49,7 +49,7 @@ const getAllArtProducts = async (req, res, next) => {
       args.push(authorSlug);
     }
 
-    query += ` ORDER BY a.created_at DESC LIMIT ? OFFSET ?`;
+    query += ` ORDER BY a.created_at DESC, a.id DESC LIMIT ? OFFSET ?`;
     args.push(limit + 1, offset); // Fetch one extra to check if there are more
 
     const result = await db.execute({ sql: query, args });
