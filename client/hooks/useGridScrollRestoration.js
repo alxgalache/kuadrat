@@ -7,13 +7,14 @@ import {
   GRID_RESTORE_STORAGE_PREFIX,
   GRID_RESTORE_TTL_MS,
 } from '@/lib/constants'
+import { isValidOrderSeed } from '@/lib/catalogOrderSeed'
 
 /**
  * Restauración de la posición del scroll en los grids con scroll infinito
  * (galería y tienda, incluidas sus rutas por autor).
  *
  * Al abrir el detalle de un producto se guarda una instantánea
- * ({ pages, productId, scrollY }) asociada a la ENTRADA DEL HISTORIAL del grid:
+ * ({ pages, productId, scrollY, seed }) asociada a la ENTRADA DEL HISTORIAL del grid:
  * el id de esa entrada vive en `window.history.state` y la instantánea en
  * `sessionStorage`. Volver a esa entrada concreta (atrás/adelante) es lo único
  * que dispara la restauración; entrar al grid desde el menú, desde un enlace
@@ -40,6 +41,13 @@ function isValidSnapshot(snapshot) {
   if (!Number.isFinite(snapshot.scrollY)) return false
   if (!Number.isFinite(snapshot.savedAt)) return false
   if (Date.now() - snapshot.savedAt > GRID_RESTORE_TTL_MS) return false
+  // La semilla es OPCIONAL: los grids con filtro de autor no usan ninguna, y
+  // las instantáneas escritas antes de existir el orden entrelazado siguen en
+  // el sessionStorage de los visitantes hasta media hora. Ausente significa
+  // «restaura con una semilla nueva», no «descarta la instantánea».
+  if (snapshot.seed !== null && snapshot.seed !== undefined && !isValidOrderSeed(snapshot.seed)) {
+    return false
+  }
   return true
 }
 
@@ -180,6 +188,7 @@ export function useGridScrollRestoration() {
   const historyIdRef = useRef(null)
   const snapshotRef = useRef(undefined)
   const loadedPagesRef = useRef(1)
+  const orderSeedRef = useRef(null)
   const rafRef = useRef(null)
 
   // Lectura en el render (no mutación): `useGalleryProducts` necesita la
@@ -210,6 +219,16 @@ export function useGridScrollRestoration() {
     if (Number.isInteger(pages) && pages > 0) loadedPagesRef.current = pages
   }, [])
 
+  /**
+   * Semilla con la que el grid ha construido su orden. Sin ella, volver atrás
+   * rehidrataría las mismas páginas de un barajado DISTINTO: el producto que se
+   * pulsó estaría en otra posición —o fuera de las páginas recargadas— y el
+   * sistema caería al desplazamiento guardado, que ya no correspondería a nada.
+   */
+  const setOrderSeed = useCallback((seed) => {
+    orderSeedRef.current = isValidOrderSeed(seed) ? seed : null
+  }, [])
+
   const onProductOpen = useCallback((productId, event) => {
     // Abrir en pestaña nueva no cambia la página actual: marcar la entrada
     // dejaría armada una restauración para una navegación que no ocurre.
@@ -234,6 +253,7 @@ export function useGridScrollRestoration() {
       pages: loadedPagesRef.current,
       productId,
       scrollY: window.scrollY,
+      seed: orderSeedRef.current,
       savedAt: Date.now(),
     })
   }, [])
@@ -256,9 +276,10 @@ export function useGridScrollRestoration() {
     () => ({
       snapshot: snapshotRef.current,
       setLoadedPages,
+      setOrderSeed,
       onProductOpen,
       applyRestore,
     }),
-    [setLoadedPages, onProductOpen, applyRestore]
+    [setLoadedPages, setOrderSeed, onProductOpen, applyRestore]
   )
 }

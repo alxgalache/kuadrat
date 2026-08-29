@@ -12,6 +12,10 @@ instalación *parece* funcionar y los datos que recoge son falsos.
 - **Dominio:** `analytics.140d.art` (panel **e** ingesta, ver §1.3)
 - **Última revisión:** 19/08/2026
 
+> Este documento cubre la **instalación**. Para leer e interpretar el evento
+> personalizado `GridLoadMoreManual` —el único que emite el sitio— ver
+> [`medicion-scroll-infinito.md`](./medicion-scroll-infinito.md).
+
 ---
 
 ## 0. Arquitectura, y por qué es así

@@ -55,16 +55,16 @@
 
 ## 8. Analítica
 
-- [ ] 8.1 Dar de alta el evento del control manual como objetivo en el panel de Plausible de `analytics.140d.art`. Sin este paso el evento se envía y se descarta en silencio, sin error en ninguna parte.
+- [x] 8.1 Dar de alta el evento del control manual como objetivo en el panel de Plausible de `analytics.140d.art`. Sin este paso el evento se envía y se descarta en silencio, sin error en ninguna parte.
 
 ## 9. Verificación manual (`client/` no tiene runner de tests)
 
-- [ ] 9.1 `/galeria` en escritorio: bajar hasta el final → cargan las 26 obras en dos tandas, sin duplicados y sin avisos en consola sobre claves repetidas.
-- [ ] 9.2 `/galeria` en un móvil Samsung con el navegador por defecto: bajar hasta el final **sin subir en ningún momento**, con la barra inferior a la vista → cargan las obras siguientes. Es el caso que hoy falla.
-- [ ] 9.3 Mismo recorrido abriendo el enlace desde el navegador integrado de Instagram.
-- [ ] 9.4 Con la red desconectada a mitad de recorrido: las obras ya cargadas siguen en pantalla, aparece el aviso en línea y **no** hay ráfaga de peticiones repetidas en la pestaña de red. Al reconectar, «Reintentar» completa la carga.
-- [ ] 9.5 Recorrer la rejilla completa usando sólo el teclado, sin ratón ni gestos: el control manual es alcanzable y permite llegar a la última obra.
-- [ ] 9.6 Restauración de scroll: cargar varias páginas, abrir una obra, volver atrás → se rehidratan todas las páginas en **una sola** petición y la obra queda centrada, exactamente como antes de este cambio.
-- [ ] 9.7 `/galeria/autor/[authorSlug]`: comprobar que ahora aparece indicador de carga durante una carga incremental.
-- [ ] 9.8 Ficha de artista con menos de 12 obras: no se muestra el control manual y no se dispara ninguna petición adicional.
-- [ ] 9.9 En producción, tras 48 horas: revisar en Plausible cuántas veces se ha usado el control manual y con qué navegadores. Cifras próximas a cero confirman que la carga automática funciona; una concentración en un motor concreto señala dónde seguir mirando.
+- [x] 9.1 `/galeria` en escritorio: bajar hasta el final → cargan las 26 obras en dos tandas, sin duplicados y sin avisos en consola sobre claves repetidas.
+- [x] 9.2 `/galeria` en un móvil Samsung con el navegador por defecto: bajar hasta el final **sin subir en ningún momento**, con la barra inferior a la vista → cargan las obras siguientes. Es el caso que hoy falla.
+- [x] 9.3 Mismo recorrido abriendo el enlace desde el navegador integrado de Instagram.
+- [x] 9.4 Con la red desconectada a mitad de recorrido: las obras ya cargadas siguen en pantalla, aparece el aviso en línea y **no** hay ráfaga de peticiones repetidas en la pestaña de red. Al reconectar, «Reintentar» completa la carga.
+- [x] 9.5 Recorrer la rejilla completa usando sólo el teclado, sin ratón ni gestos: el control manual es alcanzable y permite llegar a la última obra.
+- [x] 9.6 Restauración de scroll: cargar varias páginas, abrir una obra, volver atrás → se rehidratan todas las páginas en **una sola** petición y la obra queda centrada, exactamente como antes de este cambio.
+- [x] 9.7 `/galeria/autor/[authorSlug]`: comprobar que ahora aparece indicador de carga durante una carga incremental.
+- [x] 9.8 Ficha de artista con menos de 12 obras: no se muestra el control manual y no se dispara ninguna petición adicional.
+- [x] 9.9 En producción, tras 48 horas: revisar en Plausible cuántas veces se ha usado el control manual y con qué navegadores. Cifras próximas a cero confirman que la carga automática funciona; una concentración en un motor concreto señala dónde seguir mirando.

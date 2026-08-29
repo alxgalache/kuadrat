@@ -353,7 +353,10 @@ export const productsAPI = {
 
 // Art API
 export const artAPI = {
-  getAll: async (page = 1, limit = 12, authorSlug = null) => {
+  // `seed` gobierna el orden entrelazado por artista. Sólo se envía en las
+  // rejillas sin filtro de autor, y tiene que ser la MISMA en todas las páginas
+  // de una misma rejilla: ver `lib/catalogOrderSeed.js`.
+  getAll: async (page = 1, limit = 12, authorSlug = null, seed = null) => {
     const params = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
@@ -361,6 +364,10 @@ export const artAPI = {
 
     if (authorSlug) {
       params.append('author_slug', authorSlug);
+    }
+
+    if (seed !== null && seed !== undefined) {
+      params.append('seed', seed.toString());
     }
 
     return apiRequest(`/art?${params.toString()}`);
@@ -395,7 +402,10 @@ export const artAPI = {
 
 // Others API
 export const othersAPI = {
-  getAll: async (page = 1, limit = 12, authorSlug = null) => {
+  // `seed` gobierna el orden entrelazado por artista. Sólo se envía en las
+  // rejillas sin filtro de autor, y tiene que ser la MISMA en todas las páginas
+  // de una misma rejilla: ver `lib/catalogOrderSeed.js`.
+  getAll: async (page = 1, limit = 12, authorSlug = null, seed = null) => {
     const params = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
@@ -403,6 +413,10 @@ export const othersAPI = {
 
     if (authorSlug) {
       params.append('author_slug', authorSlug);
+    }
+
+    if (seed !== null && seed !== undefined) {
+      params.append('seed', seed.toString());
     }
 
     return apiRequest(`/others?${params.toString()}`);

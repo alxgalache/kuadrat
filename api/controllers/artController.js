@@ -15,6 +15,12 @@ const config = require('../config/env');
 const s3Service = require('../services/s3Service');
 const { sendNewProductNotificationEmail } = require('../services/emailService');
 const { attachProductImages } = require('../utils/productImages');
+const {
+  parseSeed,
+  getOrderedPage,
+  reorderByIds,
+  visibilityPredicate,
+} = require('../services/catalogOrdering');
 
 // Get all art products (public) with pagination and optional author filtering
 // El correo de la cuenta del artista NO viaja en las respuestas públicas de
@@ -28,6 +34,45 @@ const getAllArtProducts = async (req, res, next) => {
     const limit = parseInt(req.query.limit, 10) || 12;
     const authorSlug = req.query.author_slug;
     const offset = (page - 1) * limit;
+
+    // Orden entrelazado por artista. Sólo con semilla válida y SIN filtro de
+    // autor: con un solo artista no hay nada que entrelazar, y la protección
+    // vive aquí y no en que el cliente se abstenga de mandar la semilla.
+    const seed = parseSeed(req.query.seed);
+    if (seed !== null && !authorSlug) {
+      const { ids, hasMore } = await getOrderedPage('art', seed, page, limit);
+
+      let products = [];
+      if (ids.length > 0) {
+        // Los criterios de visibilidad se REAPLICAN: la baraja puede llevar
+        // hasta 30 s de retraso y una obra vendida en esa ventana no debe
+        // llegar a mostrarse. La página devuelve entonces un producto menos,
+        // que es la degradación aceptada; `hasMore` sale de la baraja.
+        const placeholders = ids.map(() => '?').join(', ');
+        const hidratadas = await db.execute({
+          sql: `
+            SELECT
+              a.*,
+              u.full_name as seller_full_name,
+              u.slug as seller_slug
+            FROM art a
+            LEFT JOIN users u ON a.seller_id = u.id
+            WHERE a.id IN (${placeholders}) AND ${visibilityPredicate('a')}
+          `,
+          args: ids,
+        });
+        products = reorderByIds(hidratadas.rows, ids);
+      }
+
+      await attachProductImages(products, 'art');
+
+      return res.status(200).json({
+        success: true,
+        products: products,
+        hasMore: hasMore,
+        page: page,
+      });
+    }
 
     // Build the query with optional filters
     let query = `

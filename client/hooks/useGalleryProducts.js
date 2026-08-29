@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { DEFAULT_PAGE_SIZE, GRID_RESTORE_MAX_PAGES } from '@/lib/constants'
+import { drawOrderSeed } from '@/lib/catalogOrderSeed'
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 
 /**
@@ -15,6 +16,22 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
  * El disparo de la carga incremental vive en `useInfiniteScroll`; aquí sólo se
  * decide QUÉ se pide y cómo se integra. Ver ese fichero para por qué el listener
  * de scroll que había antes no podía funcionar en móvil.
+ *
+ * SEMILLA DE ORDENACIÓN. Sin filtro de autor, la rejilla sortea una semilla en
+ * cada carga y la API entrelaza los artistas a partir de ella, de modo que no
+ * haya dos obras contiguas del mismo artista y que la primera fila no sea
+ * siempre del mismo. Reglas que hacen que eso funcione:
+ *
+ *   · Se sortea DENTRO de `loadInitial`, nunca en el render. Ambas rutas se
+ *     prerrenderizan y un valor aleatorio calculado en el servidor no
+ *     coincidiría con el del cliente.
+ *   · Toda la vida de la rejilla usa la misma: la ventana de paginación se
+ *     desplaza sobre UNA ordenación, y dos ordenaciones distintas repetirían
+ *     obras y perderían otras.
+ *   · Al volver atrás se reutiliza la de la instantánea, o la restauración
+ *     recolocaría el scroll sobre una rejilla que ya no es la misma.
+ *   · Con `authorSlug` no se envía ninguna: un solo artista no se entrelaza, y
+ *     el filtro se comporta exactamente igual que antes.
  */
 export function useGalleryProducts(
   productAPI,
@@ -65,6 +82,9 @@ export function useGalleryProducts(
   // traer.
   const pageRef = useRef(1)
   const hasMoreRef = useRef(false)
+  // La carga incremental la lee fuera del ciclo de render, igual que las dos de
+  // arriba: `loadMore` no debe recrearse cuando cambia la semilla.
+  const seedRef = useRef(null)
 
   // Ids ya presentes en la rejilla. Se mantiene aquí y no derivado de
   // `products` porque hace falta el recuento de elementos NUEVOS de forma
@@ -128,10 +148,19 @@ export function useGalleryProducts(
         setPage(1)
         pageRef.current = 1
       }
+      // Una semilla nueva por carga de rejilla, salvo al restaurar: allí manda
+      // la de la instantánea. Con filtro de autor no hay semilla en absoluto.
+      const semilla = authorSlug
+        ? null
+        : (snapshot?.seed ?? drawOrderSeed())
+      seedRef.current = semilla
+      restorationRef.current?.setOrderSeed(semilla)
+
       const productsData = await productAPI.getAll(
         1,
         restorePages * DEFAULT_PAGE_SIZE,
-        authorSlug
+        authorSlug,
+        semilla
       )
       setProducts(productsData.products)
       productIdsRef.current = new Set(productsData.products.map((p) => p.id))
@@ -186,7 +215,12 @@ export function useGalleryProducts(
     setLoadMoreError(false)
     try {
       const nextPage = pageRef.current + 1
-      const productsData = await productAPI.getAll(nextPage, DEFAULT_PAGE_SIZE, authorSlug)
+      const productsData = await productAPI.getAll(
+        nextPage,
+        DEFAULT_PAGE_SIZE,
+        authorSlug,
+        seedRef.current
+      )
 
       // Descarta lo que ya está en la rejilla. Con paginación por OFFSET sobre
       // un catálogo vivo, basta con que se venda o se despublique una obra

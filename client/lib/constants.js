@@ -448,3 +448,8 @@ export const PASSWORD_RESET_ERRORS = {
 // anteriores (fallo de red, 500, etc.).
 export const PASSWORD_RESET_GENERIC_ERROR =
   'No se ha podido validar el enlace. Inténtalo de nuevo en unos minutos.';
+
+// Semilla de ordenación de las rejillas de catálogo. Entero sin signo de 32
+// bits: es lo que consume el generador del servidor y lo que `Math.random()`
+// produce con una sola multiplicación. Ver `lib/catalogOrderSeed.js`.
+export const CATALOG_ORDER_SEED_MAX = 4294967295;
