@@ -5,17 +5,18 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Dialog, DialogPanel, Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
-import { Bars3Icon, XMarkIcon, ShoppingCartIcon, UserCircleIcon } from '@heroicons/react/24/outline'
+import { Bars3Icon, XMarkIcon, ShoppingCartIcon, UserCircleIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCart } from '@/contexts/CartContext'
 import ShoppingCartDrawer from '@/components/ShoppingCartDrawer'
-import { SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS } from '@/lib/constants'
+import { SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, IMPERSONATION_COPY } from '@/lib/constants'
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [cartOpen, setCartOpen] = useState(false)
   const [isAnimating, setIsAnimating] = useState(false)
-  const { isAuthenticated, logout, user } = useAuth()
+  const [endingImpersonation, setEndingImpersonation] = useState(false)
+  const { isAuthenticated, logout, user, impersonation, isImpersonating, stopImpersonation } = useAuth()
   const { getTotalItems, animationTrigger } = useCart()
   const router = useRouter()
   const pathname = usePathname()
@@ -38,6 +39,32 @@ export default function Navbar() {
     logout()
     router.push('/')
     router.refresh()
+  }
+
+  // The only always-reachable way out of an impersonation: while it is active
+  // the role is not `admin`, so every admin screen — including /admin/autores,
+  // where the session was started — is closed by AuthGuard. The navbar is the
+  // one component app/layout.js renders on every route.
+  //
+  // Hard navigations on both branches, matching the way the session was
+  // entered: a client-side push keeps the React tree mounted, so components
+  // still holding data fetched as the artist would survive into the restored
+  // admin session. A full load is the only way to guarantee the app boots as
+  // whoever the session now belongs to.
+  const handleStopImpersonation = async () => {
+    if (endingImpersonation) return
+    setEndingImpersonation(true)
+    try {
+      await stopImpersonation()
+      window.location.href = '/admin/autores'
+    } catch {
+      // The admin session could not be restored (demoted, or signed out by a
+      // password reset that landed while impersonating). stopImpersonation has
+      // already cleared the local state, so send them to the login screen
+      // rather than leave a session claiming to be something it is not.
+      logout()
+      window.location.href = '/autores'
+    }
   }
 
   // Trigger animation when cart changes
@@ -317,6 +344,26 @@ export default function Navbar() {
               </span>
             )}
           </button>
+          {/* End impersonation - far right, beside the cart. Rendered only
+              while an impersonation is active; the navbar is otherwise
+              byte-for-byte what it was. */}
+          {isImpersonating && (
+            <button
+              type="button"
+              onClick={handleStopImpersonation}
+              disabled={endingImpersonation}
+              title={`${IMPERSONATION_COPY.bannerPrefix} ${impersonation?.targetName || displayName}`}
+              className="ml-1 inline-flex items-center gap-x-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+            >
+              <ArrowUturnLeftIcon aria-hidden="true" className="size-5 shrink-0" />
+              {/* The identity is shown, not just an exit icon: an admin must
+                  never be able to mistake whose account they are acting in. */}
+              <span className="hidden max-w-[12rem] truncate sm:inline">
+                {IMPERSONATION_COPY.bannerPrefix} {impersonation?.targetName || displayName}
+              </span>
+              <span className="sr-only">{IMPERSONATION_COPY.exitLabel}</span>
+            </button>
+          )}
           <style jsx>{`
             @keyframes cartIconBounce {
               0% {
@@ -547,6 +594,21 @@ export default function Navbar() {
                     </Link>
                   </>
                 ) : null}
+                {isImpersonating && (
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false)
+                      handleStopImpersonation()
+                    }}
+                    disabled={endingImpersonation}
+                    className="-mx-3 flex w-full items-center gap-x-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-left text-base/7 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    <ArrowUturnLeftIcon aria-hidden="true" className="size-5 shrink-0" />
+                    <span className="truncate">
+                      {IMPERSONATION_COPY.exitLabel} ({impersonation?.targetName || displayName})
+                    </span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setMobileMenuOpen(false)

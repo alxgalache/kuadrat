@@ -12,6 +12,8 @@ const {
 const { validate } = require('../middleware/validate');
 const { sensitiveLimiter } = require('../middleware/rateLimiter');
 const { resetPasswordSchema } = require('../validators/passwordResetSchemas');
+const { authenticate } = require('../middleware/authorization');
+const { stopImpersonation } = require('../controllers/impersonationController');
 
 // POST /api/auth/login
 router.post('/login', login);
@@ -40,5 +42,15 @@ router.post('/reset-password', sensitiveLimiter, validate(resetPasswordSchema), 
 // GET /api/auth/password-requirements
 // Returns password requirements for frontend validation
 router.get('/password-requirements', getPasswordRequirements);
+
+// POST /api/auth/impersonation/stop
+//
+// Ends an impersonation and hands back an admin session. It CANNOT live under
+// routes/admin/: it is reached carrying the impersonated user's token, whose
+// role is 'seller', so adminAuth would reject every legitimate call. Its
+// authority comes instead from the signed `act` claim — which the caller
+// cannot forge — plus the re-validation of that actor's current role and
+// password_changed_at inside the controller.
+router.post('/impersonation/stop', sensitiveLimiter, authenticate, stopImpersonation);
 
 module.exports = router;

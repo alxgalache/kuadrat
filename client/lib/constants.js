@@ -449,6 +449,65 @@ export const PASSWORD_RESET_ERRORS = {
 export const PASSWORD_RESET_GENERIC_ERROR =
   'No se ha podido validar el enlace. Inténtalo de nuevo en unos minutos.';
 
+// ─── Impersonation de usuarios por el admin ───────────────────────────────
+// Clave de localStorage del marcador de impersonation. Solo gobierna la UI:
+// el estado real vive dentro del claim `act` del JWT, firmado por el backend,
+// así que editar esta clave a mano no concede ningún permiso.
+export const IMPERSONATION_STORAGE_KEY = 'impersonation';
+
+// Duración de la sesión, declarada al admin antes de entrar. Debe coincidir
+// con IMPERSONATION_TTL_MINUTES en api/controllers/impersonationController.js.
+export const IMPERSONATION_TTL_MINUTES = 60;
+
+// Códigos máquina que el backend envía en `title`, mismo patrón que
+// PASSWORD_RESET_ERRORS: la página nunca tiene que reconocer prosa en español.
+export const IMPERSONATION_ERRORS = {
+  IMPERSONATION_TARGET_FORBIDDEN:
+    'No se puede impersonar a un administrador.',
+  IMPERSONATION_TARGET_NOT_ACTIVATED:
+    'Este artista todavía no ha configurado su contraseña, así que no tiene una sesión que reproducir. Usa "Reenviar" para enviarle la invitación.',
+  IMPERSONATION_NOT_ACTIVE:
+    'No hay ninguna sesión de impersonation activa.',
+  IMPERSONATION_ACTOR_INVALID:
+    'Tu sesión de administrador ya no es válida. Vuelve a iniciar sesión.',
+  IMPERSONATION_ACTION_BLOCKED:
+    'Esta acción no está disponible mientras impersonas a otro usuario.',
+};
+
+export const IMPERSONATION_GENERIC_ERROR =
+  'No se ha podido completar la operación. Inténtalo de nuevo en unos minutos.';
+
+export const IMPERSONATION_COPY = {
+  // Barra de navegación
+  exitLabel: 'Terminar impersonate',
+  bannerPrefix: 'Actuando como',
+  // Diálogo de entrada
+  confirmTitle: (name) => `Impersonar a ${name}`,
+  confirmMessage: (name) =>
+    `Vas a entrar en la cuenta de ${name}. Verás y podrás hacer exactamente lo mismo que ${name}: sus pedidos, sus artículos y sus pantallas de vendedor. Todo lo que hagas queda registrado a tu nombre. La sesión dura ${IMPERSONATION_TTL_MINUTES} minutos y no podrás acceder al panel de administración hasta que la termines desde la barra superior.`,
+  confirmText: 'Impersonar',
+};
+
+// Menú de acciones de cada artista en /admin/autores.
+export const AUTHOR_ACTIONS_COPY = {
+  trigger: 'Acciones',
+  view: 'Ver',
+  edit: 'Editar',
+  password: 'Contraseña',
+  resend: 'Reenviar invitación',
+  impersonate: 'Impersonar',
+};
+
+// El envío individual del enlace de contraseña mata cualquier enlace que el
+// artista tenga en su bandeja. La acción masiva ya lo advertía; la individual
+// enviaba el correo con un solo clic y sin vuelta atrás.
+export const PASSWORD_RESET_CONFIRM_COPY = {
+  title: (name) => `Enviar cambio de contraseña a ${name}`,
+  message: (name) =>
+    `Se enviará a ${name} un email con un enlace para establecer una contraseña nueva, válido durante 24 horas. Si ya le habías enviado uno antes, dejará de funcionar en cuanto se envíe este.`,
+  confirmText: 'Enviar email',
+};
+
 // Semilla de ordenación de las rejillas de catálogo. Entero sin signo de 32
 // bits: es lo que consume el generador del servidor y lo que `Math.random()`
 // produce con una sola multiplicación. Ver `lib/catalogOrderSeed.js`.

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const { authenticate, requireSeller } = require('../middleware/authorization');
+const { authenticate, requireSeller, blockWhileImpersonating } = require('../middleware/authorization');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
@@ -44,8 +44,16 @@ router.get('/profile', async (req, res, next) => {
 /**
  * PUT /api/seller/profile/password
  * Change the authenticated seller's password
+ *
+ * The ONLY route carrying `blockWhileImpersonating`. An admin acting as this
+ * artist must not be able to set a password the artist does not know — that is
+ * a permanent account takeover, and it is exactly what impersonation exists to
+ * make unnecessary. Independently of that, the statement below writes
+ * `password_changed_at`, which config/passport.js compares against the token's
+ * `iat`: the impersonation token would invalidate itself mid-request and the
+ * admin's next call would 401 into a logout.
  */
-router.put('/profile/password', validate(changePasswordSchema), async (req, res, next) => {
+router.put('/profile/password', blockWhileImpersonating, validate(changePasswordSchema), async (req, res, next) => {
   try {
     const { currentPassword, newPassword, confirmPassword } = req.body;
 

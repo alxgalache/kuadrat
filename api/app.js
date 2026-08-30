@@ -136,6 +136,17 @@ app.use(pinoHttp({
         // verbatim puts those in every log sink. See utils/redactUrl.js.
         url: redactUrl(req.url),
         ...(req.headers['user-agent'] && { userAgent: req.headers['user-agent'] }),
+        // Under impersonation the account a request is made under is not the
+        // human who made it. Naming both is what lets a log line be attributed
+        // afterwards. Absent — and the entry unchanged — for every ordinary
+        // request, since config/passport.js only sets these for a token
+        // carrying an `act` claim. Populated by the JWT strategy, so it is
+        // present on any request whose route authenticates before logging
+        // completes; requests that never authenticate simply omit it.
+        ...(req.impersonator && {
+          impersonatorUserId: req.impersonator.id,
+          impersonatedUserId: req.user?.id,
+        }),
       };
     },
     res(res) {

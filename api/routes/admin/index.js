@@ -21,6 +21,9 @@ router.use('/postal-codes', require('./postalCodeRoutes'));
 router.use('/events', require('./eventRoutes'));
 router.use('/draws', require('./drawRoutes'));
 router.use('/marketing', require('./marketingRoutes'));
+// Admin impersonation: start half only. The stop half is on the public auth
+// router, because it arrives with a non-admin token.
+router.use('/impersonation', require('./impersonationRoutes'));
 // Stripe Connect lifecycle + fiscal data (Change #1: stripe-connect-accounts)
 // Mounted at the admin root because the paths are seller-scoped, not under a prefix.
 router.use('/', require('./stripeConnectRoutes'));

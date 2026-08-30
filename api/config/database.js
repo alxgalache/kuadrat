@@ -1149,6 +1149,34 @@ async function initializeDatabase() {
       )
     `);
 
+    // ── Impersonation sessions (audit log for admin-as-user sessions) ──
+    // One row per `POST /api/admin/impersonation/:userId/start`. Docker's log
+    // driver rotates; the question "who edited this artwork in March" has to
+    // survive that, which is why this is a table and not just a log line.
+    //
+    // Rows are NEVER deleted or overwritten by the application. A session that
+    // is abandoned rather than stopped simply keeps `ended_at` NULL — that is
+    // not "still active", it is "never closed"; `expires_at` is what says when
+    // the token stopped being usable. No scheduler backfills 'expired',
+    // because it would only ever write a value `expires_at` already implies.
+    //
+    // ip_address is HMAC-SHA256(ip, IP_HASH_SALT) via utils/ipPrivacy.js —
+    // never the raw address, same treatment as verification_events.
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS impersonation_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user_id INTEGER NOT NULL,
+        target_user_id INTEGER NOT NULL,
+        started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL,
+        ended_at DATETIME,
+        ended_reason TEXT CHECK(ended_reason IN ('manual','expired')),
+        ip_address TEXT,
+        FOREIGN KEY (admin_user_id) REFERENCES users(id),
+        FOREIGN KEY (target_user_id) REFERENCES users(id)
+      )
+    `);
+
     // ── Marketing sends (audit log + send-once guard for marketing emails) ──
     // One row per marketing broadcast attempt (Resend Broadcasts API). Doubles
     // as the idempotency guard for AUTO announcements: a successful row for
@@ -1264,6 +1292,11 @@ async function initializeDatabase() {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_uid ON verification_events(uid)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_status ON verification_events(status)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_verif_events_occurred ON verification_events(occurred_at)`);
+
+    // Impersonation audit: both directions are real questions — "what did this
+    // admin do" and "who has entered this artist's account".
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_impersonation_admin ON impersonation_sessions(admin_user_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_impersonation_target ON impersonation_sessions(target_user_id)`);
 
     // Marketing sends: send-once guard (partial unique on successful AUTO sends)
     // + lookup/history indexes.

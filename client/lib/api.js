@@ -1,3 +1,5 @@
+import { IMPERSONATION_STORAGE_KEY } from '@/lib/constants';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 const CDN_URL = process.env.NEXT_PUBLIC_CDN_URL || '';
 
@@ -147,7 +149,24 @@ async function apiRequest(endpoint, options = {}) {
 
     const doFetch = async () => {
       const response = await fetch(url, config);
-      const data = await response.json();
+
+      // A failing response is NOT guaranteed to carry JSON, and this is the
+      // one place that assumed it did. Passport answers an invalid or expired
+      // JWT with a bare-text `Unauthorized`, so `.json()` threw here and
+      // aborted the function BEFORE the 401 handling below ever ran: the
+      // stale token stayed in localStorage and every page just failed to
+      // load until someone reloaded by hand.
+      //
+      // Parsed defensively instead, the same way apiDownloadRequest above
+      // already does. A 2xx with an unparseable body still throws exactly as
+      // before — only the error path changed.
+      let data = null;
+      let parseError = null;
+      try {
+        data = await response.json();
+      } catch (err) {
+        parseError = err;
+      }
 
       if (!response.ok) {
         // Handle 401 Unauthorized - session expired or invalid token
@@ -156,6 +175,11 @@ async function apiRequest(endpoint, options = {}) {
           if (typeof window !== 'undefined') {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
+            // An impersonation token lives 60 minutes. When it lapses this is
+            // the path it takes, and leaving the marker behind would give a
+            // logged-out browser a navbar still claiming to be acting as
+            // someone.
+            localStorage.removeItem(IMPERSONATION_STORAGE_KEY);
           }
           // Redirect to home page
           if (typeof window !== 'undefined') {
@@ -175,14 +199,17 @@ async function apiRequest(endpoint, options = {}) {
         }
 
         // Create a structured error object
-        const error = new Error(data.message || 'Solicitud a la API fallida');
-        error.status = data.status || response.status;
-        error.title = data.title || 'Error';
-        error.message = data.message || 'Solicitud a la API fallida';
-        error.errors = data.errors || null;
+        const error = new Error(data?.message || 'Solicitud a la API fallida');
+        error.status = data?.status || response.status;
+        error.title = data?.title || 'Error';
+        error.message = data?.message || 'Solicitud a la API fallida';
+        error.errors = data?.errors || null;
         error.response = data;
         throw error;
       }
+
+      // Successful response whose body is not JSON: unchanged behaviour.
+      if (parseError) throw parseError;
 
       return data;
     };
@@ -226,6 +253,7 @@ export const authAPI = {
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem(IMPERSONATION_STORAGE_KEY);
   },
 
   getCurrentUser: () => {
@@ -290,6 +318,59 @@ export const authAPI = {
     return apiRequest('/auth/password-requirements', {
       skipAuthHandling: true,
     });
+  },
+
+  // Start impersonating a user (admin only).
+  //
+  // Writes the impersonated session over the admin's own. The admin's token is
+  // deliberately NOT stashed anywhere: during an impersonation the browser is
+  // rendering artist-controlled content (bios, artwork titles, uploaded
+  // filenames), which is exactly the window in which an XSS would be able to
+  // read it. The return path re-mints it server-side from the token's signed
+  // `act` claim instead.
+  startImpersonation: async (userId) => {
+    const data = await apiRequest(`/admin/impersonation/${userId}/start`, {
+      method: 'POST',
+      skipAuthHandling: true,
+    });
+
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem(IMPERSONATION_STORAGE_KEY, JSON.stringify(data.impersonation));
+    }
+
+    return data;
+  },
+
+  // End an impersonation and restore the admin session.
+  stopImpersonation: async () => {
+    const data = await apiRequest('/auth/impersonation/stop', {
+      method: 'POST',
+      skipAuthHandling: true,
+    });
+
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+    }
+
+    // Cleared unconditionally: if the exchange failed there is no admin
+    // session to go back to, and the marker must not outlive it either way.
+    localStorage.removeItem(IMPERSONATION_STORAGE_KEY);
+
+    return data;
+  },
+
+  // The UI-only marker. The authoritative state is the signed `act` claim.
+  getImpersonation: () => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(IMPERSONATION_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
   },
 };
 
