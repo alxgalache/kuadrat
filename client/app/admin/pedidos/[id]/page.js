@@ -385,7 +385,13 @@ function OrderDetailContent() {
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Nombre</dt>
                     <dd className="mt-1 text-sm text-gray-900">
-                      {order.email || order.guest_email || 'Invitado'}
+                      {order.full_name || 'Invitado'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">DNI/NIE</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {order.dni || 'Sin DNI'}
                     </dd>
                   </div>
                   <div>

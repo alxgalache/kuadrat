@@ -35,11 +35,18 @@ const orderItemSchema = z.object({
 });
 
 // Customer block (optional -- used when provided to build Revolut / Stripe objects)
+//
+// `dni` MUST stay declared here. Zod objects strip unknown keys, so the day
+// someone wires `validate(placeOrderSchema)` onto the route -- which is the
+// project's own pattern and the natural thing to do -- an undeclared `dni`
+// would be removed from the body before the controller ever saw it, and every
+// checkout would start failing with a 400 whose cause is nowhere in sight.
 const customerSchema = z.object({
   email: z.string().optional(),
   full_name: z.string().optional(),
   fullName: z.string().optional(),
   phone: z.string().optional(),
+  dni: z.string().optional(),
 }).optional();
 
 /**

@@ -1,6 +1,7 @@
 const { db } = require('../config/database');
 const { randomUUID } = require('crypto');
 const logger = require('../config/logger');
+const { validateSpanishTaxId } = require('../utils/spanishTaxId');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -466,6 +467,7 @@ async function getParticipationBillingData(participationId) {
             db2.first_name,
             db2.last_name,
             db2.email,
+            db2.dni,
             db2.delivery_address_1,
             db2.delivery_address_2,
             db2.delivery_postal_code,
@@ -545,28 +547,11 @@ async function savePaymentData(drawBuyerId, {
 // DNI Validation
 // ---------------------------------------------------------------------------
 
-const DNI_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE';
-
+// The algorithm lives in `api/utils/spanishTaxId.js`, shared with the cart
+// checkout. This wrapper keeps the historical name and export so every existing
+// caller (drawController, its routes and its tests) stays untouched.
 function validateDNI(dni) {
-  if (!dni || typeof dni !== 'string') return false;
-  const normalized = dni.toUpperCase().trim();
-
-  // NIE format: X/Y/Z + 7 digits + letter
-  const nieMatch = normalized.match(/^([XYZ])(\d{7})([A-Z])$/);
-  if (nieMatch) {
-    const niePrefix = { X: '0', Y: '1', Z: '2' };
-    const num = parseInt(niePrefix[nieMatch[1]] + nieMatch[2], 10);
-    return nieMatch[3] === DNI_LETTERS[num % 23];
-  }
-
-  // DNI format: 8 digits + letter
-  const dniMatch = normalized.match(/^(\d{8})([A-Z])$/);
-  if (dniMatch) {
-    const num = parseInt(dniMatch[1], 10);
-    return dniMatch[2] === DNI_LETTERS[num % 23];
-  }
-
-  return false;
+  return validateSpanishTaxId(dni);
 }
 
 async function checkDniUniqueness(drawId, dni) {

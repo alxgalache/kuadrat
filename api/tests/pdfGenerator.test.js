@@ -138,6 +138,43 @@ describe('pdfGenerator', () => {
       expect(mockEnd).not.toHaveBeenCalled();
       expect(mockText).toHaveBeenCalled();
     });
+
+    // Change: checkout-buyer-tax-id. `renderParties` treats `taxId` as
+    // optional, and that is exactly what keeps orders predating the buyer tax
+    // id invoiceable — `invoiceService` passes `order.dni || undefined`.
+    it('renders the buyer NIF line when the recipient has a taxId', () => {
+      pdfGenerator.generateBuyerRebuPdf({
+        invoiceNumber: 'A-2026-00001',
+        date: '2026-01-15',
+        issuer,
+        recipient,
+        items: [{ description: 'Obra: "Paisaje"', amount: 500 }],
+        shippingCost: 15,
+        total: 515,
+      });
+
+      const textCalls = mockText.mock.calls.map(c => c[0]);
+      expect(textCalls).toContain('NIF/CIF: 12345678Z');
+    });
+
+    it('omits the buyer NIF line when the recipient has no taxId', () => {
+      const { taxId, ...recipientWithoutTaxId } = recipient;
+      pdfGenerator.generateBuyerRebuPdf({
+        invoiceNumber: 'A-2026-00002',
+        date: '2026-01-16',
+        issuer,
+        recipient: recipientWithoutTaxId,
+        items: [{ description: 'Obra: "Paisaje"', amount: 500 }],
+        shippingCost: 15,
+        total: 515,
+      });
+
+      const textCalls = mockText.mock.calls.map(c => c[0]);
+      // The issuer's own NIF still renders; only the recipient's is absent.
+      expect(textCalls).toContain(`NIF/CIF: ${issuer.taxId}`);
+      expect(textCalls.filter(t => typeof t === 'string' && t.startsWith('NIF/CIF: ')))
+        .toHaveLength(1);
+    });
   });
 
   describe('generateBuyerStandardPdf', () => {

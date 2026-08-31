@@ -449,6 +449,15 @@ export const PASSWORD_RESET_ERRORS = {
 export const PASSWORD_RESET_GENERIC_ERROR =
   'No se ha podido validar el enlace. Inténtalo de nuevo en unos minutos.';
 
+// ─── Identificador fiscal del comprador en el carrito ─────────────────────
+// El algoritmo vive en `client/lib/spanishTaxId.js` (y su gemelo del backend);
+// aquí solo la copia es-ES, igual que SHIPPING_VERIFICATION_ERRORS.
+export const BUYER_TAX_ID_COPY = {
+  label: 'DNI/NIE',
+  placeholder: '12345678Z',
+  invalid: 'Introduce un DNI o NIE válido',
+};
+
 // ─── Impersonation de usuarios por el admin ───────────────────────────────
 // Clave de localStorage del marcador de impersonation. Solo gobierna la UI:
 // el estado real vive dentro del claim `act` del JWT, firmado por el backend,

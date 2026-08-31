@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDownIcon } from '@heroicons/react/16/solid'
 import { loadGoogleMaps } from '@/lib/googleMaps'
+import { validateSpanishTaxId } from '@/lib/spanishTaxId'
+import { BUYER_TAX_ID_COPY } from '@/lib/constants'
 
 /**
  * AddressAutocomplete Component
@@ -23,7 +25,7 @@ export default function AddressAutocomplete({
   defaultCountry = 'ES',
   showMap = true,
   // New: personal info section support
-  personalInfo = { fullName: '', email: '', phone: '' },
+  personalInfo = { fullName: '', dni: '', email: '', phone: '' },
   onPersonalInfoChange = () => { },
   showPersonalSection = false,
 }) {
@@ -226,6 +228,14 @@ export default function AddressAutocomplete({
     )
   }
 
+  // Error en línea del DNI. Derivado, sin estado ni efecto: mientras el campo
+  // está vacío no se muestra nada — de eso se encarga el aviso del botón
+  // "Continuar" —, y en cuanto hay algo escrito que no valida, se ve.
+  const dniError =
+    personalInfo.dni && !validateSpanishTaxId(personalInfo.dni)
+      ? BUYER_TAX_ID_COPY.invalid
+      : ''
+
   return (
     <div className="space-y-4">
       {/* Información personal */}
@@ -245,6 +255,26 @@ export default function AddressAutocomplete({
                 placeholder="Nombre y apellidos"
                 className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900 sm:text-sm"
               />
+            </div>
+
+            {/* Identificador fiscal del comprador. Obligatorio: viaja a
+                `orders.dni` y de ahí a la línea "NIF/CIF" de la factura.
+                El mismo bloque existe en el componente hermano — el que no se
+                renderice según NEXT_PUBLIC_CART_ADDRESS_FUNC. */}
+            <div className="sm:col-span-2">
+              <label htmlFor="buyer-tax-id" className="block text-sm font-medium text-gray-700">
+                {BUYER_TAX_ID_COPY.label} <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="buyer-tax-id"
+                value={personalInfo.dni || ''}
+                onChange={(e) => onPersonalInfoChange({ ...personalInfo, dni: e.target.value.toUpperCase() })}
+                placeholder={BUYER_TAX_ID_COPY.placeholder}
+                autoComplete="off"
+                className={`mt-1 block w-full rounded-md border ${dniError ? 'border-red-300' : 'border-gray-300'} bg-white px-3 py-2 text-gray-900 uppercase shadow-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900 sm:text-sm`}
+              />
+              {dniError && <p className="mt-1 text-xs text-red-600">{dniError}</p>}
             </div>
 
             <div>

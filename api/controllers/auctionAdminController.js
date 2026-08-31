@@ -673,7 +673,7 @@ const billBid = async (req, res, next) => {
 
     const orderResult = await db.execute({
       sql: `INSERT INTO orders (
-              full_name, email, total_price, status, token,
+              full_name, dni, email, total_price, status, token,
               delivery_address_line_1, delivery_address_line_2,
               delivery_postal_code, delivery_city, delivery_province, delivery_country,
               delivery_lat, delivery_lng,
@@ -681,13 +681,14 @@ const billBid = async (req, res, next) => {
               invoicing_postal_code, invoicing_city, invoicing_province, invoicing_country,
               payment_provider, stripe_customer_id, stripe_payment_method_id,
               notes
-            ) VALUES (?, ?, ?, 'pending', ?,
+            ) VALUES (?, ?, ?, ?, 'pending', ?,
               ?, ?, ?, ?, ?, ?, ?, ?,
               ?, ?, ?, ?, ?, ?,
               'stripe', ?, ?,
               ?)`,
       args: [
         `${data.first_name} ${data.last_name}`,
+        data.dni || null,
         data.email,
         totalPrice,
         token,

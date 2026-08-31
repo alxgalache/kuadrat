@@ -7,31 +7,7 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import { auctionsAPI } from '@/lib/api'
 import { getStripePromise } from '@/lib/stripe'
 import { useNotification } from '@/contexts/NotificationContext'
-
-// ---------------------------------------------------------------------------
-// DNI / NIE validation
-// ---------------------------------------------------------------------------
-const DNI_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE'
-
-function validateDNI(dni) {
-  if (!dni || typeof dni !== 'string') return false
-  const normalized = dni.toUpperCase().trim()
-
-  const nieMatch = normalized.match(/^([XYZ])(\d{7})([A-Z])$/)
-  if (nieMatch) {
-    const niePrefix = { X: '0', Y: '1', Z: '2' }
-    const num = parseInt(niePrefix[nieMatch[1]] + nieMatch[2], 10)
-    return nieMatch[3] === DNI_LETTERS[num % 23]
-  }
-
-  const dniMatch = normalized.match(/^(\d{8})([A-Z])$/)
-  if (dniMatch) {
-    const num = parseInt(dniMatch[1], 10)
-    return dniMatch[2] === DNI_LETTERS[num % 23]
-  }
-
-  return false
-}
+import { validateSpanishTaxId as validateDNI } from '@/lib/spanishTaxId'
 
 // ---------------------------------------------------------------------------
 // Flow phases

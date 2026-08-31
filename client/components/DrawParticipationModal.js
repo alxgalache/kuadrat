@@ -9,6 +9,7 @@ import { drawsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import { getStripePromise } from '@/lib/stripe'
 import usePostalCodeValidation from '@/hooks/usePostalCodeValidation'
 import { useNotification } from '@/contexts/NotificationContext'
+import { validateSpanishTaxId as validateDNI } from '@/lib/spanishTaxId'
 
 // ---------------------------------------------------------------------------
 // Flow phases (CHOOSE and VERIFY removed)
@@ -24,33 +25,6 @@ const PHASE = {
 }
 
 const STEPS = [PHASE.TERMS, PHASE.PERSONAL, PHASE.DELIVERY, PHASE.INVOICING, PHASE.PAYMENT]
-
-// ---------------------------------------------------------------------------
-// DNI/NIE validation (Spanish NIF algorithm)
-// ---------------------------------------------------------------------------
-const DNI_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE'
-
-function validateDNI(dni) {
-  if (!dni || typeof dni !== 'string') return false
-  const normalized = dni.toUpperCase().trim()
-
-  // NIE format: X/Y/Z + 7 digits + letter
-  const nieMatch = normalized.match(/^([XYZ])(\d{7})([A-Z])$/)
-  if (nieMatch) {
-    const niePrefix = { X: '0', Y: '1', Z: '2' }
-    const num = parseInt(niePrefix[nieMatch[1]] + nieMatch[2], 10)
-    return nieMatch[3] === DNI_LETTERS[num % 23]
-  }
-
-  // DNI format: 8 digits + letter
-  const dniMatch = normalized.match(/^(\d{8})([A-Z])$/)
-  if (dniMatch) {
-    const num = parseInt(dniMatch[1], 10)
-    return dniMatch[2] === DNI_LETTERS[num % 23]
-  }
-
-  return false
-}
 
 // ---------------------------------------------------------------------------
 // Stripe PaymentForm (inner component wrapped by <Elements>)

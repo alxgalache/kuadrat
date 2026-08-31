@@ -1,6 +1,10 @@
-# pdf-invoice-engine (ADDED)
+# pdf-invoice-engine
 
-## ADDED Requirements
+## Purpose
+
+Generación de los documentos fiscales en PDF de la galería: facturas de comprador en régimen REBU (Serie A) y en régimen general con desglose de IVA (Serie P), facturas de entrada de evento, facturas de comisión al artista (Serie C) y notas de liquidación internas REBU (Serie L), junto con la tabla `invoices` que numera cada serie de forma correlativa y sin huecos, los endpoints de administración que los sirven y los botones de descarga del panel.
+
+## Requirements
 
 ### Requirement: Invoice numbering table
 The system SHALL maintain an `invoices` table with columns: `id` (INTEGER PRIMARY KEY AUTOINCREMENT), `invoice_number` (TEXT NOT NULL UNIQUE), `series` (TEXT NOT NULL — 'A', 'P', 'C', 'L'), `year` (INTEGER NOT NULL), `sequence` (INTEGER NOT NULL), `invoice_type` (TEXT NOT NULL — 'buyer_rebu', 'buyer_standard', 'commission', 'settlement_rebu'), `order_id` (INTEGER, nullable), `withdrawal_id` (INTEGER, nullable), `event_attendee_id` (TEXT, nullable), `issued_at` (DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP). The table SHALL enforce UNIQUE(series, year, sequence).
@@ -24,7 +28,7 @@ The system SHALL maintain an `invoices` table with columns: `id` (INTEGER PRIMAR
 - **THEN** the row SHALL be rolled back atomically so no gap is created in the sequence
 
 ### Requirement: Buyer invoice — REBU (Series A)
-The system SHALL generate a PDF invoice for orders containing art items whose snapshotted `vat_regime` is `'art_rebu'` (`COALESCE(vat_regime, 'art_rebu')` on `art_order_items`). Art items with `vat_regime = 'standard_vat'` SHALL NOT appear on this invoice (they belong to the Series P invoice). The invoice SHALL NOT include any IVA breakdown. The invoice SHALL include the mandatory legal text: "Régimen especial de los bienes usados, objetos de arte, antigüedades y objetos de colección (artículos 135-139 de la Ley 37/1992)". The invoice SHALL include: gallery fiscal data (from `config.business.*`), buyer data (from `orders` table: `full_name`, `email`/`guest_email`, invoicing address fields), invoice number and date, line items with description and price, shipping cost (included in total, no IVA breakdown), and total amount. If the order has no REBU-regime art items, the endpoint SHALL respond 400.
+The system SHALL generate a PDF invoice for orders containing art items whose snapshotted `vat_regime` is `'art_rebu'` (`COALESCE(vat_regime, 'art_rebu')` on `art_order_items`). Art items with `vat_regime = 'standard_vat'` SHALL NOT appear on this invoice (they belong to the Series P invoice). The invoice SHALL NOT include any IVA breakdown. The invoice SHALL include the mandatory legal text: "Régimen especial de los bienes usados, objetos de arte, antigüedades y objetos de colección (artículos 135-139 de la Ley 37/1992)". The invoice SHALL include: gallery fiscal data (from `config.business.*`), buyer data (from `orders` table: `full_name`, `dni`, `email`/`guest_email`, invoicing address fields), invoice number and date, line items with description and price, shipping cost (included in total, no IVA breakdown), and total amount. The buyer's `dni` SHALL be passed as the recipient's `taxId` and rendered as a "NIF/CIF" line; when the order has no `dni` the line SHALL be omitted and invoice generation SHALL succeed, so that orders created before the buyer tax id was collected remain invoiceable. If the order has no REBU-regime art items, the endpoint SHALL respond 400.
 
 #### Scenario: Generate REBU invoice for an art order
 - **GIVEN** order #1050 has 2 `art_order_items` with `vat_regime = 'art_rebu'` and 0 `other_order_items`, total = 1500€, shipping = 15€
@@ -50,8 +54,18 @@ The system SHALL generate a PDF invoice for orders containing art items whose sn
 - **WHEN** the admin requests the invoice
 - **THEN** the system returns HTTP 400 with message "Faltan datos de facturación del comprador"
 
+#### Scenario: REBU invoice shows the buyer's NIF
+- **GIVEN** order #1050 has `dni = '12345678Z'`
+- **WHEN** the invoice is generated
+- **THEN** the buyer section SHALL show a "NIF/CIF: 12345678Z" line
+
+#### Scenario: REBU invoice for an order without NIF
+- **GIVEN** order #1020 was created before the buyer tax id was collected and has `dni = NULL`
+- **WHEN** the admin requests the invoice
+- **THEN** the invoice SHALL be generated without a "NIF/CIF" line and SHALL NOT return an error
+
 ### Requirement: Buyer invoice — Standard (Series P)
-The system SHALL generate a PDF invoice for orders containing standard-regime items: `other_order_items` and/or `art_order_items` whose snapshotted `vat_regime` is `'standard_vat'` (art sold by sellers invoicing at the standard rate, e.g. via a cooperative). The invoice SHALL include IVA breakdown: base imponible + IVA 21% per line item + total (prices are VAT-included; the 21% general rate applies to the gallery's retail sale regardless of item kind). Shipping SHALL appear as a separate line with its own base + IVA 21% breakdown. The invoice SHALL include gallery fiscal data, buyer data, invoice number and date, and itemized lines. If the order has no standard-regime items, the endpoint SHALL respond 400.
+The system SHALL generate a PDF invoice for orders containing standard-regime items: `other_order_items` and/or `art_order_items` whose snapshotted `vat_regime` is `'standard_vat'` (art sold by sellers invoicing at the standard rate, e.g. via a cooperative). The invoice SHALL include IVA breakdown: base imponible + IVA 21% per line item + total (prices are VAT-included; the 21% general rate applies to the gallery's retail sale regardless of item kind). Shipping SHALL appear as a separate line with its own base + IVA 21% breakdown. The invoice SHALL include gallery fiscal data, buyer data, invoice number and date, and itemized lines. The buyer's `dni` SHALL be passed as the recipient's `taxId` and rendered as a "NIF/CIF" line; when the order has no `dni` the line SHALL be omitted and invoice generation SHALL succeed. If the order has no standard-regime items, the endpoint SHALL respond 400.
 
 #### Scenario: Generate standard invoice for an other-product order
 - **GIVEN** order #1060 has 1 `other_order_item` at 121€ (IVA included) and shipping = 12.10€ (IVA included)
@@ -67,6 +81,16 @@ The system SHALL generate a PDF invoice for orders containing standard-regime it
 - **THEN** the system generates a series P PDF
 - **AND** the artwork line shows: base = 500€, IVA 21% = 105€, total = 605€
 - **AND** no REBU legal mention appears
+
+#### Scenario: Standard invoice shows the buyer's NIF
+- **GIVEN** order #1060 has `dni = 'X1234567L'`
+- **WHEN** the invoice is generated
+- **THEN** the buyer section SHALL show a "NIF/CIF: X1234567L" line
+
+#### Scenario: Standard invoice for an order without NIF
+- **GIVEN** order #1030 has `dni = NULL`
+- **WHEN** the admin requests the invoice
+- **THEN** the invoice SHALL be generated without a "NIF/CIF" line and SHALL NOT return an error
 
 ### Requirement: Mixed order generates separate invoices
 The system SHALL detect orders containing items of both fiscal regimes and generate TWO separate invoices: one series A (REBU) for REBU-regime art items, one series P (Standard) for standard-regime items (`other_order_items` plus standard-regime art items). Each invoice SHALL only include items of its corresponding regime. An order is "mixed" by regime, which includes the case of two art items with different snapshotted regimes.

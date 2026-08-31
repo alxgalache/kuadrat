@@ -19,6 +19,7 @@ import StripeCardPayment from './StripeCardPayment'
 import StripeExpressCheckout from './StripeExpressCheckout'
 import ShippingStep from './shipping/ShippingStep'
 import {SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, SHIPPING_VERIFICATION_ERRORS} from '@/lib/constants'
+import {validateSpanishTaxId, normalizeSpanishTaxId} from '@/lib/spanishTaxId'
 import {trackInitiateCheckout, cartToContents} from '@/lib/metaPixel'
 
 // Key used to persist a pending Revolut order for a given cart in sessionStorage
@@ -113,7 +114,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     // Step management (1: cart, 2: address, 3: payment method selection)
     const [currentStep, setCurrentStep] = useState(STEP_CART)
     const [isProcessing, setIsProcessing] = useState(false)
-    const [personalInfo, setPersonalInfo] = useState({fullName: '', email: '', phone: ''})
+    const [personalInfo, setPersonalInfo] = useState({fullName: '', dni: '', email: '', phone: ''})
     const [deliveryAddress, setDeliveryAddress] = useState({})
     const [invoicingAddress, setInvoicingAddress] = useState({})
     const [useSameAddressForInvoicing, setUseSameAddressForInvoicing] = useState(true)
@@ -536,6 +537,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
         const phoneRegex = /^\+\d{7,15}$/ // E.164-like: + followed by 7-15 digits
         if (!personalInfo.fullName || personalInfo.fullName.trim().length < 2) return false
+        if (!validateSpanishTaxId(personalInfo.dni)) return false
         if (!emailRegex.test((personalInfo.email || '').trim())) return false
         if (!phoneRegex.test((personalInfo.phone || '').trim())) return false
         return true
@@ -758,6 +760,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             invoicing_address: finalInvoicingAddress,
             customer: {
                 full_name: personalInfo.fullName,
+                dni: normalizeSpanishTaxId(personalInfo.dni),
                 email: personalInfo.email,
                 phone: personalInfo.phone,
             },
@@ -901,7 +904,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             clearCart()
             setCurrentStep(STEP_CART)
             setSelectedPaymentMethod(null)
-            setPersonalInfo({fullName: '', email: '', phone: ''})
+            setPersonalInfo({fullName: '', dni: '', email: '', phone: ''})
             setDeliveryAddress({})
             setInvoicingAddress({})
             setUseSameAddressForInvoicing(true)
@@ -1000,7 +1003,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             clearCart()
             setCurrentStep(STEP_CART)
             setSelectedPaymentMethod(null)
-            setPersonalInfo({fullName: '', email: '', phone: ''})
+            setPersonalInfo({fullName: '', dni: '', email: '', phone: ''})
             setDeliveryAddress({})
             setInvoicingAddress({})
             setUseSameAddressForInvoicing(true)

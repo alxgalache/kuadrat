@@ -287,6 +287,7 @@ async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         full_name TEXT,
+        dni TEXT,
         email TEXT,
         phone TEXT,
         guest_email TEXT,
@@ -754,6 +755,7 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE draws ADD COLUMN min_participants INTEGER NOT NULL DEFAULT 30');
     await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN ip_address TEXT');
     await safeAlter('ALTER TABLE users ADD COLUMN available_withdrawal REAL NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE orders ADD COLUMN dni TEXT');
     await safeAlter('ALTER TABLE orders ADD COLUMN reserved_at DATETIME');
     await safeAlter('ALTER TABLE orders ADD COLUMN payment_mismatch INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN access_password TEXT');

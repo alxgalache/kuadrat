@@ -35,7 +35,7 @@ export default function PrivacyPolicyPage() {
           Política de Privacidad
         </h1>
         <p className="mt-2 text-sm text-gray-500">
-          Última actualización: Mayo 2026
+          Última actualización: Agosto 2026
         </p>
 
         <div className="mt-10 space-y-8 text-sm leading-7 text-gray-700">
@@ -51,11 +51,16 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-lg font-semibold text-gray-900">2. Datos que Recopilamos</h2>
             <p className="mt-3">
-              Recopilamos los siguientes datos personales cuando te registras como pujador en nuestras subastas:
+              Recopilamos los siguientes datos personales cuando realizas una compra, participas en un
+              sorteo o te registras como pujador en nuestras subastas:
             </p>
             <ul className="mt-3 list-disc pl-5 space-y-1">
               <li>Nombre y apellidos</li>
+              <li>
+                Identificador fiscal (DNI o NIE), necesario para emitir la factura de tu compra
+              </li>
               <li>Dirección de correo electrónico</li>
+              <li>Número de teléfono</li>
               <li>Dirección de entrega</li>
               <li>Dirección de facturación</li>
               <li>Datos de pago (procesados de forma segura a través de Stripe)</li>

@@ -135,6 +135,11 @@ async function generateBuyerRebuInvoice(orderId) {
 
   const recipient = {
     name: order.full_name,
+    // `renderParties` omits the NIF/CIF line when taxId is falsy, which is what
+    // keeps orders predating the buyer tax id invoiceable. Do NOT promote this
+    // to a requirement in `validateBuyerInvoicingData`: that would turn every
+    // historical order into a 400.
+    taxId: order.dni || undefined,
     email: order.email || order.guest_email,
     address: {
       line1: order.invoicing_address_line_1,
@@ -202,6 +207,11 @@ async function generateBuyerStandardInvoice(orderId) {
 
   const recipient = {
     name: order.full_name,
+    // `renderParties` omits the NIF/CIF line when taxId is falsy, which is what
+    // keeps orders predating the buyer tax id invoiceable. Do NOT promote this
+    // to a requirement in `validateBuyerInvoicingData`: that would turn every
+    // historical order into a 400.
+    taxId: order.dni || undefined,
     email: order.email || order.guest_email,
     address: {
       line1: order.invoicing_address_line_1,

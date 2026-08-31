@@ -9,6 +9,7 @@ const { updatePaymentIntent, findOrCreateCustomer } = require('../services/strip
 const crypto = require('crypto');
 const { artVatRegimeForRate } = require('../utils/vatRegime');
 const { artCommissionAmount } = require('../utils/artCommission');
+const { validateSpanishTaxId, normalizeSpanishTaxId } = require('../utils/spanishTaxId');
 
 // Public site base URL used for product images/links in Revolut payload
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
@@ -86,6 +87,19 @@ const placeOrder = async (req, res, next) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!buyerEmail || !emailRegex.test(buyerEmail)) {
       throw new ApiError(400, 'Se requiere un email válido para completar el pedido', 'Email inválido');
+    }
+
+    // Buyer tax id (DNI/NIE). Checked HERE, alongside the email, because
+    // everything below this point has side effects: the order row and then the
+    // guarded `editions_sold` increment, which is not idempotent and whose only
+    // release path needs an `orders.id` that a late 400 would never create.
+    const buyerDni = normalizeSpanishTaxId(customer && customer.dni);
+    if (!validateSpanishTaxId(buyerDni)) {
+      throw new ApiError(
+        400,
+        'Se requiere un DNI o NIE válido para completar el pedido',
+        'DNI inválido'
+      );
     }
 
     // Validate input - items should be array of { type: 'art' | 'other', id, variantId?, shipping? }
@@ -298,6 +312,7 @@ const placeOrder = async (req, res, next) => {
     const orderResult = await db.execute({
       sql: `INSERT INTO orders (
         full_name,
+        dni,
         email,
         phone,
         guest_email,
@@ -324,9 +339,10 @@ const placeOrder = async (req, res, next) => {
         stripe_payment_intent_id,
         stripe_customer_id,
         reserved_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
       args: [
         customerBlock?.full_name || customerBlock?.fullName || null,
+        buyerDni,
         buyerEmail,
         buyerPhone ?? null,
         guest_email || null,
