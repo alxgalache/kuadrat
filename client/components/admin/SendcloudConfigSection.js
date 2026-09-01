@@ -27,6 +27,7 @@ const EMPTY_FORM = {
   excluded_carriers: [],
   vat_number: '',
   self_packs: false,
+  allow_store_pickup: false,
 }
 
 const SendcloudConfigSection = forwardRef(function SendcloudConfigSection({ authorId }, ref) {
@@ -64,6 +65,7 @@ const SendcloudConfigSection = forwardRef(function SendcloudConfigSection({ auth
           excluded_carriers: parseCarriers(data.excluded_carriers),
           vat_number: data.vat_number || '',
           self_packs: !!data.self_packs,
+          allow_store_pickup: !!data.allow_store_pickup,
         })
       }
     } catch (err) {
@@ -102,7 +104,8 @@ const SendcloudConfigSection = forwardRef(function SendcloudConfigSection({ auth
         form.preferred_carriers.length > 0 ||
         form.excluded_carriers.length > 0 ||
         form.vat_number.trim() !== '' ||
-        form.self_packs === true
+        form.self_packs === true ||
+        form.allow_store_pickup === true
       )
     },
     markSaved(savedData) {
@@ -205,11 +208,20 @@ const SendcloudConfigSection = forwardRef(function SendcloudConfigSection({ auth
             placeholder="Ej: ESB12345678"
             className={inputClass} />
         </div>
-        <div className="sm:col-span-3 flex items-end pb-1">
+        <div className="sm:col-span-3 flex flex-col justify-end gap-2 pb-1">
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={form.self_packs} onChange={e => handleChange('self_packs', e.target.checked)}
               className="size-4 rounded border-gray-300 text-black" />
             <span className="text-sm text-gray-700">Empaqueta él mismo</span>
+          </label>
+          {/* The only condition for offering "Recogida en persona" on store
+              ('other') products in the cart. The pickup address below is shown
+              to the buyer when filled in, but never decides availability. */}
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={form.allow_store_pickup}
+              onChange={e => handleChange('allow_store_pickup', e.target.checked)}
+              className="size-4 rounded border-gray-300 text-black" />
+            <span className="text-sm text-gray-700">Permitir recogida para productos de la tienda</span>
           </label>
         </div>
 

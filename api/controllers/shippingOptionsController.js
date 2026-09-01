@@ -111,20 +111,33 @@ const getShippingOptions = async (req, res, next) => {
         return true
       })
 
-      // Get seller pickup info
+      // Get seller pickup info. `allow_store_pickup` lives on the Sendcloud
+      // configuration and is the ONLY thing that decides whether the option is
+      // offered; the users.pickup_* columns are read for display only.
       const sellerResult = await db.execute({
-        sql: `SELECT full_name, pickup_address, pickup_city, pickup_postal_code,
-              pickup_country, pickup_instructions FROM users WHERE id = ?`,
+        sql: `SELECT u.full_name, u.pickup_address, u.pickup_city, u.pickup_postal_code,
+                     u.pickup_country, u.pickup_instructions,
+                     usc.allow_store_pickup
+              FROM users u
+              LEFT JOIN user_sendcloud_configuration usc ON usc.user_id = u.id
+              WHERE u.id = ?`,
         args: [sellerId],
       })
 
+      // Pickup is a STORE feature. Art shipments are arranged by hand from the
+      // Sendcloud web interface, so an art-only group is never offered pickup
+      // here — and a mixed group is offered it on account of its store items.
+      const hasStoreItems = productTypes.includes('other')
+
       let pickupOption = null
-      if (sellerResult.rows.length > 0) {
+      if (sellerResult.rows.length > 0 && hasStoreItems) {
         const seller = sellerResult.rows[0]
-        if (seller.pickup_address && seller.pickup_city) {
+        // A seller with no Sendcloud configuration row has no flag, so the
+        // LEFT JOIN yields null — which is the same answer as an explicit 0.
+        if (seller.allow_store_pickup) {
           pickupOption = {
-            address: seller.pickup_address,
-            city: seller.pickup_city,
+            address: seller.pickup_address || '',
+            city: seller.pickup_city || '',
             postalCode: seller.pickup_postal_code || '',
             country: seller.pickup_country || 'ES',
             instructions: seller.pickup_instructions || '',

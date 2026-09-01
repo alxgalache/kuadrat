@@ -171,9 +171,14 @@ export default function SellerShippingGroup({
                 />
                 <div>
                   <div className="text-sm font-medium text-gray-900">Recogida en persona</div>
-                  <div className="text-xs text-gray-500">
-                    {pickupOption.address}, {pickupOption.city}
-                  </div>
+                  {/* The option is offered on the seller's `allow_store_pickup`
+                      flag alone, so the address may well be empty. Joining the
+                      parts that exist avoids rendering a bare ", ". */}
+                  {[pickupOption.address, pickupOption.city].filter(Boolean).length > 0 && (
+                    <div className="text-xs text-gray-500">
+                      {[pickupOption.address, pickupOption.city].filter(Boolean).join(', ')}
+                    </div>
+                  )}
                   {pickupOption.instructions && (
                     <div className="text-xs text-gray-400">{pickupOption.instructions}</div>
                   )}

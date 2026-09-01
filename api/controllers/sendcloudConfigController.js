@@ -71,8 +71,9 @@ const createSendcloudConfig = async (req, res, next) => {
         sender_phone, sender_email, require_signature, fragile_goods,
         insurance_type, insurance_fixed_amount, first_mile,
         preferred_carriers, excluded_carriers,
-        default_hs_code, origin_country, vat_number, eori_number, self_packs
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        default_hs_code, origin_country, vat_number, eori_number, self_packs,
+        allow_store_pickup
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         id,
         body.sender_name || null,
@@ -97,6 +98,7 @@ const createSendcloudConfig = async (req, res, next) => {
         body.vat_number || null,
         body.eori_number || null,
         body.self_packs !== undefined ? (body.self_packs ? 1 : 0) : 1,
+        body.allow_store_pickup ? 1 : 0,
       ],
     })
 
@@ -162,6 +164,7 @@ const updateSendcloudConfig = async (req, res, next) => {
       vat_number: body.vat_number,
       eori_number: body.eori_number,
       self_packs: body.self_packs !== undefined ? (body.self_packs ? 1 : 0) : undefined,
+      allow_store_pickup: body.allow_store_pickup !== undefined ? (body.allow_store_pickup ? 1 : 0) : undefined,
     }
 
     for (const [key, value] of Object.entries(mapping)) {

@@ -929,6 +929,11 @@ async function initializeDatabase() {
     // host credit, payouts and invoicing. See the event_attendees CREATE TABLE.
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0');
 
+    // Per-seller opt-in to "Recogida en persona" for store ('other') products.
+    // DEFAULT 0 deliberately without backfill: the option is switched on one
+    // seller at a time from the admin panel, never inferred from an address.
+    await safeAlter('ALTER TABLE user_sendcloud_configuration ADD COLUMN allow_store_pickup INTEGER NOT NULL DEFAULT 0');
+
     // Stripe Connect (Change #2) — polymorphic pivot table linking a payout to
     // the concrete items (art/other/event_attendee) it covers, with per-item
     // VAT snapshot for the fiscal export (Change #4).
@@ -1053,6 +1058,12 @@ async function initializeDatabase() {
         vat_number TEXT,
         eori_number TEXT,
         self_packs INTEGER NOT NULL DEFAULT 1,
+        -- Whether this seller offers "Recogida en persona" for STORE ('other')
+        -- products in the cart. It is the only condition: an address in
+        -- users.pickup_* no longer implies the option is offered, and its
+        -- absence no longer hides it. Art is out of scope — art pickup goes
+        -- through shipping_methods.type = 'pickup' in zoneResolver.
+        allow_store_pickup INTEGER NOT NULL DEFAULT 0,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

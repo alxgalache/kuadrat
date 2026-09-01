@@ -23,6 +23,7 @@ const sendcloudConfigBody = z.object({
   vat_number: z.string().max(30).optional().nullable(),
   eori_number: z.string().max(30).optional().nullable(),
   self_packs: z.union([z.boolean(), z.number()]).optional(),
+  allow_store_pickup: z.union([z.boolean(), z.number()]).optional(),
 }).strip();
 
 /**
