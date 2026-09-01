@@ -48,6 +48,22 @@ const deliveryAddressSchema = z
   .nullable()
   .optional();
 
+// The buyer's Sendcloud choice, one entry per seller. It arrives as its own
+// field because it never lands on the cart item: `setSendcloudShipping` writes
+// to `shippingSelections`, a state parallel to the cart, and `item.shipping`
+// stays null — which is why the shipping used to be quoted and then never
+// charged. `cost` is what the buyer was shown; the server re-quotes and charges
+// its own number, and uses this one only to notice that the rate has moved.
+const sendcloudSelectionSchema = z
+  .object({
+    sellerId: z.union([z.number().int().positive(), z.string().transform(Number)]),
+    shippingOptionCode: z.string().optional(),
+    servicePointId: z.union([z.number(), z.string()]).nullable().optional(),
+    cost: z.number().nonnegative({ message: 'Coste de envío inválido' }).optional(),
+    type: z.string().optional(),
+  })
+  .passthrough();
+
 const initPaymentSchema = z.object({
   body: z.object({
     items: z
@@ -55,7 +71,8 @@ const initPaymentSchema = z.object({
       .min(1, { message: 'items debe ser un array no vacío' }),
     currency: z.string().trim().min(3).max(3).optional(),
     deliveryAddress: deliveryAddressSchema,
+    shippingSelections: z.array(sendcloudSelectionSchema).optional(),
   }).passthrough(),
 });
 
-module.exports = { initPaymentSchema };
+module.exports = { initPaymentSchema, sendcloudSelectionSchema };

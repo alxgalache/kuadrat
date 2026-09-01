@@ -428,6 +428,8 @@ export const SHIPPING_VERIFICATION_ERRORS = {
     'El método de envío elegido ya no está disponible para esa dirección. Elimina el producto de la cesta y vuelve a añadirlo eligiendo otro envío.',
   SHIPPING_COST_OUTDATED:
     'El precio del envío ha cambiado desde que añadiste el producto a la cesta. Elimínalo y vuelve a añadirlo para continuar.',
+  SHIPPING_SELECTION_REQUIRED:
+    'Selecciona un método de envío para cada vendedor antes de continuar con el pago.',
 };
 
 // Rechazos del enlace de cambio de contraseña que envía el administrador. La

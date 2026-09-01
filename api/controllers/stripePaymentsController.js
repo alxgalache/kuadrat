@@ -13,6 +13,11 @@ const {
   computeShippingTotal,
   verifyShippingCosts,
 } = require('../utils/paymentHelpers');
+const {
+  verifySendcloudShipping,
+  encodeVerifiedShipping,
+  toCents,
+} = require('../services/shipping/sendcloudQuoteVerifier');
 const { processOrderConfirmation } = require('./paymentsController');
 const { releaseOrderInventory } = require('../services/inventoryService');
 const {
@@ -43,6 +48,7 @@ const createPaymentIntentEndpoint = async (req, res, next) => {
       items: compactItems,
       currency = 'EUR',
       deliveryAddress = null,
+      shippingSelections = [],
     } = req.body || {};
 
     if (!Array.isArray(compactItems) || compactItems.length === 0) {
@@ -52,8 +58,14 @@ const createPaymentIntentEndpoint = async (req, res, next) => {
     // Load products from DB and validate
     const { artMap, otherMap } = await loadProductsDetails(compactItems);
 
-    // Verify shipping costs server-side before computing total
+    // Verify shipping costs server-side before computing total. The two flows
+    // are disjoint by construction: legacy items carry a method on the cart
+    // item and Sendcloud items never do, so each verifier skips the other's.
     await verifyShippingCosts(compactItems, artMap, otherMap, { deliveryAddress });
+    const verifiedSendcloud = await verifySendcloudShipping(compactItems, artMap, otherMap, {
+      shippingSelections,
+      deliveryAddress,
+    });
 
     const { productsTotal } = buildLineItems({
       compactItems,
@@ -63,7 +75,9 @@ const createPaymentIntentEndpoint = async (req, res, next) => {
       siteBaseUrl: SITE_BASE_URL,
     });
     const shippingTotal = computeShippingTotal(compactItems);
-    const amountMinor = productsTotal + shippingTotal;
+    // Always the re-quoted figure, never the one the browser sent.
+    const sendcloudShippingTotal = verifiedSendcloud.reduce((sum, v) => sum + toCents(v.cost), 0);
+    const amountMinor = productsTotal + shippingTotal + sendcloudShippingTotal;
 
     if (amountMinor <= 0) {
       throw new ApiError(400, 'El importe debe ser mayor que cero', 'Importe inválido');
@@ -82,6 +96,11 @@ const createPaymentIntentEndpoint = async (req, res, next) => {
       currency: currency.toLowerCase(),
       metadata: {
         cartSnapshot: cartSnapshot.slice(0, 500), // Stripe metadata value limit
+        // What `placeOrder` records as the shipping cost of each seller group.
+        // Reading it back is what makes the figure stored equal the figure
+        // charged: re-quoting there instead would be two numbers that have to
+        // agree across the seconds the buyer spends in the card form.
+        sendcloudShipping: encodeVerifiedShipping(verifiedSendcloud).slice(0, 500),
       },
     });
 

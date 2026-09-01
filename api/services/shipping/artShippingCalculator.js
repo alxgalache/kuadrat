@@ -214,6 +214,11 @@ function classifyOptions(rawOptions, packagingCost) {
 
     if (!hasUsableRate(opt)) continue
 
+    // `quoteTotal` sums one quote per parcel, and this module always sends
+    // exactly one (`parcels: [parcel]` below), so the sum is that parcel's
+    // total and the neighbouring `quotes[0]` reads — lead time, currency,
+    // breakdown — describe the same single parcel. Sending more than one parcel
+    // from here would silently make the breakdown describe only the first.
     const total = quoteTotal(opt)
     const leadTimeHours = quotes[0]?.lead_time
 

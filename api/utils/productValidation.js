@@ -64,10 +64,20 @@ const validateCommonProductFields = ({ name, description, price, weight, dimensi
     }
   }
 
-  // Validate dimensions (optional, but if provided must follow format WxLxH)
-  if (dimensions && typeof dimensions === 'string') {
+  // Dimensions are mandatory for a STORE product under Sendcloud, and optional
+  // everywhere else. A store product's parcel is co-packed with whatever else
+  // the buyer ordered, so it travels with no dimensions of its own and its
+  // volume has to be derived from each product's — without them the parcel is
+  // priced on real weight alone and a bulky, light product is quoted well below
+  // what the carrier bills. Art needs no rule here: its parcel carries its real
+  // dimensions and Sendcloud does the arithmetic.
+  const dimensionsValue = typeof dimensions === 'string' ? dimensions.trim() : '';
+
+  if (productType === 'other' && isSendcloudEnabled('other') && !dimensionsValue) {
+    errors.push({ field: 'dimensions', message: 'Las dimensiones son obligatorias para poder calcular el envío' });
+  } else if (dimensionsValue) {
     const dimensionsRegex = /^\d+x\d+x\d+$/;
-    if (!dimensionsRegex.test(dimensions.trim())) {
+    if (!dimensionsRegex.test(dimensionsValue)) {
       errors.push({ field: 'dimensions', message: 'Las dimensiones deben estar en formato "LxWxH" (ej: 30x20x10)' });
     }
   }

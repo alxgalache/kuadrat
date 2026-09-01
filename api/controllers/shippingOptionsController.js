@@ -2,52 +2,7 @@ const { db } = require('../config/database')
 const logger = require('../config/logger')
 const { ApiError } = require('../middleware/errorHandler')
 const { sendSuccess } = require('../utils/response')
-const { getProvider, isSendcloudEnabled } = require('../services/shipping/shippingProviderFactory')
-const { groupBySeller } = require('../services/shipping/parcelGrouper')
-
-/**
- * Fetch real weight/dimensions from the DB for each item.
- * Overrides any frontend-provided values to ensure accuracy.
- */
-async function enrichItemsFromDB(items) {
-  const artIds = items.filter(i => i.productType === 'art').map(i => i.productId)
-  const otherIds = items.filter(i => i.productType === 'other' || i.productType === 'others').map(i => i.productId)
-
-  const productData = new Map()
-
-  if (artIds.length > 0) {
-    const placeholders = artIds.map(() => '?').join(',')
-    const result = await db.execute({
-      sql: `SELECT id, weight, dimensions FROM art WHERE id IN (${placeholders})`,
-      args: artIds,
-    })
-    for (const row of result.rows) {
-      productData.set(`art-${row.id}`, { weight: row.weight, dimensions: row.dimensions })
-    }
-  }
-
-  if (otherIds.length > 0) {
-    const placeholders = otherIds.map(() => '?').join(',')
-    const result = await db.execute({
-      sql: `SELECT id, weight, dimensions FROM others WHERE id IN (${placeholders})`,
-      args: otherIds,
-    })
-    for (const row of result.rows) {
-      productData.set(`other-${row.id}`, { weight: row.weight, dimensions: row.dimensions })
-      productData.set(`others-${row.id}`, { weight: row.weight, dimensions: row.dimensions })
-    }
-  }
-
-  return items.map(item => {
-    const key = `${item.productType}-${item.productId}`
-    const dbData = productData.get(key)
-    return {
-      ...item,
-      weight: dbData?.weight || item.weight || 0,
-      dimensions: dbData?.dimensions || item.dimensions || null,
-    }
-  })
-}
+const { quoteSellerGroups } = require('../services/shipping/cartQuoting')
 
 /**
  * POST /api/shipping/options
@@ -59,58 +14,13 @@ const getShippingOptions = async (req, res, next) => {
   try {
     const { items, deliveryAddress } = req.body
 
-    // Enrich items with real weight/dimensions from DB
-    const enrichedItems = await enrichItemsFromDB(items)
-
-    // Group items by seller and create parcels
-    const sellerGroups = groupBySeller(enrichedItems)
+    // The grouping, the parcels and the provider dispatch live in
+    // `cartQuoting`, shared with the payment endpoints that charge for this
+    // quote. Everything below is presentation: pickup and the response shape.
+    const quoted = await quoteSellerGroups({ items, deliveryAddress })
     const sellers = []
 
-    for (const [sellerId, group] of sellerGroups) {
-      // Determine the product types in this seller group
-      const productTypes = [...new Set(group.items.map(i =>
-        i.productType === 'others' ? 'other' : i.productType
-      ))]
-
-      // Fetch delivery options per product type (may use different providers)
-      let allDeliveryOptions = []
-      let deliveryError = null
-
-      for (const pType of productTypes) {
-        const provider = getProvider(pType)
-        const typeParcels = group.parcels.filter(p => {
-          const normalized = p.productType === 'others' ? 'other' : p.productType
-          return normalized === pType
-        })
-
-        if (typeParcels.length === 0) continue
-
-        try {
-          const options = await provider.getDeliveryOptions({
-            sellerId,
-            parcels: typeParcels,
-            buyerAddress: deliveryAddress,
-          })
-          allDeliveryOptions.push(...options)
-        } catch (error) {
-          logger.error({
-            sellerId,
-            productType: pType,
-            err: error,
-          }, 'Error fetching delivery options for seller')
-          deliveryError = error.message || 'No se pudieron obtener las opciones de envío a domicilio'
-          // Continue with other product types, don't fail the whole request
-        }
-      }
-
-      // Deduplicate by option ID
-      const seenIds = new Set()
-      const uniqueOptions = allDeliveryOptions.filter(opt => {
-        if (seenIds.has(opt.id)) return false
-        seenIds.add(opt.id)
-        return true
-      })
-
+    for (const { sellerId, group, productTypes, deliveryOptions, deliveryError } of quoted) {
       // Get seller pickup info. `allow_store_pickup` lives on the Sendcloud
       // configuration and is the ONLY thing that decides whether the option is
       // offered; the users.pickup_* columns are read for display only.
@@ -150,7 +60,7 @@ const getShippingOptions = async (req, res, next) => {
         sellerName: sellerResult.rows[0]?.full_name || group.sellerName || '',
         parcelCount: group.parcels.length,
         productCount: group.items.reduce((sum, i) => sum + (i.quantity || 1), 0),
-        deliveryOptions: uniqueOptions,
+        deliveryOptions,
         pickupOption,
         deliveryError,
       })

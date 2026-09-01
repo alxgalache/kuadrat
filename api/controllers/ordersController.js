@@ -5,7 +5,12 @@ const { ApiError } = require('../middleware/errorHandler');
 const { sendPurchaseConfirmation, sendPaymentConfirmation, sendTrackingUpdateEmail, sendItemsSentEmail } = require('../services/emailService');
 const { sendBuyerToSellerContactEmail } = require('../services/emailService');
 const { updateRevolutOrder } = require('../services/revolutService');
-const { updatePaymentIntent, findOrCreateCustomer } = require('../services/stripeService');
+const { updatePaymentIntent, findOrCreateCustomer, retrievePaymentIntent } = require('../services/stripeService');
+const { isSendcloudEnabled } = require('../services/shipping/shippingProviderFactory');
+const {
+  verifySendcloudShipping,
+  decodeVerifiedShipping,
+} = require('../services/shipping/sendcloudQuoteVerifier');
 const crypto = require('crypto');
 const { artVatRegimeForRate } = require('../utils/vatRegime');
 const { artCommissionAmount } = require('../utils/artCommission');
@@ -64,6 +69,7 @@ const placeOrder = async (req, res, next) => {
       revolut_order_token,
       stripe_payment_intent_id,
       payment_provider,
+      shippingSelections = [],
       currency = 'EUR',
       description = 'Pedido realizado en 140d Galería de Arte',
     } = req.body || {};
@@ -107,7 +113,13 @@ const placeOrder = async (req, res, next) => {
       throw new ApiError(400, 'items debe ser un array no vacío', 'Solicitud inválida');
     }
 
-    const itemsWithoutShipping = items.filter((item) => !item.shipping);
+    // An item priced by Sendcloud carries NO `shipping` of its own: the choice
+    // is per seller and travels in `shippingSelections`. The equivalent
+    // guarantee for those items is `SHIPPING_SELECTION_REQUIRED`, raised below
+    // by the verifier, which is stricter than this check ever was.
+    const itemsWithoutShipping = items.filter(
+      (item) => !item.shipping && !isSendcloudEnabled(item.type === 'art' ? 'art' : 'other')
+    );
     if (itemsWithoutShipping.length > 0) {
       throw new ApiError(400, 'Todos los productos deben tener información de envío', 'Información de envío faltante');
     }
@@ -159,19 +171,99 @@ const placeOrder = async (req, res, next) => {
       }
     }
 
+    // ── Sendcloud shipping: one figure per seller, and the SAME figure that
+    // was charged ────────────────────────────────────────────────────────────
+    //
+    // For a Stripe order the amount comes back from the PaymentIntent, where
+    // `create-intent` left it after verifying it. Re-quoting Sendcloud here
+    // instead would be two numbers that have to agree across the seconds the
+    // buyer spends in the card form, and a fuel surcharge that moved in that
+    // window would leave the order recording something other than what the
+    // buyer paid — the very defect this change exists to close.
+    //
+    // Revolut (legacy) has no such channel, so that path re-verifies. So does a
+    // Stripe order whose intent predates this change and carries no metadata.
+    const artMapForShipping = new Map(artProducts.map(p => [p.id, p]));
+    const otherMapForShipping = new Map(othersProducts.map(p => [p.id, p]));
+
+    let sendcloudShippingBySeller = null;
+
+    if (provider === 'stripe' && stripe_payment_intent_id) {
+      try {
+        const intent = await retrievePaymentIntent(stripe_payment_intent_id);
+        sendcloudShippingBySeller = decodeVerifiedShipping(intent?.metadata?.sendcloudShipping);
+      } catch (err) {
+        logger.warn(
+          { stripe_payment_intent_id, err },
+          'Could not read the verified shipping off the PaymentIntent; re-verifying'
+        );
+      }
+    }
+
+    if (!sendcloudShippingBySeller) {
+      const verified = await verifySendcloudShipping(items, artMapForShipping, otherMapForShipping, {
+        shippingSelections,
+        deliveryAddress: delivery_address
+          ? { country: delivery_address.country, postalCode: delivery_address.postalCode }
+          : null,
+      });
+      sendcloudShippingBySeller = new Map(verified.map(v => [v.sellerId, v.cost]));
+    }
+
+    // The selection's descriptive fields (name, option code, service point) are
+    // the buyer's and are recorded as sent; only the COST comes from the
+    // verified figure above, never from the browser.
+    const sendcloudSelectionBySeller = new Map(
+      (shippingSelections || []).map(s => [Number(s.sellerId), s])
+    );
+
+    // The cost belongs to the seller GROUP, but item rows are one per unit.
+    // Writing it on every row multiplied it by the quantity: an order of two
+    // units recorded 9,14 € of shipping against 4,57 € actually charged. It is
+    // written once, on the first row of each group, which keeps the six
+    // `Σ price_at_purchase + shipping_cost` aggregations correct untouched.
+    const sendcloudCostWritten = new Set();
+    const sendcloudRowShipping = (sellerId, productType) => {
+      if (!isSendcloudEnabled(productType)) return null;
+      const key = Number(sellerId);
+      if (!sendcloudShippingBySeller.has(key)) return null;
+
+      const selection = sendcloudSelectionBySeller.get(key) || {};
+      const isFirstRow = !sendcloudCostWritten.has(key);
+      sendcloudCostWritten.add(key);
+
+      return {
+        methodId: selection.shippingOptionCode || null,
+        cost: isFirstRow ? sendcloudShippingBySeller.get(key) : 0,
+        methodName: selection.name || null,
+        methodType: selection.type || 'home_delivery',
+        shippingOptionCode: selection.shippingOptionCode || null,
+        servicePointId: selection.servicePointId || null,
+      };
+    };
+
     // Calculate total price including all products (with duplicates) and shipping costs
     let totalPrice = 0;
     for (const item of artItems) {
       const product = artProducts.find(p => p.id === item.id);
       if (product) {
-        totalPrice += product.price + (item.shipping?.cost || 0);
+        // A Sendcloud item's shipping is added once per seller, below.
+        const legacyShipping = isSendcloudEnabled('art') ? 0 : (item.shipping?.cost || 0);
+        totalPrice += product.price + legacyShipping;
       }
     }
     for (const item of othersItems) {
       const product = othersProducts.find(p => p.id === item.id);
       if (product) {
-        totalPrice += product.price + (item.shipping?.cost || 0);
+        const legacyShipping = isSendcloudEnabled('other') ? 0 : (item.shipping?.cost || 0);
+        totalPrice += product.price + legacyShipping;
       }
+    }
+
+    // Each seller's Sendcloud shipping, counted ONCE however many units the
+    // order holds. This is the figure the buyer was charged.
+    for (const cost of sendcloudShippingBySeller.values()) {
+      totalPrice += cost;
     }
 
     // Build compact items for Revolut (same grouping as legacy flow)
@@ -510,6 +602,9 @@ const placeOrder = async (req, res, next) => {
         commissionRate: sellerInfo?.art || 0,
         vatRegime,
       });
+      // A Sendcloud group's cost lands on its first row only; everything else
+      // keeps the per-item shipping the legacy flow genuinely prices per item.
+      const rowShipping = sendcloudRowShipping(product.seller_id, 'art') || item.shipping || {};
       await db.execute({
         sql: `INSERT INTO art_order_items (
           order_id,
@@ -529,14 +624,14 @@ const placeOrder = async (req, res, next) => {
           orderId,
           product.id,
           product.price,
-          item.shipping?.methodId || null,
-          item.shipping?.cost || 0,
-          item.shipping?.methodName || null,
-          item.shipping?.methodType || null,
+          rowShipping.methodId || null,
+          rowShipping.cost || 0,
+          rowShipping.methodName || null,
+          rowShipping.methodType || null,
           commissionAmount,
           'pending',
-          item.shipping?.shippingOptionCode || null,
-          item.shipping?.servicePointId || null,
+          rowShipping.shippingOptionCode || null,
+          rowShipping.servicePointId || null,
           vatRegime,
         ],
       });
@@ -547,6 +642,9 @@ const placeOrder = async (req, res, next) => {
       const variant = othersVariations.find((v) => v.id === item.variantId);
       const sellerRate = (sellerCommissionMap.get(product.seller_id)?.other || 0) / 100;
       const commissionAmount = product.price * sellerRate;
+      // Same rule as the art rows: the seller group's Sendcloud cost is
+      // written once, on its first row, and 0 on the rest.
+      const rowShipping = sendcloudRowShipping(product.seller_id, 'other') || item.shipping || {};
       await db.execute({
         sql: `INSERT INTO other_order_items (
           order_id,
@@ -567,14 +665,14 @@ const placeOrder = async (req, res, next) => {
           product.id,
           variant.id,
           product.price,
-          item.shipping?.methodId || null,
-          item.shipping?.cost || 0,
-          item.shipping?.methodName || null,
-          item.shipping?.methodType || null,
+          rowShipping.methodId || null,
+          rowShipping.cost || 0,
+          rowShipping.methodName || null,
+          rowShipping.methodType || null,
           commissionAmount,
           'pending',
-          item.shipping?.shippingOptionCode || null,
-          item.shipping?.servicePointId || null,
+          rowShipping.shippingOptionCode || null,
+          rowShipping.servicePointId || null,
         ],
       });
     }

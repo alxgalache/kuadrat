@@ -18,6 +18,10 @@ const {
   computeShippingTotal: sharedComputeShippingTotal,
   verifyShippingCosts: sharedVerifyShippingCosts,
 } = require('../utils/paymentHelpers');
+const {
+  verifySendcloudShipping,
+  toCents,
+} = require('../services/shipping/sendcloudQuoteVerifier');
 
 const SITE_BASE_URL = process.env.SITE_PUBLIC_BASE_URL || 'https://pre.140d.art';
 const SITE_API_URL = process.env.SITE_API_BASE_URL || 'https://api.pre.140d.art';
@@ -90,7 +94,7 @@ async function loadProductsDetails(compactItems) {
     const res = await db.execute({
       sql: `SELECT a.id, a.name, a.price, a.slug,
                    (SELECT basename FROM product_images WHERE product_type = 'art' AND product_id = a.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
-                   a.description, a.is_sold
+                   a.description, a.is_sold, a.seller_id
             FROM art a WHERE a.id IN (${placeholders})`,
       args: artIds,
     });
@@ -109,7 +113,7 @@ async function loadProductsDetails(compactItems) {
     const res = await db.execute({
       sql: `SELECT o.id, o.name, o.price, o.slug,
                    (SELECT basename FROM product_images WHERE product_type = 'other' AND product_id = o.id ORDER BY position ASC, id ASC LIMIT 1) AS basename,
-                   o.description, o.is_sold
+                   o.description, o.is_sold, o.seller_id
             FROM others o WHERE o.id IN (${placeholders})`,
       args: otherIds,
     });
@@ -205,6 +209,7 @@ const initRevolutOrderEndpoint = async (req, res, next) => {
       items: compactItems,
       currency = 'EUR',
       deliveryAddress = null,
+      shippingSelections = [],
     } = req.body || {};
 
     if (!Array.isArray(compactItems) || compactItems.length === 0) {
@@ -216,10 +221,17 @@ const initRevolutOrderEndpoint = async (req, res, next) => {
 
     // Verify shipping costs server-side before computing total
     await sharedVerifyShippingCosts(compactItems, artMap, otherMap, { deliveryAddress });
+    const verifiedSendcloud = await verifySendcloudShipping(compactItems, artMap, otherMap, {
+      shippingSelections,
+      deliveryAddress,
+    });
 
     const { lineItems, productsTotal } = buildLineItems({ compactItems, artMap, otherMap });
     const shippingTotal = computeShippingTotal(compactItems);
-    const amountMinor = productsTotal + shippingTotal;
+    // Always the re-quoted figure, never the one the browser sent. Revolut has
+    // no metadata channel to carry it to `placeOrder`, so that path re-verifies.
+    const sendcloudShippingTotal = verifiedSendcloud.reduce((sum, v) => sum + toCents(v.cost), 0);
+    const amountMinor = productsTotal + shippingTotal + sendcloudShippingTotal;
 
     if (amountMinor <= 0) {
       throw new ApiError(400, 'El importe debe ser mayor que cero', 'Importe inválido');

@@ -25,14 +25,16 @@ export default function ShippingStep({ deliveryAddress }) {
       return
     }
 
+    // Only identity and quantity travel. Weight, dimensions, price and
+    // co-packability are read from the product row on the server: they set the
+    // price, so the browser has no say in them. `canCopack` in particular was
+    // never stored on the cart item, so this always sent `true` and a product
+    // marked as non-co-packable was quoted as one parcel and shipped as N.
     const items = sendcloudItems.map(item => ({
       productId: item.productId,
       productType: item.productType,
       quantity: item.quantity,
       sellerId: item.sellerId,
-      weight: item.weight || 0,
-      dimensions: item.dimensions || null,
-      canCopack: item.canCopack ?? true,
     }))
 
     setLoading(true)

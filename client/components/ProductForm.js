@@ -152,6 +152,34 @@ function ImageDropzoneSlot({ previewUrl, onDrop, onClear, isFirst }) {
 //   regime, derived server-side; selects which art earnings legend renders
 // - onSubmit(formData, productCategory): performs the API call; errors it
 //   throws are shown via showApiError
+
+// The ONLY values `productCategory` can hold. The `<select>` emits these two
+// and `initialProductType` carries the same pair; a comparison against anything
+// else is dead code that always evaluates false.
+//
+// This is not decoration. The predicates below used to be written inline in
+// three places and all three said `'others'` — a value nothing ever produces.
+// The consequences were invisible and expensive: the "can be packed with other
+// products" checkbox never rendered at all, so `can_copack` was unsettable; the
+// weight was never actually required for a store product, despite being
+// specified as mandatory; and the form labelled it "(opcional)". A store
+// product saved with no weight is quoted as a 1 kg parcel by the provider's
+// `parcel.weight || 1000` fallback, silently. One named predicate, used
+// everywhere, is what stops a fourth copy from drifting again.
+const PRODUCT_CATEGORIES = ['art', 'other']
+
+const isStoreCategory = (category) => category === 'other'
+
+const isWeightRequired = (category) =>
+    (category === 'art' && SENDCLOUD_ENABLED_ART)
+    || (isStoreCategory(category) && SENDCLOUD_ENABLED_OTHERS)
+
+// Only the store needs them: its co-packed parcel travels with no dimensions of
+// its own, so the volume has to be derived from each product's. An art parcel
+// sends its real dimensions and Sendcloud does the arithmetic.
+const areDimensionsRequired = (category) =>
+    isStoreCategory(category) && SENDCLOUD_ENABLED_OTHERS
+
 export default function ProductForm({
     mode = 'create',
     initialProduct = null,
@@ -516,7 +544,7 @@ export default function ProductForm({
         }
 
         // Validate weight — mandatory when Sendcloud enabled for this product type
-        const weightRequired = (productCategory === 'art' && SENDCLOUD_ENABLED_ART) || (productCategory === 'others' && SENDCLOUD_ENABLED_OTHERS)
+        const weightRequired = isWeightRequired(productCategory)
         if (weightRequired && (!weight || !weight.trim())) {
             validationErrors.push({ field: 'weight', message: 'El peso es obligatorio para poder calcular el envío' })
         } else if (weight && weight.trim()) {
@@ -526,8 +554,14 @@ export default function ProductForm({
             }
         }
 
-        // Validate dimensions (optional, but if provided must follow format WxLxH)
-        if (dimensions && dimensions.trim()) {
+        // Dimensions: mandatory for store products under Sendcloud, because the
+        // co-packed parcel is priced by the greater of its real and volumetric
+        // weight and the second cannot be computed without them. Optional
+        // elsewhere, but always checked for shape when present.
+        const dimensionsRequired = areDimensionsRequired(productCategory)
+        if (dimensionsRequired && (!dimensions || !dimensions.trim())) {
+            validationErrors.push({ field: 'dimensions', message: 'Las dimensiones son obligatorias para poder calcular el envío' })
+        } else if (dimensions && dimensions.trim()) {
             const dimensionsRegex = /^\d+x\d+x\d+$/
             if (!dimensionsRegex.test(dimensions.trim())) {
                 validationErrors.push({ field: 'dimensions', message: 'Las dimensiones deben estar en formato "LxWxH" (ej: 30x20x10)' })
@@ -893,7 +927,7 @@ export default function ProductForm({
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-8">
                                         <div>
                                             <label htmlFor="weight" className="block text-sm/6 font-medium text-gray-900">
-                                                Peso (gramos) {((productCategory === 'art' && SENDCLOUD_ENABLED_ART) || (productCategory === 'others' && SENDCLOUD_ENABLED_OTHERS))
+                                                Peso (gramos) {isWeightRequired(productCategory)
                                                     ? <span className="text-red-500">*</span>
                                                     : <span className="text-gray-400">(opcional)</span>}
                                             </label>
@@ -916,7 +950,9 @@ export default function ProductForm({
 
                                         <div>
                                             <label htmlFor="dimensions" className="block text-sm/6 font-medium text-gray-900">
-                                                Dimensiones (cm) <span className="text-gray-400">(opcional)</span>
+                                                Dimensiones (cm) {areDimensionsRequired(productCategory)
+                                                    ? <span className="text-red-500">*</span>
+                                                    : <span className="text-gray-400">(opcional)</span>}
                                             </label>
                                             <label className="block text-sm/6 font-medium text-gray-400">
                                                 Formato: Largo x Ancho x Fondo. Ej: "30x20x5"
@@ -935,7 +971,7 @@ export default function ProductForm({
                                         </div>
                                     </div>
 
-                                    {productCategory === 'others' && SENDCLOUD_ENABLED_OTHERS && (
+                                    {isStoreCategory(productCategory) && SENDCLOUD_ENABLED_OTHERS && (
                                         <div className="flex items-center">
                                             <input
                                                 id="canCopack"

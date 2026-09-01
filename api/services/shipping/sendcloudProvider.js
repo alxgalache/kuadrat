@@ -1,5 +1,5 @@
 const sendcloud = require('./sendcloudApiClient')
-const { insuredValueFor, hasUsableRate } = require('./sendcloudPricing')
+const { insuredValueFor, hasUsableRate, quoteTotal, quoteLeadTime } = require('./sendcloudPricing')
 const { db } = require('../../config/database')
 const logger = require('../../config/logger')
 const { ApiError } = require('../../middleware/errorHandler')
@@ -186,17 +186,35 @@ async function getDeliveryOptions({ sellerId, parcels, buyerAddress }) {
       // or a total that is absent, non-numeric or <= 0.
       return hasUsableRate(opt)
     })
-    .map(opt => normalizeOption(opt))
+    .map(opt => normalizeOption(opt, requestBody.parcels.length))
 
   return options
 }
 
 /**
  * Normalize a Sendcloud shipping option to our standard format.
+ *
+ * `price` is the sum of the option's quotes — one per parcel in the request —
+ * and `estimatedDays` the slowest of their lead times. Reading `quotes[0]` for
+ * either would price a three-parcel shipment as a one-parcel one and promise
+ * the arrival of its fastest box.
+ *
+ * @param {object} opt - A raw shipping option from `POST /v3/shipping-options`.
+ * @param {number} parcelCount - Parcels sent in the request, for the sanity check.
  */
-function normalizeOption(opt) {
-  const quote = opt.quotes?.[0]
-  const leadTimeHours = quote?.lead_time
+function normalizeOption(opt, parcelCount) {
+  const quotes = opt.quotes || []
+
+  // A quote count that does not match the parcel count means the endpoint has
+  // changed shape under us, and the price would be wrong in silence.
+  if (parcelCount !== undefined && quotes.length !== parcelCount) {
+    logger.warn(
+      { shippingOptionCode: opt.code, quoteCount: quotes.length, parcelCount },
+      'Sendcloud returned a quote count that does not match the parcels sent; the price may be wrong'
+    )
+  }
+
+  const leadTimeHours = quoteLeadTime(opt)
 
   return {
     id: opt.code || opt.id,
@@ -206,8 +224,8 @@ function normalizeOption(opt) {
       code: opt.carrier?.code || '',
       logoUrl: opt.carrier?.logo_url || '',
     },
-    price: parseFloat(quote.price.total.value),
-    currency: quote.price.total.currency || 'EUR',
+    price: quoteTotal(opt),
+    currency: quotes[0]?.price?.total?.currency || 'EUR',
     estimatedDays: leadTimeHours ? Math.ceil(leadTimeHours / 24) : null,
     shippingOptionCode: opt.code || '',
     requiresServicePoint: opt.requirements?.is_service_point_required || false,

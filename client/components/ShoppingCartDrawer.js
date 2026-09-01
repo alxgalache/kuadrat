@@ -205,6 +205,33 @@ export default function ShoppingCartDrawer({open, onClose}) {
         }))
     ), [])
 
+    // The buyer's Sendcloud choice, one entry per seller. It has to travel as
+    // its own field because it never lands on the cart item: `shippingSelections`
+    // is a state parallel to the cart, and `item.shipping` stays null for these
+    // items — which is why the shipping used to be quoted and never charged.
+    //
+    // `cost` is what the buyer was shown. The server re-quotes and charges its
+    // own number; this one only lets it notice that the rate has moved.
+    const buildShippingSelections = useCallback(() => (
+        Object.entries(shippingSelections).map(([sellerId, sc]) => ({
+            sellerId: Number(sellerId),
+            shippingOptionCode: sc.shippingOptionCode || sc.optionId || '',
+            servicePointId: sc.servicePointId || null,
+            cost: sc.cost || 0,
+            type: sc.type || 'home_delivery',
+            name: sc.name || '',
+        }))
+    ), [shippingSelections])
+
+    // What a pending Revolut order is compared against. It must include the
+    // shipping selection, not just the items: now that the shipping is actually
+    // charged, changing the method changes the amount, and a snapshot blind to
+    // it would reuse an order created for a different total.
+    const buildPaymentSnapshot = useCallback(
+        () => JSON.stringify({ items: buildCompactItems(cart), shipping: buildShippingSelections() }),
+        [cart, buildCompactItems, buildShippingSelections]
+    )
+
     // The destination the server prices the shipping against. Sent to the
     // payment endpoints so the zone is resolved for the address the order is
     // actually going to, rather than for the postal code the cart captured when
@@ -338,7 +365,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 return
             }
 
-            const currentSnapshot = JSON.stringify(buildCompactItems(cart))
+            const currentSnapshot = buildPaymentSnapshot()
             if (currentSnapshot === stored.cartSnapshot) {
                 setRevolutOrderId(stored.revolut_order_id)
                 setRevolutOrderToken(stored.token)
@@ -385,7 +412,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
             return
         }
 
-        const currentSnapshot = JSON.stringify(buildCompactItems(cart))
+        const currentSnapshot = buildPaymentSnapshot()
         if (currentSnapshot !== revolutCartSnapshot) {
             // Cart changed - cancel Revolut order
             if (revolutOrderId) {
@@ -412,7 +439,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 setSelectedPaymentMethod(null)
             }
         }
-    }, [cart, revolutCartSnapshot, currentStep, revolutOrderId, buildCompactItems, cleanupRevolutState])
+    }, [cart, revolutCartSnapshot, currentStep, revolutOrderId, buildPaymentSnapshot, cleanupRevolutState])
 
     // Clean up Stripe state when cart is cleared (e.g. after successful payment)
     useEffect(() => {
@@ -624,7 +651,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
     // Initialize Revolut order (shared between Card and Revolut Pay)
     const initializeRevolutOrder = async () => {
         const compactItems = buildCompactItems(cart)
-        const snapshot = JSON.stringify(compactItems)
+        const snapshot = buildPaymentSnapshot()
 
         // If we already have a matching Revolut order, reuse it
         if (revolutOrderId && revolutOrderToken && revolutCartSnapshot === snapshot) {
@@ -638,6 +665,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 items: compactItems,
                 currency: 'EUR',
                 deliveryAddress: buildPricingAddress(),
+                shippingSelections: buildShippingSelections(),
             })
 
             if (!resp || !resp.revolut_order_id || !resp.token) {
@@ -691,6 +719,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 items: compactItems,
                 currency: 'EUR',
                 deliveryAddress: buildPricingAddress(),
+                shippingSelections: buildShippingSelections(),
             })
 
             if (!resp || !resp.clientSecret || !resp.paymentIntentId) {
@@ -713,28 +742,15 @@ export default function ShoppingCartDrawer({open, onClose}) {
 
     // Place order in our database (shared between Card and Revolut Pay)
     const placeOrderInDatabase = async () => {
+        // A Sendcloud selection is NOT merged into each expanded unit any more.
+        // It is per seller, and copying it onto every row made the server record
+        // it once per unit: an order of two units stored 9,14 € of shipping
+        // against 4,57 € charged. It now travels once, in `shippingSelections`.
         const orderItems = cart.flatMap(item => {
-            let shipping = item.shipping
-
-            // For Sendcloud items, merge shipping from shippingSelections
-            if (!shipping && item.sellerId) {
-                const sc = shippingSelections[item.sellerId]
-                if (sc) {
-                    shipping = {
-                        methodId: sc.shippingOptionCode || sc.optionId,
-                        cost: sc.cost || 0,
-                        methodName: sc.name || '',
-                        methodType: sc.type || 'home_delivery',
-                        shippingOptionCode: sc.shippingOptionCode || '',
-                        servicePointId: sc.servicePointId || null,
-                    }
-                }
-            }
-
             const baseItem = {
                 type: item.productType === 'art' ? 'art' : 'other',
                 id: item.productId,
-                shipping,
+                shipping: item.shipping,
             }
             if (item.productType === 'other') baseItem.variantId = item.variantId
             return Array(item.quantity).fill(baseItem)
@@ -764,6 +780,7 @@ export default function ShoppingCartDrawer({open, onClose}) {
                 email: personalInfo.email,
                 phone: personalInfo.phone,
             },
+            shippingSelections: buildShippingSelections(),
             payment_provider: PAYMENT_PROVIDER,
         }
 

@@ -8,7 +8,10 @@ const shippingOptionsItemSchema = z.object({
   sellerName: z.string().optional(),
   weight: z.union([z.number(), z.string().transform(Number)]).optional().nullable(),
   dimensions: z.string().optional().nullable(),
-  canCopack: z.union([z.boolean(), z.number()]).optional(),
+  // `canCopack` is deliberately absent: co-packability decides how many parcels
+  // a shipment has, and therefore its price. It is read from `others.can_copack`
+  // in `enrichItemsFromDB`, so accepting it here would only leave a field the
+  // server ignores but an unauthenticated caller can still try to set.
   name: z.string().optional(),
   price: z.union([z.number(), z.string().transform(Number)]).optional(),
   variantId: z.union([z.number(), z.string().transform(Number)]).optional().nullable(),

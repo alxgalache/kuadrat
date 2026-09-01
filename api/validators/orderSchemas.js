@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { sendcloudSelectionSchema } = require('./paymentSchemas');
 
 // Reusable address shape (all fields optional -- the controller tolerates
 // partial / missing addresses and falls back to null for each DB column).
@@ -78,6 +79,11 @@ const placeOrderSchema = z.object({
     customer: customerSchema,
     delivery_address: addressSchema,
     invoicing_address: addressSchema,
+
+    // Per-seller Sendcloud choice. It never rides on the item, so it has to
+    // arrive on its own; `placeOrder` records its cost once per seller group
+    // rather than on every expanded unit row.
+    shippingSelections: z.array(sendcloudSelectionSchema).optional(),
 
     currency: z.string().optional(),
     description: z.string().optional(),

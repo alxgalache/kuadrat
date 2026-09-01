@@ -1,10 +1,21 @@
+const logger = require('../../config/logger')
+const { parcelWeightGrams } = require('../../utils/volumetricWeight')
+
 /**
  * Groups cart items into parcels per seller based on product type and co-packability.
  *
  * Rules:
- * - Art products: always separate parcels (one per piece)
- * - Others products with can_copack=1: aggregated into one parcel (summed weight)
- * - Others products with can_copack=0: each becomes its own parcel
+ * - Art products: always separate parcels (one per piece), real weight + real dimensions
+ * - Others products with can_copack=1: aggregated into ONE parcel, weighed by the
+ *   greater of its summed real and summed volumetric weight, and carrying NO
+ *   dimensions — see `api/utils/volumetricWeight.js` for why the two are exclusive
+ * - Others products with can_copack=0: each unit becomes its own parcel, real
+ *   weight + real dimensions
+ *
+ * `canCopack` and `price` on the incoming items come from the product row, not
+ * from the request: `enrichItemsFromDB` overwrites both. Grouping on a
+ * client-supplied co-packability quoted one parcel for a shipment that
+ * `createShipments()` then announced as N.
  *
  * @param {object[]} items - Cart items for a single seller
  *   Each item: { productId, productType, quantity, weight, dimensions, canCopack, name, price, sellerId }
@@ -36,7 +47,6 @@ function groupIntoParcels(items) {
 
   // Co-packable items -> one aggregated parcel
   if (copackable.length > 0) {
-    let totalWeight = 0
     let totalValue = 0
     let totalQuantity = 0
     const allItems = []
@@ -44,16 +54,34 @@ function groupIntoParcels(items) {
 
     for (const item of copackable) {
       const qty = item.quantity || 1
-      totalWeight += (item.weight || 0) * qty
       totalValue += (item.price || 0) * qty
       totalQuantity += qty
       allItems.push(item)
       allItemIds.push({ productId: item.productId, productType: 'other', variantId: item.variantId })
+
+      if (!item.dimensions) {
+        logger.warn(
+          { productId: item.productId, productType: item.productType },
+          'Co-packable product has no dimensions; its parcel is quoted on real weight alone'
+        )
+      }
     }
 
+    // The greater of the summed real weight and the summed volumetric weight.
+    // The carrier bills whichever is higher, and this parcel deliberately
+    // carries no dimensions (see below), so the volume has to travel inside the
+    // weight or it does not travel at all.
+    const { weight } = parcelWeightGrams(copackable)
+
     parcels.push({
-      weight: totalWeight || null,
-      dimensions: null, // Don't aggregate dimensions for co-packed items
+      weight: weight || null,
+      // No dimensions, and this is now load-bearing rather than a shrug: the
+      // weight above is already volume-adjusted, and Sendcloud applies its own
+      // volumetric calculation to any `dimensions` it receives. Sending both
+      // would bill the volume twice. A single-item parcel does the opposite —
+      // real weight plus real dimensions — and lets Sendcloud do it properly,
+      // with each carrier's own divisor and size limits.
+      dimensions: null,
       totalValue,
       quantity: totalQuantity,
       productType: 'other',
