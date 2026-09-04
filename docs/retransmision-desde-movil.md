@@ -55,12 +55,37 @@ retransmisión no se corta al cambiar. El modo elegido se recuerda en ese
 teléfono, así que **recargar la página a mitad de evento vuelve a la consola**
 (la pantalla completa sí hay que volver a pedirla: el navegador exige un toque).
 
+### Lo que ves es lo que se emite
+
+La previsualización del host **no** está invertida: con la cámara trasera ves
+exactamente el encuadre que reciben los asistentes, y cualquier texto en plano se
+lee bien. (Los autovisores de las salas tipo reunión sí siguen espejados, que es
+la convención para verse a uno mismo.)
+
 ### Comprobar que se está emitiendo con el micrófono correcto
 
 Es el error caro de este montaje. Bajo el vídeo de la consola hay un **medidor
 de nivel**: si alguien habla por el DJI y la barra no se mueve, la fuente
 seleccionada no es esa. Se cambia con el botón **⌄** de la tarjeta «Micrófono»,
 que abre la lista de fuentes a pantalla completa.
+
+### Elegir la calidad de emisión
+
+Bajo la previsualización hay tres botones: **1080p**, **720p** y **480p**. El
+cambio se aplica al instante, sin cortar la emisión, y se recuerda en ese
+teléfono. El valor por defecto es **720p**, y conviene dejarlo ahí salvo motivo:
+
+- **Subir a 1080p cuesta 2,25× más.** Agora factura por asistente según la
+  resolución que cada uno recibe, y la banda «HD» termina justo en 1280 × 720
+  (3,99 $ por 1.000 min frente a 8,99 $ en «Full HD»). Además son ~3-4 Mbps de
+  subida sostenidos: si el recinto no los da, Agora degrada sobre la marcha y el
+  vídeo oscila, que se ve peor que un 720p estable. Úsalo cuando el sitio tenga
+  buena conexión y el evento vaya a verse en pantalla grande.
+- **Bajar a 480p es la salida de emergencia.** Si el wifi del recinto va mal —o
+  la imagen empieza a congelarse— bajar a 480p mantiene la retransmisión viva.
+  Es el uso que más veces salva un evento.
+
+Los tres niveles son panorámicos (16:9); ninguno cambia la proporción.
 
 ### La pantalla ya no se apaga sola
 

@@ -70,7 +70,7 @@ El modo `console` SHALL caber íntegro, sin scroll de página, en un viewport de
 La distribución SHALL ser:
 
 - **Cabecera** (~40 px): indicador «EN DIRECTO», número de conectados y el conmutador de modo.
-- **Columna izquierda** (~40 % del ancho): previsualización del vídeo publicado en 16:9 y, debajo, el medidor de nivel de micrófono.
+- **Columna izquierda** (~40 % del ancho): previsualización del vídeo publicado en 16:9 y, debajo, el medidor de nivel de micrófono y el selector de calidad.
 - **Columna derecha**: rejilla de dos columnas con las tarjetas de control **Micrófono**, **Cámara**, **Altavoz** y **Pantalla**. Cada tarjeta SHALL llevar su etiqueta, su interruptor de encendido cuando el control lo tenga, y el acceso a su selector de fuente cuando lo tenga.
 - **Pie**: el botón «Finalizar stream», visualmente separado de las tarjetas.
 
@@ -113,6 +113,28 @@ En el modo `console` la elección de micrófono, cámara y altavoz SHALL hacerse
 - **WHEN** el host abre el panel de fuentes y toca fuera de él
 - **THEN** el panel se cierra y la fuente activa no cambia
 
+### Requirement: Toda la interfaz de la consola es hija de la superposición
+
+Cualquier panel que la consola necesite mostrar —selector de fuente, confirmación de finalizar— SHALL renderizarse como hijo de la propia superposición. NO SHALL usarse ningún componente que se monte en un portal colgado de `document.body`, incluido el `ConfirmDialog` compartido: un portal así queda **fuera del elemento en pantalla completa** —el navegador solo pinta ese subárbol— y además por debajo del `z-index` de la superposición, de modo que el control resulta invisible e inoperante sin ningún error.
+
+La confirmación de «Finalizar stream» SHALL por tanto ser propia de la consola, con los mismos objetivos táctiles de ≥48 px que el resto, y SHALL seguir apoyándose en la misma acción compartida de finalizar el evento.
+
+#### Scenario: Finalizar el stream desde la consola en pantalla completa
+
+- **WHEN** el host pulsa «Finalizar stream» estando en modo `console` y en pantalla completa
+- **THEN** aparece la confirmación dentro de la propia consola
+- **AND** al confirmarla el evento termina para todos los participantes
+
+#### Scenario: Cancelar la confirmación
+
+- **WHEN** el host abre la confirmación y la cancela o toca fuera de ella
+- **THEN** el panel se cierra y la retransmisión continúa
+
+#### Scenario: Fallo al finalizar
+
+- **WHEN** la petición de finalizar el evento falla
+- **THEN** la confirmación se cierra y el error queda visible en el pie de la consola
+
 ### Requirement: Medidor de nivel de micrófono
 
 La consola SHALL mostrar un indicador continuo del nivel de entrada del micrófono local mientras el micrófono está activo, de forma que el host pueda confirmar **antes y durante** la retransmisión que la fuente seleccionada es la que capta sonido. Con el micrófono desactivado el indicador SHALL mostrarse en reposo, nunca oculto: su ausencia se confundiría con silencio.
@@ -131,6 +153,41 @@ La consola SHALL mostrar un indicador continuo del nivel de entrada del micrófo
 
 - **WHEN** el host desactiva el micrófono
 - **THEN** el medidor sigue presente en estado de reposo, diferenciable de un nivel cero con el micrófono encendido
+
+### Requirement: Selección de calidad de emisión
+
+La consola SHALL permitir al host elegir la calidad con la que emite entre tres niveles —alta, media y baja—, **todos en 16:9**, con la resolución misma como etiqueta del control. El cambio SHALL aplicarse sobre la pista ya publicada sin republicarla, de modo que los asistentes no vean ningún corte, y SHALL persistir por dispositivo. El mismo control SHALL estar disponible en la vista completa, compartiendo estado con el de la consola.
+
+El nivel por defecto SHALL ser el medio (720p). Subir de ahí cruza la banda de facturación de Agora —que factura por asistente según la resolución agregada que recibe, con el corte en 921.600 px— y multiplica por 2,25 el coste de cada minuto-asistente, además de exigir una subida sostenida que un recinto puede no dar. El nivel bajo SHALL existir para lo contrario: sostener la emisión cuando la conexión es mala.
+
+Con la cámara apagada el cambio NO SHALL fallar: el nivel elegido SHALL aplicarse a la pista cuando se cree.
+
+#### Scenario: Bajar la calidad con la emisión en curso
+
+- **WHEN** el host toca «480p» durante la retransmisión con la cámara encendida
+- **THEN** la pista publicada se reconfigura a esa resolución
+- **AND** los asistentes siguen recibiendo el vídeo sin corte ni reconexión
+
+#### Scenario: Subir a 1080p
+
+- **WHEN** el host toca «1080p»
+- **THEN** la emisión pasa a 1920 × 1080, manteniendo la proporción 16:9
+
+#### Scenario: Cambio con la cámara apagada
+
+- **WHEN** el host cambia de calidad sin la cámara encendida
+- **THEN** no se produce ningún error
+- **AND** al encender la cámara la pista se crea con el nivel elegido
+
+#### Scenario: La preferencia se recuerda
+
+- **WHEN** el host elige un nivel y recarga la página
+- **THEN** vuelve con ese nivel seleccionado
+
+#### Scenario: Un asistente no elige calidad
+
+- **WHEN** un asistente publica cámara en modo `meeting`
+- **THEN** no dispone de este control y emite con el perfil de participante
 
 ### Requirement: Degradación de los controles no soportados por el navegador móvil
 

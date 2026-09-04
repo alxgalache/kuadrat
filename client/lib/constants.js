@@ -93,6 +93,51 @@ export const AGORA_SPEAKING_VOLUME_THRESHOLD = 10;
 // senders → 16 attendees + host). Mirrored by the API validators.
 export const MEETING_MAX_ATTENDEES = 16;
 
+// ---------------------------------------------------------------------------
+// Perfil de codificación de la cámara en salas Agora
+// ---------------------------------------------------------------------------
+// EL SDK EMITE EN 4:3 SI NO SE LE DICE OTRA COSA. La referencia de Agora lo
+// dice literalmente: «The SDK uses "480p_1" by default», y `480p_1` es
+// 640 × 480. Sin `encoderConfig`, toda cámara —de móvil o de escritorio— se
+// publica casi cuadrada y las tarjetas `aspect-video` de la interfaz la
+// muestran con bandas. No es un ajuste del teléfono: es el defecto del SDK.
+//
+// El host emite en 720p porque su vídeo es EL vídeo del evento y puede verse a
+// pantalla completa. Los participantes de una reunión van a 360p: son mosaicos
+// pequeños y en modo `meeting` puede haber 17 emisores simultáneos, así que
+// darles 720p multiplica el enlace de subida sin que se note en pantalla.
+// Ambos son 16:9 (la tabla de perfiles mezcla 4:3, 1:1 y 16:9 sin avisar).
+export const AGORA_CAMERA_ENCODER_HOST = '720p_2';        // 1280 × 720, 30 fps
+export const AGORA_CAMERA_ENCODER_PARTICIPANT = '360p_4'; // 640 × 360, 30 fps
+
+// Calidad de emisión elegible por el host durante la retransmisión.
+//
+// LOS TRES NIVELES SON 16:9. La tabla de perfiles de Agora mezcla 4:3, 1:1 y
+// 16:9 sin ninguna pista en el nombre (`480p_2` es 4:3, `360p_3` es cuadrado),
+// así que añadir un nivel exige comprobar la proporción, no fiarse del número.
+//
+// El defecto es 720p y no 1080p por dos motivos medidos, no por prudencia:
+//   · Agora factura POR ASISTENTE según la resolución agregada que recibe, y
+//     1080p cruza a la banda «Full HD»: 8,99 $/1000 min frente a 3,99 $ — 2,25×
+//     el coste de cada minuto-asistente, y el bono mensual se agota igual de
+//     rápido. El corte está en 921.600 px, o sea exactamente 1280 × 720.
+//   · 1080p30 son ~3-4 Mbps de subida sostenidos. Si el recinto no los aguanta,
+//     Agora degrada sobre la marcha y el vídeo oscila, que se ve peor que un
+//     720p estable — y una hora larga codificando 1080p en un móvil invita a la
+//     limitación térmica.
+// «Baja» existe para lo contrario y es lo que más veces salva un evento:
+// sostener la emisión cuando el wifi del sitio es malo.
+// `short` es la etiqueta del botón: la resolución misma, que es lo único que el
+// host necesita para decidir. «Alta/Media/Baja» no dice cuánto se está subiendo.
+export const AGORA_VIDEO_QUALITIES = [
+  { id: 'high', short: '1080p', label: 'Alta', detail: '1920 × 1080 · 30 fps', encoderConfig: '1080p_2' },
+  { id: 'medium', short: '720p', label: 'Media', detail: '1280 × 720 · 30 fps', encoderConfig: AGORA_CAMERA_ENCODER_HOST },
+  { id: 'low', short: '480p', label: 'Baja', detail: '848 × 480 · 30 fps', encoderConfig: '480p_9' },
+];
+
+export const AGORA_VIDEO_QUALITY_DEFAULT = 'medium';
+export const AGORA_VIDEO_QUALITY_STORAGE_KEY = 'kuadrat.agora.videoQuality';
+
 // Agora virtual background (camera effects)
 // Effect preference persisted per device; validated on read against the catalog
 // in lib/virtualBackgrounds.js (a background removed from the repo degrades to none).
@@ -137,7 +182,12 @@ export const HOST_CONSOLE_COPY = {
   speaker: 'Altavoz',
   screen: 'Pantalla',
   endStream: 'Finalizar stream',
+  endStreamConfirm: '¿Seguro que quieres finalizar? El evento terminará para todos los participantes.',
+  confirmEnd: 'Finalizar',
+  ending: 'Finalizando...',
+  cancel: 'Cancelar',
   micLevel: 'Nivel de micrófono',
+  quality: 'Calidad',
   micLevelOff: 'Micrófono apagado',
   chooseSource: 'Elegir fuente',
   noDevices: 'No se encontraron dispositivos',

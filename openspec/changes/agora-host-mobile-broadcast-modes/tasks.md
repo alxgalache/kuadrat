@@ -48,7 +48,7 @@
 - [x] 6.5 Previsualización del vídeo publicado (pantalla compartida si está activa, si no la cámara) con `AgoraVideo`
 - [x] 6.6 Medidor de nivel de micrófono bajo el vídeo, sondeando `getVolumeLevel()` a ~10 Hz mientras la consola está abierta; visible en reposo con el micrófono apagado
 - [x] 6.7 Cabecera con «EN DIRECTO», número de conectados y el selector de modo
-- [x] 6.8 «Finalizar stream» reutilizando el `ConfirmDialog` existente, visualmente separado de las tarjetas
+- [x] 6.8 «Finalizar stream» con confirmación **propia de la consola** (`ConsoleConfirm`), visualmente separada de las tarjetas — el `ConfirmDialog` compartido usa un portal a `document.body` y queda fuera de la pantalla completa y bajo el `z-index` de la superposición
 - [x] 6.9 Confirmar que la rejilla de participantes y el chat no se renderizan en este modo
 
 ## 7. Selector de fuente táctil
@@ -88,3 +88,14 @@
 - [x] 11.1 Añadir a `CLAUDE.md` una sección corta que fije las reglas que se romperán al editar: el envoltorio siempre montado por la pizarra, la divergencia deliberada respecto a `fullscreenchange` de `TheaterShell`, que el wake lock no depende del flag, y que la consola y la vista `full` comparten un único hook
 - [x] 11.2 Documentar como procedimiento operativo la instalación desde «Añadir a pantalla de inicio» (`manifest.json` ya declara `display: standalone`), que elimina la barra de direcciones sin depender de la pantalla completa y es la opción más sólida para un evento planificado
 - [x] 11.3 Dejar registrados los límites conocidos: compartir pantalla no fiable en Chrome para Android, selección de altavoz inexistente en Android, y ausencia de test automático para la distribución del cliente
+
+## 12. Correcciones tras la verificación en preproducción
+
+- [x] 12.1 «Finalizar stream» no hacía nada en la consola: sustituir el `ConfirmDialog` de Headless UI por `ConsoleConfirm`, hijo de la superposición (portal a `document.body` → fuera de la pantalla completa y bajo el `z-[60]`)
+- [x] 12.2 Vídeo publicado en 4:3: pasar `encoderConfig` explícito a `createCameraVideoTrack` — el SDK usa `480p_1` (640 × 480) por defecto
+- [x] 12.3 Elegir el perfil por rol (`AGORA_CAMERA_ENCODER_HOST` 720p / `AGORA_CAMERA_ENCODER_PARTICIPANT` 360p) y declararlos en `client/lib/constants.js`
+- [x] 12.4 Reaplicar el perfil tras `setDevice` en `useAgoraDevices.selectCamera` y en `MeetingSelfControls`, que es la ruta exacta del síntoma (cámara trasera)
+- [x] 12.5 Documentar ambas causas en `CLAUDE.md` y añadir el delta de `agora-streaming-provider`
+- [x] 12.6 Quitar el modo espejo del vídeo del host (`mirror={false}` en los tres elementos de vídeo de broadcast); los autovisores de reunión lo conservan
+- [x] 12.7 Selector de calidad (1080p / 720p / 480p, los tres 16:9) en `useHostVideoQuality`, aplicado en caliente con `setEncoderConfiguration` y persistido; presente en la consola y en la vista completa
+- [ ] 12.8 Reverificar en el Pixel: que «Finalizar stream» muestra la confirmación y termina el evento, que la cámara trasera emite 16:9 para el host y para un participante remoto, y que la previsualización del host ya no sale invertida

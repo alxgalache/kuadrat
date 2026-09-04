@@ -12,8 +12,9 @@ import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
 import useEventRoomSocket from '@/hooks/useEventRoomSocket'
 import useHostMediaControls, { cameraErrorMessage } from '@/hooks/useHostMediaControls'
 import useHostViewMode from '@/hooks/useHostViewMode'
+import useHostVideoQuality from '@/hooks/useHostVideoQuality'
 import HostConsole, { HostViewModeSwitcher, HostPreviewMode } from '@/components/events/HostConsole'
-import { HOST_VIEW_MODES } from '@/lib/constants'
+import { HOST_VIEW_MODES, AGORA_CAMERA_ENCODER_PARTICIPANT, AGORA_VIDEO_QUALITIES } from '@/lib/constants'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
 
 // Fastboard is heavy — load it only when the host opens the whiteboard
@@ -280,6 +281,17 @@ export default function AgoraLiveRoom({
     )
   }, [eventId, isHost, attendeeSession])
 
+  // 16:9 explícito: el defecto del SDK (`480p_1`) es 640 × 480, o sea 4:3, y
+  // publicaba el vídeo casi cuadrado en cualquier cámara. El host va a 720p
+  // porque su vídeo puede verse a pantalla completa; el resto a 360p, que es
+  // el tamaño real de un mosaico y evita 17 emisores en alta en modo reunión.
+  // La calidad del host es elegible durante la retransmisión; el resto de
+  // participantes emiten siempre con el perfil de mosaico.
+  const videoQuality = useHostVideoQuality({ enabled: isHost })
+  const cameraEncoderConfig = isHost
+    ? videoQuality.encoderConfig
+    : AGORA_CAMERA_ENCODER_PARTICIPANT
+
   const room = useAgoraRoom({
     enabled: !!(appId && channel && rtcToken),
     appId,
@@ -289,6 +301,7 @@ export default function AgoraLiveRoom({
     initialRole: isHost || isMeeting ? 'host' : 'audience',
     renewToken,
     onKicked,
+    cameraEncoderConfig,
   })
 
   // La pantalla del host no debe apagarse durante la retransmisión. No depende
@@ -298,7 +311,7 @@ export default function AgoraLiveRoom({
   // Controles de host: UNA SOLA instancia, por encima del conmutador de modo.
   // Montarla dentro de cada presentación reiniciaría el procesador de fondos
   // virtuales y la enumeración de dispositivos en cada cambio de vista.
-  const hostControls = useHostMediaControls({ enabled: isHost, room, eventId })
+  const hostControls = useHostMediaControls({ enabled: isHost, room, eventId, cameraEncoderConfig, videoQuality })
 
   // Incoming moderation (targeted at this client by the server)
   const roomRef = useRef(room)
@@ -622,21 +635,28 @@ function AudioActivationOverlay({ onActivate }) {
 // ---------------------------------------------------------------------------
 // Agora track renderer — plays a local/remote video track into a div
 // ---------------------------------------------------------------------------
-function AgoraVideo({ track, className, fit = 'contain' }) {
+// `mirror` sigue el defecto del SDK cuando no se pasa: Agora ESPEJA la
+// previsualización local de una cámara y no espeja las remotas. Es la convención
+// correcta para un autovisor con la cámara frontal, y la equivocada para el
+// vídeo del host, que se emite tal cual: con la trasera del móvil en un trípode
+// el host veía su propio encuadre invertido —y cualquier texto ilegible— aunque
+// los asistentes lo recibieran bien. Solo el vídeo del host lo desactiva; los
+// mosaicos de reunión conservan el autovisor espejado.
+function AgoraVideo({ track, className, fit = 'contain', mirror }) {
   const containerRef = useRef(null)
 
   useEffect(() => {
     const el = containerRef.current
     if (!track || !el) return
     try {
-      track.play(el, { fit })
+      track.play(el, mirror === undefined ? { fit } : { fit, mirror })
     } catch (err) {
       console.warn('Agora video play error:', err)
     }
     return () => {
       try { track.stop() } catch { /* already stopped */ }
     }
-  }, [track, fit])
+  }, [track, fit, mirror])
 
   return <div ref={containerRef} className={className} />
 }
@@ -698,7 +718,7 @@ function BroadcastArea({
   // detiene la reproducción, no la publicación: por eso mover el vídeo entre
   // modos no corta la emisión para los asistentes.
   const overlayVideo = publishedHostTrack
-    ? <AgoraVideo track={publishedHostTrack} className="w-full h-full" fit="contain" />
+    ? <AgoraVideo track={publishedHostTrack} className="w-full h-full" fit="contain" mirror={false} />
     : (
       <div className="flex h-full items-center justify-center px-2 text-center">
         <p className="text-xs text-gray-400">Activa tu cámara en los controles</p>
@@ -762,7 +782,7 @@ function BroadcastArea({
                   style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
                 >
                   {hostTrack ? (
-                    <AgoraVideo track={hostTrack} className="w-full h-full" fit="cover" />
+                    <AgoraVideo track={hostTrack} className="w-full h-full" fit="cover" mirror={false} />
                   ) : (
                     <div className="flex items-center justify-center h-full">
                       <p className="text-white text-xs">{isHost ? 'Tu cámara' : 'Host'}</p>
@@ -781,7 +801,7 @@ function BroadcastArea({
           style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
         >
           {hostTrack ? (
-            <AgoraVideo track={hostTrack} className="w-full h-full" fit="contain" />
+            <AgoraVideo track={hostTrack} className="w-full h-full" fit="contain" mirror={false} />
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-2">
               {isHost ? (
@@ -932,6 +952,7 @@ function AgoraHostControls({ room, hostControls, endLabel, whiteboard }) {
   const {
     devices, videoEffect, deviceError, isEnding,
     toggleMic, toggleCamera, toggleScreenShare, selectDevice: selectDeviceFn, endEvent,
+    videoQuality, selectVideoQuality,
   } = hostControls
 
   // Same state as the device dropdowns, so only one menu is ever open. Opening
@@ -1012,6 +1033,31 @@ function AgoraHostControls({ room, hostControls, endLabel, whiteboard }) {
             <span className="text-sm text-gray-700">Pantalla</span>
             <ToggleSwitch checked={room.screenEnabled} onChange={toggleScreenShare} />
           </div>
+          {/* Mismo control que la consola, mismo estado: la calidad elegida en
+              una vista es la que muestra la otra. */}
+          {selectVideoQuality && (
+            <div className="flex items-center gap-x-2">
+              <span className="text-sm text-gray-700">Calidad</span>
+              <div className="flex gap-x-1">
+                {AGORA_VIDEO_QUALITIES.map((level) => (
+                  <button
+                    key={level.id}
+                    type="button"
+                    onClick={() => selectVideoQuality(level.id)}
+                    aria-pressed={videoQuality === level.id}
+                    title={`${level.label} — ${level.detail}`}
+                    className={`rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset transition-colors ${
+                      videoQuality === level.id
+                        ? 'bg-gray-900 text-white ring-gray-900'
+                        : 'bg-white text-gray-700 ring-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {level.short}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {whiteboard?.available && (
             <div className="flex items-center gap-x-2">
               <span className="text-sm text-gray-700">Pizarra</span>
@@ -1542,6 +1588,9 @@ function MeetingSelfControls({ room }) {
     setSpeakerDevice: room.setSpeakerDevice,
     micEnabled: room.micEnabled,
     camEnabled: room.camEnabled,
+    // Un asistente de reunión publica con el perfil de participante; al cambiar
+    // de cámara hay que reafirmarlo o la trasera puede volver a 4:3.
+    cameraEncoderConfig: AGORA_CAMERA_ENCODER_PARTICIPANT,
   })
 
   const videoEffect = useAgoraVideoEffect({

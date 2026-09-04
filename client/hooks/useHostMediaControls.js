@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { eventsAPI } from '@/lib/api'
 import useAgoraDevices from '@/hooks/useAgoraDevices'
 import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
+import { AGORA_VIDEO_QUALITIES } from '@/lib/constants'
 
 /**
  * Estado y acciones de los controles de host de una sala Agora, en un solo
@@ -25,8 +26,11 @@ import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
  *   al hook condicionalmente: las reglas de los hooks lo prohíben.
  * @param {object} params.room - El objeto de `useAgoraRoom`
  * @param {string} params.eventId
+ * @param {string|object} params.cameraEncoderConfig - Perfil 16:9 de la cámara,
+ *   reaplicado al cambiar de dispositivo (ver lib/constants.js)
+ * @param {object} params.videoQuality - El objeto de `useHostVideoQuality`
  */
-export default function useHostMediaControls({ enabled, room, eventId }) {
+export default function useHostMediaControls({ enabled, room, eventId, cameraEncoderConfig, videoQuality }) {
   const [deviceError, setDeviceError] = useState('')
   const [isEnding, setIsEnding] = useState(false)
 
@@ -37,6 +41,7 @@ export default function useHostMediaControls({ enabled, room, eventId }) {
     setSpeakerDevice: room.setSpeakerDevice,
     micEnabled: room.micEnabled,
     camEnabled: room.camEnabled,
+    cameraEncoderConfig,
   })
 
   const videoEffect = useAgoraVideoEffect({
@@ -90,6 +95,26 @@ export default function useHostMediaControls({ enabled, room, eventId }) {
     }
   }, [devices])
 
+  // Cambio de calidad en caliente: `setEncoderConfiguration` reconfigura el
+  // codificador de la pista ya publicada, así que no hay que republicar y los
+  // asistentes no ven ningún corte. Sin cámara encendida no hay nada que
+  // reconfigurar — el perfil nuevo se aplicará al crear la pista, porque
+  // `cameraEncoderConfig` también deriva de esta misma preferencia.
+  const selectVideoQuality = useCallback(async (id) => {
+    const level = AGORA_VIDEO_QUALITIES.find((q) => q.id === id)
+    if (!level) return
+    videoQuality?.setQuality(id)
+    const track = room.camTrackRef.current
+    if (!track) return
+    setDeviceError('')
+    try {
+      await track.setEncoderConfiguration(level.encoderConfig)
+    } catch (err) {
+      console.warn('Video quality error:', err)
+      setDeviceError('No se pudo cambiar la calidad de vídeo')
+    }
+  }, [videoQuality, room])
+
   const endEvent = useCallback(async () => {
     setIsEnding(true)
     try {
@@ -132,6 +157,9 @@ export default function useHostMediaControls({ enabled, room, eventId }) {
     toggleScreenShare,
     selectDevice,
     endEvent,
+    videoQuality: videoQuality?.quality,
+    videoQualityLevel: videoQuality?.level,
+    selectVideoQuality,
     screenShareSupported,
     speakerSelectionSupported,
   }

@@ -11,8 +11,12 @@ import { AGORA_SPEAKING_VOLUME_THRESHOLD } from '@/lib/constants'
 // the first getUserMedia (transient device contention). Best-effort: retry the same
 // device once after a short delay before surfacing the error. Hardware-incompatible
 // cameras may still fail (integrated webcams work).
-async function createCameraTrackWithRetry(deviceId) {
-  const opts = deviceId ? { cameraId: deviceId } : undefined
+async function createCameraTrackWithRetry(deviceId, encoderConfig) {
+  // `encoderConfig` NO es opcional en la práctica: sin él el SDK aplica su
+  // defecto `480p_1` (640 × 480), es decir 4:3, y publica casi cuadrado.
+  const opts = {}
+  if (deviceId) opts.cameraId = deviceId
+  if (encoderConfig) opts.encoderConfig = encoderConfig
   try {
     return await AgoraRTC.createCameraVideoTrack(opts)
   } catch (err) {
@@ -39,6 +43,10 @@ async function createCameraTrackWithRetry(deviceId) {
  * @param {'host'|'audience'} params.initialRole - Agora client role at join
  * @param {Function} params.renewToken - async () => ({ rtcToken }) fresh token for the CURRENT role
  * @param {Function} [params.onKicked] - connection dropped with reason UID_BANNED
+ * @param {string|object} params.cameraEncoderConfig - Perfil de codificación de
+ *   la cámara local. Obligatorio en la práctica: sin él el SDK usa `480p_1`
+ *   (640 × 480, 4:3) y publica casi cuadrado. Ver AGORA_CAMERA_ENCODER_* en
+ *   lib/constants.js.
  */
 export default function useAgoraRoom({
   enabled,
@@ -49,6 +57,7 @@ export default function useAgoraRoom({
   initialRole,
   renewToken,
   onKicked,
+  cameraEncoderConfig,
 }) {
   const clientRef = useRef(null)
   const micTrackRef = useRef(null)
@@ -250,7 +259,7 @@ export default function useAgoraRoom({
     if (on) {
       assertJoined()
       if (!camTrackRef.current) {
-        const track = await createCameraTrackWithRetry(deviceId)
+        const track = await createCameraTrackWithRetry(deviceId, cameraEncoderConfig)
         camTrackRef.current = track
         setCamTrackVersion((v) => v + 1)
         // While screen sharing, the camera stays unpublished (single video
@@ -268,7 +277,7 @@ export default function useAgoraRoom({
       }
       setCamEnabled(false)
     }
-  }, [assertJoined])
+  }, [assertJoined, cameraEncoderConfig])
 
   // ── Screen share (swap with camera on a single client) ────
   const stopScreenShare = useCallback(async () => {

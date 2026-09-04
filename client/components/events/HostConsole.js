@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import ConfirmDialog from '@/components/ConfirmDialog'
+import { useState, useEffect, useCallback } from 'react'
 import MobileDevicePicker from '@/components/events/MobileDevicePicker'
-import { HOST_CONSOLE_COPY, HOST_VIEW_MODES, HOST_VIEW_MODE_LABELS } from '@/lib/constants'
+import { HOST_CONSOLE_COPY, HOST_VIEW_MODES, HOST_VIEW_MODE_LABELS, AGORA_VIDEO_QUALITIES } from '@/lib/constants'
 
 const MIC_LEVEL_POLL_MS = 100
 
@@ -36,6 +35,7 @@ export default function HostConsole({
     devices, deviceError, isEnding,
     toggleMic, toggleCamera, toggleScreenShare, selectDevice, endEvent,
     screenShareSupported, speakerSelectionSupported,
+    videoQuality, selectVideoQuality,
   } = hostControls
 
   const handleEndStream = async () => {
@@ -75,6 +75,7 @@ export default function HostConsole({
             {videoElement}
           </div>
           <MicLevelMeter room={room} />
+          <QualitySelector quality={videoQuality} onSelect={selectVideoQuality} />
         </div>
 
         {/* Único elemento con scroll: si el alto no llega, se desplazan las
@@ -135,16 +136,111 @@ export default function HostConsole({
         onClose={() => setPicker(null)}
       />
 
-      <ConfirmDialog
+      {/* Confirmación PROPIA de la consola, no el ConfirmDialog compartido.
+          Aquél usa Headless UI, que renderiza en un portal colgado de
+          `document.body`, y ahí queda invisible por dos motivos independientes:
+          cae FUERA del elemento en pantalla completa (el navegador solo pinta
+          ese subárbol) y su `z-50` pierde contra el `z-[60]` de la
+          superposición. El resultado era un botón que no hacía nada. */}
+      <ConsoleConfirm
         open={showEndConfirm}
-        onClose={() => setShowEndConfirm(false)}
-        onConfirm={handleEndStream}
         title={HOST_CONSOLE_COPY.endStream}
-        message="¿Estás seguro de que quieres finalizar el stream? Esta acción terminará el evento para todos los participantes."
-        confirmText={isEnding ? 'Finalizando...' : 'Finalizar'}
-        cancelText="Cancelar"
-        type="danger"
+        message={HOST_CONSOLE_COPY.endStreamConfirm}
+        confirmText={isEnding ? HOST_CONSOLE_COPY.ending : HOST_CONSOLE_COPY.confirmEnd}
+        busy={isEnding}
+        onConfirm={handleEndStream}
+        onCancel={() => setShowEndConfirm(false)}
       />
+    </div>
+  )
+}
+
+/**
+ * Calidad de emisión: control segmentado de un solo toque, bajo la
+ * previsualización que modifica.
+ *
+ * Tres opciones no justifican un panel a pantalla completa como el de las
+ * fuentes —serían dos toques para elegir entre tres— y las etiquetas son la
+ * propia resolución, que es lo único que el host necesita saber para decidir.
+ * Vive en la columna del vídeo y no en la rejilla de tarjetas para no añadir
+ * una tercera fila: el presupuesto de 300 px de alto sigue intacto.
+ */
+function QualitySelector({ quality, onSelect }) {
+  if (!onSelect) return null
+  return (
+    <div className="flex flex-shrink-0 items-center gap-x-2">
+      <span className="text-[11px] text-gray-400">{HOST_CONSOLE_COPY.quality}</span>
+      <div className="flex flex-1 gap-x-1">
+        {AGORA_VIDEO_QUALITIES.map((level) => (
+          <button
+            key={level.id}
+            type="button"
+            onClick={() => onSelect(level.id)}
+            aria-pressed={quality === level.id}
+            title={`${level.label} — ${level.detail}`}
+            className={`min-h-11 flex-1 rounded-md text-xs font-medium transition-colors ${
+              quality === level.id
+                ? 'bg-white text-gray-900'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+            }`}
+          >
+            {level.short}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Confirmación destructiva dentro de la propia superposición.
+ *
+ * No usa el `ConfirmDialog` compartido a propósito: aquél está construido sobre
+ * el `Dialog` de Headless UI, que se monta en un portal colgado de
+ * `document.body`. Eso lo deja fuera del elemento que está en pantalla completa
+ * —el navegador solo pinta ese subárbol— y además por debajo del `z-[60]` de la
+ * consola. Cualquier interfaz que la consola necesite mostrar tiene que ser
+ * hija suya, igual que `MobileDevicePicker`.
+ */
+function ConsoleConfirm({ open, title, message, confirmText, busy, onConfirm, onCancel }) {
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, onCancel])
+
+  if (!open) return null
+
+  return (
+    <div
+      className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-3"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-lg bg-white p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-sm font-semibold text-gray-900">{title}</p>
+        <p className="mt-1 text-xs leading-snug text-gray-600">{message}</p>
+        <div className="mt-3 flex justify-end gap-x-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="min-h-11 rounded-md bg-white px-4 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+          >
+            {HOST_CONSOLE_COPY.cancel}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="min-h-11 rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

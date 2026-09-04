@@ -38,7 +38,9 @@ Sin cambios en el comportamiento de asistentes, de eventos LiveKit, de `interact
 
 ### Modified Capabilities
 
-Ninguna. `agora-streaming-provider` gana un campo aditivo en los formularios y validadores de evento, pero ninguno de sus requisitos actuales cambia de comportamiento: un evento sin el flag se comporta exactamente igual que hoy.
+- `agora-streaming-provider`: toda pista de cámara pasa a crearse con un perfil de codificación **16:9 explícito**. El SDK aplica `480p_1` (640 × 480, 4:3) cuando no se le indica ninguno, así que hasta ahora cualquier cámara se publicaba casi cuadrada. Se detectó retransmitiendo desde el Pixel 9 Pro, pero no era del teléfono: afectaba a todas las salas Agora.
+
+El campo `allow_mobile_host_console` que esta capacidad gana en formularios y validadores es aditivo y no cambia ninguno de sus requisitos: un evento sin el flag se comporta exactamente igual que antes.
 
 ## Impact
 

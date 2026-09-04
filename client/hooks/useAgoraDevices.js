@@ -16,7 +16,7 @@ import AgoraRTC from 'agora-rtc-sdk-ng'
  * @param {object} params.camTrackRef - From useAgoraRoom
  * @param {Function} params.setSpeakerDevice - From useAgoraRoom
  */
-export default function useAgoraDevices({ enabled, micTrackRef, camTrackRef, setSpeakerDevice, micEnabled = false, camEnabled = false }) {
+export default function useAgoraDevices({ enabled, micTrackRef, camTrackRef, setSpeakerDevice, micEnabled = false, camEnabled = false, cameraEncoderConfig = null }) {
   const [microphones, setMicrophones] = useState([])
   const [cameras, setCameras] = useState([])
   const [playbackDevices, setPlaybackDevices] = useState([])
@@ -81,8 +81,20 @@ export default function useAgoraDevices({ enabled, micTrackRef, camTrackRef, set
     setActiveCamId(deviceId)
     if (camTrackRef?.current) {
       await camTrackRef.current.setDevice(deviceId)
+      // Reafirmar el perfil tras cambiar de cámara. `setDevice` conserva el
+      // track, pero vuelve a abrir el dispositivo y cada cámara ofrece modos de
+      // captura distintos: la trasera de un móvil tiene modos 4:3 nativos y es
+      // justo donde se vio el vídeo casi cuadrado. Si el perfil ya está
+      // aplicado esto no hace nada.
+      if (cameraEncoderConfig) {
+        try {
+          await camTrackRef.current.setEncoderConfiguration(cameraEncoderConfig)
+        } catch (err) {
+          console.warn('No se pudo reaplicar el perfil de vídeo:', err)
+        }
+      }
     }
-  }, [camTrackRef])
+  }, [camTrackRef, cameraEncoderConfig])
 
   const selectSpeaker = useCallback(async (deviceId) => {
     setActiveSpeakerId(deviceId)
