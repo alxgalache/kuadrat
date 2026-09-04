@@ -18,6 +18,7 @@ import { Track, RoomEvent, DisconnectReason } from 'livekit-client'
 import { eventsAPI } from '@/lib/api'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import DeviceDropdown from '@/components/events/DeviceDropdown'
+import useScreenWakeLock from '@/hooks/useScreenWakeLock'
 
 // Spam threshold: more than this many messages in the given window triggers a kick
 const SPAM_MAX_MESSAGES = 10
@@ -92,6 +93,10 @@ function AudioActivationOverlay() {
 }
 
 function RoomContent({ isHost, eventId, onKicked }) {
+  // Paridad con AgoraLiveRoom: la pantalla del host no se apaga mientras
+  // retransmite. Independiente de la consola móvil, que aquí no existe.
+  useScreenWakeLock({ enabled: isHost })
+
   const participants = useParticipants()
   const { localParticipant } = useLocalParticipant()
   const room = useRoomContext()

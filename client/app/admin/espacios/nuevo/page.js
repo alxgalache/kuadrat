@@ -29,7 +29,14 @@ function NewEventPageContent() {
   const [videoSource, setVideoSource] = useState('url') // 'url' or 'file'
   const [videoFile, setVideoFile] = useState(null)
   const [maxAttendees, setMaxAttendees] = useState('')
+  const [allowMobileHostConsole, setAllowMobileHostConsole] = useState(false)
   const [status, setStatus] = useState('draft')
+
+  // Un solo predicado con nombre para la combinación que soporta la consola
+  // móvil. Repetirlo en línea en el render y en el envío es exactamente lo que
+  // dejó sobrevivir la comparación muerta de `ProductForm`.
+  const supportsMobileHostConsole =
+    format === 'live' && provider === 'agora' && interactionMode === 'broadcast'
 
   const [sellers, setSellers] = useState([])
   const [loadingSellers, setLoadingSellers] = useState(true)
@@ -95,6 +102,11 @@ function NewEventPageContent() {
         category,
         video_url: (format === 'video' && videoSource === 'url') ? (videoUrl || null) : null,
         max_attendees: maxAttendees ? parseInt(maxAttendees, 10) : null,
+        // Solo viaja en la combinación que lo soporta; fuera de ella el campo
+        // no se envía y la columna se queda en su defecto 0.
+        ...(supportsMobileHostConsole
+          ? { allow_mobile_host_console: allowMobileHostConsole }
+          : {}),
         status,
       })
 
@@ -340,6 +352,27 @@ function NewEventPageContent() {
                     </select>
                   </div>
                 )}
+              </div>
+            )}
+
+            {supportsMobileHostConsole && (
+              <div className="mt-4">
+                <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowMobileHostConsole}
+                    onChange={(e) => setAllowMobileHostConsole(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-black"
+                  />
+                  <span>
+                    Consola móvil del host
+                    <span className="block text-xs text-gray-500">
+                      Permite al host cambiar entre la vista completa, una consola de
+                      controles grandes pensada para el móvil en horizontal, y el vídeo a
+                      pantalla completa. Útil para retransmitir desde un trípode.
+                    </span>
+                  </span>
+                </label>
               </div>
             )}
 

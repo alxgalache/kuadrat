@@ -10,6 +10,11 @@ import useAgoraRoom from '@/hooks/useAgoraRoom'
 import useAgoraDevices from '@/hooks/useAgoraDevices'
 import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
 import useEventRoomSocket from '@/hooks/useEventRoomSocket'
+import useHostMediaControls, { cameraErrorMessage } from '@/hooks/useHostMediaControls'
+import useHostViewMode from '@/hooks/useHostViewMode'
+import HostConsole, { HostViewModeSwitcher, HostPreviewMode } from '@/components/events/HostConsole'
+import { HOST_VIEW_MODES } from '@/lib/constants'
+import useScreenWakeLock from '@/hooks/useScreenWakeLock'
 
 // Fastboard is heavy — load it only when the host opens the whiteboard
 const WhiteboardPanel = dynamic(
@@ -233,13 +238,7 @@ function TheaterMeetingTile({ entry, isLocal, room, remoteByUid, speakingUids, l
 
 // Camera errors → clear es-ES messages. NOT_READABLE is a device/driver failure
 // (some external webcams); distinct from a missing device.
-function cameraErrorMessage(err) {
-  if (err?.code === 'NOT_JOINED') return 'Conectando a la sala, espera un momento...'
-  if (err?.code === 'NOT_READABLE' || err?.name === 'NotReadableError') {
-    return 'No se pudo iniciar la cámara; puede estar en uso por otra aplicación'
-  }
-  return 'No se encontró la cámara'
-}
+// La definición vive ahora en useHostMediaControls (importada arriba).
 
 /**
  * Live room for Agora events. Sibling of EventLiveRoom (LiveKit), selected by
@@ -260,6 +259,7 @@ export default function AgoraLiveRoom({
   eventId,
   onKicked,
   whiteboardAvailable = false,
+  allowMobileHostConsole = false,
   eventEnded = false,
 }) {
   const isMeeting = interactionMode === 'meeting'
@@ -290,6 +290,15 @@ export default function AgoraLiveRoom({
     renewToken,
     onKicked,
   })
+
+  // La pantalla del host no debe apagarse durante la retransmisión. No depende
+  // de la consola móvil: es la corrección de un defecto de toda vista de host.
+  useScreenWakeLock({ enabled: isHost && !eventEnded })
+
+  // Controles de host: UNA SOLA instancia, por encima del conmutador de modo.
+  // Montarla dentro de cada presentación reiniciaría el procesador de fondos
+  // virtuales y la enumeración de dispositivos en cada cambio de vista.
+  const hostControls = useHostMediaControls({ enabled: isHost, room, eventId })
 
   // Incoming moderation (targeted at this client by the server)
   const roomRef = useRef(room)
@@ -512,6 +521,7 @@ export default function AgoraLiveRoom({
         >
           {isMeeting ? (
             <MeetingArea
+              hostControls={hostControls}
               room={room}
               socket={socket}
               selfPresence={selfPresence}
@@ -532,6 +542,8 @@ export default function AgoraLiveRoom({
             />
           ) : (
             <BroadcastArea
+              hostControls={hostControls}
+              allowMobileHostConsole={allowMobileHostConsole}
               room={room}
               socket={socket}
               selfPresence={selfPresence}
@@ -635,7 +647,7 @@ function AgoraVideo({ track, className, fit = 'contain' }) {
 function BroadcastArea({
   room, socket, selfPresence, remoteByUid, nameByUid,
   isHost, amSpeaker, eventId, localUid, eventEnded,
-  whiteboardElement, whiteboard,
+  whiteboardElement, whiteboard, hostControls, allowMobileHostConsole,
 }) {
   const hostRemote = remoteByUid.get(HOST_RTC_UID)
 
@@ -644,11 +656,25 @@ function BroadcastArea({
   const closeTheater = useCallback(() => setTheaterOpen(false), [])
   const openTheater = useCallback(() => setTheaterOpen(true), [])
 
+  // Modos de vista del host (completa | consola | solo vídeo). Solo existen si
+  // el evento los habilita y quien mira es el host.
+  const viewMode = useHostViewMode({
+    available: isHost && allowMobileHostConsole,
+    eventEnded,
+  })
+  const inOverlay = viewMode.isOverlay
+
   // Event ended while in theater: close it (TheaterShell's cleanup also exits
   // native fullscreen) so the "Evento finalizado" dialog is visible
   useEffect(() => {
     if (eventEnded) setTheaterOpen(false)
   }, [eventEnded])
+
+  // Dos superposiciones a pantalla completa a la vez se pelearían; al entrar en
+  // un modo móvil se cierra el modo teatro.
+  useEffect(() => {
+    if (inOverlay) setTheaterOpen(false)
+  }, [inOverlay])
 
   // Theater strip: everyone except the host (featured above)
   const stripEntries = useMemo(
@@ -658,9 +684,35 @@ function BroadcastArea({
 
   // Host area track: local preview for the host (screen preferred), the
   // host's single published track for viewers (screen replaces camera)
-  const hostTrack = isHost
+  const publishedHostTrack = isHost
     ? (room.screenEnabled ? room.screenTrackRef.current : (room.camEnabled ? room.camTrackRef.current : null))
     : (hostRemote?.videoTrack || null)
+
+  // Una pista de Agora solo puede reproducirse en un contenedor a la vez: si el
+  // árbol normal (oculto) y la superposición montaran ambos su AgoraVideo, el
+  // desmontaje de uno llamaría a track.stop() y apagaría el del otro. Mientras
+  // hay superposición, el vídeo lo pinta ella y solo ella.
+  const hostTrack = inOverlay ? null : publishedHostTrack
+
+  // Elemento de vídeo de los modos móviles. `stop()` sobre una pista LOCAL
+  // detiene la reproducción, no la publicación: por eso mover el vídeo entre
+  // modos no corta la emisión para los asistentes.
+  const overlayVideo = publishedHostTrack
+    ? <AgoraVideo track={publishedHostTrack} className="w-full h-full" fit="contain" />
+    : (
+      <div className="flex h-full items-center justify-center px-2 text-center">
+        <p className="text-xs text-gray-400">Activa tu cámara en los controles</p>
+      </div>
+    )
+
+  const modeSwitcher = isHost && allowMobileHostConsole ? (
+    <HostViewModeSwitcher
+      mode={viewMode.mode}
+      onSelect={viewMode.selectMode}
+      isFullscreen={viewMode.isFullscreen}
+      onEnterFullscreen={viewMode.enterFullscreen}
+    />
+  ) : null
 
   const hostSpeaking = isHost
     ? room.speakingUids.has(localUid) || room.speakingUids.has(0)
@@ -675,7 +727,17 @@ function BroadcastArea({
   const toggleHandRaise = () => socket.setHandRaised(!handRaised)
 
   return (
-    <>
+    // El envoltorio está SIEMPRE montado y solo cambia de className, igual que
+    // TheaterShell: es lo que impide que la pizarra cambie de posición en el
+    // árbol de React, lo que la desconectaría de su sala de fastboard.
+    // `contents` fuera de la superposición: el envoltorio desaparece del
+    // layout y sus hijos vuelven a ser hijos directos del contenedor flex del
+    // padre, de modo que la vista completa queda exactamente como estaba.
+    <div ref={viewMode.shellRef} className={inOverlay ? 'fixed inset-0 z-[60] bg-gray-900' : 'contents'}>
+      {/* Árbol normal. Se OCULTA (no se desmonta) mientras hay superposición:
+          desmontarlo sacaría la pizarra de su posición en el árbol. Igual que
+          el envoltorio de fuera, es `contents` cuando no estorba. */}
+      <div className={inOverlay ? 'hidden' : 'contents'}>
       <TheaterShell open={theaterOpen} onClose={closeTheater}>
         {whiteboardElement ? (
           <>
@@ -807,7 +869,16 @@ function BroadcastArea({
       {/* Toggle controls for host */}
       {isHost && (
         <div className="mt-3">
-          <AgoraHostControls room={room} eventId={eventId} endLabel="Finalizar stream" whiteboard={whiteboard} />
+          <AgoraHostControls room={room} hostControls={hostControls} endLabel="Finalizar stream" whiteboard={whiteboard} />
+        </div>
+      )}
+
+      {/* Entrada a los modos móviles desde la vista completa. Sobre fondo claro,
+          así que el conmutador va dentro de una barra oscura propia. */}
+      {modeSwitcher && (
+        <div className="mt-3 flex items-center gap-x-3 rounded-md bg-gray-900 px-3 py-2">
+          <span className="text-xs text-gray-400">Vista del host</span>
+          {modeSwitcher}
         </div>
       )}
 
@@ -828,33 +899,40 @@ function BroadcastArea({
           </button>
         </div>
       )}
-    </>
+      </div>
+
+      {inOverlay && (
+        viewMode.mode === HOST_VIEW_MODES.CONSOLE ? (
+          <HostConsole
+            room={room}
+            hostControls={hostControls}
+            connectedCount={socket.presence.length}
+            videoElement={overlayVideo}
+            modeSwitcher={modeSwitcher}
+          />
+        ) : (
+          <HostPreviewMode videoElement={overlayVideo} modeSwitcher={modeSwitcher} />
+        )
+      )}
+    </div>
   )
 }
 
 // ---------------------------------------------------------------------------
 // Host controls (broadcast + meeting extras) — same layout as EventLiveRoom
 // ---------------------------------------------------------------------------
-function AgoraHostControls({ room, eventId, endLabel, whiteboard }) {
-  const [deviceError, setDeviceError] = useState('')
+function AgoraHostControls({ room, hostControls, endLabel, whiteboard }) {
   const [showEndConfirm, setShowEndConfirm] = useState(false)
-  const [isEnding, setIsEnding] = useState(false)
   const [openDeviceMenu, setOpenDeviceMenu] = useState(null)
 
-  const devices = useAgoraDevices({
-    enabled: true,
-    micTrackRef: room.micTrackRef,
-    camTrackRef: room.camTrackRef,
-    setSpeakerDevice: room.setSpeakerDevice,
-    micEnabled: room.micEnabled,
-    camEnabled: room.camEnabled,
-  })
-
-  const videoEffect = useAgoraVideoEffect({
-    camTrackRef: room.camTrackRef,
-    camTrackVersion: room.camTrackVersion,
-    camEnabled: room.camEnabled,
-  })
+  // Todo el estado y las acciones vienen de useHostMediaControls, instanciado
+  // una sola vez en AgoraLiveRoom: esta vista y la consola móvil son dos
+  // presentaciones del mismo estado. Lo único propio de esta presentación es
+  // qué menú está abierto y el diálogo de confirmación.
+  const {
+    devices, videoEffect, deviceError, isEnding,
+    toggleMic, toggleCamera, toggleScreenShare, selectDevice: selectDeviceFn, endEvent,
+  } = hostControls
 
   // Same state as the device dropdowns, so only one menu is ever open. Opening
   // the effects panel is what triggers the extension download.
@@ -863,62 +941,13 @@ function AgoraHostControls({ room, eventId, endLabel, whiteboard }) {
     if (kind === 'effects') videoEffect.ensureLoaded()
   }, [videoEffect])
 
-  const toggleMic = useCallback(async () => {
-    setDeviceError('')
-    try {
-      await room.setMicrophoneEnabled(!room.micEnabled, devices.activeMicId)
-    } catch (err) {
-      console.warn('Microphone error:', err)
-      setDeviceError(err?.code === 'NOT_JOINED' ? 'Conectando a la sala, espera un momento...' : 'No se encontró el micrófono')
-    }
-  }, [room, devices.activeMicId])
-
-  const toggleCamera = useCallback(async () => {
-    setDeviceError('')
-    try {
-      await room.setCameraEnabled(!room.camEnabled, devices.activeCamId)
-    } catch (err) {
-      console.warn('Camera error:', err)
-      setDeviceError(cameraErrorMessage(err))
-    }
-  }, [room, devices.activeCamId])
-
-  const toggleScreenShare = useCallback(async () => {
-    setDeviceError('')
-    try {
-      if (room.screenEnabled) {
-        await room.stopScreenShare()
-      } else {
-        await room.startScreenShare()
-      }
-    } catch (err) {
-      console.warn('Screen share error:', err)
-      setDeviceError(err?.code === 'NOT_JOINED' ? 'Conectando a la sala, espera un momento...' : 'No se pudo compartir pantalla')
-    }
-  }, [room])
-
   const handleEndStream = async () => {
-    setIsEnding(true)
-    try {
-      await eventsAPI.endEvent(eventId)
-      window.location.reload()
-    } catch (err) {
-      console.error('Error ending stream:', err)
-      setDeviceError('Error al finalizar el evento')
-      setIsEnding(false)
-      setShowEndConfirm(false)
-    }
+    const ok = await endEvent()
+    if (!ok) setShowEndConfirm(false)
   }
 
   const selectDevice = (kind) => async (device) => {
-    try {
-      if (kind === 'audioinput') await devices.selectMicrophone(device.deviceId)
-      else if (kind === 'videoinput') await devices.selectCamera(device.deviceId)
-      else await devices.selectSpeaker(device.deviceId)
-    } catch (err) {
-      console.warn('Device switch error:', err)
-      setDeviceError('Error al cambiar el dispositivo')
-    }
+    await selectDeviceFn(kind)(device)
     setOpenDeviceMenu(null)
   }
 
@@ -1265,7 +1294,7 @@ function AgoraParticipantTile({
 // ---------------------------------------------------------------------------
 // Meeting mode — Meet-style grid of large tiles, self-serve controls for all
 // ---------------------------------------------------------------------------
-function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard }) {
+function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard, hostControls }) {
   const hostEntry = socket.presence.find((p) => p.isHost)
   const hostScreenSharing = !whiteboardElement && !!hostEntry?.screenSharing
 
@@ -1407,7 +1436,7 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
       {/* Bottom control bar: self-serve controls for everyone */}
       <div className="mt-3 flex-shrink-0">
         {isHost ? (
-          <AgoraHostControls room={room} eventId={eventId} endLabel="Finalizar evento" whiteboard={whiteboard} />
+          <AgoraHostControls room={room} hostControls={hostControls} endLabel="Finalizar evento" whiteboard={whiteboard} />
         ) : (
           <MeetingSelfControls room={room} />
         )}

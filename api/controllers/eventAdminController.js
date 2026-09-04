@@ -24,12 +24,19 @@ const validateProviderBusinessRules = ({ provider, interaction_mode, max_attende
   return null;
 };
 
+// SQLite has no boolean type and the libsql client does not coerce one, so the
+// checkbox's `true`/`false` has to reach the database as 1/0. `undefined` stays
+// undefined: on update it means "field not present", which is what lets a PUT
+// omit the flag instead of clearing it.
+const toFlag = (value) => (value === undefined ? undefined : (value ? 1 : 0));
+
 const createEvent = async (req, res, next) => {
   try {
     const {
       title, description, event_datetime, duration_minutes, host_user_id,
       cover_image_url, access_type, price, currency, format, content_type,
       category, video_url, max_attendees, status, provider, interaction_mode,
+      allow_mobile_host_console,
     } = req.body;
 
     if (!title || !event_datetime || !host_user_id || !category) {
@@ -65,6 +72,7 @@ const createEvent = async (req, res, next) => {
       title, description, event_datetime, duration_minutes, host_user_id,
       cover_image_url, access_type, price, currency, format, content_type,
       category, video_url, max_attendees, status, provider, interaction_mode,
+      allow_mobile_host_console: toFlag(allow_mobile_host_console),
     });
 
     // Marketing announcement (non-blocking; never throws; guarded send-once)
@@ -160,7 +168,10 @@ const updateEvent = async (req, res, next) => {
       });
     }
 
-    const event = await eventService.updateEvent(req.params.id, req.body);
+    const event = await eventService.updateEvent(req.params.id, {
+      ...req.body,
+      allow_mobile_host_console: toFlag(req.body.allow_mobile_host_console),
+    });
 
     // Marketing announcement on transition into 'scheduled' (guarded send-once)
     marketingEmailService.announceEventIfEligible(req.params.id);

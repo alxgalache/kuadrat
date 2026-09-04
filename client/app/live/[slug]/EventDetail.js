@@ -489,6 +489,7 @@ export default function EventDetail({
                 eventId={event.id}
                 onKicked={handleKicked}
                 whiteboardAvailable={!!agoraCreds.whiteboardAvailable}
+                allowMobileHostConsole={!!event.allow_mobile_host_console}
                 eventEnded={eventEnded}
               />
             ) : (

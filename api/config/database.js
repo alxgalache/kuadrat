@@ -596,6 +596,17 @@ async function initializeDatabase() {
         livekit_room_name TEXT,
         provider TEXT NOT NULL DEFAULT 'livekit' CHECK(provider IN ('livekit','agora')),
         interaction_mode TEXT NOT NULL DEFAULT 'broadcast' CHECK(interaction_mode IN ('broadcast','meeting')),
+        -- Habilita los tres modos de vista del host (completa | consola | vídeo)
+        -- pensados para operar la retransmisión desde un móvil en horizontal.
+        -- Solo tiene efecto con provider='agora' e interaction_mode='broadcast',
+        -- en cualquier otra combinación se ignora. DEFAULT 0 sin backfill: los
+        -- eventos anteriores al cambio conservan exactamente la vista de antes.
+        -- NINGÚN comentario de este esquema puede terminar una línea en punto y
+        -- coma: sqlite_master guarda el CREATE TABLE con sus comentarios y el
+        -- restaurador de dbDump separa los enunciados por punto y coma seguido
+        -- de salto de línea, así que uno aquí parte la tabla en dos al
+        -- restaurar la copia de seguridad.
+        allow_mobile_host_console INTEGER NOT NULL DEFAULT 0,
         agora_channel_name TEXT,
         whiteboard_room_uuid TEXT,
         video_started_at DATETIME,
@@ -858,6 +869,7 @@ async function initializeDatabase() {
     // speaker_granted the current broadcast-mode promotion state.
     await safeAlter("ALTER TABLE events ADD COLUMN provider TEXT NOT NULL DEFAULT 'livekit'");
     await safeAlter("ALTER TABLE events ADD COLUMN interaction_mode TEXT NOT NULL DEFAULT 'broadcast'");
+    await safeAlter('ALTER TABLE events ADD COLUMN allow_mobile_host_console INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE events ADD COLUMN agora_channel_name TEXT');
     await safeAlter('ALTER TABLE events ADD COLUMN whiteboard_room_uuid TEXT');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN agora_uid INTEGER');

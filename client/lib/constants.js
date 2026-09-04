@@ -104,6 +104,52 @@ export const AGORA_BLUR_DEGREE_STRONG = 3;
 // the ORIGINAL file (a raw HTMLImageElement), never the next/image optimized URL.
 export const AGORA_BACKGROUNDS_BASE_PATH = '/fondos-virtuales/';
 
+// ---------------------------------------------------------------------------
+// Consola móvil del host (events.allow_mobile_host_console)
+// ---------------------------------------------------------------------------
+// Tres modos de vista para operar la retransmisión desde un móvil en horizontal
+// montado en un trípode. Solo existen si el evento los habilita y solo para el
+// host de una sala Agora en modo broadcast.
+export const HOST_VIEW_MODES = {
+  FULL: 'full',
+  CONSOLE: 'console',
+  PREVIEW: 'preview',
+};
+
+export const HOST_VIEW_MODE_LABELS = {
+  [HOST_VIEW_MODES.FULL]: 'Vista completa',
+  [HOST_VIEW_MODES.CONSOLE]: 'Consola',
+  [HOST_VIEW_MODES.PREVIEW]: 'Solo vídeo',
+};
+
+// Preferencia por dispositivo. Se lee SIEMPRE desde un efecto, nunca desde el
+// inicializador de useState: todo el árbol de app/layout.js respeta esa regla y
+// romperla reintroduce discrepancias de hidratación.
+export const HOST_VIEW_MODE_STORAGE_KEY = 'kuadrat.agora.hostViewMode';
+
+// Textos es-ES de la consola. Los dos estados deshabilitados explican por qué
+// un control no está disponible: un hueco vacío se lee como un fallo de carga.
+export const HOST_CONSOLE_COPY = {
+  live: 'EN DIRECTO',
+  connected: (n) => `${n} conectado${n === 1 ? '' : 's'}`,
+  mic: 'Micrófono',
+  camera: 'Cámara',
+  speaker: 'Altavoz',
+  screen: 'Pantalla',
+  endStream: 'Finalizar stream',
+  micLevel: 'Nivel de micrófono',
+  micLevelOff: 'Micrófono apagado',
+  chooseSource: 'Elegir fuente',
+  noDevices: 'No se encontraron dispositivos',
+  close: 'Cerrar',
+  enterFullscreen: 'Pantalla completa',
+  backToFull: 'Volver a la vista completa',
+  // Chrome para Android no ofrece captura de pantalla de forma fiable.
+  screenUnsupported: 'No disponible en este navegador',
+  // En Android la salida de audio la enruta el sistema (setSinkId es de escritorio).
+  speakerUnsupported: 'La gestiona el sistema',
+};
+
 // Public brand name — the user-facing marketplace brand.
 // "Kuadrat" is only the internal codename; any text shown to buyers, sellers,
 // or visitors should use these constants instead of the repo/project name.

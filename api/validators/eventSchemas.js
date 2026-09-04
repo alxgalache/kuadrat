@@ -102,6 +102,15 @@ const createEventSchema = z.object({
     status: z.string().optional(),
     provider: z.enum(['livekit', 'agora'], { message: 'Proveedor de streaming inválido' }).optional(),
     interaction_mode: z.enum(['broadcast', 'meeting'], { message: 'Modo de interacción inválido' }).optional(),
+    // Consola móvil del host. Se acepta el entero además del booleano porque el
+    // formulario de edición recibe el valor tal cual sale de SQLite (0 | 1) y
+    // podría devolverlo sin convertir; cualquier otra cosa se rechaza aquí, no
+    // se normaliza en silencio.
+    allow_mobile_host_console: z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ], { message: 'Valor inválido para la consola móvil del host' }).optional(),
   }).strip().superRefine(validateProviderRules),
 });
 
@@ -157,6 +166,11 @@ const updateEventSchema = z.object({
     status: z.string().optional(),
     provider: z.enum(['livekit', 'agora'], { message: 'Proveedor de streaming inválido' }).optional(),
     interaction_mode: z.enum(['broadcast', 'meeting'], { message: 'Modo de interacción inválido' }).optional(),
+    allow_mobile_host_console: z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ], { message: 'Valor inválido para la consola móvil del host' }).optional(),
   }).strip().superRefine(validateProviderRulesPartial),
 });
 

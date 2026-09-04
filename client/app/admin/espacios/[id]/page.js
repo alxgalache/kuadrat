@@ -78,6 +78,9 @@ function EventDetailContent({ id }) {
     category: ev.category || 'charla',
     video_url: ev.video_url || '',
     max_attendees: ev.max_attendees || '',
+    // Llega de SQLite como 0 | 1; el checkbox necesita un booleano y así es
+    // también como viaja de vuelta en el PUT.
+    allow_mobile_host_console: !!ev.allow_mobile_host_console,
     status: ev.status || 'draft',
   })
 
@@ -100,6 +103,11 @@ function EventDetailContent({ id }) {
     setVideoFile(null)
     setEditMode(true)
   }
+
+  // Mismo predicado con nombre que en el formulario de creación: la consola
+  // móvil solo existe en un evento Agora en modo broadcast.
+  const supportsMobileHostConsole =
+    form.format === 'live' && form.provider === 'agora' && form.interaction_mode === 'broadcast'
 
   const handleSave = async () => {
     setError('')
@@ -126,6 +134,9 @@ function EventDetailContent({ id }) {
         interaction_mode: form.format === 'live' && form.provider === 'agora' ? form.interaction_mode : 'broadcast',
         video_url: (form.format === 'video' && videoSource === 'url') ? (form.video_url || null) : (form.video_url?.startsWith('uploaded:') ? form.video_url : null),
       }
+      // `...form` lo mete siempre; fuera de la combinación soportada el campo
+      // no debe viajar, igual que en el formulario de creación.
+      if (!supportsMobileHostConsole) delete payload.allow_mobile_host_console
       await adminAPI.events.update(id, payload)
 
       // Upload new video file if selected
@@ -450,6 +461,24 @@ function EventDetailContent({ id }) {
                       </div>
                     )}
                   </div>
+                )}
+                {supportsMobileHostConsole && (
+                  <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.allow_mobile_host_console}
+                      onChange={(e) => setForm({ ...form, allow_mobile_host_console: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-black"
+                    />
+                    <span>
+                      Consola móvil del host
+                      <span className="block text-xs text-gray-500">
+                        Permite al host cambiar entre la vista completa, una consola de
+                        controles grandes pensada para el móvil en horizontal, y el vídeo a
+                        pantalla completa. Útil para retransmitir desde un trípode.
+                      </span>
+                    </span>
+                  </label>
                 )}
                 {form.format === 'video' && (
                   <div className="space-y-3">
