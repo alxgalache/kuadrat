@@ -261,6 +261,7 @@ export default function AgoraLiveRoom({
   onKicked,
   whiteboardAvailable = false,
   allowMobileHostConsole = false,
+  allowHostVideoQuality = false,
   eventEnded = false,
 }) {
   const isMeeting = interactionMode === 'meeting'
@@ -287,7 +288,7 @@ export default function AgoraLiveRoom({
   // el tamaño real de un mosaico y evita 17 emisores en alta en modo reunión.
   // La calidad del host es elegible durante la retransmisión; el resto de
   // participantes emiten siempre con el perfil de mosaico.
-  const videoQuality = useHostVideoQuality({ enabled: isHost })
+  const videoQuality = useHostVideoQuality({ enabled: isHost && allowHostVideoQuality })
   const cameraEncoderConfig = isHost
     ? videoQuality.encoderConfig
     : AGORA_CAMERA_ENCODER_PARTICIPANT

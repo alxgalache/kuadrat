@@ -607,6 +607,15 @@ async function initializeDatabase() {
         -- de salto de línea, así que uno aquí parte la tabla en dos al
         -- restaurar la copia de seguridad.
         allow_mobile_host_console INTEGER NOT NULL DEFAULT 0,
+        -- Permite al host cambiar la resolución de emisión durante el evento
+        -- (1080p | 720p | 480p). Con 0 la emisión queda fija en 720p y el
+        -- control no se muestra en ninguna vista. Es una palanca de COSTE, no
+        -- de comodidad: Agora factura por asistente según la resolución que
+        -- cada uno recibe y 1080p cruza a la banda Full HD, 2,25 veces el
+        -- precio del minuto-asistente. A diferencia de la consola móvil, este
+        -- flag aplica a los dos interaction_mode, porque el selector vive en
+        -- los controles de host que ambos comparten.
+        allow_host_video_quality INTEGER NOT NULL DEFAULT 0,
         agora_channel_name TEXT,
         whiteboard_room_uuid TEXT,
         video_started_at DATETIME,
@@ -870,6 +879,7 @@ async function initializeDatabase() {
     await safeAlter("ALTER TABLE events ADD COLUMN provider TEXT NOT NULL DEFAULT 'livekit'");
     await safeAlter("ALTER TABLE events ADD COLUMN interaction_mode TEXT NOT NULL DEFAULT 'broadcast'");
     await safeAlter('ALTER TABLE events ADD COLUMN allow_mobile_host_console INTEGER NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE events ADD COLUMN allow_host_video_quality INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE events ADD COLUMN agora_channel_name TEXT');
     await safeAlter('ALTER TABLE events ADD COLUMN whiteboard_room_uuid TEXT');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN agora_uid INTEGER');

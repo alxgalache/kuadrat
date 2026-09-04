@@ -31,3 +31,24 @@ El perfil SHALL reaplicarse tras cambiar de cámara con `setDevice`: la pista so
 
 - **WHEN** la cámara no puede entregar exactamente la resolución del perfil
 - **THEN** la pista se crea igualmente con el modo más próximo, sin error
+
+### Requirement: La elección de resolución la concede el admin por evento
+
+El sistema SHALL disponer de la columna `events.allow_host_video_quality` (INTEGER, `NOT NULL DEFAULT 0`), definida en `api/config/database.js` en el `CREATE TABLE` y en su `safeAlter`, aceptada como booleano opcional por `createEventSchema` y `updateEventSchema`, incluida en el `INSERT` de `eventService.createEvent` y en `allowedFields` de `eventService.updateEvent`. SHALL exponerse como checkbox en los formularios de creación y edición de cualquier evento `format='live'` con `provider='agora'`, en las dos modalidades de interacción.
+
+Es una palanca de **coste**: Agora factura por asistente según la resolución agregada que recibe y 1080p cruza a la banda Full HD, 2,25 veces el precio del minuto-asistente. Con el flag a 0 la emisión del host SHALL quedar fija en el perfil por defecto de 720p.
+
+#### Scenario: Evento sin la casilla marcada
+
+- **WHEN** el host retransmite un evento con `allow_host_video_quality = 0`
+- **THEN** emite en 720p y no dispone de ningún control para cambiarlo
+
+#### Scenario: Preferencia guardada que el evento no permite
+
+- **WHEN** un host que eligió 1080p en su dispositivo entra en un evento con el flag a 0
+- **THEN** la emisión es de 720p, ignorando la preferencia guardada
+
+#### Scenario: Evento existente anterior al cambio
+
+- **WHEN** se consulta un evento creado antes de este cambio
+- **THEN** `allow_host_video_quality` vale `0` y el host emite en 720p

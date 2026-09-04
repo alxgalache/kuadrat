@@ -111,6 +111,11 @@ const createEventSchema = z.object({
       z.literal(0),
       z.literal(1),
     ], { message: 'Valor inválido para la consola móvil del host' }).optional(),
+    allow_host_video_quality: z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ], { message: 'Valor inválido para la calidad de vídeo del host' }).optional(),
   }).strip().superRefine(validateProviderRules),
 });
 
@@ -171,6 +176,11 @@ const updateEventSchema = z.object({
       z.literal(0),
       z.literal(1),
     ], { message: 'Valor inválido para la consola móvil del host' }).optional(),
+    allow_host_video_quality: z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ], { message: 'Valor inválido para la calidad de vídeo del host' }).optional(),
   }).strip().superRefine(validateProviderRulesPartial),
 });
 

@@ -1,8 +1,14 @@
 /**
- * `events.allow_mobile_host_console` — the per-event switch that gives the host
- * the three mobile view modes (openspec change: agora-host-mobile-broadcast-modes).
+ * The per-event host flags of `events` (openspec change:
+ * agora-host-mobile-broadcast-modes):
  *
- * Worth a regression test because the failure mode is silent in both
+ *   · `allow_mobile_host_console` — the three mobile view modes.
+ *   · `allow_host_video_quality`  — letting the host change the broadcast
+ *     resolution. Off means the event is pinned to 720p, which is a COST
+ *     control: Agora bills per subscriber by the resolution they receive and
+ *     1080p crosses into the Full HD band at 2.25× the price.
+ *
+ * They share a test because they share a failure mode, and it is silent in both
  * directions. The write path crosses four places — the two Zod schemas, the
  * `INSERT` column list in `eventService.createEvent`, and the `allowedFields`
  * whitelist in `eventService.updateEvent` — and missing ANY of them leaves the
@@ -64,7 +70,10 @@ async function callController(handler, { body = {}, params = {} } = {}) {
 
 // --- tests ----------------------------------------------------------------
 
-describe('events.allow_mobile_host_console', () => {
+describe.each([
+  ['allow_mobile_host_console'],
+  ['allow_host_video_quality'],
+])('events.%s', (column) => {
   test('defaults to 0 when the field is not sent', async () => {
     const hostUserId = await insertHost()
 
@@ -73,46 +82,46 @@ describe('events.allow_mobile_host_console', () => {
     })
 
     expect(payload.success).toBe(true)
-    expect(payload.event.allow_mobile_host_console).toBe(0)
+    expect(payload.event[column]).toBe(0)
   })
 
   test('persists on create and survives a re-read', async () => {
     const hostUserId = await insertHost()
 
     const { payload } = await callController(eventAdminController.createEvent, {
-      body: eventPayload(hostUserId, { allow_mobile_host_console: true }),
+      body: eventPayload(hostUserId, { [column]: true }),
     })
 
-    expect(payload.event.allow_mobile_host_console).toBe(1)
+    expect(payload.event[column]).toBe(1)
 
     // Re-read through the same path the live page uses.
     const reread = await eventService.getEventById(payload.event.id)
-    expect(reread.allow_mobile_host_console).toBe(1)
+    expect(reread[column]).toBe(1)
   })
 
   test('updates in both directions', async () => {
     const hostUserId = await insertHost()
     const created = await eventService.createEvent(
-      eventPayload(hostUserId, { allow_mobile_host_console: 0 })
+      eventPayload(hostUserId, { [column]: 0 })
     )
 
     const on = await callController(eventAdminController.updateEvent, {
       params: { id: created.id },
-      body: { allow_mobile_host_console: true },
+      body: { [column]: true },
     })
-    expect(on.payload.event.allow_mobile_host_console).toBe(1)
+    expect(on.payload.event[column]).toBe(1)
 
     const off = await callController(eventAdminController.updateEvent, {
       params: { id: created.id },
-      body: { allow_mobile_host_console: false },
+      body: { [column]: false },
     })
-    expect(off.payload.event.allow_mobile_host_console).toBe(0)
+    expect(off.payload.event[column]).toBe(0)
   })
 
   test('a PUT that omits the field leaves it untouched', async () => {
     const hostUserId = await insertHost()
     const created = await eventService.createEvent(
-      eventPayload(hostUserId, { allow_mobile_host_console: 1 })
+      eventPayload(hostUserId, { [column]: 1 })
     )
 
     // The edit form only sends the field in the supported provider/mode
@@ -122,31 +131,31 @@ describe('events.allow_mobile_host_console', () => {
       body: { title: 'Otro título' },
     })
 
-    expect(payload.event.allow_mobile_host_console).toBe(1)
+    expect(payload.event[column]).toBe(1)
   })
 
   test('the boolean survives both Zod schemas, which strip anything undeclared', async () => {
     const hostUserId = await insertHost()
 
     const created = createEventSchema.parse({
-      body: eventPayload(hostUserId, { allow_mobile_host_console: true }),
+      body: eventPayload(hostUserId, { [column]: true }),
     })
-    expect(created.body.allow_mobile_host_console).toBe(true)
+    expect(created.body[column]).toBe(true)
 
     // SQLite hands the edit form a 0/1; it must not be rejected on the way back.
-    const updated = updateEventSchema.parse({ body: { allow_mobile_host_console: 1 } })
-    expect(updated.body.allow_mobile_host_console).toBe(1)
+    const updated = updateEventSchema.parse({ body: { [column]: 1 } })
+    expect(updated.body[column]).toBe(1)
   })
 
   test('an invalid value is rejected by Zod, before the database', async () => {
     const hostUserId = await insertHost()
 
     expect(() => createEventSchema.parse({
-      body: eventPayload(hostUserId, { allow_mobile_host_console: 'quizá' }),
+      body: eventPayload(hostUserId, { [column]: 'quizá' }),
     })).toThrow()
 
     expect(() => updateEventSchema.parse({
-      body: { allow_mobile_host_console: 7 },
+      body: { [column]: 7 },
     })).toThrow()
   })
 })
@@ -156,7 +165,10 @@ describe('events.allow_mobile_host_console', () => {
  * already fails if a place is missing, but this names WHICH one, which is the
  * difference between a five-minute fix and an afternoon.
  */
-describe('the write path keeps all four places in step', () => {
+describe.each([
+  ['allow_mobile_host_console'],
+  ['allow_host_video_quality'],
+])('the write path keeps all four places in step for %s', (column) => {
   const fs = require('fs')
   const path = require('path')
   const serviceSource = fs.readFileSync(
@@ -168,7 +180,7 @@ describe('the write path keeps all four places in step', () => {
       serviceSource.indexOf('INSERT INTO events'),
       serviceSource.indexOf('async function updateEvent')
     )
-    expect(insert).toContain('allow_mobile_host_console')
+    expect(insert).toContain(column)
   })
 
   test('the column is in allowedFields of updateEvent', () => {
@@ -177,14 +189,14 @@ describe('the write path keeps all four places in step', () => {
       update.indexOf('const allowedFields'),
       update.indexOf('const setClauses')
     )
-    expect(allowed).toContain('allow_mobile_host_console')
+    expect(allowed).toContain(column)
   })
 
   test('the column is declared in both Zod schemas', () => {
     const schemaSource = fs.readFileSync(
       path.join(__dirname, '..', 'validators', 'eventSchemas.js'), 'utf8'
     )
-    const occurrences = schemaSource.split('allow_mobile_host_console:').length - 1
+    const occurrences = schemaSource.split(`${column}:`).length - 1
     expect(occurrences).toBe(2)
   })
 })

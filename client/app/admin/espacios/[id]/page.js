@@ -81,6 +81,7 @@ function EventDetailContent({ id }) {
     // Llega de SQLite como 0 | 1; el checkbox necesita un booleano y así es
     // también como viaja de vuelta en el PUT.
     allow_mobile_host_console: !!ev.allow_mobile_host_console,
+    allow_host_video_quality: !!ev.allow_host_video_quality,
     status: ev.status || 'draft',
   })
 
@@ -108,6 +109,10 @@ function EventDetailContent({ id }) {
   // móvil solo existe en un evento Agora en modo broadcast.
   const supportsMobileHostConsole =
     form.format === 'live' && form.provider === 'agora' && form.interaction_mode === 'broadcast'
+
+  // Igual que en el formulario de creación: la calidad aplica a las dos
+  // modalidades, la consola móvil solo a `broadcast`.
+  const supportsHostVideoQuality = form.format === 'live' && form.provider === 'agora'
 
   const handleSave = async () => {
     setError('')
@@ -137,6 +142,7 @@ function EventDetailContent({ id }) {
       // `...form` lo mete siempre; fuera de la combinación soportada el campo
       // no debe viajar, igual que en el formulario de creación.
       if (!supportsMobileHostConsole) delete payload.allow_mobile_host_console
+      if (!supportsHostVideoQuality) delete payload.allow_host_video_quality
       await adminAPI.events.update(id, payload)
 
       // Upload new video file if selected
@@ -461,6 +467,25 @@ function EventDetailContent({ id }) {
                       </div>
                     )}
                   </div>
+                )}
+                {supportsHostVideoQuality && (
+                  <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.allow_host_video_quality}
+                      onChange={(e) => setForm({ ...form, allow_host_video_quality: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-black"
+                    />
+                    <span>
+                      Permitir al host cambiar la calidad de vídeo
+                      <span className="block text-xs text-gray-500">
+                        Deja que el host emita en 1080p, 720p o 480p durante el evento. Sin
+                        marcar, la emisión queda fija en 720p. Afecta al coste: Agora cobra
+                        por asistente según la resolución que recibe, y 1080p cuesta 2,25
+                        veces más por minuto y asistente que 720p.
+                      </span>
+                    </span>
+                  </label>
                 )}
                 {supportsMobileHostConsole && (
                   <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">

@@ -40,7 +40,9 @@ Sin cambios en el comportamiento de asistentes, de eventos LiveKit, de `interact
 
 - `agora-streaming-provider`: toda pista de cámara pasa a crearse con un perfil de codificación **16:9 explícito**. El SDK aplica `480p_1` (640 × 480, 4:3) cuando no se le indica ninguno, así que hasta ahora cualquier cámara se publicaba casi cuadrada. Se detectó retransmitiendo desde el Pixel 9 Pro, pero no era del teléfono: afectaba a todas las salas Agora.
 
-El campo `allow_mobile_host_console` que esta capacidad gana en formularios y validadores es aditivo y no cambia ninguno de sus requisitos: un evento sin el flag se comporta exactamente igual que antes.
+- `agora-streaming-provider` (cont.): nueva columna `events.allow_host_video_quality` y su checkbox, que decide si el host puede cambiar la resolución durante el evento. Desactivada por defecto, la emisión queda fija en 720p. Es una palanca de coste en manos del admin.
+
+Los campos `allow_mobile_host_console` y `allow_host_video_quality` que esta capacidad gana en formularios y validadores son aditivos y no cambia ninguno de sus requisitos: un evento sin el flag se comporta exactamente igual que antes.
 
 ## Impact
 

@@ -65,7 +65,7 @@
 
 ## 9. Tests de API
 
-- [x] 9.1 Crear `api/tests/mobileHostConsoleFlag.test.js`: creación con el flag a 1 y a 0, actualización en ambos sentidos, y valor por defecto 0 en un evento creado sin el campo
+- [x] 9.1 Crear el test de flags de evento (hoy `api/tests/eventHostFlags.test.js`): creación con el flag a 1 y a 0, actualización en ambos sentidos, y valor por defecto 0 en un evento creado sin el campo
 - [x] 9.2 Cubrir que un valor inválido lo rechaza la validación Zod sin tocar la base de datos
 - [x] 9.3 Añadir una aserción estructural de que la columna está tanto en el `INSERT` de `createEvent` como en `allowedFields` de `updateEvent` — es el fallo silencioso que el ritual de cuatro sitios provoca
 - [x] 9.4 Ejecutar `npm test` desde `api/` y comprobar que no hay regresiones, en particular en `adminEventAccess.test.js`
@@ -98,4 +98,7 @@
 - [x] 12.5 Documentar ambas causas en `CLAUDE.md` y añadir el delta de `agora-streaming-provider`
 - [x] 12.6 Quitar el modo espejo del vídeo del host (`mirror={false}` en los tres elementos de vídeo de broadcast); los autovisores de reunión lo conservan
 - [x] 12.7 Selector de calidad (1080p / 720p / 480p, los tres 16:9) en `useHostVideoQuality`, aplicado en caliente con `setEncoderConfiguration` y persistido; presente en la consola y en la vista completa
-- [ ] 12.8 Reverificar en el Pixel: que «Finalizar stream» muestra la confirmación y termina el evento, que la cámara trasera emite 16:9 para el host y para un participante remoto, y que la previsualización del host ya no sale invertida
+- [x] 12.8 Segundo flag `events.allow_host_video_quality` (columna + `safeAlter` + ambos esquemas Zod + controlador + `INSERT` y `allowedFields`), con checkbox en los dos formularios, visible en **las dos** modalidades de interacción
+- [x] 12.9 Gatear el selector con una sola puerta (`selectVideoQuality: null`) y forzar el nivel por defecto en `useHostVideoQuality` cuando no hay permiso, para que una preferencia guardada no lo eluda
+- [x] 12.10 Generalizar el test a los dos flags (`api/tests/eventHostFlags.test.js`, renombrado): 18 casos, seis por columna
+- [ ] 12.11 Reverificar en el Pixel: que «Finalizar stream» muestra la confirmación y termina el evento, que la cámara trasera emite 16:9 para el host y para un participante remoto, y que la previsualización del host ya no sale invertida

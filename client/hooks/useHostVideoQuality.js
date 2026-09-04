@@ -21,7 +21,9 @@ import {
  * hidratación.
  *
  * @param {object} params
- * @param {boolean} params.enabled - Solo el host elige calidad
+ * @param {boolean} params.enabled - El host de un evento cuyo admin marcó
+ *   «Permitir al host cambiar la calidad de vídeo». Desactivado, la emisión
+ *   queda fija en el nivel por defecto y no hay control que mostrar.
  */
 export default function useHostVideoQuality({ enabled }) {
   const [quality, setQualityState] = useState(AGORA_VIDEO_QUALITY_DEFAULT)
@@ -37,17 +39,28 @@ export default function useHostVideoQuality({ enabled }) {
   }, [enabled])
 
   const setQuality = useCallback((id) => {
+    if (!enabled) return
     if (!AGORA_VIDEO_QUALITIES.some((q) => q.id === id)) return
     setQualityState(id)
     try {
       localStorage.setItem(AGORA_VIDEO_QUALITY_STORAGE_KEY, id)
     } catch { /* la preferencia no persiste, pero la sesión sí la usa */ }
-  }, [])
+  }, [enabled])
 
-  const level = useMemo(
-    () => AGORA_VIDEO_QUALITIES.find((q) => q.id === quality) || AGORA_VIDEO_QUALITIES[1],
-    [quality]
-  )
+  // Con la elección desactivada se devuelve SIEMPRE el nivel por defecto, no el
+  // estado. No basta con dejar de leer `localStorage`: un host que eligió 1080p
+  // en este teléfono seguiría emitiendo en 1080p en un evento donde el admin
+  // no lo permite, que es justo el gasto que el flag existe para acotar.
+  const level = useMemo(() => {
+    const stored = enabled && AGORA_VIDEO_QUALITIES.find((q) => q.id === quality)
+    return stored || AGORA_VIDEO_QUALITIES.find((q) => q.id === AGORA_VIDEO_QUALITY_DEFAULT)
+  }, [enabled, quality])
 
-  return { quality, level, encoderConfig: level.encoderConfig, setQuality }
+  return {
+    enabled: !!enabled,
+    quality: enabled ? quality : AGORA_VIDEO_QUALITY_DEFAULT,
+    level,
+    encoderConfig: level.encoderConfig,
+    setQuality,
+  }
 }

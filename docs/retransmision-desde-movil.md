@@ -14,11 +14,19 @@ Broadcasts» de `CLAUDE.md` y `openspec/changes/agora-host-mobile-broadcast-mode
 
 ## Antes del evento
 
-1. **Marcar la casilla al crear el evento.** En `/admin/espacios/nuevo`, con
-   **Proveedor de streaming = Agora** y **Modo de interacción = Stream (mano
-   levantada)**, aparece «Consola móvil del host». Sin esa casilla el host solo
-   dispone de la vista completa de siempre. Se puede marcar también después,
-   editando el evento.
+1. **Marcar las casillas al crear el evento.** En `/admin/espacios/nuevo`, con
+   **Proveedor de streaming = Agora**, aparecen dos casillas independientes. Las
+   dos se pueden marcar también después, editando el evento.
+
+   | Casilla | Qué concede | Cuándo aparece |
+   |---|---|---|
+   | **Consola móvil del host** | Los tres modos de vista. Sin ella el host solo tiene la vista completa de siempre. | Solo con **Modo de interacción = Stream** |
+   | **Permitir al host cambiar la calidad de vídeo** | El selector 1080p / 720p / 480p. Sin ella la emisión queda fija en **720p**. | En **cualquier** evento Agora, Stream o Reunión |
+
+   La segunda es una palanca de **gasto**, y por eso la decides tú por evento:
+   1080p cuesta 2,25× más por minuto y asistente (ver más abajo). Concédela a
+   los eventos donde la calidad importe, o a los hosts en los que confíes para
+   usarla con criterio.
 
 2. **Instalar el sitio en la pantalla de inicio del teléfono.** Este es el paso
    que más espacio recupera y no depende de nada durante la retransmisión.
@@ -71,9 +79,15 @@ que abre la lista de fuentes a pantalla completa.
 
 ### Elegir la calidad de emisión
 
-Bajo la previsualización hay tres botones: **1080p**, **720p** y **480p**. El
-cambio se aplica al instante, sin cortar la emisión, y se recuerda en ese
-teléfono. El valor por defecto es **720p**, y conviene dejarlo ahí salvo motivo:
+Solo si el evento tiene marcada la casilla **«Permitir al host cambiar la
+calidad de vídeo»**. Si no la tiene, no verás ningún control y la emisión será de
+720p — aunque en ese mismo teléfono hubieras elegido otra cosa en un evento
+anterior.
+
+Con el permiso concedido, bajo la previsualización hay tres botones: **1080p**,
+**720p** y **480p**. El cambio se aplica al instante, sin cortar la emisión, y se
+recuerda en ese teléfono. El valor por defecto es **720p**, y conviene dejarlo
+ahí salvo motivo:
 
 - **Subir a 1080p cuesta 2,25× más.** Agora factura por asistente según la
   resolución que cada uno recibe, y la banda «HD» termina justo en 1280 × 720

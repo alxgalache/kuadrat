@@ -30,6 +30,7 @@ function NewEventPageContent() {
   const [videoFile, setVideoFile] = useState(null)
   const [maxAttendees, setMaxAttendees] = useState('')
   const [allowMobileHostConsole, setAllowMobileHostConsole] = useState(false)
+  const [allowHostVideoQuality, setAllowHostVideoQuality] = useState(false)
   const [status, setStatus] = useState('draft')
 
   // Un solo predicado con nombre para la combinación que soporta la consola
@@ -37,6 +38,11 @@ function NewEventPageContent() {
   // dejó sobrevivir la comparación muerta de `ProductForm`.
   const supportsMobileHostConsole =
     format === 'live' && provider === 'agora' && interactionMode === 'broadcast'
+
+  // La calidad de vídeo NO se limita a `broadcast`: el selector vive en los
+  // controles de host, que las dos modalidades comparten, así que gatearlo solo
+  // en broadcast dejaría las reuniones sin control de gasto.
+  const supportsHostVideoQuality = format === 'live' && provider === 'agora'
 
   const [sellers, setSellers] = useState([])
   const [loadingSellers, setLoadingSellers] = useState(true)
@@ -106,6 +112,9 @@ function NewEventPageContent() {
         // no se envía y la columna se queda en su defecto 0.
         ...(supportsMobileHostConsole
           ? { allow_mobile_host_console: allowMobileHostConsole }
+          : {}),
+        ...(supportsHostVideoQuality
+          ? { allow_host_video_quality: allowHostVideoQuality }
           : {}),
         status,
       })
@@ -352,6 +361,28 @@ function NewEventPageContent() {
                     </select>
                   </div>
                 )}
+              </div>
+            )}
+
+            {supportsHostVideoQuality && (
+              <div className="mt-4">
+                <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowHostVideoQuality}
+                    onChange={(e) => setAllowHostVideoQuality(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-black"
+                  />
+                  <span>
+                    Permitir al host cambiar la calidad de vídeo
+                    <span className="block text-xs text-gray-500">
+                      Deja que el host emita en 1080p, 720p o 480p durante el evento. Sin
+                      marcar, la emisión queda fija en 720p. Afecta al coste: Agora cobra
+                      por asistente según la resolución que recibe, y 1080p cuesta 2,25
+                      veces más por minuto y asistente que 720p.
+                    </span>
+                  </span>
+                </label>
               </div>
             )}
 

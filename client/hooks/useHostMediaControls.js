@@ -159,7 +159,9 @@ export default function useHostMediaControls({ enabled, room, eventId, cameraEnc
     endEvent,
     videoQuality: videoQuality?.quality,
     videoQualityLevel: videoQuality?.level,
-    selectVideoQuality,
+    // Una sola puerta: sin permiso no hay función, y las dos presentaciones ya
+    // se ocultan solas porque ambas renderizan el control solo si existe.
+    selectVideoQuality: videoQuality?.enabled ? selectVideoQuality : null,
     screenShareSupported,
     speakerSelectionSupported,
   }

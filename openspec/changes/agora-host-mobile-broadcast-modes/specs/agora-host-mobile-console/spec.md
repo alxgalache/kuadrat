@@ -156,7 +156,11 @@ La consola SHALL mostrar un indicador continuo del nivel de entrada del micrófo
 
 ### Requirement: Selección de calidad de emisión
 
-La consola SHALL permitir al host elegir la calidad con la que emite entre tres niveles —alta, media y baja—, **todos en 16:9**, con la resolución misma como etiqueta del control. El cambio SHALL aplicarse sobre la pista ya publicada sin republicarla, de modo que los asistentes no vean ningún corte, y SHALL persistir por dispositivo. El mismo control SHALL estar disponible en la vista completa, compartiendo estado con el de la consola.
+Que el host pueda elegir la calidad SHALL decidirlo el admin por evento, mediante la columna `events.allow_host_video_quality` (INTEGER, `NOT NULL DEFAULT 0`) y su checkbox «Permitir al host cambiar la calidad de vídeo». A diferencia del de la consola móvil, ese checkbox SHALL ofrecerse en **cualquier** evento Agora en directo, `broadcast` y `meeting`, porque el selector vive en los controles de host que ambas modalidades comparten.
+
+Con el flag desactivado la emisión SHALL quedar fija en el nivel por defecto (720p) y el control NO SHALL renderizarse en ninguna vista. La preferencia guardada de un dispositivo NO SHALL aplicarse en ese caso: devolver el nivel almacenado cuando el evento no lo permite reabriría exactamente el gasto que el flag acota.
+
+Con el flag activo, la consola SHALL permitir elegir entre tres niveles —alta, media y baja—, **todos en 16:9**, con la resolución misma como etiqueta del control. El cambio SHALL aplicarse sobre la pista ya publicada sin republicarla, de modo que los asistentes no vean ningún corte, y SHALL persistir por dispositivo. El mismo control SHALL estar disponible en la vista completa, compartiendo estado con el de la consola.
 
 El nivel por defecto SHALL ser el medio (720p). Subir de ahí cruza la banda de facturación de Agora —que factura por asistente según la resolución agregada que recibe, con el corte en 921.600 px— y multiplica por 2,25 el coste de cada minuto-asistente, además de exigir una subida sostenida que un recinto puede no dar. El nivel bajo SHALL existir para lo contrario: sostener la emisión cuando la conexión es mala.
 
@@ -183,6 +187,18 @@ Con la cámara apagada el cambio NO SHALL fallar: el nivel elegido SHALL aplicar
 
 - **WHEN** el host elige un nivel y recarga la página
 - **THEN** vuelve con ese nivel seleccionado
+
+#### Scenario: Evento sin permiso de calidad
+
+- **WHEN** el host entra en un evento con `allow_host_video_quality = 0`
+- **THEN** no aparece el control de calidad ni en la consola ni en la vista completa
+- **AND** la emisión es de 720p aunque ese dispositivo tuviera guardado otro nivel
+
+#### Scenario: El admin concede la calidad en un evento de reunión
+
+- **WHEN** el admin crea un evento `provider='agora'` con `interaction_mode='meeting'`
+- **THEN** el checkbox de calidad se ofrece igualmente
+- **AND** el de la consola móvil no
 
 #### Scenario: Un asistente no elige calidad
 
