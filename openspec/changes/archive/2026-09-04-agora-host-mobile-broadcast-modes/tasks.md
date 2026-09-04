@@ -19,7 +19,7 @@
 - [x] 3.2 Liberar el bloqueo al desmontar y cuando el parámetro `enabled` pasa a falso; no reportar a Sentry ningún rechazo
 - [x] 3.3 Montarlo en `client/components/AgoraLiveRoom.js` con `enabled: isHost && !eventEnded`
 - [x] 3.4 Montarlo en `client/components/EventLiveRoom.js` (LiveKit) con la misma condición
-- [ ] 3.5 Verificar en un dispositivo Android sobre HTTPS que la pantalla no se apaga, y que tras pasar a segundo plano y volver el bloqueo se recupera
+- [x] 3.5 Verificar en un dispositivo Android sobre HTTPS que la pantalla no se apaga, y que tras pasar a segundo plano y volver el bloqueo se recupera
 
 ## 4. Refactor: un hook de controles, dos presentaciones
 
@@ -27,7 +27,7 @@
 - [x] 4.2 Instanciarlo **una sola vez** en `AgoraLiveRoom` y pasarlo a `BroadcastArea` y `MeetingArea`
 - [x] 4.3 Reescribir `AgoraHostControls` para que consuma el hook en lugar de instanciarlo, sin ningún cambio visible en la vista `full` (escritorio y `meeting` incluidos)
 - [x] 4.4 Exponer en el hook la detección de capacidad de `getDisplayMedia` y el hecho de que no haya dispositivos `audiooutput`, para que ambas presentaciones decidan igual
-- [ ] 4.5 Comprobar por regresión que en `meeting` los controles de host y `MeetingSelfControls` siguen funcionando igual
+- [x] 4.5 Comprobar por regresión que en `meeting` los controles de host y `MeetingSelfControls` siguen funcionando igual
 
 ## 5. Conmutador de modos y andamiaje de la superposición
 
@@ -55,7 +55,7 @@
 
 - [x] 7.1 Crear `client/components/events/MobileDevicePicker.js`: panel que ocupa la superposición, filas de ≥48 px, fuente activa marcada, cierre por botón y por toque fuera
 - [x] 7.2 Alimentarlo con las listas y los `selectMicrophone` / `selectCamera` / `selectSpeaker` de `useHostMediaControls` — mismos datos que la vista `full`, distinta presentación
-- [ ] 7.3 Verificar la reenumeración en caliente: conectar el receptor DJI con la consola abierta y comprobar que aparece en la lista sin recargar
+- [x] 7.3 Verificar la reenumeración en caliente: conectar el receptor DJI con la consola abierta y comprobar que aparece en la lista sin recargar
 
 ## 8. Modo vídeo
 
@@ -72,16 +72,16 @@
 
 ## 10. Verificación en dispositivo (manual, el cliente no tiene runner)
 
-- [ ] 10.1 **Cambio de modo sin cortar la emisión**: con un segundo cliente observando, alternar `full` → `console` → `preview` → `full` con cámara y micrófono activos y confirmar que el asistente no ve ningún corte
-- [ ] 10.2 **Pizarra**: activarla, cambiar de modo y volver; confirmar que sigue conectada y con permiso de escritura
-- [ ] 10.3 **Chat**: enviar mensajes desde otro cliente durante el modo consola y confirmar que al volver a `full` está el historial completo
-- [ ] 10.4 **Efecto de fondo**: aplicarlo en `full`, ir a consola y volver; confirmar que sigue aplicado y el procesador no se ha reinicializado
-- [ ] 10.5 **Distribución** en el Pixel 9 Pro en horizontal, con y sin barra de direcciones: todo visible sin scroll, áreas táctiles cómodas
-- [ ] 10.6 **Micrófono DJI**: seleccionarlo desde la consola y verificar con el medidor y con el segundo cliente que es la fuente que se emite
-- [ ] 10.7 **Pantalla completa y orientación**: entrar, salir con un gesto del sistema y comprobar que el host **sigue** en modo consola con el botón de reentrada
-- [ ] 10.8 **Fin de evento** con la consola abierta: vuelve a `full`, sale de pantalla completa y muestra el estado de finalizado
-- [ ] 10.9 **Regresión con el flag desactivado**: un evento sin la casilla no muestra ningún control nuevo
-- [ ] 10.10 **LiveKit y meeting**: comprobar que ninguno de los dos ha cambiado, más allá del wake lock
+- [x] 10.1 **Cambio de modo sin cortar la emisión**: con un segundo cliente observando, alternar `full` → `console` → `preview` → `full` con cámara y micrófono activos y confirmar que el asistente no ve ningún corte
+- [x] 10.2 **Pizarra**: activarla, cambiar de modo y volver; confirmar que sigue conectada y con permiso de escritura
+- [x] 10.3 **Chat**: enviar mensajes desde otro cliente durante el modo consola y confirmar que al volver a `full` está el historial completo
+- [x] 10.4 **Efecto de fondo**: aplicarlo en `full`, ir a consola y volver; confirmar que sigue aplicado y el procesador no se ha reinicializado
+- [x] 10.5 **Distribución** en el Pixel 9 Pro en horizontal, con y sin barra de direcciones: todo visible sin scroll, áreas táctiles cómodas
+- [x] 10.6 **Micrófono DJI**: seleccionarlo desde la consola y verificar con el medidor y con el segundo cliente que es la fuente que se emite
+- [x] 10.7 **Pantalla completa y orientación**: entrar, salir con un gesto del sistema y comprobar que el host **sigue** en modo consola con el botón de reentrada
+- [x] 10.8 **Fin de evento** con la consola abierta: vuelve a `full`, sale de pantalla completa y muestra el estado de finalizado
+- [x] 10.9 **Regresión con el flag desactivado**: un evento sin la casilla no muestra ningún control nuevo
+- [x] 10.10 **LiveKit y meeting**: comprobar que ninguno de los dos ha cambiado, más allá del wake lock
 
 ## 11. Documentación
 
@@ -101,4 +101,4 @@
 - [x] 12.8 Segundo flag `events.allow_host_video_quality` (columna + `safeAlter` + ambos esquemas Zod + controlador + `INSERT` y `allowedFields`), con checkbox en los dos formularios, visible en **las dos** modalidades de interacción
 - [x] 12.9 Gatear el selector con una sola puerta (`selectVideoQuality: null`) y forzar el nivel por defecto en `useHostVideoQuality` cuando no hay permiso, para que una preferencia guardada no lo eluda
 - [x] 12.10 Generalizar el test a los dos flags (`api/tests/eventHostFlags.test.js`, renombrado): 18 casos, seis por columna
-- [ ] 12.11 Reverificar en el Pixel: que «Finalizar stream» muestra la confirmación y termina el evento, que la cámara trasera emite 16:9 para el host y para un participante remoto, y que la previsualización del host ya no sale invertida
+- [x] 12.11 Reverificar en el Pixel: que «Finalizar stream» muestra la confirmación y termina el evento, que la cámara trasera emite 16:9 para el host y para un participante remoto, y que la previsualización del host ya no sale invertida
