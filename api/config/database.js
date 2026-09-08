@@ -616,6 +616,18 @@ async function initializeDatabase() {
         -- flag aplica a los dos interaction_mode, porque el selector vive en
         -- los controles de host que ambos comparten.
         allow_host_video_quality INTEGER NOT NULL DEFAULT 0,
+        -- Devuelve el procesado 3A del navegador (AEC/ANS/AGC) a la pista de
+        -- micrófono del HOST. El defecto 0 significa SIN procesado, que es la
+        -- ruta buena: en Android el flag AEC no quita un filtro, decide el
+        -- input preset del sistema. Con cancelación de eco Chrome abre el
+        -- micrófono con AAUDIO_INPUT_PRESET_VOICE_COMMUNICATION, la cadena de
+        -- las llamadas de voz (limitada en banda, de ahí el sonido a
+        -- teléfono), y el enrutado deja de priorizar un receptor USB frente al
+        -- micrófono interno del móvil. Solo se pone a 1 cuando el host va a
+        -- reproducir por altavoz el audio de los invitados a los que da la
+        -- palabra, porque entonces el eco importa más que la fidelidad. Solo
+        -- tiene efecto con provider='agora' e interaction_mode='broadcast'.
+        host_echo_cancellation INTEGER NOT NULL DEFAULT 0,
         agora_channel_name TEXT,
         whiteboard_room_uuid TEXT,
         video_started_at DATETIME,
@@ -880,6 +892,7 @@ async function initializeDatabase() {
     await safeAlter("ALTER TABLE events ADD COLUMN interaction_mode TEXT NOT NULL DEFAULT 'broadcast'");
     await safeAlter('ALTER TABLE events ADD COLUMN allow_mobile_host_console INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE events ADD COLUMN allow_host_video_quality INTEGER NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE events ADD COLUMN host_echo_cancellation INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE events ADD COLUMN agora_channel_name TEXT');
     await safeAlter('ALTER TABLE events ADD COLUMN whiteboard_room_uuid TEXT');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN agora_uid INTEGER');

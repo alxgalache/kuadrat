@@ -47,6 +47,14 @@ async function createCameraTrackWithRetry(deviceId, encoderConfig) {
  *   la cámara local. Obligatorio en la práctica: sin él el SDK usa `480p_1`
  *   (640 × 480, 4:3) y publica casi cuadrado. Ver AGORA_CAMERA_ENCODER_* en
  *   lib/constants.js.
+ * @param {object} [params.micTrackConfig] - Configuración de la pista de
+ *   micrófono (`encoderConfig` y los flags AEC/ANS/AGC), elegida por rol igual
+ *   que `cameraEncoderConfig`. Solo se pasa para el host: un asistente emite
+ *   desde hardware desconocido oyendo al host por sus altavoces, así que
+ *   necesita el procesado del navegador y no se beneficia de 128 kbps.
+ *   `undefined` reproduce el comportamiento anterior. Ver AGORA_MIC_* en
+ *   lib/constants.js — y ojo, el perfil de audio queda CONGELADO al crear la
+ *   pista: `ILocalAudioTrack` no expone `setEncoderConfiguration`.
  */
 export default function useAgoraRoom({
   enabled,
@@ -58,6 +66,7 @@ export default function useAgoraRoom({
   renewToken,
   onKicked,
   cameraEncoderConfig,
+  micTrackConfig,
 }) {
   const clientRef = useRef(null)
   const micTrackRef = useRef(null)
@@ -235,8 +244,16 @@ export default function useAgoraRoom({
     if (on) {
       assertJoined()
       if (!micTrackRef.current) {
+        // `micTrackConfig` NO es opcional para el host: sin `encoderConfig` el
+        // SDK deja Opus sin declarar (~32 kbps) pese a documentar
+        // `music_standard`, y sin `AEC: false` Chrome abre el micrófono con el
+        // preset de llamadas de voz de Android. Ver AGORA_MIC_* en
+        // lib/constants.js. Se fija aquí para siempre: el audio no tiene
+        // `setEncoderConfiguration`, así que la pista habría que recrearla.
+        const opts = { ...(micTrackConfig || {}) }
+        if (deviceId) opts.microphoneId = deviceId
         const track = await AgoraRTC.createMicrophoneAudioTrack(
-          deviceId ? { microphoneId: deviceId } : undefined
+          Object.keys(opts).length > 0 ? opts : undefined
         )
         micTrackRef.current = track
         await client.publish(track)
@@ -250,7 +267,7 @@ export default function useAgoraRoom({
       }
       setMicEnabled(false)
     }
-  }, [assertJoined])
+  }, [assertJoined, micTrackConfig])
 
   // ── Local camera ──────────────────────────────────────────
   const setCameraEnabled = useCallback(async (on, deviceId = null) => {

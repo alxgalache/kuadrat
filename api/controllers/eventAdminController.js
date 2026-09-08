@@ -36,7 +36,7 @@ const createEvent = async (req, res, next) => {
       title, description, event_datetime, duration_minutes, host_user_id,
       cover_image_url, access_type, price, currency, format, content_type,
       category, video_url, max_attendees, status, provider, interaction_mode,
-      allow_mobile_host_console, allow_host_video_quality,
+      allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
     } = req.body;
 
     if (!title || !event_datetime || !host_user_id || !category) {
@@ -74,6 +74,7 @@ const createEvent = async (req, res, next) => {
       category, video_url, max_attendees, status, provider, interaction_mode,
       allow_mobile_host_console: toFlag(allow_mobile_host_console),
       allow_host_video_quality: toFlag(allow_host_video_quality),
+      host_echo_cancellation: toFlag(host_echo_cancellation),
     });
 
     // Marketing announcement (non-blocking; never throws; guarded send-once)
@@ -173,6 +174,7 @@ const updateEvent = async (req, res, next) => {
       ...req.body,
       allow_mobile_host_console: toFlag(req.body.allow_mobile_host_console),
       allow_host_video_quality: toFlag(req.body.allow_host_video_quality),
+      host_echo_cancellation: toFlag(req.body.host_echo_cancellation),
     });
 
     // Marketing announcement on transition into 'scheduled' (guarded send-once)

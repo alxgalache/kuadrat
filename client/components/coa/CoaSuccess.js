@@ -2,6 +2,7 @@ import Image from 'next/image'
 import { getArtImageUrl } from '@/lib/api'
 import CoaDescription from '@/components/coa/CoaDescription'
 import { EDITION_COPY } from '@/lib/constants'
+import { formatArtDimensions } from '@/lib/dimensions'
 
 /**
  * Rendered when /api/coa/verify returns status='ok'.
@@ -107,7 +108,9 @@ export default function CoaSuccess({ art, counter }) {
                     <dt className="text-xs uppercase tracking-wide text-gray-400 font-medium">
                       Dimensiones
                     </dt>
-                    <dd className="mt-0.5 text-sm text-gray-700">{art.dimensions}</dd>
+                    <dd className="mt-0.5 text-sm text-gray-700">
+                      {formatArtDimensions(art.dimensions)}
+                    </dd>
                   </div>
                 )}
               </dl>

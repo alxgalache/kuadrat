@@ -1,12 +1,17 @@
 /**
- * The per-event host flags of `events` (openspec change:
- * agora-host-mobile-broadcast-modes):
+ * The per-event host flags of `events` (openspec changes:
+ * agora-host-mobile-broadcast-modes, agora-host-audio-fidelity):
  *
  *   · `allow_mobile_host_console` — the three mobile view modes.
  *   · `allow_host_video_quality`  — letting the host change the broadcast
  *     resolution. Off means the event is pinned to 720p, which is a COST
  *     control: Agora bills per subscriber by the resolution they receive and
  *     1080p crosses into the Full HD band at 2.25× the price.
+ *   · `host_echo_cancellation`    — giving the host's microphone track back the
+ *     browser's 3A processing. This one DEFAULTS TO THE OFF STATE MEANING THE
+ *     GOOD PATH: 0 is no processing, which on Android is what makes Chrome open
+ *     the mic with AAUDIO_INPUT_PRESET_GENERIC instead of the voice-call chain.
+ *     It is only turned on when the host plays guests' audio out loud.
  *
  * They share a test because they share a failure mode, and it is silent in both
  * directions. The write path crosses four places — the two Zod schemas, the
@@ -73,6 +78,7 @@ async function callController(handler, { body = {}, params = {} } = {}) {
 describe.each([
   ['allow_mobile_host_console'],
   ['allow_host_video_quality'],
+  ['host_echo_cancellation'],
 ])('events.%s', (column) => {
   test('defaults to 0 when the field is not sent', async () => {
     const hostUserId = await insertHost()
@@ -168,6 +174,7 @@ describe.each([
 describe.each([
   ['allow_mobile_host_console'],
   ['allow_host_video_quality'],
+  ['host_echo_cancellation'],
 ])('the write path keeps all four places in step for %s', (column) => {
   const fs = require('fs')
   const path = require('path')

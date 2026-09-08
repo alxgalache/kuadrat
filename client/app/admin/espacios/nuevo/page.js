@@ -31,6 +31,7 @@ function NewEventPageContent() {
   const [maxAttendees, setMaxAttendees] = useState('')
   const [allowMobileHostConsole, setAllowMobileHostConsole] = useState(false)
   const [allowHostVideoQuality, setAllowHostVideoQuality] = useState(false)
+  const [hostEchoCancellation, setHostEchoCancellation] = useState(false)
   const [status, setStatus] = useState('draft')
 
   // Un solo predicado con nombre para la combinación que soporta la consola
@@ -43,6 +44,13 @@ function NewEventPageContent() {
   // controles de host, que las dos modalidades comparten, así que gatearlo solo
   // en broadcast dejaría las reuniones sin control de gasto.
   const supportsHostVideoQuality = format === 'live' && provider === 'agora'
+
+  // La cancelación de eco del host comparte hoy la condición de la consola
+  // móvil, pero tiene su propio predicado a propósito: son dos decisiones
+  // distintas y encadenarlas haría que cambiar la de una arrastrase la otra en
+  // silencio. Su defecto es 0 = SIN procesado, que es la ruta de captura buena.
+  const supportsHostEchoCancellation =
+    format === 'live' && provider === 'agora' && interactionMode === 'broadcast'
 
   const [sellers, setSellers] = useState([])
   const [loadingSellers, setLoadingSellers] = useState(true)
@@ -115,6 +123,9 @@ function NewEventPageContent() {
           : {}),
         ...(supportsHostVideoQuality
           ? { allow_host_video_quality: allowHostVideoQuality }
+          : {}),
+        ...(supportsHostEchoCancellation
+          ? { host_echo_cancellation: hostEchoCancellation }
           : {}),
         status,
       })
@@ -401,6 +412,30 @@ function NewEventPageContent() {
                       Permite al host cambiar entre la vista completa, una consola de
                       controles grandes pensada para el móvil en horizontal, y el vídeo a
                       pantalla completa. Útil para retransmitir desde un trípode.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {supportsHostEchoCancellation && (
+              <div className="mt-4">
+                <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hostEchoCancellation}
+                    onChange={(e) => setHostEchoCancellation(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-black"
+                  />
+                  <span>
+                    El host escuchará a los invitados por altavoz
+                    <span className="block text-xs text-gray-500">
+                      Márcalo solo si vas a dar la palabra a participantes y el host no
+                      usará auriculares. Activa la cancelación de eco del navegador, que
+                      degrada notablemente la calidad del sonido del host: en el móvil
+                      cambia la captura a la cadena de las llamadas de voz y deja de
+                      priorizar el micrófono externo conectado por USB. Sin marcar, el
+                      host emite con la mejor calidad disponible.
                     </span>
                   </span>
                 </label>

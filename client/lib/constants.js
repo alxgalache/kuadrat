@@ -110,6 +110,53 @@ export const MEETING_MAX_ATTENDEES = 16;
 export const AGORA_CAMERA_ENCODER_HOST = '720p_2';        // 1280 × 720, 30 fps
 export const AGORA_CAMERA_ENCODER_PARTICIPANT = '360p_4'; // 640 × 360, 30 fps
 
+// ---------------------------------------------------------------------------
+// Perfil de codificación del micrófono del host en salas Agora
+// ---------------------------------------------------------------------------
+// EL DEFECTO DOCUMENTADO NO EXISTE. La referencia dice «The SDK uses
+// "music_standard" by default», pero el constructor de la pista hace
+// `super(e, t.encoderConfig ? Uk(t.encoderConfig) : {}, ...)`: sin
+// `encoderConfig`, `_encoderConfig` es `{}` y el munging de SDP escribe cada
+// parámetro de Opus bajo su propio guardián (`r.bitrate && ...`,
+// `r.sampleRate && ...`), así que NO SE DECLARA NINGUNO y Chrome negocia Opus
+// a su bitrate por defecto: ~32 kbps, y adaptativo hacia abajo. Es el mismo
+// defecto que el 4:3 de la cámara, y `high_quality` son 128 kbps.
+//
+// Subirlo NO CUESTA DINERO: Agora factura el audio a 0,99 $/1000 min de forma
+// plana, sin tramos por bitrate, muestreo ni canales — al contrario que el
+// vídeo, donde 1080p cuesta 2,25× y obligó a fijar 720p por defecto.
+//
+// MONO A PROPÓSITO, y no es una limitación de Agora. Chrome en Android captura
+// mono: `audio_manager_android.cc` elige el layout de entrada según
+// `features::kAudioStereoInputStreamParameters`, que está
+// `FEATURE_DISABLED_BY_DEFAULT`. Además, dos micrófonos de solapa
+// panoramizados duro no son estéreo sino dos monos discretos —el peor caso
+// para la codificación Mid/Side de Opus—, y `standard_stereo` da ~32 kbps por
+// canal frente a los 128 de aquí. El receptor inalámbrico va en modo Mono.
+export const AGORA_MIC_ENCODER_HOST = 'high_quality';     // 48 kHz, mono, 128 kbps
+
+// Procesado 3A del navegador (cancelación de eco, supresión de ruido, control
+// de ganancia) para la pista del host.
+//
+// EN ANDROID `AEC: false` NO QUITA UN FILTRO: CAMBIA LA RUTA DE CAPTURA. Chrome
+// elige el input preset del sistema a partir de ese único bit
+// (`media/audio/android/aaudio_stream_wrapper.cc`):
+//
+//     AAudioStreamBuilder_setInputPreset(
+//       builder, params_.effects() & AudioParameters::ECHO_CANCELLER
+//                    ? AAUDIO_INPUT_PRESET_VOICE_COMMUNICATION
+//                    : fallback_preset);   // GENERIC
+//
+// `VOICE_COMMUNICATION` es la cadena que Android reserva para las llamadas
+// —limitada en banda, de ahí el sonido «a teléfono»— y su enrutado pasa por la
+// selección de dispositivo de comunicaciones. El comentario del propio
+// Chromium dice que `GENERIC` existe para «prioritizing USB or wired headsets
+// over the internal phone microphone»: con la cancelación de eco activada el
+// teléfono puede acabar emitiendo con su micrófono interno en vez de con el
+// receptor conectado. NO lo reactives sin leer el evento: solo tiene sentido
+// cuando el host reproduce por altavoz el audio de los invitados.
+export const AGORA_MIC_NO_PROCESSING = { AEC: false, ANS: false, AGC: false };
+
 // Calidad de emisión elegible por el host durante la retransmisión.
 //
 // LOS TRES NIVELES SON 16:9. La tabla de perfiles de Agora mezcla 4:3, 1:1 y

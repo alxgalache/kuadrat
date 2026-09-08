@@ -23,11 +23,30 @@ A partir de ahí, `desplegar` desde cualquier directorio.
 | 1 | Comprobaciones previas | Los tres `.env`, docker, sudo, y **variables nuevas en los `.example` que faltan en los `.env`** |
 | 2 | `git pull origin main` | Carga la clave de despliegue sólo si no hay ya un agente |
 | 3 | Configuración de nginx | Copia los ficheros del repo **sólo si han cambiado**, valida con `nginx -t` y restaura si falla |
-| 4 | `up -d --build` | Sin `down` previo: ver abajo |
+| 4 | `up -d --build` | Sin `down` previo: ver abajo. La imagen del cliente **pasa el linter antes de compilar**: ver abajo |
 | 5 | Esperar a que respondan | **Antes** de purgar: ver abajo |
 | 6 | Purgar la caché de páginas | Obligatorio en cada despliegue del cliente |
 | 7 | Recalentar | Recorre las URLs públicas |
 | 8 | Verificación | 200, HTTP/2, caché sirviendo, ficha cacheable, y **privado sin cachear** |
+
+### Por qué el linter está en el Dockerfile y no en el script
+
+`client/Dockerfile.prod` y `client/Dockerfile.staging` ejecutan `npm run lint`
+en la etapa `builder`, justo antes de `npm run build`. No es un paso de
+`deploy.sh` porque **la instancia no tiene Node ni `node_modules`**: esa etapa
+es el único momento del despliegue en que existen las dependencias de
+desarrollo.
+
+La consecuencia importante es de orden: si el linter falla, `up -d --build`
+se detiene en la construcción y **no llega a recrear ningún contenedor**, así
+que producción sigue sirviendo la imagen anterior. Misma propiedad que el resto
+del script: nada se aplica hasta que su paso termina bien.
+
+La configuración (`client/eslint.config.mjs`) tiene deliberadamente **una sola
+regla**: prohibir el import de `dompurify`, que no expone `sanitize()` en el
+servidor y tumbó `/coa` en producción con un 500. Un fallo del linter aquí es
+un defecto real, nunca una cuestión de estilo — que es lo que hace aceptable
+que bloquee un despliegue.
 
 ### Por qué ya no hay `docker compose down --rmi all --volumes`
 

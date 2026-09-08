@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",
@@ -21,7 +21,6 @@
     "@stripe/stripe-js": "^8.8.0",
     "agora-extension-virtual-background": "^2.1.0",
     "agora-rtc-sdk-ng": "^4.24.6",
-    "dompurify": "^3.3.1",
     "isomorphic-dompurify": "^3.19.0",
     "livekit-client": "^2.17.2",
     "next": "^16.2.12",

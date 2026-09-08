@@ -47,7 +47,7 @@ async function createEvent({
   title, description, event_datetime, duration_minutes, host_user_id,
   cover_image_url, access_type, price, currency, format, content_type,
   category, video_url, max_attendees, status, provider, interaction_mode,
-  allow_mobile_host_console, allow_host_video_quality,
+  allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
 }) {
   const id = generateUUID();
   const slug = generateSlug(title);
@@ -56,8 +56,8 @@ async function createEvent({
     sql: `INSERT INTO events (id, title, slug, description, event_datetime, duration_minutes,
           host_user_id, cover_image_url, access_type, price, currency, format, content_type,
           category, video_url, max_attendees, status, provider, interaction_mode,
-          allow_mobile_host_console, allow_host_video_quality)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id, title, slug, description || null, event_datetime, duration_minutes || 60,
       host_user_id, cover_image_url || null, access_type || 'free',
@@ -66,6 +66,7 @@ async function createEvent({
       provider || 'livekit', interaction_mode || 'broadcast',
       allow_mobile_host_console ? 1 : 0,
       allow_host_video_quality ? 1 : 0,
+      host_echo_cancellation ? 1 : 0,
     ],
   });
 
@@ -80,7 +81,7 @@ async function updateEvent(id, fields) {
     'title', 'description', 'event_datetime', 'duration_minutes', 'host_user_id',
     'cover_image_url', 'access_type', 'price', 'currency', 'format', 'content_type',
     'category', 'video_url', 'max_attendees', 'status', 'provider', 'interaction_mode',
-    'allow_mobile_host_console', 'allow_host_video_quality',
+    'allow_mobile_host_console', 'allow_host_video_quality', 'host_echo_cancellation',
   ];
 
   const setClauses = [];

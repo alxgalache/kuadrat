@@ -15,6 +15,7 @@ import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
 import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY, PAYMENT_ENABLED, ART_BUY_AVAILABLE, EDITION_COPY } from '@/lib/constants'
 import { trackViewContent } from '@/lib/metaPixel'
+import { formatArtDimensions } from '@/lib/dimensions'
 
 const ArtProductInquiryModal = dynamic(
   () => import('@/components/ArtProductInquiryModal'),
@@ -305,7 +306,7 @@ export default function ArtProductDetail({ params, initialProduct = null }) {
               </p>
               <p className="text-lg text-gray-700 mt-1">
                 <span className="font-medium">Medidas:</span>{' '}
-                {product.dimensions && `${product.dimensions.split('x').slice(0, -1).join(' x ')} cm`}
+                {formatArtDimensions(product.dimensions)}
               </p>
               {product.edition_size > 1 && (
                 <p className="text-lg text-gray-700 mt-1">

@@ -82,6 +82,7 @@ function EventDetailContent({ id }) {
     // también como viaja de vuelta en el PUT.
     allow_mobile_host_console: !!ev.allow_mobile_host_console,
     allow_host_video_quality: !!ev.allow_host_video_quality,
+    host_echo_cancellation: !!ev.host_echo_cancellation,
     status: ev.status || 'draft',
   })
 
@@ -114,6 +115,11 @@ function EventDetailContent({ id }) {
   // modalidades, la consola móvil solo a `broadcast`.
   const supportsHostVideoQuality = form.format === 'live' && form.provider === 'agora'
 
+  // Predicado propio, no una reutilización del de la consola móvil: hoy
+  // coinciden, pero son dos decisiones distintas.
+  const supportsHostEchoCancellation =
+    form.format === 'live' && form.provider === 'agora' && form.interaction_mode === 'broadcast'
+
   const handleSave = async () => {
     setError('')
 
@@ -143,6 +149,7 @@ function EventDetailContent({ id }) {
       // no debe viajar, igual que en el formulario de creación.
       if (!supportsMobileHostConsole) delete payload.allow_mobile_host_console
       if (!supportsHostVideoQuality) delete payload.allow_host_video_quality
+      if (!supportsHostEchoCancellation) delete payload.host_echo_cancellation
       await adminAPI.events.update(id, payload)
 
       // Upload new video file if selected
@@ -501,6 +508,27 @@ function EventDetailContent({ id }) {
                         Permite al host cambiar entre la vista completa, una consola de
                         controles grandes pensada para el móvil en horizontal, y el vídeo a
                         pantalla completa. Útil para retransmitir desde un trípode.
+                      </span>
+                    </span>
+                  </label>
+                )}
+                {supportsHostEchoCancellation && (
+                  <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.host_echo_cancellation}
+                      onChange={(e) => setForm({ ...form, host_echo_cancellation: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-black"
+                    />
+                    <span>
+                      El host escuchará a los invitados por altavoz
+                      <span className="block text-xs text-gray-500">
+                        Márcalo solo si vas a dar la palabra a participantes y el host no
+                        usará auriculares. Activa la cancelación de eco del navegador, que
+                        degrada notablemente la calidad del sonido del host: en el móvil
+                        cambia la captura a la cadena de las llamadas de voz y deja de
+                        priorizar el micrófono externo conectado por USB. Sin marcar, el
+                        host emite con la mejor calidad disponible.
                       </span>
                     </span>
                   </label>

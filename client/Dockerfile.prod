@@ -14,6 +14,20 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# El linter, ANTES de compilar. Va aquí y no en `deploy/deploy.sh` porque la
+# instancia de producción no tiene Node ni `node_modules`: esta etapa es el
+# único punto del despliegue donde existen las dependencias de desarrollo.
+#
+# Si falla, `docker compose up -d --build` se detiene en la construcción y NO
+# llega a recrear nada: los contenedores en marcha siguen sirviendo la imagen
+# anterior. Es la misma propiedad que promete el resto del script — nada se
+# aplica hasta que su paso termina bien.
+#
+# La configuración tiene UNA sola regla (prohibir `dompurify`, que no expone
+# `sanitize()` en el servidor y tumbó `/coa` en producción; ver
+# `client/eslint.config.mjs`). Un fallo aquí es un defecto real, nunca estilo.
+RUN npm run lint
+
 # Build arguments for environment variables needed at build time
 ARG NEXT_PUBLIC_SITE_URL
 ARG NEXT_PUBLIC_API_URL

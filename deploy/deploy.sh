@@ -224,6 +224,13 @@ fi
 
 # ═══ 5. Contenedores ═════════════════════════════════════════════════════════
 paso "Construyendo y levantando los contenedores"
+# La construcción del cliente EJECUTA EL LINTER antes de compilar
+# (`RUN npm run lint` en client/Dockerfile.prod). Vive ahí y no como un paso de
+# este script porque la instancia no tiene Node ni node_modules: la etapa
+# `builder` es el único punto del despliegue donde existen las dependencias de
+# desarrollo. Un import prohibido detiene la construcción aquí, y como los
+# contenedores sólo se recrean cuando la imagen sale bien, producción se queda
+# sirviendo la anterior.
 # Deliberadamente SIN `down --rmi all`: borrar las imágenes obliga a
 # reconstruir desde cero en cada despliegue y —lo importante— deja el sitio
 # caído durante toda la compilación, no sólo durante el reinicio. `up -d

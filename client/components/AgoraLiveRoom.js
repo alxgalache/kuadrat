@@ -14,7 +14,10 @@ import useHostMediaControls, { cameraErrorMessage } from '@/hooks/useHostMediaCo
 import useHostViewMode from '@/hooks/useHostViewMode'
 import useHostVideoQuality from '@/hooks/useHostVideoQuality'
 import HostConsole, { HostViewModeSwitcher, HostPreviewMode } from '@/components/events/HostConsole'
-import { HOST_VIEW_MODES, AGORA_CAMERA_ENCODER_PARTICIPANT, AGORA_VIDEO_QUALITIES } from '@/lib/constants'
+import {
+  HOST_VIEW_MODES, AGORA_CAMERA_ENCODER_PARTICIPANT, AGORA_VIDEO_QUALITIES,
+  AGORA_MIC_ENCODER_HOST, AGORA_MIC_NO_PROCESSING,
+} from '@/lib/constants'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
 
 // Fastboard is heavy — load it only when the host opens the whiteboard
@@ -262,6 +265,7 @@ export default function AgoraLiveRoom({
   whiteboardAvailable = false,
   allowMobileHostConsole = false,
   allowHostVideoQuality = false,
+  hostEchoCancellation = false,
   eventEnded = false,
 }) {
   const isMeeting = interactionMode === 'meeting'
@@ -293,6 +297,34 @@ export default function AgoraLiveRoom({
     ? videoQuality.encoderConfig
     : AGORA_CAMERA_ENCODER_PARTICIPANT
 
+  // Misma asimetría por rol que el vídeo, y por el mismo motivo. Sin
+  // `encoderConfig` el SDK deja Opus sin declarar (~32 kbps) pese a documentar
+  // `music_standard`; el perfil se aplica en las DOS ramas porque el bitrate y
+  // el procesado son ejes independientes.
+  //
+  // El 3A se desactiva salvo que el evento pida lo contrario. Con el flag
+  // activo las tres claves SE OMITEN en lugar de pasarse a `true`: no es lo
+  // mismo, porque pasar `ANS: true` explícitamente añade además
+  // `googHighpassFilter` en Chrome, que el camino por defecto no activa.
+  // Omitirlas reproduce el comportamiento anterior byte a byte.
+  //
+  // Los asistentes se quedan en `undefined`: es SU cancelación de eco la que
+  // impide que se oigan a sí mismos con retardo al escuchar al host por
+  // altavoz, y 128 kbps sobre el micrófono integrado de un portátil es ancho
+  // de banda tirado.
+  const micTrackConfig = useMemo(() => {
+    if (!isHost) return undefined
+    // El perfil sí aplica a las dos modalidades. El 3A NO: en `meeting` hay
+    // hasta 17 emisores de audio y el host oye a todos, así que quitarle la
+    // cancelación de eco provocaría acoplamiento para toda la sala. Por eso la
+    // casilla del evento tampoco se ofrece ahí.
+    if (isMeeting) return { encoderConfig: AGORA_MIC_ENCODER_HOST }
+    return {
+      encoderConfig: AGORA_MIC_ENCODER_HOST,
+      ...(hostEchoCancellation ? {} : AGORA_MIC_NO_PROCESSING),
+    }
+  }, [isHost, isMeeting, hostEchoCancellation])
+
   const room = useAgoraRoom({
     enabled: !!(appId && channel && rtcToken),
     appId,
@@ -303,6 +335,7 @@ export default function AgoraLiveRoom({
     renewToken,
     onKicked,
     cameraEncoderConfig,
+    micTrackConfig,
   })
 
   // La pantalla del host no debe apagarse durante la retransmisión. No depende
