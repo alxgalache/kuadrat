@@ -141,14 +141,14 @@
 
 ## 10. Verificación manual en dispositivo (obligatoria antes de cerrar)
 
-- [ ] 10.1 Entrevista con tres navegadores (host, admin, asistente): encender y apagar cada cámara en todas las combinaciones y confirmar en los tres las disposiciones 1 cámara / dividida / recuadro, con el conmutador del admin sincronizado y un asistente que entra tarde en `'pip'`
-- [ ] 10.2 El host comparte pantalla con y sin admin en cámara: pantalla en la escena, esquina con las cámaras, conmutador bloqueado; al parar desde el aviso del navegador vuelve la disposición anterior sin corte de la cámara
-- [ ] 10.3 Pizarra con las dos cámaras: esquina sobre la pizarra y zoom y páginas de fastboard pulsables por el host; teatro sobre la escena en los tres modos
-- [ ] 10.4 En `chrome://webrtc-internals` del asistente: resolución recibida de la pantalla ≤ 1792 × 1008 y de las cámaras de la esquina 480 × 270; con la cámara al 100 %, 1280 × 720. El host no recibe el uid 2
-- [ ] 10.5 El host hace clic en la casilla del admin (no pasa nada) y el admin sigue publicando; el admin no tiene «Levantar mano» ni menú de moderación
-- [ ] 10.6 Consola móvil del host (Pixel) con el admin en cámara: la emisión de ambos continúa y al volver a la vista completa la escena reaparece sin recargar
-- [ ] 10.7 Ajustar a ojo las fracciones de los recuadros en escritorio, en teatro y en móvil vertical, y fijarlas en `constants.js`
-- [ ] 10.8 Regresión: evento `meeting` (compartir pantalla, rejilla, admin como asistente) y evento LiveKit sin cambios
+- [x] 10.1 Entrevista con tres navegadores (host, admin, asistente): encender y apagar cada cámara en todas las combinaciones y confirmar en los tres las disposiciones 1 cámara / dividida / recuadro, con el conmutador del admin sincronizado y un asistente que entra tarde en `'pip'`
+- [x] 10.2 El host comparte pantalla con y sin admin en cámara: pantalla en la escena, esquina con las cámaras, conmutador bloqueado; al parar desde el aviso del navegador vuelve la disposición anterior sin corte de la cámara
+- [x] 10.3 Pizarra con las dos cámaras: esquina sobre la pizarra y zoom y páginas de fastboard pulsables por el host; teatro sobre la escena en los tres modos
+- [x] 10.4 En `chrome://webrtc-internals` del asistente: resolución recibida de la pantalla ≤ 1792 × 1008 y de las cámaras de la esquina 480 × 270; con la cámara al 100 %, 1280 × 720. El host no recibe el uid 2
+- [x] 10.5 El host hace clic en la casilla del admin (no pasa nada) y el admin sigue publicando; el admin no tiene «Levantar mano» ni menú de moderación
+- [x] 10.6 Consola móvil del host (Pixel) con el admin en cámara: la emisión de ambos continúa y al volver a la vista completa la escena reaparece sin recargar
+- [x] 10.7 Ajustar a ojo las fracciones de los recuadros en escritorio, en teatro y en móvil vertical, y fijarlas en `constants.js`
+- [x] 10.8 Regresión: evento `meeting` (compartir pantalla, rejilla, admin como asistente) y evento LiveKit sin cambios
 
 ## 11. Documentación
 
@@ -162,3 +162,10 @@
   - la disposición vive en el socket
   - el procedimiento de audio para entrevistas remotas y presenciales
 - [x] 11.2 Actualizar en `CLAUDE.md` la línea de Streaming del resumen y la sección «Admin access to Live events», que hoy afirma que el admin «is a participant, not a host» y recibe `subscriber` en broadcast
+
+## 12. Ruido de Sentry detectado en la verificación (140D-CLIENT-1Y)
+
+- [x] 12.1 Localizar en el bundle instalado de `agora-rtc-sdk-ng` el origen del `AbortError: The operation was aborted.` recibido desde un iPad al cambiar de cámara. Resultado: `play()` sin capturar de `autoResumeAfterInterruption` (reproductor de vídeo del SDK, fin de interrupción de audio en iOS), abortado por la sustitución de pista de `setDevice`. Descartado `checkVideoTrackIsActive`, que el SDK no invoca internamente
+- [x] 12.2 Crear `client/lib/sentryNoise.js` con el predicado `isAgoraInterruptedPlayback`. Condiciones: `AbortError` con el mensaje exacto de WebKit, mecanismo `auto.browser.global_handlers.onunhandledrejection` y página `/live/…`. Conectarlo en `beforeSend` de `client/instrumentation-client.js`
+- [x] 12.3 Verificar el predicado con node: descarta el caso real y conserva el mismo aborto fuera de `/live/`, la redacción de Chrome, un aborto capturado, otro nombre de DOMException, un `Error` con el mismo texto y eventos incompletos
+- [x] 12.4 Documentar el filtro en la sección de Sentry de `CLAUDE.md`, junto al de navegadores in-app

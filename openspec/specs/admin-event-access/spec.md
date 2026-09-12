@@ -1,4 +1,10 @@
-## ADDED Requirements
+# admin-event-access
+
+## Purpose
+
+The gallery admin can join any Live event without registering, verifying their email or paying, through a real `event_attendees` row marked `is_staff`. Covers the admin access endpoint, the payment-gate exemption, the streaming role the admin receives (an ordinary participant, or the co-presenter in Agora `broadcast` events — see `agora-broadcast-cohost`), the exclusion of staff from counts, host credits, payouts and invoices, and the admin shortcut on the event page.
+
+## Requirements
 
 ### Requirement: Admin event access endpoint
 
@@ -66,26 +72,38 @@ The endpoint SHALL NOT set `amount_paid`, and SHALL NOT grant host privileges.
 
 ### Requirement: Admin joins as a participant, not as host
 
-The admin SHALL receive the same streaming role an ordinary attendee would: `subscriber` in Agora `broadcast` mode, `publisher` in Agora `meeting` mode, and a viewer token under LiveKit. The admin SHALL NOT occupy `agoraService.HOST_UID` and SHALL NOT receive host moderation controls.
+The admin SHALL receive the following streaming role:
 
-`getHostToken` SHALL keep requiring `req.user.id === event.host_user_id`; being an admin SHALL NOT satisfy it.
+- In Agora `broadcast` mode, while their user still holds `role = 'admin'`: the `publisher` role **as co-presenter**, with `coHost: true` in the token response (capability `agora-broadcast-cohost`).
+- In Agora `meeting` mode: the `publisher` role, like every other attendee there.
+- Under LiveKit: a viewer token.
+
+A staff attendee whose user no longer holds `role = 'admin'` SHALL fall back to the role an ordinary attendee would get.
+
+In every mode the admin SHALL NOT occupy `agoraService.HOST_UID` or `agoraService.HOST_SCREEN_UID`. The admin SHALL NOT receive host controls: ending the stream, promoting or demoting participants, screen sharing, whiteboard, video quality or chat moderation. As co-presenter they only get microphone, camera, speaker selection and the camera layout switch.
+
+`getHostToken` and `POST /api/events/:id/screen-token` SHALL keep requiring `req.user.id === event.host_user_id`; being an admin SHALL NOT satisfy either.
 
 #### Scenario: Admin in a broadcast Agora event
 - **WHEN** an admin joins an Agora event whose `interaction_mode` is `broadcast`
-- **THEN** the issued RTC token SHALL carry the `subscriber` role
+- **THEN** the issued RTC token SHALL carry the `publisher` role and the response SHALL include `coHost: true`
 - **AND** the assigned uid SHALL come from `ensureAttendeeUid`, not `HOST_UID`
+
+#### Scenario: Former admin with a stored staff session
+- **WHEN** a staff attendee whose user is no longer an admin requests a token for a `broadcast` Agora event
+- **THEN** the issued RTC token SHALL carry the `subscriber` role and the response SHALL include `coHost: false`
 
 #### Scenario: Admin in a meeting Agora event
 - **WHEN** an admin joins an Agora event whose `interaction_mode` is `meeting`
 - **THEN** the issued RTC token SHALL carry the `publisher` role, like every other attendee in that mode
 
 #### Scenario: Admin does not get host controls
-- **WHEN** an admin is inside an event they do not host
-- **THEN** the client SHALL render the attendee interface
-- **AND** SHALL NOT render host controls such as ending the stream or promoting participants
+- **WHEN** an admin is inside a `broadcast` event they do not host
+- **THEN** the client SHALL render only the co-presenter controls (microphone, camera, speakers, layout)
+- **AND** SHALL NOT render ending the stream, promoting participants, screen sharing, whiteboard or video quality
 
 #### Scenario: Host token stays restricted
-- **WHEN** an admin who is not the host calls `POST /api/events/:id/host-token`
+- **WHEN** an admin who is not the host calls `POST /api/events/:id/host-token` or `POST /api/events/:id/screen-token`
 - **THEN** the API SHALL return 403
 
 #### Scenario: Admin who is also the host is unaffected

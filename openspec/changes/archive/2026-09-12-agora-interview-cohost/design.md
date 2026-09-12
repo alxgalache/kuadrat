@@ -169,6 +169,11 @@ La escena toma el primer `coHost` de la presencia que tenga vídeo. El orden de 
 - **[*Kicking rule* previa sobre el uid del admin]** Solo existiría si el host lo hubiera degradado antes de este cambio, cosa imposible: nunca fue `speaker`, y un clic sobre un no-speaker llama a promover. → Sin mitigación en código.
 - **[Reinicio del API a mitad de entrevista]** La disposición vuelve a `'split'`. → Aceptable: un clic del admin la restablece.
 - **[Recorte en la vista dividida]** Se pierde ~50 % del ancho de cada imagen. Si el host enseña obra a su lado, puede quedar fuera. → Elegido así. El admin puede pasar a `'pip'`, que muestra el encuadre completo del host.
+- **[Ruido de Sentry del SDK en iOS, visto en la verificación: 140D-CLIENT-1Y]** Al cambiar de cámara en un iPad (Chrome, motor WebKit) llegó un `AbortError: The operation was aborted.` sin pila, como rechazo sin capturar.
+  - **Origen:** el reproductor de vídeo de `agora-rtc-sdk-ng` escucha el fin de una interrupción de audio de iOS (`SM.on(IOS_INTERRUPTION_END, autoResumeAfterInterruption)`) y reanuda el `<video>` con un `play()` sin `.catch`. La sustitución de pista que hace `setDevice` reasigna `srcObject` inmediatamente después, lo que aborta ese `play()`.
+  - **Por qué no es nuestro:** el siguiente `play()` del propio SDK sí se captura y deja el vídeo funcionando. No es un defecto de este cambio, porque `setDevice` ya existía para el host y en `meeting`.
+  - **Descartado:** `checkVideoTrackIsActive`, que tiene otro `play()` sin capturar, es una API pública que el SDK no invoca internamente.
+  - → **Mitigación:** filtro `beforeSend` en `client/instrumentation-client.js`, con el predicado en `client/lib/sentryNoise.js`. Exige a la vez un `AbortError` con el mensaje exacto de WebKit, un rechazo sin capturar y una página `/live/…`. No se usa `ignoreErrors`, porque el mismo mensaje de WebKit es el de cualquier `AbortSignal` abortado sin motivo.
 
 ## Migration Plan
 

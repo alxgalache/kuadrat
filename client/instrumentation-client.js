@@ -4,6 +4,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { SENTRY_ENABLED, SENTRY_TRACES_SAMPLE_RATE } from "./lib/sentryEnv";
+import { isAgoraInterruptedPlayback } from "./lib/sentryNoise";
 
 Sentry.init({
   dsn: "https://053a88f0de66024cc2190230b04d7686@o4510473239330816.ingest.de.sentry.io/4510562852798544",
@@ -72,6 +73,20 @@ Sentry.init({
     // los eventos de la aplicación.
     /^app:\/\/(?!\/)/,
   ],
+
+  // --- `play()` abortado dentro del SDK de Agora al cambiar de cámara en iOS ---
+  //
+  // Rechazo sin capturar del propio reproductor de vídeo de Agora: tras una
+  // interrupción de audio de iOS reanuda el <video> con un `play()` que no
+  // espera, y la sustitución de pista de `setDevice` lo aborta al instante.
+  // Sin pila (un DOMException no la tiene), sin efecto visible y sin nada
+  // nuestro en el camino. La explicación completa y las tres condiciones que lo
+  // acotan están en lib/sentryNoise.js: no basta con `ignoreErrors`, porque el
+  // mismo mensaje de WebKit también es el de cualquier AbortSignal abortado.
+  beforeSend(event, hint) {
+    if (isAgoraInterruptedPlayback(event, hint)) return null;
+    return event;
+  },
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
