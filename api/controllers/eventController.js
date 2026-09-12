@@ -19,23 +19,35 @@ function getClientIp(req) {
 
 const EVENTS_VIDEOS_DIR = path.join(__dirname, '..', 'uploads', 'events');
 
+// Payment gate with the staff exemption. Lives in eventService because the
+// authenticated Socket.IO room applies the same gate (see its JSDoc there).
+const { requiresPayment } = eventService;
+
 /**
- * Whether this attendee still owes money for this event.
+ * RTC role of an attendee in an Agora event. One helper for the two places
+ * that issue attendee tokens (first token and renewal), which must agree.
  *
- * Staff attendees (the gallery admin sitting in an event they did not host)
- * are exempt: charging the owner of the platform to watch a stream organised
- * from their own panel makes no sense. Every OTHER check — event active, room
- * available, email ban, IP ban — still applies to them, so this predicate is
- * deliberately narrow.
- *
- * One helper rather than the same condition inlined at five call sites: the
- * five must agree, and a divergence would show up as the admin getting a
- * whiteboard token but not being able to upload to it.
+ * meeting: everyone publishes (enters muted/cam-off client-side). broadcast:
+ * the persisted promotion state, or being the co-presenter (the admin
+ * interviewing the host, see eventService.isBroadcastCohost). Chat bans do
+ * NOT affect the RTC token — chat runs on our Socket.IO room.
  */
-function requiresPayment(event, attendee) {
-  if (event.access_type !== 'paid') return false;
-  if (Number(attendee.is_staff) === 1) return false;
-  return !['paid', 'joined'].includes(attendee.status);
+function agoraAttendeeRole(event, attendee, coHost) {
+  if (event.interaction_mode === 'meeting') return 'publisher';
+  if (attendee.speaker_granted === 1 || coHost) return 'publisher';
+  return 'subscriber';
+}
+
+/**
+ * Moderation never targets gallery staff. Demoting creates a 24 h Agora
+ * kicking rule that only a re-promotion lifts; on the co-presenter a single
+ * accidental click on their tile would leave the interviewer unable to publish
+ * for the rest of the day. Checked before any write.
+ */
+function assertNotStaffTarget(attendee) {
+  if (Number(attendee.is_staff) === 1) {
+    throw new ApiError(400, 'No se puede moderar a un miembro del equipo de la galería', 'Solicitud inválida');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -348,12 +360,8 @@ const getViewerToken = async (req, res, next) => {
       }
 
       const uid = await agoraService.ensureAttendeeUid(id, attendee.id);
-      // meeting: everyone publishes (enters muted/cam-off client-side);
-      // broadcast: role follows the persisted promotion state. Chat bans do
-      // NOT affect the RTC token — chat runs on our Socket.IO room.
-      const role = event.interaction_mode === 'meeting' || attendee.speaker_granted === 1
-        ? 'publisher'
-        : 'subscriber';
+      const coHost = await eventService.isBroadcastCohost(event, attendee);
+      const role = agoraAttendeeRole(event, attendee, coHost);
       const rtcToken = agoraService.generateRtcToken({
         channel: event.agora_channel_name,
         uid,
@@ -371,6 +379,7 @@ const getViewerToken = async (req, res, next) => {
         uid,
         rtcToken,
         interactionMode: event.interaction_mode,
+        coHost,
         whiteboardAvailable: whiteboardService.isConfigured(),
       });
     }
@@ -468,10 +477,56 @@ const getHostToken = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
+// POST /api/events/:id/screen-token
+// Agora broadcast events: publisher token for the host's SECOND client, which
+// joins under the reserved HOST_SCREEN_UID and publishes only the shared
+// screen. A single AgoraRTCClient cannot publish two video tracks, so this is
+// what keeps the host's camera on air while they share their screen. Called
+// when sharing starts and again on that client's token-privilege-will-expire.
+// Meeting events keep swapping camera and screen on one client.
+// ---------------------------------------------------------------------------
+const getScreenToken = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
+    if (event.provider !== 'agora' || event.interaction_mode !== 'broadcast') {
+      throw new ApiError(400, 'Este evento no admite compartir pantalla con cámara', 'Solicitud inválida');
+    }
+
+    if (event.status !== 'active' || !event.agora_channel_name) {
+      throw new ApiError(400, 'El evento no está activo', 'Evento no activo');
+    }
+
+    if (!req.user || req.user.id !== event.host_user_id) {
+      throw new ApiError(403, 'Solo el host puede compartir pantalla', 'Acceso denegado');
+    }
+
+    const rtcToken = agoraService.generateRtcToken({
+      channel: event.agora_channel_name,
+      uid: agoraService.HOST_SCREEN_UID,
+      role: 'publisher',
+    });
+
+    res.status(200).json({
+      success: true,
+      uid: agoraService.HOST_SCREEN_UID,
+      rtcToken,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /api/events/:id/renew-token
 // Agora events: re-issue an RTC token for the caller's CURRENT role. Called by
 // the client on token-privilege-will-expire and after promote/demote. Accepts
-// attendee credentials in the body or a host/admin JWT in the header.
+// attendee credentials in the body or the event host's JWT in the header.
 // ---------------------------------------------------------------------------
 const renewToken = async (req, res, next) => {
   try {
@@ -509,9 +564,8 @@ const renewToken = async (req, res, next) => {
       }
 
       const uid = await agoraService.ensureAttendeeUid(id, attendee.id);
-      const role = event.interaction_mode === 'meeting' || attendee.speaker_granted === 1
-        ? 'publisher'
-        : 'subscriber';
+      const coHost = await eventService.isBroadcastCohost(event, attendee);
+      const role = agoraAttendeeRole(event, attendee, coHost);
       const rtcToken = agoraService.generateRtcToken({
         channel: event.agora_channel_name,
         uid,
@@ -527,10 +581,14 @@ const renewToken = async (req, res, next) => {
         rtcToken,
         role,
         interactionMode: event.interaction_mode,
+        coHost,
       });
     }
 
-    // Host/admin path: JWT in the Authorization header
+    // Host path: JWT in the Authorization header. Only the event's host — an
+    // admin who is not the host used to get a HOST_UID token here; with a
+    // co-presenter in the room that would be a second identity publishing as
+    // the host. The admin renews through the attendee path above.
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       let decoded;
@@ -539,7 +597,7 @@ const renewToken = async (req, res, next) => {
       } catch {
         throw new ApiError(403, 'Credenciales inválidas', 'Acceso denegado');
       }
-      if (decoded.id !== event.host_user_id && decoded.role !== 'admin') {
+      if (decoded.id !== event.host_user_id) {
         throw new ApiError(403, 'Solo el host puede renovar este token', 'Acceso denegado');
       }
 
@@ -846,6 +904,7 @@ async function resolveAgoraAttendee(event, identity) {
   if (!attendee || attendee.event_id !== event.id) {
     throw new ApiError(404, 'Participante no encontrado', 'Error');
   }
+  assertNotStaffTarget(attendee);
   return attendee;
 }
 
@@ -1157,6 +1216,7 @@ const banFromChat = async (req, res, next) => {
     if (!attendee || attendee.event_id !== id) {
       throw new ApiError(404, 'Participante no encontrado', 'Error');
     }
+    assertNotStaffTarget(attendee);
 
     // Already chat-banned?
     const alreadyBanned = await eventService.isAttendeeChatBanned(attendeeId);
@@ -1249,6 +1309,7 @@ const reportSpam = async (req, res, next) => {
     if (!spammer || spammer.event_id !== id) {
       throw new ApiError(404, 'Participante no encontrado', 'Error');
     }
+    assertNotStaffTarget(spammer);
 
     // Check if already chat-banned
     const alreadyChatBanned = await eventService.isAttendeeChatBanned(spammerAttendeeId);
@@ -1400,6 +1461,7 @@ module.exports = {
   confirmPayment,
   getViewerToken,
   getHostToken,
+  getScreenToken,
   renewToken,
   getWhiteboardToken,
   uploadWhiteboardImage,

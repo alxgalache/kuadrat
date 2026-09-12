@@ -436,8 +436,9 @@ function NewEventPageContent() {
                   <span>
                     El host escuchará a los invitados por altavoz
                     <span className="block text-xs text-gray-500">
-                      Márcalo solo si vas a dar la palabra a participantes y el host no
-                      usará auriculares. Activa la cancelación de eco del navegador, que
+                      Márcalo solo si vas a dar la palabra a participantes, o a entrevistar
+                      al host con el administrador en cámara, y el host no usará
+                      auriculares. Activa la cancelación de eco del navegador, que
                       degrada notablemente la calidad del sonido del host: en el móvil
                       cambia la captura a la cadena de las llamadas de voz y deja de
                       priorizar el micrófono externo conectado por USB. Sin marcar, el

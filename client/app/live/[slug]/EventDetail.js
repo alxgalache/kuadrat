@@ -498,6 +498,7 @@ export default function EventDetail({
                 allowMobileHostConsole={!!event.allow_mobile_host_console}
                 allowHostVideoQuality={!!event.allow_host_video_quality}
                 hostEchoCancellation={!!event.host_echo_cancellation}
+                isCoHost={!!agoraCreds.coHost}
                 eventEnded={eventEnded}
               />
             ) : (

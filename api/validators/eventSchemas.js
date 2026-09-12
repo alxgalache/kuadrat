@@ -198,8 +198,8 @@ const updateEventSchema = z.object({
  * POST /api/events/:id/renew-token
  *
  * Agora events: re-issues an RTC token for the caller's current role.
- * Credentials: attendeeId+accessToken in the body, OR a host/admin JWT in the
- * Authorization header (both optional here; the controller validates the
+ * Credentials: attendeeId+accessToken in the body, OR the event host's JWT in
+ * the Authorization header (both optional here; the controller validates the
  * combination).
  */
 const renewTokenSchema = z.object({
@@ -220,6 +220,20 @@ const whiteboardTokenSchema = z.object({
     attendeeId: z.union([z.number(), z.string()]).optional(),
     accessToken: z.string().optional(),
   }).strip(),
+});
+
+/**
+ * POST /api/events/:id/screen-token
+ *
+ * Agora broadcast events: RTC token for the host's second client, which
+ * publishes only the shared screen under the reserved uid 2. Host JWT only
+ * (checked by `authenticate` + the controller); no body.
+ */
+const screenTokenSchema = z.object({
+  params: z.object({
+    id: z.string().min(1),
+  }),
+  body: z.object({}).strip().optional(),
 });
 
 /**
@@ -306,6 +320,7 @@ module.exports = {
   confirmPaymentSchema,
   getViewerTokenSchema,
   renewTokenSchema,
+  screenTokenSchema,
   whiteboardTokenSchema,
   whiteboardImageSchema,
   createEventSchema,

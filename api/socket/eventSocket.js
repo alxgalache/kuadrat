@@ -23,6 +23,11 @@ const SPAM_WINDOW_MS = 10000;
 
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
 
+// Camera layout of a broadcast stage, chosen by the co-presenter. Keep in sync
+// with STAGE_LAYOUTS in client/lib/constants.js.
+const STAGE_LAYOUTS = new Set(['split', 'pip']);
+const DEFAULT_STAGE_LAYOUT = 'split';
+
 module.exports = function setupEventSocket(io) {
   // eventId → Map<identity, { identity, name, isHost, agoraUid, handRaised,
   //                           speaker, chatBanned, attendeeId, email,
@@ -33,6 +38,13 @@ module.exports = function setupEventSocket(io) {
   // phase). Set by the host, read by the whiteboard-token endpoint to decide
   // attendee roles and rebroadcast to late joiners via the join ACK.
   const eventWhiteboards = new Map();
+
+  // eventId → 'split' | 'pip' — camera layout of a broadcast stage, set by the
+  // co-presenter and rebroadcast to late joiners via the join ACK. Same
+  // lifecycle as eventWhiteboards: in memory, dropped when the event ends; a
+  // process restart falls back to the default and clients converge on their
+  // next reconnection.
+  const eventStageLayouts = new Map();
 
   const roomName = (eventId) => `event-room-${eventId}`;
 
@@ -51,6 +63,7 @@ module.exports = function setupEventSocket(io) {
       speaker: entry.speaker,
       chatBanned: entry.chatBanned,
       screenSharing: !!entry.screenSharing,
+      coHost: !!entry.coHost,
     };
   }
 
@@ -109,7 +122,11 @@ module.exports = function setupEventSocket(io) {
     }
     if (event.status !== 'active') return { ok: false, reason: 'El evento no está activo' };
 
-    // Host / admin path: verified JWT
+    // Host path: verified JWT of the event's host. An admin who is not the
+    // host used to get an isHost entry on uid 1 here; the broadcast stage finds
+    // the host through presence, so a second host entry would corrupt it (and
+    // unlock the host-only signals below). The admin joins through the
+    // attendee path, as co-presenter where applicable.
     if (hostToken) {
       let decoded;
       try {
@@ -117,8 +134,7 @@ module.exports = function setupEventSocket(io) {
       } catch {
         return { ok: false, reason: 'Credenciales inválidas' };
       }
-      const isEventHost = decoded.id === event.host_user_id;
-      if (!isEventHost && decoded.role !== 'admin') {
+      if (decoded.id !== event.host_user_id) {
         return { ok: false, reason: 'Credenciales inválidas' };
       }
       return {
@@ -126,8 +142,9 @@ module.exports = function setupEventSocket(io) {
         event,
         entry: {
           identity: `host-${decoded.id}`,
-          name: isEventHost ? (event.host_name || 'Host') : 'Admin',
+          name: event.host_name || 'Host',
           isHost: true,
+          coHost: false,
           agoraUid: 1,
           handRaised: false,
           speaker: true,
@@ -146,7 +163,8 @@ module.exports = function setupEventSocket(io) {
     if (!attendee || attendee.id !== attendeeId) {
       return { ok: false, reason: 'Credenciales inválidas' };
     }
-    if (event.access_type === 'paid' && !['paid', 'joined'].includes(attendee.status)) {
+    // Same gate as the token endpoints, staff exemption included
+    if (eventService.requiresPayment(event, attendee)) {
       return { ok: false, reason: 'Se requiere pago para acceder' };
     }
     const clientIp = getClientIp(socket);
@@ -157,6 +175,11 @@ module.exports = function setupEventSocket(io) {
       return { ok: false, reason: 'Has sido expulsado de este evento' };
     }
 
+    // The co-presenter publishes from the moment they join, so presence
+    // reports them as a speaker without persisting speaker_granted — that
+    // column is the host's promotion state, not the admin's.
+    const coHost = await eventService.isBroadcastCohost(event, attendee);
+
     return {
       ok: true,
       event,
@@ -164,9 +187,10 @@ module.exports = function setupEventSocket(io) {
         identity: `viewer-${attendee.id}`,
         name: `${attendee.first_name} ${attendee.last_name}`,
         isHost: false,
+        coHost,
         agoraUid: attendee.agora_uid != null ? Number(attendee.agora_uid) : null,
         handRaised: false,
-        speaker: attendee.speaker_granted === 1,
+        speaker: coHost || attendee.speaker_granted === 1,
         chatBanned: attendee.chat_banned === 1,
         attendeeId: attendee.id,
         email: attendee.email,
@@ -243,6 +267,7 @@ module.exports = function setupEventSocket(io) {
           existing.name = result.entry.name;
           existing.agoraUid = result.entry.agoraUid ?? existing.agoraUid;
           existing.speaker = result.entry.speaker;
+          existing.coHost = result.entry.coHost;
           existing.chatBanned = result.entry.chatBanned;
           entry = existing;
         } else {
@@ -265,6 +290,7 @@ module.exports = function setupEventSocket(io) {
             chatBanned: entry.chatBanned,
             presence: presenceList(eventId),
             whiteboard: eventWhiteboards.get(eventId) || { active: false, everyoneWrites: false },
+            stageLayout: eventStageLayouts.get(eventId) || DEFAULT_STAGE_LAYOUT,
           });
         }
       } catch (err) {
@@ -291,7 +317,9 @@ module.exports = function setupEventSocket(io) {
 
       if (entry.chatBanned) return; // silently discarded
 
-      if (!entry.isHost) {
+      // The co-presenter is exempt like the host: the auto-ban also bans the
+      // email and IP, which for an in-person interview is the studio's.
+      if (!entry.isHost && !entry.coHost) {
         const banned = await checkSpam(eventRoomId, entry);
         if (banned) return;
       }
@@ -309,7 +337,8 @@ module.exports = function setupEventSocket(io) {
       const { eventRoomId, identity } = socket.data || {};
       if (!eventRoomId || !identity) return;
       const entry = eventRooms.get(eventRoomId)?.get(identity);
-      if (!entry || entry.isHost) return;
+      // The co-presenter already has the floor: no hand to raise
+      if (!entry || entry.isHost || entry.coHost) return;
       entry.handRaised = !!raised;
       io.to(roomName(eventRoomId)).emit('presence_updated', publicPresence(entry));
     });
@@ -347,6 +376,18 @@ module.exports = function setupEventSocket(io) {
       io.to(roomName(eventRoomId)).emit('whiteboard_toggle', state);
     });
 
+    // Broadcast stage camera layout: only the co-presenter directs it, and
+    // every client (host included) follows. Anything else is ignored silently.
+    socket.on('stage_layout', ({ mode } = {}) => {
+      const { eventRoomId, identity } = socket.data || {};
+      if (!eventRoomId || !identity) return;
+      if (!STAGE_LAYOUTS.has(mode)) return;
+      const sender = eventRooms.get(eventRoomId)?.get(identity);
+      if (!sender || !sender.coHost) return;
+      eventStageLayouts.set(eventRoomId, mode);
+      io.to(roomName(eventRoomId)).emit('stage_layout', { mode });
+    });
+
     socket.on('disconnect', () => {
       leaveEventRoom(socket);
     });
@@ -371,6 +412,7 @@ module.exports = function setupEventSocket(io) {
       // Agora rooms: drop the in-memory presence, clients leave() on their own
       eventRooms.delete(eventId);
       eventWhiteboards.delete(eventId);
+      eventStageLayouts.delete(eventId);
     },
 
     // ── Agora event-room moderation helpers (called from controllers) ──

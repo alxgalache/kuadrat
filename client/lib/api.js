@@ -1744,6 +1744,15 @@ export const eventsAPI = {
     });
   },
 
+  // Agora broadcast events, host only: token for the second RTC client that
+  // publishes the shared screen under the reserved uid 2, so the camera stays
+  // on air. Requested when sharing starts and again when that token expires.
+  getScreenToken: async (eventId) => {
+    return apiRequest(`/events/${eventId}/screen-token`, {
+      method: 'POST',
+    });
+  },
+
   // Admin-only: join any event as an ordinary participant, skipping
   // registration, email verification and payment. Returns the same
   // { attendeeId, accessToken } pair EventAccessModal produces, so the caller

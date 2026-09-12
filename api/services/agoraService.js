@@ -4,9 +4,15 @@ const config = require('../config/env');
 const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
 
-// Reserved RTC uid for the event host. Attendee uids are assigned sequentially
-// starting at 101 (1-100 reserved for system use). See design D3.
+// Reserved RTC uids. 1-100 are never assigned to attendees, whose uids start
+// at 101 (see design D3 of add-agora-streaming-provider). The host owns two:
+//  - HOST_UID (1): the host's main client — camera and microphone.
+//  - HOST_SCREEN_UID (2): a second client that publishes only the shared
+//    screen in `broadcast` events. A single AgoraRTCClient cannot publish two
+//    video tracks (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS` in 4.24.6), so
+//    showing the camera over the screen needs a second uid in the channel.
 const HOST_UID = 1;
+const HOST_SCREEN_UID = 2;
 const FIRST_ATTENDEE_UID = 101;
 
 // Default RTC token TTL: 4 hours (parity with LiveKit tokens).
@@ -296,6 +302,7 @@ function isConfigured() {
 
 module.exports = {
   HOST_UID,
+  HOST_SCREEN_UID,
   generateRtcToken,
   ensureAttendeeUid,
   banPublish,

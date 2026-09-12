@@ -6,6 +6,10 @@ import { eventsAPI } from '@/lib/api'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import DeviceDropdown from '@/components/events/DeviceDropdown'
 import VideoEffectsMenu from '@/components/events/VideoEffectsMenu'
+import AgoraVideo from '@/components/events/AgoraVideo'
+import ToggleSwitch from '@/components/events/ToggleSwitch'
+import BroadcastStage, { stageStreamTypes } from '@/components/events/BroadcastStage'
+import CoHostControls from '@/components/events/CoHostControls'
 import useAgoraRoom from '@/hooks/useAgoraRoom'
 import useAgoraDevices from '@/hooks/useAgoraDevices'
 import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
@@ -15,8 +19,10 @@ import useHostViewMode from '@/hooks/useHostViewMode'
 import useHostVideoQuality from '@/hooks/useHostVideoQuality'
 import HostConsole, { HostViewModeSwitcher, HostPreviewMode } from '@/components/events/HostConsole'
 import {
-  HOST_VIEW_MODES, AGORA_CAMERA_ENCODER_PARTICIPANT, AGORA_VIDEO_QUALITIES,
+  HOST_VIEW_MODES, AGORA_CAMERA_ENCODER_HOST, AGORA_CAMERA_ENCODER_PARTICIPANT, AGORA_VIDEO_QUALITIES,
   AGORA_MIC_ENCODER_HOST, AGORA_MIC_NO_PROCESSING,
+  AGORA_HOST_UID, AGORA_HOST_SCREEN_UID, AGORA_LOW_STREAM_PARAMETER, AGORA_SCREEN_ENCODER_BROADCAST,
+  STAGE_COPY,
 } from '@/lib/constants'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
 
@@ -25,8 +31,6 @@ const WhiteboardPanel = dynamic(
   () => import('@/components/events/WhiteboardPanel'),
   { ssr: false }
 )
-
-const HOST_RTC_UID = 1
 
 // Theater strip geometry — these MUST stay in step with the Tailwind classes
 // of the strip tiles and arrows: tiles are w-16 (64px) under the sm breakpoint
@@ -266,9 +270,13 @@ export default function AgoraLiveRoom({
   allowMobileHostConsole = false,
   allowHostVideoQuality = false,
   hostEchoCancellation = false,
+  isCoHost = false,
   eventEnded = false,
 }) {
   const isMeeting = interactionMode === 'meeting'
+  // The admin interviewing the host (agora-broadcast-cohost). Broadcast only:
+  // in a meeting everybody already publishes and the server never flags it.
+  const coHostMode = isCoHost && !isHost && !isMeeting
 
   // Attendee session (socket join credentials + token renewal)
   const attendeeSession = useMemo(() => {
@@ -293,9 +301,11 @@ export default function AgoraLiveRoom({
   // La calidad del host es elegible durante la retransmisión; el resto de
   // participantes emiten siempre con el perfil de mosaico.
   const videoQuality = useHostVideoQuality({ enabled: isHost && allowHostVideoQuality })
+  // El co-presentador emite a 720p fija: es la otra mitad de la escena, no un
+  // mosaico, y no tiene selector de calidad.
   const cameraEncoderConfig = isHost
     ? videoQuality.encoderConfig
-    : AGORA_CAMERA_ENCODER_PARTICIPANT
+    : coHostMode ? AGORA_CAMERA_ENCODER_HOST : AGORA_CAMERA_ENCODER_PARTICIPANT
 
   // Misma asimetría por rol que el vídeo, y por el mismo motivo. Sin
   // `encoderConfig` el SDK deja Opus sin declarar (~32 kbps) pese a documentar
@@ -313,6 +323,11 @@ export default function AgoraLiveRoom({
   // altavoz, y 128 kbps sobre el micrófono integrado de un portátil es ancho
   // de banda tirado.
   const micTrackConfig = useMemo(() => {
+    // Co-presentador: el perfil de 128 kbps (el audio no cuesta más) pero CON
+    // el 3A del navegador — las claves se omiten, no se pasan a `true`. Oye al
+    // host por sus altavoces y es su cancelación de eco la que impide devolver
+    // esa voz al canal.
+    if (coHostMode) return { encoderConfig: AGORA_MIC_ENCODER_HOST }
     if (!isHost) return undefined
     // El perfil sí aplica a las dos modalidades. El 3A NO: en `meeting` hay
     // hasta 17 emisores de audio y el host oye a todos, así que quitarle la
@@ -323,7 +338,12 @@ export default function AgoraLiveRoom({
       encoderConfig: AGORA_MIC_ENCODER_HOST,
       ...(hostEchoCancellation ? {} : AGORA_MIC_NO_PROCESSING),
     }
-  }, [isHost, isMeeting, hostEchoCancellation])
+  }, [isHost, isMeeting, hostEchoCancellation, coHostMode])
+
+  // Host of a broadcast only: the screen goes on a second client (uid 2) so the
+  // camera stays on air. Meeting keeps swapping camera and screen.
+  const getScreenToken = useCallback(() => eventsAPI.getScreenToken(eventId), [eventId])
+  const broadcastPublisher = !isMeeting && (isHost || coHostMode)
 
   const room = useAgoraRoom({
     enabled: !!(appId && channel && rtcToken),
@@ -331,21 +351,29 @@ export default function AgoraLiveRoom({
     channel,
     uid,
     rtcToken,
-    initialRole: isHost || isMeeting ? 'host' : 'audience',
+    initialRole: isHost || isMeeting || coHostMode ? 'host' : 'audience',
     renewToken,
     onKicked,
     cameraEncoderConfig,
     micTrackConfig,
+    screenShareMode: isHost && !isMeeting ? 'separate-client' : 'swap',
+    getScreenToken,
+    screenEncoderConfig: AGORA_SCREEN_ENCODER_BROADCAST,
+    // Dual stream for the cameras the stage may draw small in its corner
+    lowStreamParameter: broadcastPublisher ? AGORA_LOW_STREAM_PARAMETER : undefined,
   })
 
-  // La pantalla del host no debe apagarse durante la retransmisión. No depende
-  // de la consola móvil: es la corrección de un defecto de toda vista de host.
-  useScreenWakeLock({ enabled: isHost && !eventEnded })
+  // La pantalla de quien emite no debe apagarse durante la retransmisión. No
+  // depende de la consola móvil: es la corrección de un defecto de toda vista
+  // que publica, la del host y la del co-presentador.
+  useScreenWakeLock({ enabled: (isHost || coHostMode) && !eventEnded })
 
   // Controles de host: UNA SOLA instancia, por encima del conmutador de modo.
   // Montarla dentro de cada presentación reiniciaría el procesador de fondos
-  // virtuales y la enumeración de dispositivos en cada cambio de vista.
-  const hostControls = useHostMediaControls({ enabled: isHost, room, eventId, cameraEncoderConfig, videoQuality })
+  // virtuales y la enumeración de dispositivos en cada cambio de vista. El
+  // co-presentador consume la misma instancia con una presentación restringida
+  // (CoHostControls); sin `videoQuality` habilitada no tiene selector.
+  const hostControls = useHostMediaControls({ enabled: isHost || coHostMode, room, eventId, cameraEncoderConfig, videoQuality })
 
   // Incoming moderation (targeted at this client by the server)
   const roomRef = useRef(room)
@@ -384,6 +412,13 @@ export default function AgoraLiveRoom({
     [socket.presence, socket.selfIdentity]
   )
   const amSpeaker = isHost || !!selfPresence?.speaker
+
+  // Co-presenters cannot be moderated (the server answers 400): the host's chat
+  // menu is not offered on their messages
+  const coHostIdentities = useMemo(
+    () => new Set(socket.presence.filter((p) => p.coHost).map((p) => p.identity)),
+    [socket.presence]
+  )
 
   // Rejoining as an already-promoted speaker (page refresh): switch the RTC
   // role without auto-enabling the mic (live promotions go through onPromoted)
@@ -597,6 +632,7 @@ export default function AgoraLiveRoom({
               remoteByUid={remoteByUid}
               nameByUid={nameByUid}
               isHost={isHost}
+              isCoHost={coHostMode}
               amSpeaker={amSpeaker}
               eventId={eventId}
               localUid={uid}
@@ -629,6 +665,7 @@ export default function AgoraLiveRoom({
             chatMessages={filteredMessages}
             onSend={socket.sendChatMessage}
             isHost={isHost}
+            protectedIdentities={coHostIdentities}
             isChatBanned={socket.selfChatBanned}
             onHostBanFromChat={handleHostBanFromChat}
           />
@@ -667,43 +704,14 @@ function AudioActivationOverlay({ onActivate }) {
 }
 
 // ---------------------------------------------------------------------------
-// Agora track renderer — plays a local/remote video track into a div
-// ---------------------------------------------------------------------------
-// `mirror` sigue el defecto del SDK cuando no se pasa: Agora ESPEJA la
-// previsualización local de una cámara y no espeja las remotas. Es la convención
-// correcta para un autovisor con la cámara frontal, y la equivocada para el
-// vídeo del host, que se emite tal cual: con la trasera del móvil en un trípode
-// el host veía su propio encuadre invertido —y cualquier texto ilegible— aunque
-// los asistentes lo recibieran bien. Solo el vídeo del host lo desactiva; los
-// mosaicos de reunión conservan el autovisor espejado.
-function AgoraVideo({ track, className, fit = 'contain', mirror }) {
-  const containerRef = useRef(null)
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!track || !el) return
-    try {
-      track.play(el, mirror === undefined ? { fit } : { fit, mirror })
-    } catch (err) {
-      console.warn('Agora video play error:', err)
-    }
-    return () => {
-      try { track.stop() } catch { /* already stopped */ }
-    }
-  }, [track, fit, mirror])
-
-  return <div ref={containerRef} className={className} />
-}
-
-// ---------------------------------------------------------------------------
 // Broadcast mode — LiveKit parity
 // ---------------------------------------------------------------------------
 function BroadcastArea({
   room, socket, selfPresence, remoteByUid, nameByUid,
-  isHost, amSpeaker, eventId, localUid, eventEnded,
+  isHost, isCoHost, amSpeaker, eventId, localUid, eventEnded,
   whiteboardElement, whiteboard, hostControls, allowMobileHostConsole,
 }) {
-  const hostRemote = remoteByUid.get(HOST_RTC_UID)
+  const hostRemote = remoteByUid.get(AGORA_HOST_UID)
 
   const [theaterOpen, setTheaterOpen] = useState(false)
   const [stripVisible, setStripVisible] = useState(true)
@@ -736,17 +744,105 @@ function BroadcastArea({
     [socket.presence]
   )
 
-  // Host area track: local preview for the host (screen preferred), the
-  // host's single published track for viewers (screen replaces camera)
+  // Video of the host's mobile view modes: their own local preview, screen
+  // preferred — the console shows what the host is sending
   const publishedHostTrack = isHost
     ? (room.screenEnabled ? room.screenTrackRef.current : (room.camEnabled ? room.camTrackRef.current : null))
     : (hostRemote?.videoTrack || null)
 
+  // ── Stage sources (spec agora-broadcast-stage) ──────────────
   // Una pista de Agora solo puede reproducirse en un contenedor a la vez: si el
   // árbol normal (oculto) y la superposición montaran ambos su AgoraVideo, el
   // desmontaje de uno llamaría a track.stop() y apagaría el del otro. Mientras
-  // hay superposición, el vídeo lo pinta ella y solo ella.
-  const hostTrack = inOverlay ? null : publishedHostTrack
+  // hay superposición, el vídeo lo pinta ella y solo ella: la escena no pinta
+  // ninguno. La pizarra no es una pista y sigue montada en su sitio.
+  const hostCameraTrack = isHost
+    ? (room.camEnabled ? room.camTrackRef.current : null)
+    : (hostRemote?.videoTrack || null)
+  const hostScreenTrack = isHost
+    ? (room.screenEnabled ? room.screenTrackRef.current : null)
+    : (remoteByUid.get(AGORA_HOST_SCREEN_UID)?.videoTrack || null)
+
+  // Co-presenters in join order. The stage shows the first one publishing
+  // video, so every viewer resolves the same person.
+  const coHostEntries = useMemo(
+    () => socket.presence.filter((p) => p.coHost && p.agoraUid != null),
+    [socket.presence]
+  )
+  let coHostCameraTrack = null
+  let coHostIsLocal = false
+  let coHostUid = null
+  for (const entry of coHostEntries) {
+    const local = entry.identity === socket.selfIdentity
+    const track = local
+      ? (room.camEnabled ? room.camTrackRef.current : null)
+      : (remoteByUid.get(Number(entry.agoraUid))?.videoTrack || null)
+    if (track) {
+      coHostCameraTrack = track
+      coHostIsLocal = local
+      coHostUid = Number(entry.agoraUid)
+      break
+    }
+  }
+
+  const hostSpeaking = isHost
+    ? room.speakingUids.has(localUid) || room.speakingUids.has(0)
+    : room.speakingUids.has(AGORA_HOST_UID)
+  const coHostSpeaking = coHostIsLocal
+    ? room.speakingUids.has(localUid) || room.speakingUids.has(0)
+    : coHostUid != null && room.speakingUids.has(coHostUid)
+
+  const stageHostCamera = {
+    key: 'host',
+    track: inOverlay ? null : hostCameraTrack,
+    speaking: hostSpeaking,
+    mirror: false, // the host's framing goes out as captured (tripod rear camera)
+  }
+  const stageCoHostCamera = {
+    key: 'cohost',
+    track: inOverlay ? null : coHostCameraTrack,
+    speaking: coHostSpeaking,
+    mirror: undefined, // SDK default: own preview mirrored, remotes never
+  }
+  const stageContent = whiteboardElement
+    ? { kind: 'whiteboard', element: whiteboardElement }
+    : (hostScreenTrack && !inOverlay ? { kind: 'screen', track: hostScreenTrack } : null)
+  const hasStageContent = !!whiteboardElement || !!hostScreenTrack
+
+  // Theater entry points as before: over the whiteboard for everyone, over any
+  // video or content for everyone but the host
+  const showTheaterButton = !theaterOpen && (
+    !!whiteboardElement ||
+    (!isHost && !!(stageHostCamera.track || stageCoHostCamera.track || stageContent))
+  )
+
+  const stagePlaceholder = (
+    <div className="flex flex-col items-center justify-center h-full gap-2">
+      {isHost ? (
+        <>
+          <p className="text-white text-sm">{STAGE_COPY.presenterTitle}</p>
+          <p className="text-gray-400 text-xs">{STAGE_COPY.presenterHint}</p>
+        </>
+      ) : (
+        <p className="text-white text-sm">{STAGE_COPY.waitingHost}</p>
+      )}
+    </div>
+  )
+
+  // Dual stream subscription: the low stream for remote cameras drawn in the
+  // corner, the high one otherwise. Re-applied when remote users change so a
+  // camera that arrives late gets the right stream; the hook only calls the
+  // SDK for uids whose type actually changed.
+  const remoteCameraUids = []
+  if (!isHost) remoteCameraUids.push(AGORA_HOST_UID)
+  for (const entry of coHostEntries) {
+    if (entry.identity !== socket.selfIdentity) remoteCameraUids.push(Number(entry.agoraUid))
+  }
+  const streamTypesKey = JSON.stringify(stageStreamTypes(remoteCameraUids, hasStageContent))
+  const setRemoteStreamTypes = room.setRemoteStreamTypes
+  useEffect(() => {
+    setRemoteStreamTypes(JSON.parse(streamTypesKey))
+  }, [streamTypesKey, room.remoteUsers, setRemoteStreamTypes])
 
   // Elemento de vídeo de los modos móviles. `stop()` sobre una pista LOCAL
   // detiene la reproducción, no la publicación: por eso mover el vídeo entre
@@ -768,14 +864,17 @@ function BroadcastArea({
     />
   ) : null
 
-  const hostSpeaking = isHost
-    ? room.speakingUids.has(localUid) || room.speakingUids.has(0)
-    : room.speakingUids.has(HOST_RTC_UID)
-
-  // Promoted viewers publishing video (rare but supported: camera after promotion)
-  const promotedVideoUsers = room.remoteUsers.filter(
-    (u) => Number(u.uid) !== HOST_RTC_UID && u.videoTrack
-  )
+  // Promoted viewers publishing video (rare but supported: camera after
+  // promotion). Never the stage's own tracks — the host's camera (uid 1) and
+  // screen (uid 2) or a co-presenter: a track plays in one container only.
+  const coHostUids = new Set(coHostEntries.map((p) => Number(p.agoraUid)))
+  const promotedVideoUsers = room.remoteUsers.filter((u) => {
+    const remoteUid = Number(u.uid)
+    return remoteUid !== AGORA_HOST_UID &&
+      remoteUid !== AGORA_HOST_SCREEN_UID &&
+      !coHostUids.has(remoteUid) &&
+      u.videoTrack
+  })
 
   const handRaised = !!selfPresence?.handRaised
   const toggleHandRaise = () => socket.setHandRaised(!handRaised)
@@ -793,68 +892,18 @@ function BroadcastArea({
           el envoltorio de fuera, es `contents` cuando no estorba. */}
       <div className={inOverlay ? 'hidden' : 'contents'}>
       <TheaterShell open={theaterOpen} onClose={closeTheater}>
-        {whiteboardElement ? (
-          <>
-            {/* Whiteboard takes the main area; host video shrinks to a tile
-                (audio keeps flowing untouched) */}
-            <div className={theaterOpen
-              ? 'relative flex-1 min-h-0 bg-white'
-              : 'rounded-lg overflow-hidden aspect-video w-full relative border border-gray-200 bg-white'}
-            >
-              {whiteboardElement}
-              {/* Theater for the whiteboard — host and viewers alike */}
-              {!theaterOpen && (
-                <TheaterButton onOpen={openTheater} className="absolute top-2 right-2 z-10" />
-              )}
-            </div>
-            {!theaterOpen && (
-              <div className="mt-3 flex">
-                <div
-                  className={`bg-black rounded-lg overflow-hidden aspect-video w-48 relative transition-shadow duration-300 ${
-                    hostSpeaking ? 'ring-2 ring-green-400' : ''
-                  }`}
-                  style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
-                >
-                  {hostTrack ? (
-                    <AgoraVideo track={hostTrack} className="w-full h-full" fit="cover" mirror={false} />
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <p className="text-white text-xs">{isHost ? 'Tu cámara' : 'Host'}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-        /* Host video */
-        <div
-          className={`relative transition-shadow duration-300 ${
-            theaterOpen ? 'flex-1 min-h-0 bg-black' : 'bg-black rounded-lg overflow-hidden aspect-video w-full'
-          } ${hostSpeaking ? 'ring-2 ring-green-400' : ''}`}
-          style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
-        >
-          {hostTrack ? (
-            <AgoraVideo track={hostTrack} className="w-full h-full" fit="contain" mirror={false} />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-2">
-              {isHost ? (
-                <>
-                  <p className="text-white text-sm">Tu vista de presentador</p>
-                  <p className="text-gray-400 text-xs">Activa tu cámara con el control de abajo</p>
-                </>
-              ) : (
-                <p className="text-white text-sm">Esperando al host...</p>
-              )}
-            </div>
-          )}
-
-          {/* Theater on the host video (screen or camera) — viewers only */}
-          {!theaterOpen && !isHost && hostTrack && (
-            <TheaterButton onOpen={openTheater} className="absolute bottom-2 right-2" />
-          )}
-        </div>
-        )}
+        {/* One stage for every role: single camera, split or picture-in-picture
+            interview, or whiteboard / screen with the cameras in the corner.
+            Its content layer keeps the whiteboard at a fixed tree position. */}
+        <BroadcastStage
+          hostCamera={stageHostCamera}
+          coHostCamera={stageCoHostCamera}
+          content={stageContent}
+          layout={socket.stageLayout}
+          theaterOpen={theaterOpen}
+          placeholder={stagePlaceholder}
+          theaterButton={showTheaterButton ? <TheaterButton onOpen={openTheater} /> : null}
+        />
 
         {theaterOpen && (
           <>
@@ -927,6 +976,19 @@ function BroadcastArea({
         </div>
       )}
 
+      {/* Co-presenter: microphone, camera, speakers and the camera layout */}
+      {isCoHost && (
+        <div className="mt-3">
+          <CoHostControls
+            room={room}
+            hostControls={hostControls}
+            layout={socket.stageLayout}
+            onLayoutChange={socket.setStageLayout}
+            layoutLocked={hasStageContent}
+          />
+        </div>
+      )}
+
       {/* Entrada a los modos móviles desde la vista completa. Sobre fondo claro,
           así que el conmutador va dentro de una barra oscura propia. */}
       {modeSwitcher && (
@@ -936,8 +998,8 @@ function BroadcastArea({
         </div>
       )}
 
-      {/* Hand raise for viewers */}
-      {!isHost && (
+      {/* Hand raise for viewers (the co-presenter already has the floor) */}
+      {!isHost && !isCoHost && (
         <div className="mt-3">
           <button
             type="button"
@@ -1139,21 +1201,6 @@ function AgoraHostControls({ room, hostControls, endLabel, whiteboard }) {
   )
 }
 
-function ToggleSwitch({ checked, onChange }) {
-  return (
-    <label className="relative inline-block w-11 h-6 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onChange}
-        className="peer sr-only"
-      />
-      <span className="absolute inset-0 bg-gray-200 rounded-full transition-colors duration-200 ease-in-out peer-checked:bg-gray-800 peer-disabled:opacity-50 peer-disabled:pointer-events-none" />
-      <span className="absolute top-1/2 start-0.5 -translate-y-1/2 size-5 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out peer-checked:translate-x-full" />
-    </label>
-  )
-}
-
 function SpeakingPulseStyle() {
   return (
     <style jsx global>{`
@@ -1275,6 +1322,9 @@ function AgoraParticipantTile({
   readOnly = false,
 }) {
   const isHostParticipant = entry.isHost
+  // The co-presenter's tile is state only for everybody: the server refuses to
+  // promote or demote staff, and a demote would ban their publishing for 24 h
+  const isCoHostParticipant = !!entry.coHost
   const handRaised = entry.handRaised
   const canPublish = isLocal ? amSpeaker : entry.speaker
 
@@ -1287,7 +1337,7 @@ function AgoraParticipantTile({
   const shortName = isLocal ? '(Tu)' : (displayName.length > 12 ? displayName.slice(0, 11) + '...' : displayName)
 
   const handleClick = useCallback(() => {
-    if (isHostParticipant) return
+    if (isHostParticipant || isCoHostParticipant) return
     if (isLocal) {
       if (canPublish && isMicActive) onSelfMute?.()
       return
@@ -1298,10 +1348,11 @@ function AgoraParticipantTile({
     } else {
       onPromote?.(entry.identity)
     }
-  }, [isLocal, viewerIsHost, isHostParticipant, canPublish, isMicActive, onSelfMute, onPromote, onDemote, entry.identity])
+  }, [isLocal, viewerIsHost, isHostParticipant, isCoHostParticipant, canPublish, isMicActive, onSelfMute, onPromote, onDemote, entry.identity])
 
   const getTitle = () => {
     if (isHostParticipant) return `Host: ${displayName}`
+    if (isCoHostParticipant) return displayName
     if (isLocal) {
       if (canPublish && isMicActive) return 'Silenciar tu micrófono'
       if (!canPublish) return 'Levanta la mano para hablar'
@@ -1315,6 +1366,11 @@ function AgoraParticipantTile({
   const getTileClasses = () => {
     if (isHostParticipant) {
       return 'bg-gray-50 text-gray-900 ring-2 ring-gray-900 cursor-default'
+    }
+    if (isCoHostParticipant) {
+      return isMicActive
+        ? 'bg-green-50 text-green-800 ring-2 ring-green-400 cursor-default'
+        : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
     }
     if (isLocal) {
       if (canPublish) {
@@ -1411,11 +1467,11 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
   // own track, everyone else sees the host's remote track.
   const hostVideoTrack = isHost
     ? (room.screenEnabled ? room.screenTrackRef.current : (room.camEnabled ? room.camTrackRef.current : null))
-    : (remoteByUid.get(HOST_RTC_UID)?.videoTrack || null)
+    : (remoteByUid.get(AGORA_HOST_UID)?.videoTrack || null)
 
   const hostSpeaking = isHost
     ? (room.speakingUids.has(localUid) || room.speakingUids.has(0))
-    : room.speakingUids.has(HOST_RTC_UID)
+    : room.speakingUids.has(AGORA_HOST_UID)
 
   // Featured layout → the grid holds everyone except the host. Host equal-grid →
   // everyone, host tile first.
@@ -1739,7 +1795,7 @@ function MeetingSelfControls({ room }) {
 // ---------------------------------------------------------------------------
 // Chat — same UI as EventLiveRoom's ChatPanel over the Socket.IO room
 // ---------------------------------------------------------------------------
-function ChatPanel({ chatMessages, onSend, isHost, isChatBanned, onHostBanFromChat }) {
+function ChatPanel({ chatMessages, onSend, isHost, isChatBanned, onHostBanFromChat, protectedIdentities }) {
   const [message, setMessage] = useState('')
   const messagesContainerRef = useRef(null)
   const [openMenuFor, setOpenMenuFor] = useState(null)
@@ -1796,7 +1852,7 @@ function ChatPanel({ chatMessages, onSend, isHost, isChatBanned, onHostBanFromCh
                 <span className="text-gray-600 ml-1 break-words">{msg.message}</span>
               </div>
               {/* Three-dot menu — host only, not for host messages */}
-              {isHost && !isHostMsg && senderIdentity && (
+              {isHost && !isHostMsg && senderIdentity && !protectedIdentities?.has(senderIdentity) && (
                 <div className="relative flex-shrink-0 mt-0.5" ref={openMenuFor === i ? menuRef : null}>
                   <button
                     type="button"

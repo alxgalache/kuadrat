@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { io } from 'socket.io-client'
 import { getAuthToken } from '@/lib/api'
+import { STAGE_LAYOUTS } from '@/lib/constants'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
@@ -26,7 +27,8 @@ const SOCKET_URL = getSocketUrl()
  *
  * @param {object} params
  * @param {string} params.eventId
- * @param {boolean} params.isHost - Host/admin joins with the JWT; attendees with their credentials
+ * @param {boolean} params.isHost - The event host joins with the JWT; everyone
+ *   else (the admin included, as co-presenter) with their attendee credentials
  * @param {string|null} params.attendeeId
  * @param {string|null} params.accessToken
  * @param {boolean} params.enabled - Connect only when the room is actually mounted
@@ -53,6 +55,8 @@ export default function useEventRoomSocket({
   const [joined, setJoined] = useState(false)
   // Whiteboard toggle state (optional phase): { active, everyoneWrites }
   const [whiteboard, setWhiteboard] = useState({ active: false, everyoneWrites: false })
+  // Broadcast stage camera layout ('split' | 'pip'), directed by the co-presenter
+  const [stageLayout, setStageLayoutState] = useState(STAGE_LAYOUTS.SPLIT)
   const socketRef = useRef(null)
   const selfIdentityRef = useRef(null)
 
@@ -87,6 +91,7 @@ export default function useEventRoomSocket({
           active: !!response.whiteboard?.active,
           everyoneWrites: !!response.whiteboard?.everyoneWrites,
         })
+        setStageLayoutState(response.stageLayout === STAGE_LAYOUTS.PIP ? STAGE_LAYOUTS.PIP : STAGE_LAYOUTS.SPLIT)
         setJoined(true)
       })
     }
@@ -127,6 +132,10 @@ export default function useEventRoomSocket({
 
     socket.on('whiteboard_toggle', (state) => {
       setWhiteboard({ active: !!state?.active, everyoneWrites: !!state?.everyoneWrites })
+    })
+
+    socket.on('stage_layout', ({ mode } = {}) => {
+      if (mode === STAGE_LAYOUTS.SPLIT || mode === STAGE_LAYOUTS.PIP) setStageLayoutState(mode)
     })
 
     socket.on('room_join_denied', (denial) => {
@@ -173,6 +182,14 @@ export default function useEventRoomSocket({
     socketRef.current.emit('whiteboard_toggle', { active: !!active, everyoneWrites: !!everyoneWrites })
   }, [])
 
+  // Co-presenter only (server-validated): no optimistic update — every client,
+  // this one included, follows the server's `stage_layout` broadcast, so a
+  // refused request never leaves this client out of step with the rest.
+  const setStageLayout = useCallback((mode) => {
+    if (!socketRef.current) return
+    socketRef.current.emit('stage_layout', { mode })
+  }, [])
+
   return {
     joined,
     presence,
@@ -180,6 +197,8 @@ export default function useEventRoomSocket({
     selfIdentity,
     selfChatBanned,
     whiteboard,
+    stageLayout,
+    setStageLayout,
     sendChatMessage,
     setHandRaised,
     setScreenSharing,

@@ -12,7 +12,7 @@ Kuadrat is a minimalist online marketplace for art, functioning as a virtual art
 * **Auth:** Passport.js (passport-local + passport-jwt), JWT tokens
 * **Payments:** Stripe (primary), Revolut (legacy support)
 * **Real-time:** Socket.IO for auctions and event notifications (plus the authenticated per-event room used by Agora events)
-* **Streaming:** LiveKit + Agora, selectable per event (`events.provider`, default `livekit`); Agora adds an `interaction_mode` (`broadcast` = LiveKit parity | `meeting` = Meet-style camera grid, max 16 attendees) and client-side virtual backgrounds (see below)
+* **Streaming:** LiveKit + Agora, selectable per event (`events.provider`, default `livekit`); Agora adds an `interaction_mode` (`broadcast` = LiveKit parity | `meeting` = Meet-style camera grid, max 16 attendees), client-side virtual backgrounds, and in `broadcast` an on-camera interview mode where the admin co-presents with the host (see below)
 * **Email:** Nodemailer with SMTP
 * **Logging:** Pino (structured JSON in production, pretty in development)
 * **Validation:** Zod schemas for API request validation
@@ -562,13 +562,36 @@ Bulk send (`POST /api/admin/authors/send-password-reset-all`) is **sequential, n
 
 **Credentials in the URL are redacted before logging.** `pino-http` logs `req.url` on every request and several routes carry a bearer credential as a path segment — the activation link, the reset link, the public order token (`/orders/public/token/:token`) and the signed `?vtoken=`. `api/utils/redactUrl.js` strips them in the `req` serializer of `api/app.js`. Adding a new route with a secret in the path means adding its prefix there.
 
+## Interviews in Agora broadcast events (co-presenter and stage)
+
+The admin can interview the host on camera in any `provider='agora'` + `interaction_mode='broadcast'` event, with no flag and no new column. See `openspec/changes/agora-interview-cohost`.
+
+* **Co-presenter = `is_staff = 1` AND the user's CURRENT `role = 'admin'`, in `broadcast` only.** One predicate, `eventService.isBroadcastCohost`, consumed by `getViewerToken`, `renewToken` and `join_event_room`. The role is re-checked on every call because the staff session lives in `localStorage` and does not expire with the role. The co-presenter gets a `publisher` token on their own attendee uid (never 1 or 2) plus `coHost: true`, and **only** microphone, camera, speakers and the layout switch: `CoHostControls`, a presentation of the same single `useHostMediaControls` instance. Screen share, whiteboard, effects, quality and ending the stream stay with the host — two operators produce incompatible states.
+* **One Agora client publishes ONE video track** (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS` in 4.24.6). That is why the old screen share *swapped* the camera out, and why the broadcast host's screen now goes on a **second `AgoraRTCClient` under the reserved uid 2** (`HOST_SCREEN_UID`), with a token from `POST /api/events/:id/screen-token` (event host only). The camera never leaves the main client. **The host's main client never subscribes to uid 2**: it would download — and be billed for — its own screen. `meeting` keeps the one-client swap (`screenShareMode: 'swap'` in `useAgoraRoom`).
+* **The stage is composed in each browser** (`client/components/events/BroadcastStage.js`) and is identical for every role:
+  * 1 camera → 100 %, uncropped.
+  * 2 cameras → `split` (host left, co-presenter right, each cropped to its half) or `pip` (host at 100 %, co-presenter bottom-right).
+  * Whiteboard or screen on stage → content at 100 %, cameras in the bottom-right corner, **always side by side** there whatever layout was chosen. The chosen layout is not touched and comes back when the content ends.
+
+  The layout lives in memory in `eventSocket.js`: `stage_layout`, accepted from the co-presenter only, delivered in the join ACK, dropped on `event_ended` — the same lifecycle as the whiteboard toggle. The whiteboard stays the stage's **first child** so it never moves in the React tree (moving it rejoins the fastboard room). Over the whiteboard, the corner box sits above fastboard's zoom/page controls (`.fastboard-bottom-right`).
+* **Staff are never moderation targets.** `resolveAgoraAttendee` (host and admin promote/demote), `banFromChat` and `reportSpam` answer 400 before any write. A demote creates a 24 h kicking rule, so one click on the interviewer's tile would have silenced them for the day. The socket also exempts the co-presenter from the spam auto-ban, which bans email **and IP** — for an in-person interview, the studio's.
+* **Only the event host is host.** The admin branches of `renewToken` (a `HOST_UID` token) and `join_event_room` (an `isHost` entry on uid 1) are gone: a second host presence corrupts the stage and unlocks host-only socket signals.
+* **Billing is by the SUM of pixels each viewer receives**, and HD ends exactly at 1280 × 720, so any second video crosses it. Two 720p cameras = Full HD, 2.25× — **accepted by decision**. To keep screen share and whiteboard in the band they already had:
+  * cameras publish in dual stream with a **480 × 270** low stream (`AGORA_LOW_STREAM_PARAMETER`) — the SDK's default low stream is 160 × 120, 4:3, the same trap as the camera's `480p_1`;
+  * viewers request the low stream **only** for cameras drawn in the corner (`stageStreamTypes` → `room.setRemoteStreamTypes`);
+  * the broadcast screen is capped at **1792 × 1008** (`AGORA_SCREEN_ENCODER_BROADCAST`). Without `encoderConfig` the SDK uses `1080p_2` = 1920 × 1080 @ 30, which alone fills Full HD to the last pixel. Screen + two low streams = 2,065,536 px ≤ 2,073,600.
+
+  **A host who picks 1080p during a two-camera interview crosses into 2K.** Safari 17.2 cannot switch to the low stream, so those viewers pay the high one.
+* **Audio procedure for interviews, which no code can enforce.** The host emits without echo cancellation by default (see «Agora Host Audio»), so in a remote interview the host wears an earpiece, or the event ticks «El host escuchará a los invitados por altavoz». The co-presenter's microphone keeps the browser 3A, because they hear the host through speakers. In the same room there must be one audio chain: the admin keeps their microphone off, or both wear headphones.
+* **Known blind spot:** the stage, the co-presenter controls and the second screen client have no automated test — `client/` still has no test runner. The API half is covered by `api/tests/agoraBroadcastCohost.test.js` and `api/tests/eventSocketCohost.test.js`, which drives the socket through a recording fake `io` with no `socket.io-client` dependency.
+
 ## Admin access to Live events (`event_attendees.is_staff`)
 
 `POST /api/events/:id/admin-access` (JWT, `role === 'admin'`) find-or-creates a **real attendee row** for the admin and returns the same `{ attendeeId, accessToken }` the registration modal produces — no registration, no OTP, no payment.
 
 * **A real row, not a bypass in `getViewerToken`.** That identity is re-derived by `getViewerToken`, `renewToken`, `getWhiteboardToken`, `uploadWhiteboardImage`, `getVideoToken`, `report-spam` and the authenticated Socket.IO room. Special-casing the admin in each would be seven places that must agree.
-* **`status` stays `'registered'`, never `'paid'` with `amount_paid = 0`** — a paid state matching no payment is a lie in a table the invoicing and payout queries read. The exemption lives in `requiresPayment(event, attendee)` in `eventController.js`, the single predicate behind all five payment gates.
-* **The admin is a participant, not a host.** `subscriber` in Agora broadcast, `publisher` in meeting mode (like everyone there), never `HOST_UID`. `getHostToken` still requires `req.user.id === event.host_user_id`.
+* **`status` stays `'registered'`, never `'paid'` with `amount_paid = 0`** — a paid state matching no payment is a lie in a table the invoicing and payout queries read. The exemption lives in `requiresPayment(event, attendee)` in `eventService.js`: the single predicate behind all five payment gates **and** the authenticated Socket.IO room, which used to carry its own copy without the exemption.
+* **The admin is a participant, not a host.** In Agora `broadcast` they are the **co-presenter** (`publisher` on their own attendee uid — see «Interviews in Agora broadcast events»); in meeting mode they are `publisher` like everyone there. Never `HOST_UID` or `HOST_SCREEN_UID`. `getHostToken` and `screen-token` still require `req.user.id === event.host_user_id`.
 * **`is_staff = 1` is excluded from five queries**, and a sixth refuses outright: `getAttendeeCount` (public figure), `eventCreditScheduler.loadUncreditedAttendees` (host wallet), the payout detail in `stripeConnectPayoutsController`, the seller revenue listing in `sellerRoutes`, and `invoiceService.generateEventAttendeeInvoice` (a 0 € invoice would burn a number from series P, and invoice numbers are not recycled). **`listAttendees` deliberately does NOT filter** — the admin panel should show who was in the room. Any new query over `event_attendees` has to make this choice consciously.
 * **Known ceiling:** in Agora `meeting` mode the admin consumes one of the 16 slots. That limit is the vendor's and `is_staff` does not dodge it.
 

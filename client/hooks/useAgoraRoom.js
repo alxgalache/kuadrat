@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import AgoraRTC from 'agora-rtc-sdk-ng'
-import { AGORA_SPEAKING_VOLUME_THRESHOLD } from '@/lib/constants'
+import { AGORA_SPEAKING_VOLUME_THRESHOLD, AGORA_HOST_SCREEN_UID } from '@/lib/constants'
 
 // Only imported from components that are themselves dynamic ssr:false
 // (agora-rtc-sdk-ng touches window at import time).
@@ -55,6 +55,19 @@ async function createCameraTrackWithRetry(deviceId, encoderConfig) {
  *   `undefined` reproduce el comportamiento anterior. Ver AGORA_MIC_* en
  *   lib/constants.js — y ojo, el perfil de audio queda CONGELADO al crear la
  *   pista: `ILocalAudioTrack` no expone `setEncoderConfiguration`.
+ * @param {'swap'|'separate-client'} [params.screenShareMode='swap'] - Cómo se
+ *   comparte pantalla. `swap` (reunión) cambia la cámara por la pantalla en el
+ *   mismo cliente. `separate-client` (host de un stream) publica la pantalla
+ *   desde un SEGUNDO cliente con el uid reservado 2, sin tocar la cámara: un
+ *   cliente solo puede publicar una pista de vídeo
+ *   (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS`).
+ * @param {Function} [params.getScreenToken] - async () => ({ uid, rtcToken })
+ *   del segundo cliente. Obligatorio con `separate-client`.
+ * @param {object} [params.screenEncoderConfig] - Perfil de la pista de
+ *   pantalla en `separate-client`. Ver AGORA_SCREEN_ENCODER_BROADCAST.
+ * @param {object} [params.lowStreamParameter] - Activa el dual stream al
+ *   unirse como publicador, con este flujo reducido. Ver
+ *   AGORA_LOW_STREAM_PARAMETER: el defecto del SDK es 160 × 120, en 4:3.
  */
 export default function useAgoraRoom({
   enabled,
@@ -67,11 +80,27 @@ export default function useAgoraRoom({
   onKicked,
   cameraEncoderConfig,
   micTrackConfig,
+  screenShareMode = 'swap',
+  getScreenToken,
+  screenEncoderConfig,
+  lowStreamParameter,
 }) {
   const clientRef = useRef(null)
   const micTrackRef = useRef(null)
   const camTrackRef = useRef(null)
   const screenTrackRef = useRef(null)
+  // Second client of `separate-client` screen sharing (uid 2)
+  const screenClientRef = useRef(null)
+  const screenStartingRef = useRef(false)
+  // uid → last stream type requested (0 high, 1 low), so a re-render only
+  // talks to the SDK when a tile actually changes size
+  const streamTypesRef = useRef(new Map())
+  const screenShareModeRef = useRef(screenShareMode)
+  screenShareModeRef.current = screenShareMode
+  const getScreenTokenRef = useRef(getScreenToken)
+  getScreenTokenRef.current = getScreenToken
+  const lowStreamParameterRef = useRef(lowStreamParameter)
+  lowStreamParameterRef.current = lowStreamParameter
   const cameraWasOnRef = useRef(false)
   const speakerDeviceIdRef = useRef(null)
 
@@ -127,6 +156,13 @@ export default function useAgoraRoom({
     }
 
     const handleUserPublished = async (user, mediaType) => {
+      // The host's own screen, published by this page's second client: it is
+      // drawn from the local track and never downloaded back (bandwidth, and
+      // subscribed resolution is what Agora bills)
+      if (screenShareModeRef.current === 'separate-client' && Number(user.uid) === AGORA_HOST_SCREEN_UID) {
+        syncRemotes()
+        return
+      }
       try {
         await client.subscribe(user, mediaType)
         if (mediaType === 'audio' && user.audioTrack) {
@@ -148,7 +184,11 @@ export default function useAgoraRoom({
     client.on('user-published', handleUserPublished)
     client.on('user-unpublished', syncRemotes)
     client.on('user-joined', syncRemotes)
-    client.on('user-left', syncRemotes)
+    client.on('user-left', (user) => {
+      // Whoever rejoins starts again from the SDK default (high) stream
+      streamTypesRef.current.delete(Number(user.uid))
+      syncRemotes()
+    })
 
     client.on('volume-indicator', (volumes) => {
       if (cancelled) return
@@ -185,6 +225,18 @@ export default function useAgoraRoom({
         await client.setClientRole(initialRole === 'host' ? 'host' : 'audience')
         joinPromise = client.join(appId, channel, rtcToken, uid)
         await joinPromise
+        // Dual stream BEFORE the room counts as joined: `publish()` only adds
+        // the low track when the mode is already on, and the controls cannot
+        // publish until joinedRef flips. A browser without support keeps a
+        // single stream — a cost matter, never a broken room.
+        if (!cancelled && lowStreamParameterRef.current && initialRole === 'host') {
+          try {
+            await client.setLowStreamParameter(lowStreamParameterRef.current)
+            await client.enableDualStream()
+          } catch (err) {
+            console.warn('Agora dual stream unavailable:', err)
+          }
+        }
         if (!cancelled) {
           joinedRef.current = true
           setClientRole(initialRole)
@@ -219,11 +271,19 @@ export default function useAgoraRoom({
       if (hadCamTrack) setCamTrackVersion((v) => v + 1)
       cameraWasOnRef.current = false
       clientRef.current = null
+      streamTypesRef.current = new Map()
+      // Leaving mid-share: the second client still holds uid 2 in the channel
+      const screenClient = screenClientRef.current
+      screenClientRef.current = null
+      screenClient?.removeAllListeners()
       // Chain the async teardown (settle any pending join, then leave) so the
-      // next mount can await a fully released uid
+      // next mount can await fully released uids
       teardownRef.current = (async () => {
         try { await joinPromise } catch { /* aborted/failed join */ }
         try { await client.leave() } catch { /* never joined */ }
+        if (screenClient) {
+          try { await screenClient.leave() } catch { /* never joined */ }
+        }
       })()
       setJoined(false)
       setJoinError(null)
@@ -296,8 +356,85 @@ export default function useAgoraRoom({
     }
   }, [assertJoined, cameraEncoderConfig])
 
+  // ── Screen share on a second client (broadcast host) ──────
+  // A client publishes ONE video track, so keeping the camera on air while
+  // sharing takes a second client in the channel under the reserved uid 2.
+  // The camera and the main client are never touched.
+  const stopSeparateScreenShare = useCallback(async () => {
+    const screenClient = screenClientRef.current
+    const screenTrack = screenTrackRef.current
+    screenClientRef.current = null
+    screenTrackRef.current = null
+    if (screenClient && screenTrack) {
+      try { await screenClient.unpublish(screenTrack) } catch { /* not published */ }
+    }
+    try { screenTrack?.close() } catch { /* already closed */ }
+    if (screenClient) {
+      screenClient.removeAllListeners()
+      try { await screenClient.leave() } catch { /* never joined */ }
+    }
+    setScreenEnabled(false)
+  }, [])
+
+  const startSeparateScreenShare = useCallback(async () => {
+    if (screenStartingRef.current) return
+    screenStartingRef.current = true
+    let screenClient = null
+    let screenTrack = null
+    try {
+      // Token first: without it there is no point opening the browser picker
+      const data = await getScreenTokenRef.current?.()
+      if (!data?.rtcToken) throw new Error('Screen token unavailable')
+
+      // Cancelling the picker throws here, before anything joins the channel
+      screenTrack = await AgoraRTC.createScreenVideoTrack(
+        screenEncoderConfig ? { encoderConfig: screenEncoderConfig } : {},
+        'disable'
+      )
+      screenClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' })
+      screenClientRef.current = screenClient
+      screenTrackRef.current = screenTrack
+
+      // Browser "Stop sharing" button
+      screenTrack.on('track-ended', () => { stopSeparateScreenShare() })
+      screenClient.on('token-privilege-will-expire', async () => {
+        try {
+          const fresh = await getScreenTokenRef.current?.()
+          if (fresh?.rtcToken) await screenClient.renewToken(fresh.rtcToken)
+        } catch (err) {
+          console.warn('Agora screen token renewal failed:', err)
+        }
+      })
+
+      await screenClient.setClientRole('host')
+      await screenClient.join(appId, channel, data.rtcToken, data.uid ?? AGORA_HOST_SCREEN_UID)
+      await screenClient.publish(screenTrack)
+
+      // Stopped while joining (browser button, unmount): nothing to announce
+      if (screenClientRef.current !== screenClient) return
+      setScreenEnabled(true)
+    } catch (err) {
+      if (screenClientRef.current === screenClient) {
+        screenClientRef.current = null
+        screenTrackRef.current = null
+      }
+      try { screenTrack?.close() } catch { /* already closed */ }
+      if (screenClient) {
+        screenClient.removeAllListeners()
+        try { await screenClient.leave() } catch { /* never joined */ }
+      }
+      throw err
+    } finally {
+      screenStartingRef.current = false
+    }
+  }, [appId, channel, screenEncoderConfig, stopSeparateScreenShare])
+
   // ── Screen share (swap with camera on a single client) ────
   const stopScreenShare = useCallback(async () => {
+    if (screenShareModeRef.current === 'separate-client') {
+      await stopSeparateScreenShare()
+      return
+    }
     const client = clientRef.current
     const screenTrack = screenTrackRef.current
     if (!client || !screenTrack) return
@@ -319,12 +456,17 @@ export default function useAgoraRoom({
       }
     }
     cameraWasOnRef.current = false
-  }, [])
+  }, [stopSeparateScreenShare])
 
   const startScreenShare = useCallback(async () => {
     const client = clientRef.current
     if (!client || screenTrackRef.current) return
     assertJoined()
+
+    if (screenShareModeRef.current === 'separate-client') {
+      await startSeparateScreenShare()
+      return
+    }
 
     const screenTrack = await AgoraRTC.createScreenVideoTrack({}, 'disable')
     cameraWasOnRef.current = camEnabled
@@ -343,7 +485,7 @@ export default function useAgoraRoom({
     screenTrack.on('track-ended', () => {
       stopScreenShare()
     })
-  }, [camEnabled, stopScreenShare, assertJoined])
+  }, [camEnabled, stopScreenShare, assertJoined, startSeparateScreenShare])
 
   // ── Role transitions (broadcast promote / demote) ─────────
   const becomeSpeaker = useCallback(async ({ autoEnableMic = false } = {}) => {
@@ -393,6 +535,25 @@ export default function useAgoraRoom({
     }
   }, [])
 
+  // ── Remote stream type per uid (dual stream subscribers) ──
+  // `types` is { [uid]: 0 | 1 } — 1 (low) for cameras drawn small in the stage
+  // corner, 0 (high) otherwise. Only changed entries reach the SDK. A failed
+  // call (the user has not joined yet) is forgotten so the next call retries.
+  // It works only for publishers that enabled dual stream; for the rest the
+  // SDK keeps sending the single stream.
+  const setRemoteStreamTypes = useCallback((types) => {
+    const client = clientRef.current
+    if (!client || !joinedRef.current || !types) return
+    for (const [uidKey, type] of Object.entries(types)) {
+      const remoteUid = Number(uidKey)
+      if (streamTypesRef.current.get(remoteUid) === type) continue
+      streamTypesRef.current.set(remoteUid, type)
+      client.setRemoteVideoStreamType(remoteUid, type).catch(() => {
+        streamTypesRef.current.delete(remoteUid)
+      })
+    }
+  }, [])
+
   const resumeAudio = useCallback(() => {
     // Any user gesture unblocks the audio context; the SDK resumes on its own
     setAutoplayBlocked(false)
@@ -416,6 +577,7 @@ export default function useAgoraRoom({
     becomeSpeaker,
     becomeAudience,
     setSpeakerDevice,
+    setRemoteStreamTypes,
     // Track refs for self-view rendering and hot device switching
     micTrackRef,
     camTrackRef,

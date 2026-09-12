@@ -282,6 +282,57 @@ async function getAttendeeById(id) {
   return result.rows[0] || null;
 }
 
+/**
+ * Whether this attendee is the co-presenter of a broadcast Agora event: the
+ * gallery admin interviewing the host, with camera and microphone.
+ *
+ * The ONLY copy of this condition. The token endpoints (role + `coHost` flag)
+ * and the authenticated Socket.IO room (presence) must agree on it, or the
+ * admin would get a publisher token without the controls, or the controls
+ * without the token.
+ *
+ * `is_staff` alone is not enough. It is a snapshot taken when the admin used
+ * "Entrar como administrador", and the resulting session lives in the
+ * browser's localStorage with no expiry of its own: someone who has since
+ * stopped being an admin would keep the right to publish into any stream. The
+ * role is therefore re-checked against `users` on every call.
+ *
+ * @param {object} event - Row from `events`
+ * @param {object} attendee - Row from `event_attendees`
+ * @returns {Promise<boolean>}
+ */
+async function isBroadcastCohost(event, attendee) {
+  if (!event || !attendee) return false;
+  if (event.provider !== 'agora' || event.interaction_mode !== 'broadcast') return false;
+  if (Number(attendee.is_staff) !== 1) return false;
+
+  const result = await db.execute({
+    sql: "SELECT 1 FROM users WHERE email = ? AND role = 'admin' LIMIT 1",
+    args: [attendee.email],
+  });
+  return result.rows.length > 0;
+}
+
+/**
+ * Whether this attendee still owes money for this event.
+ *
+ * Staff attendees (the gallery admin sitting in an event they did not host)
+ * are exempt: charging the owner of the platform to watch a stream organised
+ * from their own panel makes no sense. Every OTHER check — event active, room
+ * available, email ban, IP ban — still applies to them, so this predicate is
+ * deliberately narrow.
+ *
+ * One helper rather than the same condition inlined at every gate: the token
+ * endpoints and the authenticated Socket.IO room must agree, and a divergence
+ * would show up as the admin getting a whiteboard token but not being able to
+ * upload to it, or getting an RTC token but being refused by the chat room.
+ */
+function requiresPayment(event, attendee) {
+  if (event.access_type !== 'paid') return false;
+  if (Number(attendee.is_staff) === 1) return false;
+  return !['paid', 'joined'].includes(attendee.status);
+}
+
 async function updateAttendeePayment(attendeeId, {
   stripe_payment_intent_id, stripe_customer_id, amount_paid, currency,
 }) {
@@ -588,6 +639,8 @@ module.exports = {
   createOrGetStaffAttendee,
   getAttendeeByAccessToken,
   getAttendeeById,
+  isBroadcastCohost,
+  requiresPayment,
   updateAttendeePayment,
   updateAttendeeStatus,
   listAttendees,

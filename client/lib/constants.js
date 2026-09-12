@@ -195,6 +195,73 @@ export const AGORA_VIDEO_QUALITIES = [
 export const AGORA_VIDEO_QUALITY_DEFAULT = 'medium';
 export const AGORA_VIDEO_QUALITY_STORAGE_KEY = 'kuadrat.agora.videoQuality';
 
+// ---------------------------------------------------------------------------
+// Escena de los eventos stream: co-presentador y pantalla con cámara
+// ---------------------------------------------------------------------------
+// uids reservados al host. Espejo de api/services/agoraService.js: los
+// asistentes empiezan en 101. El host usa DOS porque un cliente de Agora solo
+// puede publicar una pista de vídeo (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS`
+// en 4.24.6): la pantalla va en un segundo cliente para que la cámara siga en
+// el aire mientras se comparte.
+export const AGORA_HOST_UID = 1;
+export const AGORA_HOST_SCREEN_UID = 2;
+
+// Disposición de las dos cámaras. La elige el co-presentador y el servidor la
+// difunde a todos. Espejo de STAGE_LAYOUTS en api/socket/eventSocket.js.
+export const STAGE_LAYOUTS = {
+  SPLIT: 'split',
+  PIP: 'pip',
+};
+
+export const STAGE_LAYOUT_LABELS = {
+  [STAGE_LAYOUTS.SPLIT]: 'Dividida',
+  [STAGE_LAYOUTS.PIP]: 'Recuadro',
+};
+
+export const STAGE_COPY = {
+  layout: 'Vista',
+  lockedHint: 'Con pantalla o pizarra, las cámaras van juntas en la esquina',
+  waitingHost: 'Esperando al host...',
+  presenterTitle: 'Tu vista de presentador',
+  presenterHint: 'Activa tu cámara con el control de abajo',
+};
+
+// Flujo reducido (dual stream) de las cámaras que se pintan en la esquina.
+//
+// EL DEFECTO DEL SDK ES 4:3. `setLowStreamParameter` sin llamar deja
+// `{ width: 160, height: 120, framerate: 15, bitrate: 50 }` (literal del
+// bundle): la misma trampa que el `480p_1` de la cámara, y además ilegible
+// recortado a una mitad 8:9 de un recuadro de ~300 px.
+//
+// Existe por COSTE. Agora factura a cada asistente por la suma de píxeles que
+// recibe; una pantalla a 1792 × 1008 (1.806.336 px) más dos cámaras a
+// 480 × 270 (129.600 px cada una) suman 2.065.536, dentro de Full HD
+// (≤ 2.073.600), que es lo que ya cuesta hoy compartir pantalla. Las mismas
+// cámaras a 720p la llevarían a 2K.
+export const AGORA_LOW_STREAM_PARAMETER = { width: 480, height: 270, framerate: 15, bitrate: 300 };
+
+// Pantalla compartida del host en eventos stream (segundo cliente, uid 2).
+//
+// Sin `encoderConfig`, `createScreenVideoTrack` aplica `"1080p_2"` (literal del
+// bundle), que en su tabla de pantalla es `Ak(1920, 1080, 30)`: techo de
+// 1920 × 1080, 30 fps y sin bitrate fijo. Aquí se conserva todo salvo el
+// techo, porque 1920 × 1080 son 2.073.600 px —exactamente el límite de Full
+// HD— y cualquier cámara en la esquina llevaría al asistente a 2K. 1792 × 1008
+// sigue siendo 16:9 y deja 267.264 px para dos flujos de 480 × 270.
+// Misma forma `{ max }` que la tabla del SDK: limita la captura sin forzarla,
+// así que una pantalla 16:10 queda aún más holgada.
+export const AGORA_SCREEN_ENCODER_BROADCAST = { width: { max: 1792 }, height: { max: 1008 }, frameRate: 30 };
+
+// Tamaño de los recuadros, en porcentaje del ancho de la escena. El de esquina
+// es mayor porque con dos cámaras aloja dos mitades 8:9 dentro de un 16:9.
+export const STAGE_PIP_WIDTH_PCT = 26;
+export const STAGE_CORNER_WIDTH_PCT = 34;
+// Sobre la pizarra el recuadro sube por encima de los controles de zoom y
+// páginas de fastboard (`.fastboard-bottom-right { bottom: 8px; right: 8px }`),
+// para que el host los pueda seguir pulsando. Igual para todos los roles: así
+// la zona tapada del lienzo es la misma para quien escribe y para quien mira.
+export const STAGE_WHITEBOARD_CORNER_OFFSET_PX = 56;
+
 // Agora virtual background (camera effects)
 // Effect preference persisted per device; validated on read against the catalog
 // in lib/virtualBackgrounds.js (a background removed from the repo degrades to none).

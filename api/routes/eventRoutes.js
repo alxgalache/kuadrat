@@ -6,7 +6,7 @@ const { authenticate } = require('../middleware/authorization');
 const { validate } = require('../middleware/validate');
 const { cacheControl } = require('../middleware/cache');
 const { sensitiveLimiter } = require('../middleware/rateLimiter');
-const { sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema, renewTokenSchema, whiteboardTokenSchema, whiteboardImageSchema } = require('../validators/eventSchemas');
+const { sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema, renewTokenSchema, screenTokenSchema, whiteboardTokenSchema, whiteboardImageSchema } = require('../validators/eventSchemas');
 
 // Multer configuration for whiteboard image uploads (PNG, JPG, WEBP) up to
 // 10MB (memory storage) — same limits as product images
@@ -91,9 +91,17 @@ router.post('/:id/token', eventController.getViewerToken);
 router.post('/:id/host-token', authenticate, eventController.getHostToken);
 
 /**
+ * POST /api/events/:id/screen-token
+ * Agora broadcast events: publisher token for the host's second client, which
+ * publishes the shared screen under the reserved uid 2 while the camera stays
+ * on air (requires auth, event host only)
+ */
+router.post('/:id/screen-token', authenticate, validate(screenTokenSchema), eventController.getScreenToken);
+
+/**
  * POST /api/events/:id/renew-token
  * Agora events: re-issue an RTC token for the caller's current role
- * Authentication: attendee credentials in body, or JWT for host/admin
+ * Authentication: attendee credentials in body, or JWT of the event host
  */
 router.post('/:id/renew-token', validate(renewTokenSchema), eventController.renewToken);
 
