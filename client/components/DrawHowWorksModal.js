@@ -49,8 +49,7 @@ export default function DrawHowWorksModal({ isOpen, onClose }) {
               </p>
 
               <p>
-                Puedes cancelar tu inscripción en cualquier momento antes de que el sorteo cierre iniciando
-                sesión en tu cuenta en avantarte.com o poniéndote en contacto con nosotros en
+                Puedes cancelar tu inscripción en cualquier momento antes de que el sorteo poniéndote en contacto con nosotros en
                 info@140d.art. Si tu inscripción es seleccionada en el sorteo y decides cancelar
                 tu pedido, debes contactarnos en un plazo de 24 horas. En ese caso, se te reembolsará el pago
                 y se podrá aplicar una tarifa de gestión de hasta el 10% a nuestra discreción.

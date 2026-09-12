@@ -11,6 +11,8 @@ import BidModal from '@/components/BidModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import { useNotification } from '@/contexts/NotificationContext'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,6 +87,9 @@ export default function AuctionDetail({ params }) {
     const key = `${currentProduct.art_id ?? currentProduct.other_id}-${currentProduct.product_type}`
     return prices.get(key) || null
   }, [currentProduct, prices])
+
+  const currentImageUrl = currentProduct ? getImageUrl(currentProduct) : null
+  const loader = useImageLoaded(currentImageUrl)
 
   const displayPrice = realtimeData?.newPrice ?? currentProduct?.current_price ?? 0
   const displayNextBid = realtimeData?.nextBidAmount ?? ((currentProduct?.current_price ?? 0) + (currentProduct?.step_new_bid ?? 0))
@@ -274,16 +279,20 @@ export default function AuctionDetail({ params }) {
           {/* Column 1: Product image */}
           <div className="lg:col-span-3">
             <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-100 relative">
+              <ImageLoadingPlaceholder show={loader.showLoader} />
               {(() => {
-                const url = currentProduct ? getImageUrl(currentProduct) : null
+                const url = currentImageUrl
                 return url ? (
                   <Image
+                    ref={loader.ref}
                     src={url}
                     alt={currentProduct.name}
                     fill
                     priority
                     className={currentProduct.product_type === 'other' ? 'object-cover' : 'object-contain'}
                     sizes="(max-width: 1024px) 100vw, 25vw"
+                    onLoad={loader.onLoad}
+                    onError={loader.onError}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-gray-400 text-sm">

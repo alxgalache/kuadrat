@@ -4,7 +4,8 @@ const JwtStrategy = require('passport-jwt').Strategy;
 const ExtractJwt = require('passport-jwt').ExtractJwt;
 const bcrypt = require('bcrypt');
 const { db } = require('./database');
-const { isJwtIssuedBeforePasswordChange } = require('../utils/passwordSecurity');
+const { isJwtIssuedBeforeSessionCutoff } = require('../utils/passwordSecurity');
+const { sellerKindOf } = require('../utils/sellerCapabilities');
 
 // Local Strategy for email/password login
 passport.use(
@@ -41,6 +42,9 @@ passport.use(
           role: user.role,
           full_name: user.full_name,
           created_at: user.created_at,
+          // Second axis on top of `role` (seller-kind-artist-speaker). Free to
+          // carry: the row is already loaded. See utils/sellerCapabilities.js.
+          seller_kind: sellerKindOf(user),
         };
 
         return done(null, userWithoutPassword);
@@ -82,7 +86,17 @@ passport.use(
       // issued with the old one valid for up to JWT_EXPIRES_IN (7 days) —
       // which is precisely the exposure an admin-initiated reset exists to
       // close. No extra query: the row is already loaded above.
-      if (isJwtIssuedBeforePasswordChange(jwtPayload.iat, user.password_changed_at)) {
+      //
+      // `sessions_invalidated_at` is the second, general-purpose cut-off
+      // (seller-kind-artist-speaker): the token has to clear BOTH. Its first
+      // writer is the admin changing a seller's `seller_kind`, which is what
+      // stops the artist's browser from keeping a menu — and a cached `user`
+      // object in localStorage — describing capabilities they no longer have.
+      if (isJwtIssuedBeforeSessionCutoff(
+        jwtPayload.iat,
+        user.password_changed_at,
+        user.sessions_invalidated_at
+      )) {
         return done(null, false);
       }
 
@@ -115,6 +129,10 @@ passport.use(
         role: user.role,
         full_name: user.full_name,
         created_at: user.created_at,
+        // Read by requireArtistSeller and by the controllers that branch on
+        // what a seller may do. Free: the row is already loaded above, which
+        // is also what keeps this strategy at exactly one SELECT.
+        seller_kind: sellerKindOf(user),
       };
 
       return done(null, userWithoutPassword);

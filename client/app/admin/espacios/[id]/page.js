@@ -7,6 +7,8 @@ import { adminAPI, triggerDownload } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { MEETING_MAX_ATTENDEES } from '@/lib/constants'
 import { ArrowLeftIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid'
+import { SELLER_KIND_LABELS } from '@/lib/constants'
+import { sellerKindOf } from '@/lib/sellerCapabilities'
 
 function EventDetailContent({ id }) {
   const router = useRouter()
@@ -375,8 +377,10 @@ function EventDetailContent({ id }) {
                     className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                   >
                     <option value="">Seleccionar...</option>
+                    {/* Ambos tipos pueden ser host; se muestra cuál es cada
+                        uno, igual que en la pantalla de alta. */}
                     {sellers.map((s) => (
-                      <option key={s.id} value={s.id}>{s.full_name} ({s.email})</option>
+                      <option key={s.id} value={s.id}>{s.full_name} ({s.email}) · {SELLER_KIND_LABELS[sellerKindOf(s)]}</option>
                     ))}
                   </select>
                 </div>

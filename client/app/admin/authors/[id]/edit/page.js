@@ -7,7 +7,15 @@ import { adminAPI, getAuthorImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import SendcloudConfigSection from '@/components/admin/SendcloudConfigSection'
 import AuthorImageDropzone from '@/components/admin/AuthorImageDropzone'
-import { SENDCLOUD_ENABLED } from '@/lib/constants'
+import ConfirmDialog from '@/components/ConfirmDialog'
+import {
+  SENDCLOUD_ENABLED,
+  SELLER_KIND_LABELS,
+  SELLER_KIND_DESCRIPTIONS,
+  SELLER_KIND_CONFIRM_COPY,
+  SELLER_KIND_ERRORS,
+} from '@/lib/constants'
+import { isArtistSeller, sellerKindOf } from '@/lib/sellerCapabilities'
 import { useNotification } from '@/contexts/NotificationContext'
 import QuillEditor from '@/components/QuillEditor'
 import 'quill/dist/quill.snow.css'
@@ -40,9 +48,22 @@ function AuthorEditPageContent({ params }) {
   const [avatarPreview, setAvatarPreview] = useState('')
   const [avatarMobilePreview, setAvatarMobilePreview] = useState('')
   const [hideImgMobile, setHideImgMobile] = useState(false)
+  // Tipo de vendedor (seller-kind-artist-speaker). `initialSellerKind` guarda
+  // el valor con el que se cargó la ficha: es lo que distingue «he cambiado el
+  // tipo» de «he guardado la ficha con el tipo que ya tenía». Solo el primero
+  // pide confirmación y solo el primero cierra la sesión del vendedor.
+  const [sellerKind, setSellerKind] = useState('artist')
+  const [initialSellerKind, setInitialSellerKind] = useState('artist')
+  const [kindConfirmOpen, setKindConfirmOpen] = useState(false)
+  // Motivos que devuelve el 409 SELLER_KIND_CHANGE_BLOCKED, ya redactados por
+  // el servidor. Se pintan tal cual: la pantalla nunca reconoce prosa.
+  const [kindBlockers, setKindBlockers] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const sendcloudRef = useRef(null)
+  // Un solo predicado con nombre, consultado por la sección y por la rama de
+  // guardado: dos condiciones en línea es como divergen.
+  const showSendcloudSection = isArtistSeller(sellerKind)
   const router = useRouter()
   const { showError, showApiError, showSuccess } = useNotification()
 
@@ -90,6 +111,8 @@ function AuthorEditPageContent({ params }) {
       setTaxVatArt(author.tax_vat_art != null ? String(author.tax_vat_art) : '')
       setTaxVatOther(author.tax_vat_other != null ? String(author.tax_vat_other) : '')
       setHideImgMobile(Boolean(Number(author.hide_profile_img_mobile)))
+      setSellerKind(sellerKindOf(author))
+      setInitialSellerKind(sellerKindOf(author))
       if (author.profile_img) {
         setInitialAvatarUrl(getAuthorImageUrl(author.profile_img))
       }
@@ -157,6 +180,20 @@ function AuthorEditPageContent({ params }) {
       return
     }
 
+    // Cambiar el tipo cierra la sesión del vendedor y cambia las secciones a
+    // las que llega, así que se confirma antes de escribir nada — la misma
+    // cortesía que el envío del enlace de contraseña. Guardar la ficha con el
+    // tipo que ya tenía no pregunta y no expulsa a nadie.
+    if (sellerKind !== initialSellerKind) {
+      setKindConfirmOpen(true)
+      return
+    }
+
+    await persistAuthor()
+  }
+
+  const persistAuthor = async () => {
+    setKindBlockers([])
     setSaving(true)
 
     try {
@@ -182,15 +219,18 @@ function AuthorEditPageContent({ params }) {
         pickup_postal_code: pickupPostalCode.trim(),
         pickup_country: pickupCountry.trim(),
         pickup_instructions: pickupInstructions.trim(),
-        dealer_commission_art: commissionArtNum,
-        dealer_commission_other: commissionOtherNum,
-        tax_vat_art: taxVatArtNum,
-        tax_vat_other: taxVatOtherNum,
-        hide_profile_img_mobile: hideImgMobile
+        dealer_commission_art: parseFloat(dealerCommissionArt),
+        dealer_commission_other: parseFloat(dealerCommissionOther),
+        tax_vat_art: parseFloat(taxVatArt),
+        tax_vat_other: parseFloat(taxVatOther),
+        hide_profile_img_mobile: hideImgMobile,
+        seller_kind: sellerKind
       })
 
-      // Save Sendcloud config if there is data
-      if (SENDCLOUD_ENABLED && sendcloudRef.current) {
+      // Save Sendcloud config if there is data. A speaker has no Sendcloud
+      // section rendered, so there is nothing to read and the API would refuse
+      // the write anyway (seller-kind-artist-speaker).
+      if (SENDCLOUD_ENABLED && showSendcloudSection && sendcloudRef.current) {
         const { data, isNew } = sendcloudRef.current.getFormData()
         const hasData = sendcloudRef.current.hasData()
 
@@ -207,7 +247,17 @@ function AuthorEditPageContent({ params }) {
       showSuccess('Actualizado', 'Autor actualizado correctamente')
       router.push(`/admin/authors/${unwrappedParams.id}`)
     } catch (err) {
-      showApiError(err)
+      // El rechazo del cambio de tipo llega con su lista de motivos. Se pinta
+      // en la propia pantalla, junto al selector, en lugar del aviso genérico:
+      // el admin necesita saber QUÉ resolver, y el formulario conserva el
+      // resto de sus cambios porque el servidor no escribió nada.
+      if (err?.title === 'SELLER_KIND_CHANGE_BLOCKED') {
+        setKindBlockers(err?.response?.blockers || [])
+        setSellerKind(initialSellerKind)
+        showError('No se pudo cambiar el tipo', SELLER_KIND_ERRORS.SELLER_KIND_CHANGE_BLOCKED)
+      } else {
+        showApiError(err)
+      }
     } finally {
       setSaving(false)
     }
@@ -475,6 +525,45 @@ function AuthorEditPageContent({ params }) {
                     </div>
                   </div>
 
+                  {/* Tipo de usuario (seller-kind-artist-speaker). Cambiarlo
+                      retira o concede secciones enteras y cierra la sesión del
+                      vendedor, de ahí la confirmación previa al guardado. */}
+                  <div>
+                    <label htmlFor="sellerKind" className="block text-sm/6 font-medium text-gray-900">
+                      Tipo de usuario
+                    </label>
+                    <div className="mt-2">
+                      <select
+                        id="sellerKind"
+                        name="sellerKind"
+                        value={sellerKind}
+                        onChange={(e) => { setSellerKind(e.target.value); setKindBlockers([]) }}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                      >
+                        <option value="artist">{SELLER_KIND_LABELS.artist}</option>
+                        <option value="speaker">{SELLER_KIND_LABELS.speaker}</option>
+                      </select>
+                    </div>
+                    <p className="mt-2 text-sm/6 text-gray-500">{SELLER_KIND_DESCRIPTIONS[sellerKind]}</p>
+                    {sellerKind !== initialSellerKind && (
+                      <p className="mt-2 text-sm/6 text-amber-700">
+                        Al guardar se cerrará la sesión de este vendedor.
+                      </p>
+                    )}
+                    {kindBlockers.length > 0 && (
+                      <div className="mt-3 rounded-md bg-red-50 p-3">
+                        <p className="text-sm font-medium text-red-800">
+                          {SELLER_KIND_ERRORS.SELLER_KIND_CHANGE_BLOCKED}
+                        </p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-red-700">
+                          {kindBlockers.map((b) => (
+                            <li key={b.code}>{b.message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
                   <div>
                     <h3 className="text-sm/6 font-semibold text-gray-900">IVA del vendedor</h3>
                     <p className="text-sm/6 text-gray-500">
@@ -628,8 +717,13 @@ function AuthorEditPageContent({ params }) {
             </div>
           </div>
 
-          {/* Sendcloud Configuration - only when enabled */}
-          {SENDCLOUD_ENABLED && author && (
+          {/* Sendcloud Configuration — only when enabled AND the author is an
+              artist. A speaker never ships a product, so a sender address and
+              a carrier preference on that account would be data nothing reads;
+              the API refuses the write for the same reason. Reacts to the
+              selector above without saving first, so the form always shows
+              what the chosen type would have. */}
+          {SENDCLOUD_ENABLED && author && showSendcloudSection && (
             <SendcloudConfigSection ref={sendcloudRef} authorId={unwrappedParams.id} />
           )}
 
@@ -650,6 +744,26 @@ function AuthorEditPageContent({ params }) {
             </button>
           </div>
         </form>
+
+        {/* Confirmación del cambio de tipo. Fuera del <form> a propósito: el
+            ConfirmDialog de Headless UI se pinta por un portal y un submit
+            disparado desde dentro del formulario volvería a entrar en
+            handleSubmit. */}
+        <ConfirmDialog
+          open={kindConfirmOpen}
+          onClose={() => setKindConfirmOpen(false)}
+          onConfirm={() => {
+            setKindConfirmOpen(false)
+            persistAuthor()
+          }}
+          title={SELLER_KIND_CONFIRM_COPY.title}
+          message={SELLER_KIND_CONFIRM_COPY.message(
+            fullName || email,
+            SELLER_KIND_LABELS[initialSellerKind],
+            SELLER_KIND_LABELS[sellerKind]
+          )}
+          confirmText={SELLER_KIND_CONFIRM_COPY.confirmText}
+        />
       </div>
     </div>
   )

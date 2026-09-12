@@ -7,6 +7,7 @@ import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import AuthorImageDropzone from '@/components/admin/AuthorImageDropzone'
 import { useNotification } from '@/contexts/NotificationContext'
+import { SELLER_KIND_LABELS, SELLER_KIND_DESCRIPTIONS } from '@/lib/constants'
 import QuillEditor from '@/components/QuillEditor'
 import 'quill/dist/quill.snow.css'
 
@@ -18,6 +19,9 @@ function NewAuthorPageContent() {
   const [email, setEmail] = useState('')
   const [emailContact, setEmailContact] = useState('')
   const [visible, setVisible] = useState(true)
+  // Tipo de vendedor (seller-kind-artist-speaker). 'artist' por defecto, que
+  // es lo que la columna hace también cuando el campo se omite.
+  const [sellerKind, setSellerKind] = useState('artist')
   const [pickupAddress, setPickupAddress] = useState('')
   const [pickupCity, setPickupCity] = useState('')
   const [pickupPostalCode, setPickupPostalCode] = useState('')
@@ -93,6 +97,7 @@ function NewAuthorPageContent() {
         email: email.trim(),
         email_contact: emailContact.trim(),
         visible: visible,
+        seller_kind: sellerKind,
         pickup_address: pickupAddress.trim(),
         pickup_city: pickupCity.trim(),
         pickup_postal_code: pickupPostalCode.trim(),
@@ -343,6 +348,28 @@ function NewAuthorPageContent() {
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Tipo de usuario. Decide qué secciones existen para esta
+                      cuenta: un Ponente no publica obra ni productos, no tiene
+                      envíos y no tiene configuración Sendcloud. */}
+                  <div className="sm:col-span-4">
+                    <label htmlFor="sellerKind" className="block text-sm/6 font-medium text-gray-900">
+                      Tipo de usuario
+                    </label>
+                    <div className="mt-2">
+                      <select
+                        id="sellerKind"
+                        name="sellerKind"
+                        value={sellerKind}
+                        onChange={(e) => setSellerKind(e.target.value)}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                      >
+                        <option value="artist">{SELLER_KIND_LABELS.artist}</option>
+                        <option value="speaker">{SELLER_KIND_LABELS.speaker}</option>
+                      </select>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-500">{SELLER_KIND_DESCRIPTIONS[sellerKind]}</p>
                   </div>
 
                   <div className="relative flex items-start">

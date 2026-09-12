@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const { authenticate, requireSeller, blockWhileImpersonating } = require('../middleware/authorization');
+const { authenticate, requireSeller, requireArtistSeller, blockWhileImpersonating } = require('../middleware/authorization');
 const { db } = require('../config/database');
 const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
@@ -15,7 +15,14 @@ const { pickupSchema, bulkPickupSchema } = require('../validators/pickupSchemas'
 const stripeConnectCtrl = require('../controllers/stripeConnectController');
 const { artVatRegimeForRate } = require('../utils/vatRegime');
 
-// Apply authentication and seller authorization to all routes
+// Apply authentication and seller authorization to all routes.
+//
+// requireArtistSeller is deliberately NOT applied here: this router carries
+// both halves of a seller's life. Everything a speaker needs — /profile,
+// /wallet, /withdrawals, /paid-events, /commission-rates and the whole
+// /stripe-connect block — hangs off it, and a blanket gate would close the
+// only way a speaker has to see their balance and get paid for their events.
+// The product and shipment routes below name the middleware one by one.
 router.use(authenticate, requireSeller);
 
 /**
@@ -108,7 +115,7 @@ router.put('/profile/password', blockWhileImpersonating, validate(changePassword
  * GET /api/seller/products
  * Get all products (art and others) for the authenticated seller
  */
-router.get('/products', async (req, res) => {
+router.get('/products', requireArtistSeller, async (req, res) => {
   try {
     const sellerId = req.user.id;
 
@@ -202,7 +209,7 @@ router.get('/products', async (req, res) => {
  * PUT /api/seller/others/:id/variations
  * Update variations for an 'others' product
  */
-router.put('/others/:id/variations', async (req, res) => {
+router.put('/others/:id/variations', requireArtistSeller, async (req, res) => {
   try {
     const productId = req.params.id;
     const sellerId = req.user.id;
@@ -274,7 +281,7 @@ router.put('/others/:id/variations', async (req, res) => {
  * PUT /api/seller/products/:id/visibility
  * Toggle visibility of a product (art or others)
  */
-router.put('/products/:id/visibility', async (req, res) => {
+router.put('/products/:id/visibility', requireArtistSeller, async (req, res) => {
   try {
     const productId = req.params.id;
     const sellerId = req.user.id;
@@ -327,7 +334,7 @@ router.put('/products/:id/visibility', async (req, res) => {
  * DELETE /api/seller/products/:id
  * Soft delete a product (set removed = 1)
  */
-router.delete('/products/:id', async (req, res) => {
+router.delete('/products/:id', requireArtistSeller, async (req, res) => {
   try {
     const productId = req.params.id;
     const sellerId = req.user.id;
@@ -581,11 +588,12 @@ router.post('/withdrawals', async (req, res, next) => {
   }
 });
 
-// Seller orders (Sendcloud-managed shipments)
-router.get('/orders', getSellerOrders);
-router.get('/orders/:itemType/:itemId/label', downloadOrderLabel);
-router.post('/orders/bulk-pickup', validate(bulkPickupSchema), scheduleBulkPickup);
-router.post('/orders/:orderId/pickup', validate(pickupSchema), schedulePickup);
+// Seller orders (Sendcloud-managed shipments). A speaker never publishes a
+// product, so they never have a parcel to label or a pickup to schedule.
+router.get('/orders', requireArtistSeller, getSellerOrders);
+router.get('/orders/:itemType/:itemId/label', requireArtistSeller, downloadOrderLabel);
+router.post('/orders/bulk-pickup', requireArtistSeller, validate(bulkPickupSchema), scheduleBulkPickup);
+router.post('/orders/:orderId/pickup', requireArtistSeller, validate(pickupSchema), schedulePickup);
 
 // Stripe Connect self-service (Change #1: stripe-connect-accounts)
 // authenticate + requireSeller are already applied globally at line 20.

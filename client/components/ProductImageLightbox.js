@@ -5,6 +5,8 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { ChevronLeftIcon, ChevronRightIcon, XMarkIcon } from '@heroicons/react/20/solid'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 
 const MAX_SCALE = 5
 const ZERO_TRANSFORM = { scale: 1, tx: 0, ty: 0 }
@@ -47,7 +49,14 @@ export default function ProductImageLightbox({
   const goPrev = () => setIndex((i) => (i - 1 + list.length) % list.length)
   const goNext = () => setIndex((i) => (i + 1) % list.length)
 
+  // The full-size original is the heaviest download in the application — this is
+  // where the indicator earns its keep. Keyed on the visible basename so each
+  // arrow press re-evaluates, and disabled while the dialog is closed so the
+  // timer does not run against an image nobody is waiting for.
+  const loader = useImageLoaded(open ? (current?.basename ?? null) : null)
+
   const handleImageLoad = (basename) => (e) => {
+    loader.onLoad()
     const { naturalWidth, naturalHeight } = e.target
     if (!naturalWidth || !naturalHeight) return
     setRatios((prev) => (prev[basename] ? prev : { ...prev, [basename]: naturalWidth / naturalHeight }))
@@ -141,6 +150,10 @@ export default function ProductImageLightbox({
             <DialogPanel ref={boxRef} className="relative overflow-hidden" style={panelStyle}>
               <DialogTitle className="sr-only">{name ? `Imagen completa de ${name}` : 'Imagen completa'}</DialogTitle>
 
+              {/* Fuera del contenedor que lleva el zoom: el indicador no debe
+                  escalarse ni desplazarse con la imagen. */}
+              <ImageLoadingPlaceholder show={loader.showLoader} onDark />
+
               {current && (
                 <div
                   className="absolute inset-0 select-none touch-none"
@@ -155,7 +168,9 @@ export default function ProductImageLightbox({
                     sizes="100vw"
                     className="object-contain"
                     draggable={false}
+                    ref={loader.ref}
                     onLoad={handleImageLoad(current.basename)}
+                    onError={loader.onError}
                   />
                 </div>
               )}

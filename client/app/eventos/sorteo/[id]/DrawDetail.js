@@ -9,6 +9,8 @@ import DrawParticipationModal from '@/components/DrawParticipationModal'
 import DrawHowWorksModal from '@/components/DrawHowWorksModal'
 import AuthorModal from '@/components/AuthorModal'
 import Breadcrumbs from '@/components/Breadcrumbs'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 import {SafeProductDescription} from "@/components/SafeHTML";
 
 export default function DrawDetail({ params }) {
@@ -26,6 +28,15 @@ export default function DrawDetail({ params }) {
     draw?.id,
     draw?.end_datetime
   )
+
+  // Arriba del todo porque los hooks no pueden ir detrás de los retornos
+  // tempranos de `loading` y `error` que hay más abajo.
+  const imageUrl = draw?.basename
+    ? (draw.product_type === 'art'
+        ? getArtImageUrl(draw.basename)
+        : getOthersImageUrl(draw.basename))
+    : null
+  const loader = useImageLoaded(imageUrl)
 
   useEffect(() => {
     loadDraw()
@@ -77,12 +88,6 @@ export default function DrawDetail({ params }) {
       </div>
     )
   }
-
-  const imageUrl = draw.basename
-    ? (draw.product_type === 'art'
-        ? getArtImageUrl(draw.basename)
-        : getOthersImageUrl(draw.basename))
-    : null
 
   const isFull = draw.participation_count >= draw.max_participations
   const isActive = draw.status === 'active'
@@ -138,14 +143,18 @@ export default function DrawDetail({ params }) {
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
           {/* Image column */}
           <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
+            <ImageLoadingPlaceholder show={loader.showLoader} />
             {imageUrl ? (
               <Image
+                ref={loader.ref}
                 src={imageUrl}
                 alt={draw.product_name || draw.name}
                 fill
                 priority
                 className="object-cover"
                 sizes="(max-width: 1024px) 100vw, 50vw"
+                onLoad={loader.onLoad}
+                onError={loader.onError}
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center">

@@ -6,6 +6,7 @@ const { ApiError } = require('../middleware/errorHandler');
 const validator = require('validator');
 const { db } = require('../config/database');
 const { hashResetToken } = require('../utils/passwordSecurity');
+const { sellerKindOf } = require('../utils/sellerCapabilities');
 
 // Machine-readable codes carried in the ApiError `title`, same pattern as
 // SHIPPING_ADDRESS_REQUIRED / CAPTCHA_UNAVAILABLE. The es-ES copy lives in
@@ -42,6 +43,11 @@ const login = async (req, res, next) => {
         }
       );
 
+      // `seller_kind` travels in the RESPONSE body, never inside the JWT
+      // (seller-kind-artist-speaker). The strategy re-reads the row on every
+      // request, so the server is always current; baking the kind into a
+      // 7-day token would create a second, stale source of truth that
+      // `sessions_invalidated_at` could no longer correct.
       res.status(200).json({
         success: true,
         token,
@@ -50,6 +56,7 @@ const login = async (req, res, next) => {
           email: user.email,
           role: user.role,
           full_name: user.full_name,
+          seller_kind: user.seller_kind,
         },
       });
     })(req, res, next);
@@ -139,7 +146,8 @@ const validateSetupToken = async (req, res, next) => {
 
     // Find user with this token
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, password_hash, password_setup_token_expires
+      sql: `SELECT id, email, full_name, password_hash, password_setup_token_expires,
+                   seller_kind
             FROM users
             WHERE password_setup_token = ?`,
       args: [token],
@@ -200,7 +208,8 @@ const setPassword = async (req, res, next) => {
 
     // Find user with this token
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, password_hash, password_setup_token_expires
+      sql: `SELECT id, email, full_name, password_hash, password_setup_token_expires,
+                   seller_kind
             FROM users
             WHERE password_setup_token = ?`,
       args: [token],
@@ -264,6 +273,9 @@ const setPassword = async (req, res, next) => {
         email: user.email,
         role: 'seller',
         full_name: user.full_name,
+        // The activation link auto-logs the artist in, so this object is what
+        // the navbar composes their menu from on their very first visit.
+        seller_kind: sellerKindOf(user),
       },
     });
   } catch (error) {

@@ -26,12 +26,19 @@ function getMonthRange(year, month) {
 // Main page
 // ---------------------------------------------------------------------------
 export default function SubastasPage() {
-  const [selectedDate, setSelectedDate] = useState(todayStr())
+  // La fecha de hoy se fija en el cliente, nunca durante el render: esta página
+  // se prerrenderiza en `docker build` y se sirve estática, así que un
+  // `useState(todayStr())` congelaría en el HTML el día de la compilación y lo
+  // serviría hasta el siguiente despliegue. Ver el comentario largo en
+  // AuctionCalendar/EventCalendar.
+  const [selectedDate, setSelectedDate] = useState(null)
   const [eventsForMonth, setEventsForMonth] = useState([])
+  const [calendarYear, setCalendarYear] = useState(null)
+  const [calendarMonth, setCalendarMonth] = useState(null)
 
-  const parsedDate = selectedDate ? new Date(selectedDate + 'T00:00:00') : new Date()
-  const [calendarYear, setCalendarYear] = useState(parsedDate.getFullYear())
-  const [calendarMonth, setCalendarMonth] = useState(parsedDate.getMonth())
+  useEffect(() => {
+    setSelectedDate(todayStr())
+  }, [])
 
   // Load auctions and draws for visible calendar month
   const loadMonthEvents = useCallback(async (year, month) => {
@@ -52,10 +59,12 @@ export default function SubastasPage() {
   }, [])
 
   useEffect(() => {
+    if (calendarYear === null || calendarMonth === null) return
     loadMonthEvents(calendarYear, calendarMonth)
   }, [calendarYear, calendarMonth, loadMonthEvents])
 
   useEffect(() => {
+    if (!selectedDate) return
     const d = new Date(selectedDate + 'T00:00:00')
     setCalendarYear(d.getFullYear())
     setCalendarMonth(d.getMonth())

@@ -5,6 +5,8 @@ import Image from 'next/image'
 import { ChevronLeftIcon, ChevronRightIcon, MagnifyingGlassPlusIcon } from '@heroicons/react/20/solid'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import ProductImageLightbox from '@/components/ProductImageLightbox'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 
 export default function ProductImageCarousel({ images, imageType, name, priority = false }) {
   const [index, setIndex] = useState(0)
@@ -21,8 +23,15 @@ export default function ProductImageCarousel({ images, imageType, name, priority
   const goPrev = () => setIndex((i) => (i - 1 + list.length) % list.length)
   const goNext = () => setIndex((i) => (i + 1) % list.length)
 
+  // Keyed on the visible basename: advancing the carousel lands on an image that
+  // may not be downloaded yet, so the load state has to be re-evaluated.
+  const loader = useImageLoaded(current?.basename ?? null)
+
   // Ratio is recorded per image so the lightbox can size its panel before measuring
   const handleImageLoad = (basename) => (e) => {
+    // The loader is dismissed first: this handler returns early for a decoded
+    // image with no intrinsic size, and the indicator must come down anyway.
+    loader.onLoad()
     const { naturalWidth, naturalHeight } = e.target
     if (!naturalWidth || !naturalHeight) return
     setRatios((prev) => (prev[basename] ? prev : { ...prev, [basename]: naturalWidth / naturalHeight }))
@@ -34,8 +43,11 @@ export default function ProductImageCarousel({ images, imageType, name, priority
       className={`aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative${current ? ' cursor-pointer' : ''}`}
       onClick={current ? () => setLightboxOpen(true) : undefined}
     >
+      <ImageLoadingPlaceholder show={loader.showLoader} />
+
       {current && (
         <Image
+          ref={loader.ref}
           alt={name || ''}
           src={resolveUrl(current.basename)}
           fill
@@ -43,6 +55,7 @@ export default function ProductImageCarousel({ images, imageType, name, priority
           className="object-cover"
           priority={priority}
           onLoad={handleImageLoad(current.basename)}
+          onError={loader.onError}
         />
       )}
 

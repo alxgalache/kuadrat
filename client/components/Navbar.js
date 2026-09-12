@@ -1,15 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Dialog, DialogPanel, Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { Bars3Icon, XMarkIcon, ShoppingCartIcon, UserCircleIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCart } from '@/contexts/CartContext'
+import BrandLogo from '@/components/BrandLogo'
 import ShoppingCartDrawer from '@/components/ShoppingCartDrawer'
 import { SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, IMPERSONATION_COPY } from '@/lib/constants'
+import { canPublishProducts, canManageShipments, canSeeOrders } from '@/lib/sellerCapabilities'
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -34,6 +35,27 @@ export default function Navbar() {
       { name: 'Galería', href: '/galeria' },
       { name: 'Tienda', href: '/tienda' }
   ]
+
+  // The seller's own menu, composed ONCE (seller-kind-artist-speaker).
+  //
+  // The desktop popover and the mobile dialog below used to carry two separate
+  // copies of these links. Adding the kind condition to each of them
+  // independently would guarantee they eventually diverge — and the divergence
+  // would only ever be visible at one screen size. Both now walk this list.
+  //
+  // «Monedero» is present for BOTH kinds and that is the point of the change:
+  // it is a speaker's only way to see their balance and request payment for
+  // their events, and it used to live inside /orders, a screen they have no
+  // reason to visit. «Artículos», «Mis envíos» and «Pedidos» are withdrawn
+  // from a speaker, who never publishes a product, never ships one and never
+  // has an order item of their own.
+  const sellerMenuItems = [
+    { name: 'Perfil', href: '/seller/profile' },
+    canPublishProducts(user) && { name: 'Artículos', href: '/seller/products' },
+    SENDCLOUD_ENABLED && canManageShipments(user) && { name: 'Mis envíos', href: '/seller/pedidos' },
+    { name: 'Monedero', href: '/seller/monedero' },
+    canSeeOrders(user) && { name: 'Pedidos', href: '/orders' },
+  ].filter(Boolean)
 
   const handleLogout = () => {
     logout()
@@ -121,14 +143,7 @@ export default function Navbar() {
 
         <Link href="/" className="-m-1.5 p-1.5">
           <span className="sr-only">140d</span>
-          <Image
-            alt="140d Galería de Arte logo"
-            src="/brand/140d.svg"
-            width={120}
-            height={24}
-            className="h-6 w-auto"
-            style={{ width: 'auto' }}
-          />
+          <BrandLogo className="h-6 w-auto" priority />
         </Link>
 
         <div className="flex flex-1 justify-end items-center gap-x-2">
@@ -282,36 +297,16 @@ export default function Navbar() {
                       {displayName}
                     </div>
                   )}
-                  <Link
-                    href="/seller/profile"
-                    onClick={() => close()}
-                    className="block p-2 hover:text-gray-600"
-                  >
-                    Perfil
-                  </Link>
-                  <Link
-                    href="/seller/products"
-                    onClick={() => close()}
-                    className="block p-2 hover:text-gray-600"
-                  >
-                    Artículos
-                  </Link>
-                  {SENDCLOUD_ENABLED && (
+                  {sellerMenuItems.map((item) => (
                     <Link
-                      href="/seller/pedidos"
+                      key={item.href}
+                      href={item.href}
                       onClick={() => close()}
                       className="block p-2 hover:text-gray-600"
                     >
-                      Mis envíos
+                      {item.name}
                     </Link>
-                  )}
-                  <Link
-                    href="/orders"
-                    onClick={() => close()}
-                    className="block p-2 hover:text-gray-600"
-                  >
-                    Pedidos
-                  </Link>
+                  ))}
                   <button
                     onClick={() => {
                       close()
@@ -441,13 +436,7 @@ export default function Navbar() {
             </div>
             <Link href="/" className="-m-1.5 p-1.5">
               <span className="sr-only">140d</span>
-              <Image
-                alt="140d Galería de Arte logo"
-                src="/brand/140d.svg"
-                width={120}
-                height={32}
-                className="h-8 w-auto"
-              />
+              <BrandLogo className="h-8 w-auto" />
             </Link>
             <div className="flex flex-1 justify-end" />
           </div>
@@ -562,36 +551,18 @@ export default function Navbar() {
                   </>
                 ) : isSeller ? (
                   <>
-                    <Link
-                      href="/seller/profile"
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
-                    >
-                      Perfil
-                    </Link>
-                    <Link
-                      href="/seller/products"
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
-                    >
-                      Artículos
-                    </Link>
-                    {SENDCLOUD_ENABLED && (
+                    {/* Same list the desktop popover walks, so the two can
+                        never offer different sections. */}
+                    {sellerMenuItems.map((item) => (
                       <Link
-                        href="/seller/pedidos"
+                        key={item.href}
+                        href={item.href}
                         onClick={() => setMobileMenuOpen(false)}
                         className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
                       >
-                        Mis envíos
+                        {item.name}
                       </Link>
-                    )}
-                    <Link
-                      href="/orders"
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="-mx-3 block rounded-lg px-3 py-2 text-base/7 font-semibold text-gray-900 hover:bg-gray-50"
-                    >
-                      Pedidos
-                    </Link>
+                    ))}
                   </>
                 ) : null}
                 {isImpersonating && (

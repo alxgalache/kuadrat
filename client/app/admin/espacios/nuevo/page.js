@@ -7,6 +7,8 @@ import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import { MEETING_MAX_ATTENDEES } from '@/lib/constants'
 import { ArrowLeftIcon } from '@heroicons/react/20/solid'
+import { SELLER_KIND_LABELS } from '@/lib/constants'
+import { sellerKindOf } from '@/lib/sellerCapabilities'
 
 function NewEventPageContent() {
   const router = useRouter()
@@ -293,9 +295,13 @@ function NewEventPageContent() {
                   required
                 >
                   <option value="">Seleccionar...</option>
+                  {/* Los DOS tipos pueden ser host: ser host es justamente
+                      la razón de ser de un Ponente, y a un Artista nunca se le
+                      quitó. Se muestra el tipo para que el admin sepa a quién
+                      está asignando el evento. */}
                   {sellers.map((seller) => (
                     <option key={seller.id} value={seller.id}>
-                      {seller.full_name} ({seller.email})
+                      {seller.full_name} ({seller.email}) · {SELLER_KIND_LABELS[sellerKindOf(seller)]}
                     </option>
                   ))}
                 </select>

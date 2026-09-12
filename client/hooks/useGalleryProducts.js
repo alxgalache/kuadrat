@@ -22,9 +22,12 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
  * haya dos obras contiguas del mismo artista y que la primera fila no sea
  * siempre del mismo. Reglas que hacen que eso funcione:
  *
- *   · Se sortea DENTRO de `loadInitial`, nunca en el render. Ambas rutas se
- *     prerrenderizan y un valor aleatorio calculado en el servidor no
- *     coincidiría con el del cliente.
+ *   · Se sortea DENTRO de `loadInitial`, nunca en el render — SALVO cuando la
+ *     sortea el componente de servidor y llega por `initialSeed`. Ese caso no
+ *     es una excepción a la regla sino su aplicación: el valor viaja como prop
+ *     dentro del HTML, así que servidor y cliente usan literalmente el mismo
+ *     número y no hay nada que pueda discrepar. Es el patrón con el que se
+ *     arregló el vídeo de la portada.
  *   · Toda la vida de la rejilla usa la misma: la ventana de paginación se
  *     desplaza sobre UNA ordenación, y dos ordenaciones distintas repetirían
  *     obras y perderían otras.
@@ -38,6 +41,7 @@ export function useGalleryProducts(
   authorSlug = null,
   restoration = null,
   initialProducts = null,
+  initialSeed = null,
 ) {
   // `initialProducts` lo resuelve el componente de servidor. Sirve para UNA
   // cosa concreta y medible: que los enlaces `<a href>` a cada obra existan en
@@ -97,6 +101,11 @@ export function useGalleryProducts(
   const restorationRef = useRef(restoration)
   restorationRef.current = restoration
 
+  // La semilla del servidor sólo vale para la carga de montaje, igual que la
+  // instantánea. En una referencia para que no entre en las dependencias de
+  // `loadInitial`: cambiarla no debe reconstruir el callback.
+  const initialSeedRef = useRef(initialSeed)
+
   const isInitialLoadRef = useRef(true)
   isInitialLoadRef.current = isInitialLoad
 
@@ -148,11 +157,22 @@ export function useGalleryProducts(
         setPage(1)
         pageRef.current = 1
       }
-      // Una semilla nueva por carga de rejilla, salvo al restaurar: allí manda
-      // la de la instantánea. Con filtro de autor no hay semilla en absoluto.
+      // Una semilla nueva por carga de rejilla, con dos excepciones y en este
+      // orden de precedencia:
+      //
+      //   1. La instantánea, al volver atrás: rehidratar las mismas páginas de
+      //      un barajado distinto dejaría la obra pulsada en otra posición.
+      //   2. `initialSeed`, SÓLO en la carga de montaje: es la semilla con la
+      //      que el servidor construyó la rejilla que el visitante ya está
+      //      viendo. Reutilizarla es lo que evita que el catálogo se rebaraje
+      //      ante sus ojos un instante después de pintarse.
+      //
+      // Un cambio de filtro de autor (`initial === false`) vuelve a sortear,
+      // porque ahí la rejilla se sustituye de todos modos.
+      const semillaSembrada = initial ? initialSeedRef.current : null
       const semilla = authorSlug
         ? null
-        : (snapshot?.seed ?? drawOrderSeed())
+        : (snapshot?.seed ?? semillaSembrada ?? drawOrderSeed())
       seedRef.current = semilla
       restorationRef.current?.setOrderSeed(semilla)
 

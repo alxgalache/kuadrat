@@ -6,7 +6,7 @@ import { XMarkIcon, CheckIcon, ArrowLeftIcon } from '@heroicons/react/24/outline
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import Image from 'next/image'
 import { drawsAPI, getArtImageUrl, getOthersImageUrl } from '@/lib/api'
-import { getStripePromise } from '@/lib/stripe'
+import { getStripePromise, prefetchStripe } from '@/lib/stripe'
 import usePostalCodeValidation from '@/hooks/usePostalCodeValidation'
 import { useNotification } from '@/contexts/NotificationContext'
 import { validateSpanishTaxId as validateDNI } from '@/lib/spanishTaxId'
@@ -119,6 +119,14 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
     hasRestrictions: true,
     validateFn: postalCodeValidateFn,
   })
+
+  // Adelanta Stripe.js en cuanto se abre el modal. Desde que lib/stripe.js
+  // importa `@stripe/stripe-js/pure`, el script ya no viaja en todas las
+  // páginas del sitio: se pide aquí, varios pasos antes de que <Elements>
+  // tenga que pintarse.
+  useEffect(() => {
+    if (isOpen) prefetchStripe()
+  }, [isOpen])
 
   // ------ Auto-close if draw ends while modal is open ------
   useEffect(() => {

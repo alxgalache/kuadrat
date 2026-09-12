@@ -10,7 +10,7 @@ const {
   getArtProductImage,
   getArtProductsByAuthorSlug,
 } = require('../controllers/artController');
-const { authenticate, requireSeller } = require('../middleware/authorization');
+const { authenticate, requireSeller, requireArtistSeller } = require('../middleware/authorization');
 const { cacheControl } = require('../middleware/cache');
 
 // Multer configuration for image uploads (PNG, JPG, WEBP) up to 10MB (memory storage)
@@ -30,9 +30,11 @@ router.get('/images/:basename', cacheControl({ maxAge: 86400 }), getArtProductIm
 router.get('/author/:slug', cacheControl({ maxAge: 120 }), getArtProductsByAuthorSlug);
 
 // Protected routes - Seller only
-router.get('/seller/me', authenticate, requireSeller, getSellerArtProducts);
-router.post('/', authenticate, requireSeller, upload.fields([{ name: 'images', maxCount: 3 }]), createArtProduct);
-router.delete('/:id', authenticate, requireSeller, deleteArtProduct);
+// requireArtistSeller: a speaker has no artwork, so these three are closed
+// to them on the server, not merely hidden in their menu.
+router.get('/seller/me', authenticate, requireSeller, requireArtistSeller, getSellerArtProducts);
+router.post('/', authenticate, requireSeller, requireArtistSeller, upload.fields([{ name: 'images', maxCount: 3 }]), createArtProduct);
+router.delete('/:id', authenticate, requireSeller, requireArtistSeller, deleteArtProduct);
 
 // Public route - must be after more specific routes to avoid conflict
 router.get('/:id', getArtProductById);

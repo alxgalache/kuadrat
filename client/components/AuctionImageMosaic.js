@@ -1,5 +1,9 @@
+'use client'
+
 import Image from 'next/image'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 
 function getImageUrl(product) {
   const basename = product.thumbnail_basename || product.images?.[0]?.basename || product.basename
@@ -7,6 +11,36 @@ function getImageUrl(product) {
   return product.product_type === 'art'
     ? getArtImageUrl(basename)
     : getOthersImageUrl(basename)
+}
+
+/**
+ * Una celda del mosaico, con su propio indicador de carga.
+ *
+ * Cada celda lo gestiona por su cuenta y no hay uno solo para el mosaico
+ * entero: las imágenes llegan por separado, y un indicador único seguiría
+ * girando encima de las celdas ya pintadas hasta que llegara la última.
+ */
+function MosaicCell({ url, alt, sizes, className, priority = false }) {
+  const loader = useImageLoaded(url)
+
+  return (
+    <>
+      <ImageLoadingPlaceholder show={loader.showLoader} />
+      {url && (
+        <Image
+          ref={loader.ref}
+          alt={alt}
+          src={url}
+          fill
+          className={className}
+          sizes={sizes}
+          priority={priority}
+          onLoad={loader.onLoad}
+          onError={loader.onError}
+        />
+      )}
+    </>
+  )
 }
 
 export default function AuctionImageMosaic({ products, productCount, priority = false }) {
@@ -18,16 +52,13 @@ export default function AuctionImageMosaic({ products, productCount, priority = 
     const url = getImageUrl(products[0])
     return (
       <div className="aspect-square w-full rounded-md bg-gray-200 relative overflow-hidden">
-        {url && (
-          <Image
-            alt={products[0].name}
-            src={url}
-            fill
-            className="object-cover"
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-            priority={priority}
-          />
-        )}
+        <MosaicCell
+          url={url}
+          alt={products[0].name}
+          className="object-cover"
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          priority={priority}
+        />
       </div>
     )
   }
@@ -39,29 +70,23 @@ export default function AuctionImageMosaic({ products, productCount, priority = 
       <div className="aspect-square w-full rounded-md overflow-hidden relative bg-gray-200">
         <div className="absolute top-0 left-0 w-[75%] h-[75%]">
           <div className="relative w-full h-full">
-            {url0 && (
-              <Image
-                alt={products[0].name}
-                src={url0}
-                fill
-                className="object-cover rounded-md shadow-sm bg-gray-200"
-                sizes="(max-width: 640px) 37vw, 18vw"
-                priority={priority}
-              />
-            )}
+            <MosaicCell
+              url={url0}
+              alt={products[0].name}
+              className="object-cover rounded-md shadow-sm bg-gray-200"
+              sizes="(max-width: 640px) 37vw, 18vw"
+              priority={priority}
+            />
           </div>
         </div>
         <div className="absolute bottom-0 right-0 w-[75%] h-[75%]">
           <div className="relative w-full h-full">
-            {url1 && (
-              <Image
-                alt={products[1].name}
-                src={url1}
-                fill
-                className="object-cover rounded-md shadow-sm ring-2 ring-white bg-gray-200"
-                sizes="(max-width: 640px) 37vw, 18vw"
-              />
-            )}
+            <MosaicCell
+              url={url1}
+              alt={products[1].name}
+              className="object-cover rounded-md shadow-sm ring-2 ring-white bg-gray-200"
+              sizes="(max-width: 640px) 37vw, 18vw"
+            />
           </div>
         </div>
       </div>
@@ -78,16 +103,13 @@ export default function AuctionImageMosaic({ products, productCount, priority = 
           const url = getImageUrl(products[i])
           return (
             <div key={i} className="relative w-full h-full bg-gray-200">
-              {url && (
-                <Image
-                  alt={products[i].name}
-                  src={url}
-                  fill
-                  className="object-cover bg-gray-200"
-                  sizes="(max-width: 640px) 25vw, (max-width: 1024px) 16vw, 12vw"
-                  priority={priority && i === 0}
-                />
-              )}
+              <MosaicCell
+                url={url}
+                alt={products[i].name}
+                className="object-cover bg-gray-200"
+                sizes="(max-width: 640px) 25vw, (max-width: 1024px) 16vw, 12vw"
+                priority={priority && i === 0}
+              />
             </div>
           )
         }

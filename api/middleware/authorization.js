@@ -1,5 +1,6 @@
 const passport = require('passport');
 const { ApiError } = require('./errorHandler');
+const { canPublishProducts } = require('../utils/sellerCapabilities');
 
 // Middleware to authenticate user using JWT
 const authenticate = passport.authenticate('jwt', { session: false });
@@ -26,6 +27,43 @@ const requireSeller = (req, res, next) => {
 
   if (req.user.role !== 'seller') {
     throw new ApiError(403, 'Acceso denegado. Se requiere rol de vendedor.');
+  }
+
+  next();
+};
+
+/**
+ * Middleware to check the seller may publish and manage products
+ * (seller-kind-artist-speaker).
+ *
+ * A seller with `seller_kind = 'speaker'` only takes part in multimedia
+ * events: they have no artwork, no store product and no shipment. Every route
+ * that creates, lists, edits or ships one is closed to them here.
+ *
+ * It is a named, exported middleware rather than an `if` inside each
+ * controller for the same reason `blockWhileImpersonating` is: protecting one
+ * more endpoint is a line, not a copied condition that can drift from this
+ * one. And the answer has to live on the server — hiding a menu entry on the
+ * client is not a permission, it only avoids offering what cannot be done.
+ *
+ * Assumes `authenticate` + `requireSeller` ran first; it re-checks the role
+ * anyway so mounting it alone cannot silently pass a buyer through.
+ */
+const requireArtistSeller = (req, res, next) => {
+  if (!req.user) {
+    throw new ApiError(401, 'Autenticación requerida');
+  }
+
+  if (req.user.role !== 'seller') {
+    throw new ApiError(403, 'Acceso denegado. Se requiere rol de vendedor.');
+  }
+
+  if (!canPublishProducts(req.user)) {
+    throw new ApiError(
+      403,
+      'Esta sección no está disponible para un usuario de tipo Ponente.',
+      'SELLER_KIND_FORBIDDEN'
+    );
   }
 
   next();
@@ -89,6 +127,7 @@ module.exports = {
   authenticate,
   optionalAuthenticate,
   requireSeller,
+  requireArtistSeller,
   requireBuyer,
   requireAuth,
   blockWhileImpersonating,

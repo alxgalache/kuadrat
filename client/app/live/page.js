@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Image from 'next/image'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 import Link from 'next/link'
 import { eventsAPI } from '@/lib/api'
 import EventCalendar from '@/components/EventCalendar'
@@ -59,11 +61,19 @@ const categoryLabels = {
 // Main page
 // ---------------------------------------------------------------------------
 export default function EspaciosPage() {
-  const [selectedDate, setSelectedDate] = useState(todayStr())
+  // La fecha de hoy se fija en el cliente, nunca durante el render: esta página
+  // se prerrenderiza en `docker build` y se sirve estática, así que un
+  // `useState(todayStr())` congelaría en el HTML el día de la compilación y lo
+  // serviría hasta el siguiente despliegue. Ver el comentario largo en
+  // AuctionCalendar/EventCalendar.
+  const [selectedDate, setSelectedDate] = useState(null)
   const [eventsForMonth, setEventsForMonth] = useState([])
-  const parsedDate = selectedDate ? new Date(selectedDate + 'T00:00:00') : new Date()
-  const [calendarYear, setCalendarYear] = useState(parsedDate.getFullYear())
-  const [calendarMonth, setCalendarMonth] = useState(parsedDate.getMonth())
+  const [calendarYear, setCalendarYear] = useState(null)
+  const [calendarMonth, setCalendarMonth] = useState(null)
+
+  useEffect(() => {
+    setSelectedDate(todayStr())
+  }, [])
 
   // Load events for visible calendar month
   const loadMonthEvents = useCallback(async (year, month) => {
@@ -77,10 +87,12 @@ export default function EspaciosPage() {
   }, [])
 
   useEffect(() => {
+    if (calendarYear === null || calendarMonth === null) return
     loadMonthEvents(calendarYear, calendarMonth)
   }, [calendarYear, calendarMonth, loadMonthEvents])
 
   useEffect(() => {
+    if (!selectedDate) return
     const d = new Date(selectedDate + 'T00:00:00')
     setCalendarYear(d.getFullYear())
     setCalendarMonth(d.getMonth())
@@ -226,16 +238,7 @@ export default function EspaciosPage() {
               {/* Imagen. El degradado de tres paradas la funde con el texto de
                   forma gradual; con dos, el corte se veía. */}
               {event.cover_image_url && (
-                <div className="relative hidden w-2/5 self-stretch sm:block">
-                  <Image
-                    src={event.cover_image_url}
-                    alt={event.title}
-                    fill
-                    className="object-cover"
-                    sizes="(min-width: 640px) 40vw, 0px"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-white via-white/40 to-transparent" />
-                </div>
+                <EventCardImage src={event.cover_image_url} alt={event.title} />
               )}
             </div>
           </Link>
@@ -268,6 +271,37 @@ export default function EspaciosPage() {
           </main>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * La imagen de una tarjeta del listado, con su indicador de carga.
+ *
+ * Es un componente aparte y no JSX en línea porque el hook no puede vivir dentro
+ * del `.map()` que recorre los eventos.
+ *
+ * El orden de los tres hijos es el que importa: indicador, imagen y degradado.
+ * El degradado se pinta por encima de los dos, que es lo que pedía el diseño;
+ * y el indicador queda por debajo de la imagen por ir antes en el DOM.
+ */
+function EventCardImage({ src, alt }) {
+  const loader = useImageLoaded(src)
+
+  return (
+    <div className="relative hidden w-2/5 self-stretch sm:block">
+      <ImageLoadingPlaceholder show={loader.showLoader} />
+      <Image
+        ref={loader.ref}
+        src={src}
+        alt={alt}
+        fill
+        className="object-cover"
+        sizes="(min-width: 640px) 40vw, 0px"
+        onLoad={loader.onLoad}
+        onError={loader.onError}
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-white via-white/40 to-transparent" />
     </div>
   )
 }

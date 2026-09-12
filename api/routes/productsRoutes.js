@@ -9,7 +9,7 @@ const {
   getSellerProducts,
   getProductsByAuthorSlug,
 } = require('../controllers/productsController');
-const { authenticate, requireSeller } = require('../middleware/authorization');
+const { authenticate, requireSeller, requireArtistSeller } = require('../middleware/authorization');
 
 // Multer configuration for image uploads (PNG, JPG, WEBP) up to 10MB (memory storage)
 const upload = multer({
@@ -27,9 +27,10 @@ router.get('/', getAllProducts);
 router.get('/author/:slug', getProductsByAuthorSlug);
 
 // Protected routes - Seller only
-router.get('/seller/me', authenticate, requireSeller, getSellerProducts);
-router.post('/', authenticate, requireSeller, upload.single('image'), createProduct);
-router.delete('/:id', authenticate, requireSeller, deleteProduct);
+// Legacy products router; gated like art and others for the same reason.
+router.get('/seller/me', authenticate, requireSeller, requireArtistSeller, getSellerProducts);
+router.post('/', authenticate, requireSeller, requireArtistSeller, upload.single('image'), createProduct);
+router.delete('/:id', authenticate, requireSeller, requireArtistSeller, deleteProduct);
 
 // Public route - must be after more specific routes to avoid conflict
 router.get('/:id', getProductById);

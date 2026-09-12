@@ -386,7 +386,7 @@ function SellerOrdersContent() {
 
 export default function SellerOrdersPage() {
   return (
-    <AuthGuard requireRole="seller">
+    <AuthGuard requireRole="seller" requireSellerKind="artist">
       <SellerOrdersContent />
     </AuthGuard>
   )

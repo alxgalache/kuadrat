@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/20/solid'
 
 const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
@@ -11,12 +11,45 @@ const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
  * @param {{ selectedDate: string, onSelectDate: (dateStr: string) => void, eventDates: Array<{event_datetime: string, duration_minutes: number}> }} props
  */
 export default function EventCalendar({ selectedDate, onSelectDate, onMonthChange, eventDates = [] }) {
-  const today = new Date()
-  const todayStr = formatDateStr(today)
+  // «Hoy» y el mes visible NO pueden decidirse durante el render.
+  //
+  // Esta página se prerrenderiza durante `docker build` y se sirve estática: una
+  // fecha calculada aquí queda congelada en el HTML con el día de la compilación
+  // y se sirve así hasta el siguiente despliegue —comprobado: el HTML llevaba el
+  // día 11 marcado—. Y en desarrollo discrepa igualmente, porque el contenedor
+  // corre en UTC y el navegador en Europe/Madrid, así que entre las 00:00 y las
+  // 02:00 locales no coinciden ni en el día.
+  //
+  // Fijándolas en un efecto, que no corre en el servidor, el HTML servido no
+  // afirma ninguna fecha y no hay nada con lo que discrepar. Es la misma regla
+  // que el proyecto ya aplica a `localStorage` y al indicador de carga de
+  // imágenes: nada que dependa del reloj o del navegador sale de un
+  // inicializador de `useState`.
+  const [todayStr, setTodayStr] = useState(null)
 
-  const initial = selectedDate ? new Date(selectedDate + 'T00:00:00') : today
-  const [viewYear, setViewYear] = useState(initial.getFullYear())
-  const [viewMonth, setViewMonth] = useState(initial.getMonth())
+  // Año y mes viajan JUNTOS en un solo estado, y no en dos, porque al cambiar de
+  // mes el año depende del mes: separados no hay forma de actualizarlos a la vez
+  // a partir del valor anterior. Ver `cambiarMes`.
+  const [view, setView] = useState(null) // { year, month } · month 0-indexed
+  const viewRef = useRef(null)
+
+  useEffect(() => {
+    setTodayStr(formatDateStr(new Date()))
+  }, [])
+
+  // El mes visible se engancha a la fecha elegida la primera vez que llega; a
+  // partir de ahí lo gobiernan las flechas.
+  useEffect(() => {
+    if (!selectedDate || viewRef.current) return
+    const d = new Date(selectedDate + 'T00:00:00')
+    const inicial = { year: d.getFullYear(), month: d.getMonth() }
+    viewRef.current = inicial
+    setView(inicial)
+  }, [selectedDate])
+
+  const listo = view !== null
+  const viewYear = view?.year
+  const viewMonth = view?.month
 
   // Build a Set of date strings (YYYY-MM-DD) that have an event
   const eventDateSet = useMemo(() => {
@@ -30,6 +63,10 @@ export default function EventCalendar({ selectedDate, onSelectDate, onMonthChang
 
   // Build the calendar grid
   const calendarDays = useMemo(() => {
+    // Armazón mientras no hay mes: seis filas vacías, la altura máxima que puede
+    // ocupar un mes, para que el relleno posterior no empuje lo que hay debajo.
+    if (!listo) return Array.from({ length: 42 }, () => null)
+
     const firstDay = new Date(viewYear, viewMonth, 1)
     let startWeekday = firstDay.getDay() - 1
     if (startWeekday < 0) startWeekday = 6
@@ -50,28 +87,38 @@ export default function EventCalendar({ selectedDate, onSelectDate, onMonthChang
     }
 
     return days
-  }, [viewYear, viewMonth])
+  }, [listo, viewYear, viewMonth])
 
-  const handlePrevMonth = () => {
-    const newMonth = viewMonth === 0 ? 11 : viewMonth - 1
-    const newYear = viewMonth === 0 ? viewYear - 1 : viewYear
-    setViewMonth(newMonth)
-    setViewYear(newYear)
-    onMonthChange?.(newYear, newMonth)
+  // El salto se calcula sobre `viewRef`, no sobre el estado.
+  //
+  // Dos pulsaciones dentro del mismo lote de React leen las dos el mismo `view`
+  // del cierre, calculan el mismo mes y avanzan uno solo. La ref se adelanta
+  // dentro del propio manejador, así que la segunda parte de donde dejó la
+  // primera. No vale un actualizador funcional: `onMonthChange` es un efecto
+  // secundario y no puede vivir dentro de uno (React lo invoca dos veces en
+  // desarrollo), y meterlo en un `useEffect` tampoco, porque las páginas lo
+  // pasan como función en línea y su identidad cambia en cada render.
+  //
+  // Contar en meses absolutos evita el caso de borde de diciembre y enero.
+  const cambiarMes = (delta) => {
+    const actual = viewRef.current
+    if (!actual) return
+    const total = actual.year * 12 + actual.month + delta
+    const siguiente = { year: Math.floor(total / 12), month: ((total % 12) + 12) % 12 }
+    viewRef.current = siguiente
+    setView(siguiente)
+    onMonthChange?.(siguiente.year, siguiente.month)
   }
 
-  const handleNextMonth = () => {
-    const newMonth = viewMonth === 11 ? 0 : viewMonth + 1
-    const newYear = viewMonth === 11 ? viewYear + 1 : viewYear
-    setViewMonth(newMonth)
-    setViewYear(newYear)
-    onMonthChange?.(newYear, newMonth)
-  }
+  const handlePrevMonth = () => cambiarMes(-1)
+  const handleNextMonth = () => cambiarMes(1)
 
-  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('es-ES', {
-    month: 'long',
-    year: 'numeric',
-  })
+  const monthLabel = listo
+    ? new Date(viewYear, viewMonth, 1).toLocaleDateString('es-ES', {
+        month: 'long',
+        year: 'numeric',
+      })
+    : '\u00A0'
 
   return (
     <div className="select-none">
@@ -107,7 +154,7 @@ export default function EventCalendar({ selectedDate, onSelectDate, onMonthChang
       <div className="grid grid-cols-7 text-center text-sm">
         {calendarDays.map((cell, idx) => {
           if (!cell) {
-            return <div key={`blank-${idx}`} />
+            return <div key={`blank-${idx}`} className="h-8" />
           }
 
           const isSelected = cell.dateStr === selectedDate

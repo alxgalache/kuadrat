@@ -5,7 +5,7 @@ import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/re
 import { XMarkIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { eventsAPI } from '@/lib/api'
-import { getStripePromise } from '@/lib/stripe'
+import { getStripePromise, prefetchStripe } from '@/lib/stripe'
 
 const PHASE = {
   CHOOSE: 'choose',
@@ -45,6 +45,14 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
   const [verifyPasswordValue, setVerifyPasswordValue] = useState('')
 
   const isPaid = event?.access_type === 'paid'
+
+  // Adelanta Stripe.js en cuanto se abre el modal. Desde que lib/stripe.js
+  // importa `@stripe/stripe-js/pure`, el script ya no viaja en todas las
+  // páginas del sitio: se pide aquí, varios pasos antes de que <Elements>
+  // tenga que pintarse.
+  useEffect(() => {
+    if (isOpen) prefetchStripe()
+  }, [isOpen])
 
   // Reset when modal opens
   useEffect(() => {

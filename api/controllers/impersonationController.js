@@ -6,8 +6,9 @@ const { sendSuccess } = require('../utils/response');
 const { hashIp } = require('../utils/ipPrivacy');
 const {
   sqlUtcTimestamp,
-  isJwtIssuedBeforePasswordChange,
+  isJwtIssuedBeforeSessionCutoff,
 } = require('../utils/passwordSecurity');
+const { sellerKindOf } = require('../utils/sellerCapabilities');
 
 /**
  * Admin impersonation by token exchange (admin-user-impersonation).
@@ -56,7 +57,7 @@ const startImpersonation = async (req, res, next) => {
     const admin = req.user;
 
     const result = await db.execute({
-      sql: 'SELECT id, email, role, full_name, password_hash FROM users WHERE id = ?',
+      sql: 'SELECT id, email, role, full_name, password_hash, seller_kind FROM users WHERE id = ?',
       args: [targetId],
     });
 
@@ -138,6 +139,12 @@ const startImpersonation = async (req, res, next) => {
         email: target.email,
         role: target.role,
         full_name: target.full_name,
+        // The navbar and AuthGuard compose the seller's sections from this
+        // field (seller-kind-artist-speaker). Omitting it would render an
+        // artist's menu over a speaker's account — offering the admin exactly
+        // the sections the server then refuses — or the reverse, hiding what
+        // they impersonated the artist to look at.
+        seller_kind: sellerKindOf(target),
       },
       impersonation: {
         sessionId,
@@ -172,19 +179,25 @@ const stopImpersonation = async (req, res, next) => {
     }
 
     const result = await db.execute({
-      sql: 'SELECT id, email, role, full_name, password_changed_at FROM users WHERE id = ?',
+      sql: 'SELECT id, email, role, full_name, password_changed_at, sessions_invalidated_at FROM users WHERE id = ?',
       args: [actor.id],
     });
 
     const admin = result.rows[0];
 
-    // Deleted, demoted, or signed out everywhere by a password reset that
-    // happened while the impersonation was in flight. None of the three may
-    // buy an admin token back.
+    // Deleted, demoted, or signed out everywhere by a password reset — or by
+    // any other session cut-off — that happened while the impersonation was in
+    // flight. None of the three may buy an admin token back. The same pair of
+    // columns passport compares, so an admin cannot survive here a cut-off
+    // that would have ended their session anywhere else.
     if (
       !admin ||
       admin.role !== 'admin' ||
-      isJwtIssuedBeforePasswordChange(actor.issuedAt, admin.password_changed_at)
+      isJwtIssuedBeforeSessionCutoff(
+        actor.issuedAt,
+        admin.password_changed_at,
+        admin.sessions_invalidated_at
+      )
     ) {
       throw new ApiError(
         403,

@@ -1,7 +1,11 @@
+'use client'
+
 import Image from 'next/image'
 import Link from 'next/link'
 import EventBadge from '@/components/EventBadge'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 
 export default function DrawGridItem({ draw, priority = false }) {
   const preview = draw.product_preview || {}
@@ -11,6 +15,8 @@ export default function DrawGridItem({ draw, priority = false }) {
         : getOthersImageUrl(preview.basename))
     : null
 
+  const loader = useImageLoaded(imageUrl)
+
   return (
     <li className="inline-flex w-full flex-col text-center">
       <div className="group relative">
@@ -18,14 +24,18 @@ export default function DrawGridItem({ draw, priority = false }) {
         <div className="relative">
           <EventBadge type="draw" />
           <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
+            <ImageLoadingPlaceholder show={loader.showLoader} />
             {imageUrl ? (
               <Image
+                ref={loader.ref}
                 src={imageUrl}
                 alt={preview.name || draw.name}
                 fill
                 className="object-cover object-center"
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                 priority={priority}
+                onLoad={loader.onLoad}
+                onError={loader.onError}
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center">

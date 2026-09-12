@@ -402,7 +402,7 @@ function SellerProductsPageContent() {
 
 export default function SellerProductsPage() {
   return (
-    <AuthGuard requireRole="seller">
+    <AuthGuard requireRole="seller" requireSellerKind="artist">
       <SellerProductsPageContent />
     </AuthGuard>
   )

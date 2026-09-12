@@ -24,7 +24,9 @@ import {
   IMPERSONATION_ERRORS,
   IMPERSONATION_GENERIC_ERROR,
   PASSWORD_RESET_CONFIRM_COPY,
+  SELLER_KIND_LABELS,
 } from '@/lib/constants'
+import { sellerKindOf } from '@/lib/sellerCapabilities'
 
 // How an artist is named in a dialog. Falls back to the email, and to a
 // neutral noun while the dialog is closing and the author state is already
@@ -225,6 +227,13 @@ function AdminPageContent() {
                   className={`mx-auto size-32 shrink-0 rounded-full ${!author.is_activated ? 'opacity-60' : ''}`}
                 />
                 <h3 className="mt-6 text-sm font-medium text-gray-900">{author.full_name || author.email}</h3>
+                {/* Tipo de usuario (seller-kind-artist-speaker). Se muestra
+                    siempre, también en un Artista: si solo se marcara al
+                    Ponente, su ausencia sería ambigua entre «es artista» y
+                    «esta pantalla es anterior al cambio». */}
+                <p className="mt-1 text-xs text-gray-500">
+                  {SELLER_KIND_LABELS[sellerKindOf(author)]}
+                </p>
                 {!author.is_activated && (
                   <p className="mt-1 text-xs text-amber-600">No ha configurado su contraseña</p>
                 )}

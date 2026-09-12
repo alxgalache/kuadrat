@@ -10,7 +10,7 @@ const {
   getOthersProductImage,
   getOthersProductsByAuthorSlug,
 } = require('../controllers/othersController');
-const { authenticate, requireSeller } = require('../middleware/authorization');
+const { authenticate, requireSeller, requireArtistSeller } = require('../middleware/authorization');
 const { cacheControl } = require('../middleware/cache');
 
 // Multer configuration for image uploads (PNG, JPG, WEBP) up to 10MB (memory storage)
@@ -42,9 +42,10 @@ for (let i = 0; i < MAX_VARIATIONS; i++) {
 }
 
 // Protected routes - Seller only
-router.get('/seller/me', authenticate, requireSeller, getSellerOthersProducts);
-router.post('/', authenticate, requireSeller, upload.fields(othersUploadFields), createOthersProduct);
-router.delete('/:id', authenticate, requireSeller, deleteOthersProduct);
+// requireArtistSeller: a speaker publishes no store product either.
+router.get('/seller/me', authenticate, requireSeller, requireArtistSeller, getSellerOthersProducts);
+router.post('/', authenticate, requireSeller, requireArtistSeller, upload.fields(othersUploadFields), createOthersProduct);
+router.delete('/:id', authenticate, requireSeller, requireArtistSeller, deleteOthersProduct);
 
 // Public route - must be after more specific routes to avoid conflict
 router.get('/:id', getOthersProductById);

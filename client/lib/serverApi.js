@@ -161,6 +161,46 @@ export async function fetchAuthorOtherProducts(authorSlug, limit = 100) {
   }
 }
 
+/**
+ * Primera página del catálogo SIN filtro de autor, para sembrar las rejillas de
+ * `/galeria` y `/tienda` en el HTML servido.
+ *
+ * `seed` no es opcional en la práctica: la API entrelaza los artistas a partir
+ * de ella y las páginas 2, 3… del scroll infinito tienen que viajar con la
+ * MISMA, o la ventana de paginación se desplazaría sobre dos ordenaciones
+ * distintas. Por eso el componente de servidor la sortea, la usa aquí Y se la
+ * pasa al cliente. Ver `lib/catalogOrderSeed.js`.
+ *
+ * Devuelve `[]` ante cualquier fallo, como el resto del módulo, y eso es
+ * deliberado: estas dos rutas se prerrenderizan en `docker build`, así que un
+ * corte de la API durante la compilación tiene que degradar a «rejilla sin
+ * sembrar» —el comportamiento anterior, que el cliente resuelve al montar— y
+ * nunca romper el despliegue. Mismo criterio que el `generateStaticParams`
+ * vacío de las fichas.
+ */
+async function fetchCatalogPage(resource, seed, limit) {
+  try {
+    const params = new URLSearchParams({ page: '1', limit: String(limit) })
+    if (seed !== null && seed !== undefined) params.append('seed', String(seed))
+    const res = await fetch(`${DATA_API_URL}/${resource}?${params.toString()}`, {
+      next: { revalidate: 300 },
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.products || []
+  } catch {
+    return []
+  }
+}
+
+export function fetchArtCatalog(seed, limit = 12) {
+  return fetchCatalogPage('art', seed, limit)
+}
+
+export function fetchOthersCatalog(seed, limit = 12) {
+  return fetchCatalogPage('others', seed, limit)
+}
+
 const CDN_BASE_URL = process.env.CDN_BASE_URL || ''
 
 // En desarrollo el optimizador de imágenes de Next descarga el original desde

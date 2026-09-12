@@ -12,6 +12,16 @@ export const ANIMATION_BOUNCE = 600;
 export const ANIMATION_FADE = 300;
 export const ANIMATION_PRICE_UPDATE = 1000;
 
+// Retardo antes de mostrar el indicador de carga sobre el hueco gris de una
+// imagen. Por debajo de este umbral una espera se percibe como instantánea, así
+// que una imagen servida desde caché no llega a mostrar animación alguna: sin
+// este retardo, moverse por el catálogo sería un centelleo constante.
+//
+// Es además lo que mantiene sano el renderizado en servidor —el temporizador
+// vive en un efecto, que no corre en el servidor, así que el HTML servido no
+// contiene indicador y no hay desajuste de hidratación posible.
+export const IMAGE_LOADER_DELAY = 200;
+
 // Cart
 export const CART_EXPIRY_DAYS = 10;
 export const CART_STORAGE_KEY = 'kuadrat_cart';
@@ -666,3 +676,38 @@ export const PASSWORD_RESET_CONFIRM_COPY = {
 // bits: es lo que consume el generador del servidor y lo que `Math.random()`
 // produce con una sola multiplicación. Ver `lib/catalogOrderSeed.js`.
 export const CATALOG_ORDER_SEED_MAX = 4294967295;
+
+// ─── Tipo de vendedor: Artista / Ponente ──────────────────────────────────
+// Copia es-ES de `users.seller_kind`. Los predicados que deciden qué puede
+// hacer cada tipo viven en `client/lib/sellerCapabilities.js`; aquí solo el
+// texto, igual que SHIPPING_VERIFICATION_ERRORS.
+export const SELLER_KIND_LABELS = {
+  artist: 'Artista',
+  speaker: 'Ponente',
+};
+
+export const SELLER_KIND_DESCRIPTIONS = {
+  artist: 'Publica obra y productos de tienda, gestiona sus envíos y puede ser host de eventos.',
+  speaker: 'Solo participa en eventos multimedia. No publica obra ni productos, y no tiene envíos.',
+};
+
+// Rechazos del cambio de tipo. La API los distingue con un código de máquina
+// en `title`, igual que PASSWORD_RESET_ERRORS: la pantalla nunca reconoce
+// prosa en castellano. SELLER_KIND_CHANGE_BLOCKED llega además con una lista
+// de motivos ya redactada por el servidor, que es la que se pinta debajo.
+export const SELLER_KIND_ERRORS = {
+  SELLER_KIND_CHANGE_BLOCKED:
+    'No se puede cambiar el tipo de este usuario todavía:',
+  SELLER_KIND_FORBIDDEN:
+    'Esta sección no está disponible para un usuario de tipo Ponente.',
+};
+
+// El cambio de tipo cierra la sesión del vendedor y cambia las secciones a
+// las que llega, así que se confirma antes de guardar — misma cortesía que
+// PASSWORD_RESET_CONFIRM_COPY.
+export const SELLER_KIND_CONFIRM_COPY = {
+  title: 'Cambiar el tipo de usuario',
+  message: (name, fromLabel, toLabel) =>
+    `Vas a cambiar a ${name} de «${fromLabel}» a «${toLabel}». Se cerrará su sesión y, al volver a entrar, las secciones disponibles en su panel serán las del nuevo tipo.`,
+  confirmText: 'Cambiar tipo y guardar',
+};

@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
+import BrandLogo from '@/components/BrandLogo'
 
 export default function AutoresPage() {
   const [email, setEmail] = useState('')
@@ -66,14 +66,7 @@ export default function AutoresPage() {
   return (
     <div className="flex min-h-full flex-col justify-center px-6 py-12 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-sm">
-        <Image
-          alt="140d Galería de Arte"
-          src="/brand/140d.svg"
-          width={160}
-          height={40}
-          className="mx-auto h-10 w-auto"
-          priority
-        />
+        <BrandLogo className="mx-auto h-10 w-auto" priority />
         <h2 className="mt-10 text-center text-2xl/9 font-bold tracking-tight text-gray-900">
           Inicia sesión con tu cuenta
         </h2>

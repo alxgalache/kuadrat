@@ -16,7 +16,9 @@ const {
 } = require('../../utils/passwordSecurity')
 const { getSendcloudConfig, createSendcloudConfig, updateSendcloudConfig, getShippingMethods } = require('../../controllers/sendcloudConfigController')
 const { createSendcloudConfigSchema, updateSendcloudConfigSchema } = require('../../validators/sendcloudConfigSchemas')
-const { updateAuthorSchema } = require('../../validators/authorSchemas')
+const { createAuthorSchema, updateAuthorSchema } = require('../../validators/authorSchemas')
+const { sellerKindChangeBlockers } = require('../../services/sellerKindService')
+const { DEFAULT_SELLER_KIND } = require('../../utils/sellerCapabilities')
 const { validate } = require('../../middleware/validate')
 
 const AUTHORS_UPLOADS_DIR = path.join(__dirname, '../../uploads/authors')
@@ -80,12 +82,12 @@ async function issuePasswordReset(author) {
  * Create a new author (seller user)
  * Password is not set here - a setup email is sent to the user
  */
-router.post('/', async (req, res) => {
+router.post('/', validate(createAuthorSchema), async (req, res) => {
   try {
     const {
       email, full_name, slug, bio, location, email_contact, visible,
       pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
-      hide_profile_img_mobile
+      hide_profile_img_mobile, seller_kind
     } = req.body
 
     // Validate required fields
@@ -130,11 +132,13 @@ router.post('/', async (req, res) => {
 
     // Create user with role 'seller' and no password (will be set via token)
     // password_hash is set to empty string temporarily - user must set password via token
+    // Zod has already restricted seller_kind to the two accepted values, so
+    // the fallback below only covers it being omitted entirely.
     const result = await db.execute({
       sql: `INSERT INTO users (email, password_hash, full_name, slug, bio, location, email_contact, role, visible,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
-            password_setup_token, password_setup_token_expires, hide_profile_img_mobile)
-            VALUES (?, '', ?, ?, ?, ?, ?, 'seller', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            password_setup_token, password_setup_token_expires, hide_profile_img_mobile, seller_kind)
+            VALUES (?, '', ?, ?, ?, ?, ?, 'seller', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         email,
         full_name,
@@ -150,7 +154,8 @@ router.post('/', async (req, res) => {
         pickup_instructions || '',
         setupToken,
         tokenExpires,
-        hide_profile_img_mobile ? 1 : 0
+        hide_profile_img_mobile ? 1 : 0,
+        seller_kind || DEFAULT_SELLER_KIND
       ]
     })
 
@@ -168,7 +173,7 @@ router.post('/', async (req, res) => {
 
     // Fetch created user
     const newUser = await db.execute({
-      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at,
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at, seller_kind,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
             password_setup_token_expires
             FROM users
@@ -198,7 +203,7 @@ router.post('/', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at,
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at, seller_kind,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
             password_hash, password_setup_token_expires
             FROM users
@@ -297,7 +302,7 @@ router.post('/send-password-reset-all', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at,
+      sql: `SELECT id, email, full_name, slug, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at, seller_kind,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
             password_hash, password_setup_token_expires,
             stripe_connect_account_id, stripe_connect_status, stripe_transfers_capability_active,
@@ -481,14 +486,14 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
       pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
       dealer_commission_art, dealer_commission_other,
       tax_vat_art, tax_vat_other,
-      hide_profile_img_mobile
+      hide_profile_img_mobile, seller_kind
     } = req.body
     const authorId = req.params.id
 
     // Verify author exists and is a seller
     const checkResult = await db.execute({
-      sql: `SELECT id, dealer_commission_art, dealer_commission_other,
-                   tax_vat_art, tax_vat_other, hide_profile_img_mobile
+      sql: `SELECT id, full_name, dealer_commission_art, dealer_commission_other,
+                   tax_vat_art, tax_vat_other, hide_profile_img_mobile, seller_kind
             FROM users WHERE id = ? AND role = ?`,
       args: [authorId, 'seller']
     })
@@ -520,14 +525,49 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
       ? (hide_profile_img_mobile ? 1 : 0)
       : Number(existing.hide_profile_img_mobile)
 
-    // Update author
+    // Seller kind (seller-kind-artist-speaker). Zod has already restricted the
+    // value; what matters here is whether it actually CHANGES. Saving the form
+    // with the kind already in force must not run the blocker queries and must
+    // not invalidate any session — otherwise the admin could not fix a typo in
+    // a bio without throwing the artist out of their panel.
+    const currentKind = existing.seller_kind || DEFAULT_SELLER_KIND
+    const nextKind = seller_kind !== undefined ? seller_kind : currentKind
+    const kindChanges = nextKind !== currentKind
+
+    if (kindChanges) {
+      // Asked BEFORE any write, so a refused change leaves no partial edit
+      // behind: the admin's other field changes are rejected with it and the
+      // form still holds them.
+      const blockers = await sellerKindChangeBlockers(authorId, { toKind: nextKind })
+      if (blockers.length > 0) {
+        logger.info(
+          { authorId, from: currentKind, to: nextKind, blockers: blockers.map((b) => b.code) },
+          'Seller kind change blocked'
+        )
+        return res.status(409).json({
+          title: 'SELLER_KIND_CHANGE_BLOCKED',
+          message: 'No se puede cambiar el tipo de este usuario todavía',
+          blockers
+        })
+      }
+    }
+
+    // Update author. `seller_kind` and `sessions_invalidated_at` are written by
+    // the SAME statement, so there is no instant in which the kind has changed
+    // and the old sessions are still alive — the same rule password_hash and
+    // password_changed_at follow. The cut-off is what stops the seller's
+    // browser from keeping a menu, and a cached `user` in localStorage, that
+    // describes capabilities they no longer have: that object is only ever
+    // refreshed at sign-in, so without this it would be stale for up to
+    // JWT_EXPIRES_IN (7 days).
     await db.execute({
       sql: `UPDATE users
             SET full_name = ?, bio = ?, location = ?, email = ?, email_contact = ?, visible = ?,
             pickup_address = ?, pickup_city = ?, pickup_postal_code = ?, pickup_country = ?, pickup_instructions = ?,
             dealer_commission_art = ?, dealer_commission_other = ?,
             tax_vat_art = ?, tax_vat_other = ?,
-            hide_profile_img_mobile = ?
+            hide_profile_img_mobile = ?,
+            seller_kind = ?${kindChanges ? ',\n            sessions_invalidated_at = CURRENT_TIMESTAMP' : ''}
             WHERE id = ?`,
       args: [
         full_name, bio, location, email, email_contact, visible ? 1 : 0,
@@ -535,13 +575,21 @@ router.put('/:id', validate(updateAuthorSchema), async (req, res) => {
         commissionArt, commissionOther,
         taxVatArt, taxVatOther,
         hideImgMobile,
+        nextKind,
         authorId
       ]
     })
 
+    if (kindChanges) {
+      logger.info(
+        { authorId, adminId: req.user?.id, from: currentKind, to: nextKind },
+        'Seller kind changed; seller sessions invalidated'
+      )
+    }
+
     // Fetch updated author
     const updatedResult = await db.execute({
-      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at,
+      sql: `SELECT id, email, full_name, bio, location, email_contact, profile_img, profile_img_mobile, hide_profile_img_mobile, visible, created_at, seller_kind,
             pickup_address, pickup_city, pickup_postal_code, pickup_country, pickup_instructions,
             dealer_commission_art, dealer_commission_other,
             tax_vat_art, tax_vat_other

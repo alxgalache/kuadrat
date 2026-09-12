@@ -13,7 +13,7 @@ import {useBannerNotification} from '@/contexts/BannerNotificationContext'
 import {getArtImageUrl, getOthersImageUrl, ordersAPI, paymentsAPI, stripeAPI} from '@/lib/api'
 import AddressAutocomplete from './AddressAutocomplete'
 import AddressManualInput from './AddressManualInput'
-import {getStripePromise} from '@/lib/stripe'
+import {getStripePromise, prefetchStripe} from '@/lib/stripe'
 import {Elements, useStripe, useElements} from '@stripe/react-stripe-js'
 import StripeCardPayment from './StripeCardPayment'
 import StripeExpressCheckout from './StripeExpressCheckout'
@@ -153,6 +153,13 @@ export default function ShoppingCartDrawer({open, onClose}) {
     const paymentTimeoutRef = useRef(null)
     const paymentSucceededRef = useRef(false) // Prevents cart change effect from cancelling after success
     const prevAddressRef = useRef({}) // Tracks previous address for Sendcloud selection clearing
+
+    // Adelanta Stripe.js en cuanto se abre la cesta. Desde que lib/stripe.js
+    // importa `@stripe/stripe-js/pure`, el script ya no viaja en todas las
+    // páginas del sitio: se pide aquí, tres pasos antes del formulario de pago.
+    useEffect(() => {
+        if (open) prefetchStripe()
+    }, [open])
 
     // Clear Sendcloud shipping selections when relevant address fields change
     useEffect(() => {

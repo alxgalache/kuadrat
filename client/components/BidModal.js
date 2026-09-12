@@ -5,7 +5,7 @@ import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/re
 import { XMarkIcon, CheckIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { auctionsAPI } from '@/lib/api'
-import { getStripePromise } from '@/lib/stripe'
+import { getStripePromise, prefetchStripe } from '@/lib/stripe'
 import { useNotification } from '@/contexts/NotificationContext'
 import { validateSpanishTaxId as validateDNI } from '@/lib/spanishTaxId'
 
@@ -88,6 +88,14 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
 
   // Legacy alias for phases that don't need live tracking
   const nextBid = effectiveNextBid
+
+  // Adelanta Stripe.js en cuanto se abre el modal. Desde que lib/stripe.js
+  // importa `@stripe/stripe-js/pure`, el script ya no viaja en todas las
+  // páginas del sitio: se pide aquí, varios pasos antes de que <Elements>
+  // tenga que pintarse.
+  useEffect(() => {
+    if (isOpen) prefetchStripe()
+  }, [isOpen])
 
   // ------ Reset state when modal opens/closes ------
   useEffect(() => {

@@ -19,6 +19,7 @@ const { app } = require('./helpers/app');
 const { db } = require('../config/database');
 const {
   isJwtIssuedBeforePasswordChange,
+  isJwtIssuedBeforeSessionCutoff,
   parseSqlUtcDate,
   sqlUtcTimestamp,
 } = require('../utils/passwordSecurity');
@@ -88,6 +89,78 @@ describe('isJwtIssuedBeforePasswordChange', () => {
     const now = '2026-08-16 12:00:00';
     expect(iso > now).toBe(true); // wrong: an expired token would read as live
     expect(sqlUtcTimestamp(new Date(Date.UTC(2026, 7, 16, 10, 0, 0))) > now).toBe(false);
+  });
+});
+
+/**
+ * The generalised cut-off (Change: seller-kind-artist-speaker).
+ *
+ * `sessions_invalidated_at` is the second column the JWT strategy compares
+ * against `iat`. It carries exactly the semantics the password cut-off already
+ * had — whole seconds, strict, normalised to UTC — because it delegates to the
+ * same code; these cases are what stop a future edit from giving one column
+ * different rules from the other.
+ */
+describe('isJwtIssuedBeforeSessionCutoff', () => {
+  const CHANGED_AT = '2026-08-16 10:00:00';
+  const CHANGED_AT_SEC = Math.floor(Date.UTC(2026, 7, 16, 10, 0, 0) / 1000);
+  const LATER_AT = '2026-08-16 12:00:00';
+  const LATER_AT_SEC = Math.floor(Date.UTC(2026, 7, 16, 12, 0, 0) / 1000);
+
+  it('accepts everything when every cut-off is NULL', () => {
+    // What lets a second column deploy without signing anybody out.
+    expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC, null, null)).toBe(false);
+    expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC, undefined, undefined)).toBe(false);
+    expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC)).toBe(false);
+  });
+
+  it('rejects a token predating EITHER cut-off', () => {
+    expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC - 1, CHANGED_AT, null)).toBe(true);
+    expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC - 1, null, CHANGED_AT)).toBe(true);
+  });
+
+  it('takes the LATER of the two, not the first one set', () => {
+    // A token issued between a password change and a later session
+    // invalidation must still fail.
+    const between = CHANGED_AT_SEC + 60;
+    expect(isJwtIssuedBeforeSessionCutoff(between, CHANGED_AT, LATER_AT)).toBe(true);
+    expect(isJwtIssuedBeforeSessionCutoff(LATER_AT_SEC, CHANGED_AT, LATER_AT)).toBe(false);
+  });
+
+  it('is strict, so the same second survives on either column', () => {
+    expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC, CHANGED_AT, null)).toBe(false);
+    expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC, null, CHANGED_AT)).toBe(false);
+  });
+
+  it('rejects a token with no usable iat once any column is set', () => {
+    expect(isJwtIssuedBeforeSessionCutoff(undefined, null, CHANGED_AT)).toBe(true);
+    expect(isJwtIssuedBeforeSessionCutoff(NaN, null, CHANGED_AT)).toBe(true);
+  });
+
+  it('reads a zone-less SQLite timestamp as UTC on BOTH columns, whatever TZ', () => {
+    // Same trap as the password column: SQLite writes CURRENT_TIMESTAMP with
+    // no zone marker and Node would read it as local time — two hours off
+    // under Europe/Madrid in summer.
+    const original = process.env.TZ;
+    try {
+      for (const tz of ['UTC', 'Europe/Madrid', 'America/Los_Angeles', 'Asia/Tokyo']) {
+        process.env.TZ = tz;
+        expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC - 1, null, CHANGED_AT)).toBe(true);
+        expect(isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC, null, CHANGED_AT)).toBe(false);
+      }
+    } finally {
+      process.env.TZ = original;
+    }
+  });
+
+  it('is what isJwtIssuedBeforePasswordChange now delegates to', () => {
+    // One implementation, so the two cut-offs cannot drift apart.
+    expect(isJwtIssuedBeforePasswordChange(CHANGED_AT_SEC - 1, CHANGED_AT)).toBe(
+      isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC - 1, CHANGED_AT)
+    );
+    expect(isJwtIssuedBeforePasswordChange(CHANGED_AT_SEC, CHANGED_AT)).toBe(
+      isJwtIssuedBeforeSessionCutoff(CHANGED_AT_SEC, CHANGED_AT)
+    );
   });
 });
 

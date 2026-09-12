@@ -5,6 +5,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { PlusIcon } from '@heroicons/react/20/solid'
 import { authorsAPI } from '@/lib/api'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 
 // Cuántas imágenes de la rejilla se marcan como prioritarias.
 //
@@ -35,6 +37,10 @@ function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen, onAut
   // que un texto plano.
   const authorClickable = Boolean(onAuthorClick && product.seller_slug)
 
+  // La clave es el basename, no el producto: cambiar de variación cambia la
+  // imagen y hay que volver a evaluar si está descargada.
+  const loader = useImageLoaded(mainBasename)
+
   // Marca la instantánea de scroll antes de navegar al detalle. El hook ignora
   // los clics que abren en pestaña nueva.
   const handleOpen = (e) => onProductOpen?.(product.id, e)
@@ -43,15 +49,26 @@ function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen, onAut
     <li className="inline-flex w-full flex-col text-center" data-product-id={product.id}>
       <div className="group relative">
         <div className="relative aspect-square w-full overflow-hidden rounded-md bg-gray-200">
-          <Link href={detailHref} aria-label={product.name} className="block size-full" onClick={handleOpen}>
+          {/* Antes del <Link> a propósito: el indicador tiene que quedar por
+              debajo de la imagen, y entre dos elementos posicionados manda el
+              orden del DOM. */}
+          <ImageLoadingPlaceholder show={loader.showLoader} />
+          {/* `relative` para que la imagen con `fill` se posicione contra el propio
+              enlace. Funcionaba igual sin él —se posicionaba contra el div de
+              fuera, que mide lo mismo— pero next/image avisaba en desarrollo de
+              que su padre directo era `static`. */}
+          <Link href={detailHref} aria-label={product.name} className="relative block size-full" onClick={handleOpen}>
             {mainBasename && (
               <Image
+                ref={loader.ref}
                 alt={product.name}
                 src={getImageUrl(mainBasename)}
                 fill
                 className="object-cover [@media(hover:hover)]:group-hover:opacity-75"
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                 priority={priority}
+                onLoad={loader.onLoad}
+                onError={loader.onError}
               />
             )}
           </Link>

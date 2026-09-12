@@ -25,7 +25,7 @@ function PublishProductPageContent() {
 
 export default function PublishProductPage() {
     return (
-        <AuthGuard requireRole="seller">
+        <AuthGuard requireRole="seller" requireSellerKind="artist">
             <PublishProductPageContent />
         </AuthGuard>
     )

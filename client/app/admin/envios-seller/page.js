@@ -5,6 +5,7 @@ import { adminAPI } from '@/lib/api'
 import { getArtImageUrl, getOthersImageUrl } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
 import Image from 'next/image'
+import { isArtistSeller } from '@/lib/sellerCapabilities'
 
 const STATUS_LABELS = {
   paid: 'Pagado',
@@ -70,9 +71,15 @@ function AdminSellerShipmentsContent() {
   useEffect(() => {
     adminAPI.authors.getAll()
       .then(res => {
-        const sorted = (res.authors || []).slice().sort((a, b) =>
-          (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'es')
-        )
+        // Solo artistas (seller-kind-artist-speaker): un Ponente no publica
+        // producto, así que nunca tendrá un envío. Ofrecerle en el desplegable
+        // es dar al admin una opción cuyo único desenlace posible es una
+        // pantalla vacía.
+        const sorted = (res.authors || [])
+          .filter(isArtistSeller)
+          .sort((a, b) =>
+            (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'es')
+          )
         setSellers(sorted)
       })
       .catch(() => setSellers([]))

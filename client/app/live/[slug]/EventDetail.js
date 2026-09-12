@@ -11,6 +11,8 @@ import EventAccessModal from '@/components/EventAccessModal'
 import AuthorModal from '@/components/AuthorModal'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import useImageLoaded from '@/hooks/useImageLoaded'
+import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 
 // Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
@@ -109,6 +111,10 @@ export default function EventDetail({
   const [serverTimeOffset, setServerTimeOffset] = useState(0)
   const [adminJoining, setAdminJoining] = useState(false)
   const [adminJoinError, setAdminJoinError] = useState('')
+
+  // Arriba con el resto de hooks: más abajo hay un retorno temprano para el
+  // evento que no carga, y detrás de él ya no se puede llamar a ninguno.
+  const coverLoader = useImageLoaded(event?.cover_image_url ?? null)
 
   // The gallery admin can sit in any event without registering or paying —
   // charging the owner of the platform to watch a stream organised from their
@@ -522,14 +528,18 @@ export default function EventDetail({
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
           {/* Left column: Cover image */}
           <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
+            <ImageLoadingPlaceholder show={coverLoader.showLoader} />
             {event.cover_image_url ? (
               <Image
+                ref={coverLoader.ref}
                 src={event.cover_image_url}
                 alt={event.title}
                 fill
                 priority
                 className="object-cover"
                 sizes="(max-width: 1024px) 100vw, 50vw"
+                onLoad={coverLoader.onLoad}
+                onError={coverLoader.onError}
               />
             ) : (
               <div className="flex w-full items-center justify-center">

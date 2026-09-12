@@ -2,6 +2,27 @@ const { db } = require('../config/database')
 const logger = require('../config/logger')
 const { ApiError } = require('../middleware/errorHandler')
 const { sendSuccess, sendCreated } = require('../utils/response')
+const { canHaveSendcloudConfig } = require('../utils/sellerCapabilities')
+
+/**
+ * A speaker (users.seller_kind = 'speaker') never publishes a product and so
+ * never ships one: a sender address, a carrier preference or a customs default
+ * on that account is data nothing will ever read
+ * (seller-kind-artist-speaker).
+ *
+ * Only the WRITE paths refuse. Reading stays open for every seller, because a
+ * demoted artist may still hold a row from the shipments they really did make
+ * — and that row is the record of those shipments, not clutter to tidy away.
+ */
+const assertCanHaveSendcloudConfig = (userRow) => {
+  if (!canHaveSendcloudConfig(userRow)) {
+    throw new ApiError(
+      400,
+      'Un usuario de tipo Ponente no envía productos, así que no tiene configuración de Sendcloud',
+      'SELLER_KIND_FORBIDDEN'
+    )
+  }
+}
 
 /**
  * GET /api/admin/authors/:id/sendcloud-config
@@ -34,7 +55,7 @@ const createSendcloudConfig = async (req, res, next) => {
 
     // Verify user exists and is a seller
     const user = await db.execute({
-      sql: 'SELECT id, role FROM users WHERE id = ?',
+      sql: 'SELECT id, role, seller_kind FROM users WHERE id = ?',
       args: [id],
     })
 
@@ -45,6 +66,8 @@ const createSendcloudConfig = async (req, res, next) => {
     if (user.rows[0].role !== 'seller') {
       throw new ApiError(400, 'Solo los vendedores pueden tener configuración de Sendcloud', 'Rol inválido')
     }
+
+    assertCanHaveSendcloudConfig(user.rows[0])
 
     // Check if config already exists
     const existing = await db.execute({
@@ -120,6 +143,17 @@ const createSendcloudConfig = async (req, res, next) => {
 const updateSendcloudConfig = async (req, res, next) => {
   try {
     const { id } = req.params
+
+    const user = await db.execute({
+      sql: 'SELECT id, seller_kind FROM users WHERE id = ?',
+      args: [id],
+    })
+
+    if (user.rows.length === 0) {
+      throw new ApiError(404, 'Usuario no encontrado', 'No encontrado')
+    }
+
+    assertCanHaveSendcloudConfig(user.rows[0])
 
     const existing = await db.execute({
       sql: 'SELECT id FROM user_sendcloud_configuration WHERE user_id = ?',

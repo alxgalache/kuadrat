@@ -13,7 +13,14 @@ const marketingEmailService = require('../services/marketingEmailService');
 
 /**
  * GET /api/admin/marketing/authors
- * Visible authors (role='seller', visible=1) for the announce picker.
+ * Visible authors (role='seller', seller_kind='artist', visible=1) for the
+ * announce picker.
+ *
+ * Speakers are excluded on purpose (seller-kind-artist-speaker): the broadcast
+ * subject is literally «Nuevo artista en 140d» and its template presents
+ * someone whose work can be gone and looked at. Announcing a speaker that way
+ * would send the whole list a false statement. Doing it properly needs its own
+ * template and its own topic, and is out of scope here.
  */
 const listAuthorsForAnnounce = async (req, res, next) => {
   try {
@@ -22,7 +29,7 @@ const listAuthorsForAnnounce = async (req, res, next) => {
                    (SELECT COUNT(*) FROM marketing_sends m
                     WHERE m.kind = 'new_author' AND m.entity_id = CAST(u.id AS TEXT) AND m.status = 'sent') AS announced_count
             FROM users u
-            WHERE u.role = 'seller' AND u.visible = 1
+            WHERE u.role = 'seller' AND u.seller_kind = 'artist' AND u.visible = 1
             ORDER BY u.full_name ASC`,
     });
     const authors = result.rows.map((r) => ({
@@ -41,7 +48,9 @@ const listAuthorsForAnnounce = async (req, res, next) => {
 
 /**
  * POST /api/admin/marketing/announce-author
- * Body: { authorId }. Validates the author is a visible seller, then sends.
+ * Body: { authorId }. Validates the author is a visible artist seller, then
+ * sends. Same exclusion as the picker above — the direct call is gated too, so
+ * a stale page cannot announce a speaker the list no longer offers.
  */
 const announceAuthor = async (req, res, next) => {
   try {
@@ -49,7 +58,7 @@ const announceAuthor = async (req, res, next) => {
 
     const result = await db.execute({
       sql: `SELECT id, full_name, slug, profile_img, location, bio
-            FROM users WHERE id = ? AND role = 'seller' AND visible = 1`,
+            FROM users WHERE id = ? AND role = 'seller' AND seller_kind = 'artist' AND visible = 1`,
       args: [authorId],
     });
     const author = result.rows[0];

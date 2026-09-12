@@ -18,6 +18,7 @@ import LayoutWrapper from '@/components/LayoutWrapper'
 import MetaPixel from '@/components/MetaPixel'
 import { CONSENT_BOOTSTRAP_SCRIPT } from '@/lib/cookieConsent'
 import { IS_PROD } from '@/lib/env'
+import { inter } from '@/lib/fonts'
 import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
 
 const WEB_APP_HIDDEN = process.env.WEB_APP_HIDDEN === 'true' || process.env.WEB_APP_HIDDEN === '1'
@@ -142,7 +143,7 @@ export default function RootLayout({ children }) {
     // de que React hidrate. El servidor no puede emitirlo —depende de
     // localStorage— así que React lo ve como una discrepancia y avisa. Solo
     // afecta a los atributos de este nodo, no a su contenido.
-    <html lang="es" className="h-full" suppressHydrationWarning>
+    <html lang="es" className={`h-full ${inter.variable}`} suppressHydrationWarning>
       <body className="h-full flex flex-col">
         {/* Script bloqueante, deliberadamente el primer nodo del body: corre
             antes de que el navegador pinte el banner de cookies —que ahora

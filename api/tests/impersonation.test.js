@@ -99,11 +99,17 @@ describe('POST /api/admin/impersonation/:userId/start', () => {
     expect(payload.act).toMatchObject({ id: adminId, email: ADMIN_EMAIL });
     expect(typeof payload.act.sid).toBe('number');
 
+    // `seller_kind` is part of the swap payload on purpose
+    // (seller-kind-artist-speaker): the navbar and AuthGuard compose the
+    // seller's sections from it, so an impersonation that omitted it would
+    // render the wrong menu over the target's account. toEqual, not
+    // toMatchObject, so a field added here has to be a deliberate decision.
     expect(res.body.user).toEqual({
       id: sellerId,
       email: SELLER_EMAIL,
       role: 'seller',
       full_name: 'Artista Activada',
+      seller_kind: 'artist',
     });
   });
 

@@ -12,6 +12,8 @@ import StripeConnectSection from '@/components/admin/StripeConnectSection'
 import SellerFiscalForm from '@/components/admin/SellerFiscalForm'
 import { useNotification } from '@/contexts/NotificationContext'
 import { PencilIcon, EyeIcon, EyeSlashIcon, TrashIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline'
+import { SELLER_KIND_LABELS } from '@/lib/constants'
+import { sellerKindOf } from '@/lib/sellerCapabilities'
 
 function AuthorProfilePageContent({ params }) {
   const unwrappedParams = use(params)
@@ -235,6 +237,15 @@ function AuthorProfilePageContent({ params }) {
 
         {/* Author Details */}
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Tipo de usuario (seller-kind-artist-speaker). Va el primero
+              porque es lo que explica el resto de la ficha: en un Ponente la
+              tabla de productos de abajo estará vacía siempre. */}
+          <div>
+            <dt className="text-sm font-medium text-gray-500">Tipo de usuario</dt>
+            <dd className="mt-1 text-sm text-gray-900">
+              {SELLER_KIND_LABELS[sellerKindOf(author)]}
+            </dd>
+          </div>
           {author.location && (
             <div>
               <dt className="text-sm font-medium text-gray-500">Ubicación</dt>

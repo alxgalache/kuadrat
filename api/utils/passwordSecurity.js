@@ -87,14 +87,47 @@ function parseSqlUtcDate(value) {
  * without signing out every existing session.
  */
 function isJwtIssuedBeforePasswordChange(iat, passwordChangedAt) {
-  const changedAt = parseSqlUtcDate(passwordChangedAt);
-  if (!changedAt) return false;
+  return isJwtIssuedBeforeSessionCutoff(iat, passwordChangedAt);
+}
 
-  // The column is set but the token cannot say when it was issued, so it
-  // cannot prove it came after the change.
+/**
+ * Whether a JWT must be rejected because it predates ANY of the user's
+ * session cut-offs.
+ *
+ * There are two of them today and they are not interchangeable:
+ *
+ *   - `password_changed_at` — the password itself changed.
+ *   - `sessions_invalidated_at` — the platform ended the sessions for another
+ *     reason. Its first writer is the admin changing a seller's `seller_kind`,
+ *     which alters the sections that account may reach.
+ *
+ * Writing the first column for the second reason would be a lie in a column
+ * whose name asserts a password change, and would corrupt the audit of the
+ * reset flow. So they stay separate and the token has to clear both.
+ *
+ * The comparison semantics are the ones the password change already used and
+ * are shared verbatim: whole seconds (that is the unit of `iat`), strict
+ * (`iat < cutoff`), so a sign-in landing in the same second as the cut-off
+ * survives; and each stored value is normalised to UTC first, because SQLite
+ * writes `CURRENT_TIMESTAMP` without a zone marker and Node would otherwise
+ * read it as local time.
+ *
+ * A NULL cut-off invalidates nothing on its own account. All of them NULL
+ * accepts every otherwise-valid token, which is what lets a second column
+ * deploy without signing anybody out.
+ *
+ * @param {number} iat seconds since the epoch, from the token
+ * @param {...(string|Date|null|undefined)} cutoffs
+ */
+function isJwtIssuedBeforeSessionCutoff(iat, ...cutoffs) {
+  const parsed = cutoffs.map(parseSqlUtcDate).filter(Boolean);
+  if (parsed.length === 0) return false;
+
+  // At least one cut-off is set but the token cannot say when it was issued,
+  // so it cannot prove it came after.
   if (typeof iat !== 'number' || !Number.isFinite(iat)) return true;
 
-  return iat < Math.floor(changedAt.getTime() / 1000);
+  return parsed.some((cutoff) => iat < Math.floor(cutoff.getTime() / 1000));
 }
 
 module.exports = {
@@ -105,4 +138,5 @@ module.exports = {
   resetTokenExpiry,
   parseSqlUtcDate,
   isJwtIssuedBeforePasswordChange,
+  isJwtIssuedBeforeSessionCutoff,
 };

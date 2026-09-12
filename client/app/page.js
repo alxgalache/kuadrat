@@ -1,5 +1,5 @@
-import Image from 'next/image'
 import Link from 'next/link'
+import BrandLogo from '@/components/BrandLogo'
 import StoryVideo from '@/components/StoryVideo'
 
 const IS_PUBLISHED = process.env.PUBLISHED_VISIBLE === 'true' || process.env.PUBLISHED_VISIBLE === '1'
@@ -48,14 +48,7 @@ export default async function Home() {
     return (
       <div className="bg-white relative">
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
-          <Image
-            alt="140d Galería de Arte"
-            src="/brand/140d.svg"
-            width={160}
-            height={40}
-            className="h-10 w-auto mb-8"
-            priority
-          />
+          <BrandLogo className="h-10 w-auto mb-8" priority />
           <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance text-gray-900 sm:text-5xl">
             Próximamente...
           </h1>

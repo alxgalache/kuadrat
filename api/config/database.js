@@ -90,6 +90,15 @@ async function initializeDatabase() {
         -- rejects tokens issued before it, which is what actually signs out
         -- sessions opened with the old password. NULL = invalidate nothing.
         password_changed_at DATETIME DEFAULT NULL,
+        -- Corte de sesión de proposito general: la estrategia JWT rechaza todo
+        -- token emitido antes de este instante, igual que hace con la columna
+        -- de arriba. Existe aparte y NO se reutiliza password_changed_at
+        -- porque esa columna afirma que la contraseña cambió, y falsearla
+        -- contaminaría la auditoría del flujo de reseteo para ahorrar una
+        -- columna. Su primer escritor es el admin cambiando seller_kind, que
+        -- altera las secciones a las que la cuenta llega. NULL no invalida
+        -- nada, que es lo que permite desplegarla sin echar a nadie.
+        sessions_invalidated_at DATETIME DEFAULT NULL,
         available_withdrawal REAL NOT NULL DEFAULT 0,
         withdrawal_recipient TEXT,
         withdrawal_iban TEXT,
@@ -120,7 +129,24 @@ async function initializeDatabase() {
         -- Replaces the former global TAX_VAT_* env vars. art = 10 → REBU regime,
         -- any other value (e.g. 21 = cooperativa) → standard_vat regime.
         tax_vat_art REAL NOT NULL DEFAULT 10,
-        tax_vat_other REAL NOT NULL DEFAULT 21
+        tax_vat_other REAL NOT NULL DEFAULT 21,
+        -- Tipo de vendedor. Solo se lee cuando role = 'seller'; en una fila de
+        -- comprador o de admin no significa nada y ningún camino la consulta,
+        -- igual que dealer_commission_art existe en la fila de cada comprador
+        -- porque ALTER TABLE ADD COLUMN no sabe de roles.
+        --   'artist'  = el vendedor completo de siempre: publica obra, publica
+        --               tienda, gestiona envíos y puede ser host de eventos.
+        --   'speaker' = invitado que SOLO participa en eventos multimedia. No
+        --               publica producto de ningún tipo, no tiene envíos y no
+        --               tiene configuración Sendcloud. Sí cobra, factura,
+        --               tiene monedero y sale en payouts.
+        -- DEFAULT 'artist' sin backfill: toda cuenta existente conserva
+        -- exactamente el comportamiento previo. El CHECK viaja aquí y NO en el
+        -- safeAlter correspondiente, mismo reparto que stripe_connect_status,
+        -- porque SQLite no aplicaría la restricción a las filas ya escritas.
+        -- La garantía real del enum la da Zod en las dos rutas que lo escriben.
+        seller_kind TEXT NOT NULL DEFAULT 'artist'
+          CHECK(seller_kind IN ('artist','speaker'))
       )
     `);
 
@@ -960,6 +986,18 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE users ADD COLUMN password_reset_token_hash TEXT DEFAULT NULL');
     await safeAlter('ALTER TABLE users ADD COLUMN password_reset_token_expires DATETIME DEFAULT NULL');
     await safeAlter('ALTER TABLE users ADD COLUMN password_changed_at DATETIME DEFAULT NULL');
+
+    // Seller kind (seller-kind-artist-speaker). See the users CREATE TABLE for
+    // the semantics. The CHECK constraint is deliberately absent here: SQLite
+    // would not apply it to the rows already written, so it lives in the
+    // CREATE TABLE and the enum is enforced by Zod on the two admin routes
+    // that write it — same split as stripe_connect_status above.
+    //
+    // sessions_invalidated_at is the general session cut-off the kind change
+    // writes. It starts NULL on every existing row, which is what makes
+    // deploying this not sign anybody out.
+    await safeAlter("ALTER TABLE users ADD COLUMN seller_kind TEXT NOT NULL DEFAULT 'artist'");
+    await safeAlter('ALTER TABLE users ADD COLUMN sessions_invalidated_at DATETIME DEFAULT NULL');
     // The admin attending an event they do not host — excluded from counts,
     // host credit, payouts and invoicing. See the event_attendees CREATE TABLE.
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0');
