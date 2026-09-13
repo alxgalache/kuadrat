@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Mantiene la pantalla encendida mientras el host retransmite.
+ * Mantiene la pantalla encendida mientras se retransmite o mientras hay algo que ver.
  *
  * El caso que lo motiva: retransmitir desde un móvil montado en un trípode. Sin
  * esto, el teléfono aplica su «tiempo de pantalla encendida» y la pantalla se
@@ -11,8 +11,16 @@ import { useEffect, useRef } from 'react'
  *
  * Deliberadamente NO depende de `events.allow_mobile_host_console`: que la
  * pantalla se apague es un defecto de la vista de host, no una carencia de la
- * consola móvil, así que se aplica en Agora y en LiveKit por igual. Solo para
- * quien retransmite: un asistente no opera nada y no debe pagar la batería.
+ * consola móvil, así que se aplica en Agora y en LiveKit por igual.
+ *
+ * Los asistentes también lo piden, pero SOLO mientras hay algo que ver: vídeo o
+ * contenido en la escena de una sala Agora, o un pase de vídeo reproduciéndose
+ * (openspec/changes/live-event-mobile-layout). La exclusión anterior se
+ * justificaba en que «un asistente no opera nada», y en un móvil eso fallaba:
+ * Agora pinta el vídeo remoto en `<video>` silenciados, no se puede contar con
+ * que el navegador mantenga la pantalla encendida por ellos, y quien veía una
+ * charla sin tocar el teléfono la veía apagarse. Con «Esperando al host...» no
+ * se pide, y el navegador lo suelta igualmente al ocultarse la pestaña.
  *
  * Cinco pasos, y el cuarto es el que se olvida: detectar la capacidad, pedir el
  * bloqueo con el documento visible, guardar el sentinel (sin él no hay forma de
@@ -28,7 +36,7 @@ import { useEffect, useRef } from 'react'
  * ruido que valor.
  *
  * @param {object} params
- * @param {boolean} params.enabled - Solicitar el bloqueo (host, evento en directo)
+ * @param {boolean} params.enabled - Solicitar el bloqueo (quien emite, o quien mira algo)
  */
 export default function useScreenWakeLock({ enabled }) {
   const sentinelRef = useRef(null)

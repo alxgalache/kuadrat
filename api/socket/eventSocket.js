@@ -64,6 +64,11 @@ module.exports = function setupEventSocket(io) {
       chatBanned: entry.chatBanned,
       screenSharing: !!entry.screenSharing,
       coHost: !!entry.coHost,
+      // Staff of the gallery (the admin, co-presenter or not). The server already
+      // refuses to moderate them; clients read it so they never offer a
+      // moderation menu the server would answer with 400 — in a meeting the
+      // admin is staff without being a co-presenter.
+      staff: !!entry.staff,
     };
   }
 
@@ -145,6 +150,7 @@ module.exports = function setupEventSocket(io) {
           name: event.host_name || 'Host',
           isHost: true,
           coHost: false,
+          staff: false,
           agoraUid: 1,
           handRaised: false,
           speaker: true,
@@ -188,6 +194,7 @@ module.exports = function setupEventSocket(io) {
         name: `${attendee.first_name} ${attendee.last_name}`,
         isHost: false,
         coHost,
+        staff: Number(attendee.is_staff) === 1,
         agoraUid: attendee.agora_uid != null ? Number(attendee.agora_uid) : null,
         handRaised: false,
         speaker: coHost || attendee.speaker_granted === 1,
@@ -268,6 +275,7 @@ module.exports = function setupEventSocket(io) {
           existing.agoraUid = result.entry.agoraUid ?? existing.agoraUid;
           existing.speaker = result.entry.speaker;
           existing.coHost = result.entry.coHost;
+          existing.staff = result.entry.staff;
           existing.chatBanned = result.entry.chatBanned;
           entry = existing;
         } else {

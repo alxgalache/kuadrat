@@ -1,6 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import useAutoHideChrome from '@/hooks/useAutoHideChrome'
+import { LIVE_ROOM_COPY } from '@/lib/constants'
+
+const DEFAULT_FRAME = 'relative bg-black rounded-lg overflow-hidden aspect-video w-full'
 
 /**
  * Synchronized video player for video-format events.
@@ -10,12 +14,28 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
  * playback and revealing the frame — avoids the pre-fix flash of position 0.
  *
  * Controls: volume + fullscreen only. No pause, seek, or progress bar.
+ *
+ * Touch screens (live-event-mobile-layout): `group-hover` never fires without a
+ * pointer, so a tap on the video toggles the control bar, which hides itself
+ * after LIVE_ROOM_CHROME_HIDE_MS. The volume slider is not shown on
+ * `(hover: none)` devices — iOS ignores `video.volume`; volume is the hardware
+ * buttons there.
+ *
+ * Fullscreen: element fullscreen (plus a landscape lock where Android grants it)
+ * or, on iPhone, which has no element fullscreen, the native player. The native
+ * player CAN pause and seek, and drift correction skips paused videos — so on
+ * `webkitendfullscreen` the video is re-synced to server time and resumed.
+ *
+ * @param {object} [props.frame] - Compact room 16:9 frame ({ className, style })
+ * @param {Function} [props.onPlayingChange] - (playing) → wake lock of the viewer
  */
 export default function EventVideoPlayer({
   videoUrl,
   videoStartedAt,
   eventTitle,
   serverTimeOffset = 0,
+  frame = null,
+  onPlayingChange,
 }) {
   const videoRef = useRef(null)
   const containerRef = useRef(null)
@@ -28,6 +48,8 @@ export default function EventVideoPlayer({
   const [videoEnded, setVideoEnded] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const MAX_RETRIES = 3
+
+  const chrome = useAutoHideChrome()
 
   // Enforce HTTPS for external URLs (S3 presigned URLs, CDN, etc.)
   const safeVideoUrl = useMemo(() => {
@@ -140,6 +162,50 @@ export default function EventVideoPlayer({
     }
   }, [seekReady, getElapsedSeconds])
 
+  // iPhone native player: it can pause and seek, and drift correction skips
+  // paused videos. Leaving it must bring the viewer back to the shared moment.
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !seekReady) return
+
+    const onEndNativeFullscreen = () => {
+      const expected = getElapsedSeconds()
+      if (video.duration && expected >= video.duration) {
+        setVideoEnded(true)
+        return
+      }
+      if (Math.abs(expected - video.currentTime) > 1) {
+        video.currentTime = expected
+      }
+      if (video.paused) {
+        video.play().catch(() => {})
+      }
+    }
+
+    video.addEventListener('webkitendfullscreen', onEndNativeFullscreen)
+    return () => video.removeEventListener('webkitendfullscreen', onEndNativeFullscreen)
+  }, [seekReady, getElapsedSeconds])
+
+  // Leaving element fullscreen releases the landscape lock taken on entry
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        try { screen.orientation?.unlock?.() } catch { /* unsupported */ }
+      }
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
+  // Playing = there is something to watch: the viewer's screen must stay on
+  const playing = seekReady && !videoEnded && !videoError
+  const onPlayingChangeRef = useRef(onPlayingChange)
+  onPlayingChangeRef.current = onPlayingChange
+  useEffect(() => {
+    onPlayingChangeRef.current?.(playing)
+  }, [playing])
+  useEffect(() => () => onPlayingChangeRef.current?.(false), [])
+
   // Timeout covers both "metadata never loads" and "seek never completes"
   useEffect(() => {
     if (seekReady || videoError || videoEnded) return
@@ -221,17 +287,31 @@ export default function EventVideoPlayer({
   }, [muted])
 
   const toggleFullscreen = useCallback(() => {
-    if (!containerRef.current) return
+    const container = containerRef.current
+    const video = videoRef.current
     if (document.fullscreenElement) {
-      document.exitFullscreen()
-    } else {
-      containerRef.current.requestFullscreen().catch(() => {})
+      document.exitFullscreen().catch(() => {})
+      return
+    }
+    if (container?.requestFullscreen) {
+      container.requestFullscreen()
+        // Android only grants the lock INSIDE fullscreen
+        .then(() => screen.orientation?.lock?.('landscape'))
+        .catch(() => { /* denied or unsupported */ })
+      return
+    }
+    // iPhone: no element fullscreen, only the native player
+    if (typeof video?.webkitEnterFullscreen === 'function') {
+      try { video.webkitEnterFullscreen() } catch { /* not ready yet */ }
     }
   }, [])
 
+  const frameClassName = frame ? `${frame.className} bg-black` : DEFAULT_FRAME
+  const frameStyle = frame?.style
+
   if (videoEnded) {
     return (
-      <div className="bg-black rounded-lg overflow-hidden aspect-video w-full flex items-center justify-center">
+      <div className={`${frameClassName} flex items-center justify-center`} style={frameStyle}>
         <div className="text-center">
           <p className="text-white text-lg font-semibold">El vídeo ha finalizado</p>
           <p className="text-gray-400 text-sm mt-1">{eventTitle}</p>
@@ -242,7 +322,7 @@ export default function EventVideoPlayer({
 
   if (videoError) {
     return (
-      <div className="bg-black rounded-lg overflow-hidden aspect-video w-full flex items-center justify-center">
+      <div className={`${frameClassName} flex items-center justify-center`} style={frameStyle}>
         <div className="text-center">
           <p className="text-red-400 text-sm">No se pudo reproducir el vídeo</p>
         </div>
@@ -250,10 +330,15 @@ export default function EventVideoPlayer({
     )
   }
 
+  // Controls taps must not reach the container, whose tap toggles the bar
+  const stop = (e) => e.stopPropagation()
+
   return (
     <div
       ref={containerRef}
-      className="relative bg-black rounded-lg overflow-hidden aspect-video w-full group"
+      className={`${frameClassName} group`}
+      style={frameStyle}
+      onClick={chrome.toggle}
     >
       <video
         ref={videoRef}
@@ -272,7 +357,8 @@ export default function EventVideoPlayer({
       {muted && seekReady && (
         <button
           type="button"
-          onClick={toggleMute}
+          onClick={(e) => { stop(e); toggleMute(); chrome.reveal() }}
+          aria-label={LIVE_ROOM_COPY.unmute}
           className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity"
         >
           <div className="rounded-full bg-white/90 p-4">
@@ -290,15 +376,21 @@ export default function EventVideoPlayer({
         </div>
       )}
 
-      {/* Controls bar — appears on hover */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+      {/* Controls bar — hover with a pointer; tap (auto-hiding) on touch */}
+      <div
+        onClick={stop}
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1 transition-opacity duration-200 ${
+          chrome.visible ? 'opacity-100' : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100'
+        }`}
+      >
         <div className="flex items-center justify-between">
           {/* Volume controls */}
-          <div className="flex items-center gap-x-2">
+          <div className="flex items-center gap-x-1">
             <button
               type="button"
               onClick={toggleMute}
-              className="text-white hover:text-gray-300 transition-colors"
+              aria-label={muted ? LIVE_ROOM_COPY.unmute : LIVE_ROOM_COPY.mute}
+              className="flex size-10 items-center justify-center text-white hover:text-gray-300 transition-colors [touch-action:manipulation]"
             >
               {muted ? (
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
@@ -310,6 +402,7 @@ export default function EventVideoPlayer({
                 </svg>
               )}
             </button>
+            {/* No slider without hover: iOS ignores `video.volume` */}
             <input
               type="range"
               min="0"
@@ -317,7 +410,8 @@ export default function EventVideoPlayer({
               step="0.05"
               value={muted ? 0 : volume}
               onChange={handleVolumeChange}
-              className="w-20 h-1 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
+              aria-label="Volumen"
+              className="w-20 h-1 bg-white/30 rounded-full appearance-none cursor-pointer [@media(hover:none)]:hidden [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
             />
           </div>
 
@@ -325,7 +419,8 @@ export default function EventVideoPlayer({
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="text-white hover:text-gray-300 transition-colors"
+            aria-label={LIVE_ROOM_COPY.fullscreen}
+            className="flex size-10 items-center justify-center text-white hover:text-gray-300 transition-colors [touch-action:manipulation]"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />

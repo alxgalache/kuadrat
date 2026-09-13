@@ -324,6 +324,101 @@ export const HOST_CONSOLE_COPY = {
   speakerUnsupported: 'La gestiona el sistema',
 };
 
+// ---------------------------------------------------------------------------
+// Sala en directo compacta (openspec/changes/live-event-mobile-layout)
+// ---------------------------------------------------------------------------
+// ÚNICA fuente del criterio de disposición. Solo se lee desde
+// hooks/useCompactRoomLayout.js: repetirlo en CSS o en otra consulta crearía
+// dos verdades que divergen en silencio.
+//
+// 1024 px es el `lg` en el que la vista de escritorio ya pasaba a dos columnas,
+// así que no se introduce un umbral nuevo. 500 px de alto captura el móvil en
+// horizontal y las ventanas bajas.
+export const LIVE_ROOM_COMPACT_QUERY = '(max-width: 1023.98px), (max-height: 499.98px)';
+// Evaluada solo dentro de compacto. A partir de 1,1 veces más ancho que alto,
+// apilar escena, filas y chat deja menos de ~180 px de chat: la escena pasa a
+// una columna y el chat a un panel lateral.
+export const LIVE_ROOM_LANDSCAPE_QUERY = '(min-aspect-ratio: 11/10)';
+// La escena en vertical nunca supera la mitad del alto del contenedor. Es lo
+// que la encoge sola al abrir el teclado, sin ninguna regla aparte.
+export const LIVE_ROOM_STAGE_MAX_HEIGHT_RATIO = 0.5;
+// Teclado abierto = campo del chat enfocado Y alto visible por debajo de este
+// ratio del máximo de la orientación actual. La barra de Safari retrayéndose
+// en horizontal no llega al 25 %; un teclado sí. Solo foco plegaría las filas
+// con un teclado físico.
+export const LIVE_ROOM_KEYBOARD_SHRINK_RATIO = 0.75;
+// Controles superpuestos (horizontal) y del reproductor de vídeo en táctil.
+export const LIVE_ROOM_CHROME_HIDE_MS = 3000;
+// El chat sigue al último mensaje solo si el usuario está a esta distancia del
+// final o menos; si no, conserva su posición y ofrece «Mensajes nuevos».
+export const LIVE_ROOM_CHAT_STICK_THRESHOLD_PX = 48;
+// Cuadrados de la fila de cámaras de una reunión, relativos al alto del
+// contenedor: 72 px en un iPhone SE, 86 en un iPhone 15, 103 en un Pixel 7.
+export const LIVE_ROOM_CAMERA_TILE = { minPx: 64, heightRatio: 0.13, maxPx: 104 };
+// Panel lateral (chat y filas) en disposición horizontal.
+export const LIVE_ROOM_PANEL_WIDTH = 'clamp(260px, 36vw, 380px)';
+
+export const LIVE_ROOM_COPY = {
+  live: 'EN DIRECTO',
+  connected: (n) => `${n} conectado${n === 1 ? '' : 's'}`,
+  close: 'Cerrar',
+  send: 'Enviar',
+  messageLabel: 'Mensaje',
+  placeholder: 'Escribe un mensaje...',
+  emptyChat: 'Sin mensajes todavía',
+  newMessages: 'Mensajes nuevos',
+  chatBanned: 'Has sido expulsado del chat por comportamiento inapropiado.',
+  messageOptions: 'Opciones del mensaje',
+  banFromChat: 'Expulsar del chat',
+  showChat: 'Mostrar chat',
+  hideChat: 'Ocultar chat',
+  raiseHand: 'Levantar mano',
+  lowerHand: 'Bajar mano',
+  more: 'Más',
+  moreOptions: 'Más opciones',
+  mic: 'Micrófono',
+  camera: 'Cámara',
+  speaker: 'Altavoz',
+  screen: 'Pantalla',
+  whiteboard: 'Pizarra',
+  quality: 'Calidad',
+  effects: 'Efectos',
+  everyoneWrites: 'Todos escriben',
+  hostView: 'Vista del host',
+  stageLayout: 'Disposición de cámaras',
+  noDevices: 'No se encontraron dispositivos',
+  // Mismo criterio que la consola: un control no disponible se explica, no se oculta.
+  screenUnsupported: 'No disponible en este navegador',
+  speakerUnsupported: 'La gestiona el sistema',
+  cameraOffForEffects: 'Activa la cámara para aplicar un efecto',
+  // Texto visible del botón rojo; su etiqueta accesible es la completa
+  // («Finalizar stream» / «Finalizar evento»): en 360 px no caben las dos palabras
+  // junto a cinco iconos.
+  end: 'Finalizar',
+  endConfirm: '¿Estás seguro de que quieres finalizar el stream? Esta acción terminará el evento para todos los participantes.',
+  ending: 'Finalizando...',
+  // Vale para ratón y para dedo; «Haz clic» no.
+  activateAudio: 'Activar el audio',
+  participant: 'Participante',
+  you: '(Tu)',
+  roleHost: 'Host',
+  roleCoHost: 'Co-presentador',
+  stateSpeaking: 'Con la palabra',
+  stateMicOn: 'Micrófono abierto',
+  stateMicOff: 'Micrófono silenciado',
+  stateHandRaised: 'Ha levantado la mano',
+  stateListening: 'Escuchando',
+  giveFloor: 'Dar la palabra',
+  removeFloor: 'Quitar la palabra',
+  muteParticipant: 'Silenciar micrófono',
+  muteSelf: 'Silenciar mi micrófono',
+  orientationHint: 'Gira el móvil antes de activar la cámara para emitir en horizontal',
+  portraitBadge: 'Emitiendo en vertical',
+  fullscreen: 'Pantalla completa',
+  mute: 'Silenciar',
+  unmute: 'Activar sonido',
+};
+
 // Public brand name — the user-facing marketplace brand.
 // "Kuadrat" is only the internal codename; any text shown to buyers, sellers,
 // or visitors should use these constants instead of the repo/project name.

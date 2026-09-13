@@ -100,6 +100,9 @@ function CornerPair({ cameras, bottomPx }) {
  * @param {boolean} props.theaterOpen
  * @param {React.ReactNode} props.placeholder - Shown with no camera and no content
  * @param {React.ReactNode} [props.theaterButton] - Top-right, never over a tile
+ * @param {{className: string, style?: object}|null} [props.frame] - Compact room
+ *   16:9 frame (stageFrame in LiveRoomShell): edge to edge, capped or fitted to
+ *   its cell. Corner tiles and the theater button stay relative to this frame.
  */
 export default function BroadcastStage({
   hostCamera,
@@ -109,6 +112,7 @@ export default function BroadcastStage({
   theaterOpen,
   placeholder,
   theaterButton = null,
+  frame: compactFrame = null,
 }) {
   // Host always first: left half, and left in the corner pair
   const cameras = [hostCamera, coHostCamera].filter((camera) => camera?.track)
@@ -118,12 +122,17 @@ export default function BroadcastStage({
 
   const frame = theaterOpen
     ? `relative flex-1 min-h-0 ${isWhiteboard ? 'bg-white' : 'bg-black'}`
-    : `relative w-full aspect-video rounded-lg overflow-hidden ${isWhiteboard ? 'border border-gray-200 bg-white' : 'bg-black'}`
+    : compactFrame
+      ? `${compactFrame.className} ${isWhiteboard ? 'bg-white' : 'bg-black'}`
+      : `relative w-full aspect-video rounded-lg overflow-hidden ${isWhiteboard ? 'border border-gray-200 bg-white' : 'bg-black'}`
 
   return (
     <div
       className={`${frame} transition-shadow duration-300 ${soloSpeaking ? 'ring-2 ring-green-400' : ''}`}
-      style={soloSpeaking ? PULSE_STYLE : undefined}
+      style={{
+        ...(!theaterOpen && compactFrame?.style ? compactFrame.style : {}),
+        ...(soloSpeaking ? PULSE_STYLE : {}),
+      }}
     >
       {/* Content layer: the FIRST child, at this position whatever the cameras
           do. Moving the whiteboard in the React tree destroys and rejoins its

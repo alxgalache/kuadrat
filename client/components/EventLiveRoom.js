@@ -24,7 +24,7 @@ import useScreenWakeLock from '@/hooks/useScreenWakeLock'
 const SPAM_MAX_MESSAGES = 10
 const SPAM_WINDOW_MS = 10000
 
-export default function EventLiveRoom({ token, serverUrl, roomName, isHost = false, eventId, onKicked }) {
+export default function EventLiveRoom({ token, serverUrl, roomName, isHost = false, isAdmin = false, eventId, onKicked }) {
   if (!token || !serverUrl) {
     return (
       <div className="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
@@ -46,7 +46,7 @@ export default function EventLiveRoom({ token, serverUrl, roomName, isHost = fal
       className="h-full"
     >
       <AudioActivationOverlay />
-      <RoomContent isHost={isHost} eventId={eventId} onKicked={onKicked} />
+      <RoomContent isHost={isHost} isAdmin={isAdmin} eventId={eventId} onKicked={onKicked} />
       <RoomAudioRenderer />
     </LiveKitRoom>
   )
@@ -92,7 +92,7 @@ function AudioActivationOverlay() {
   )
 }
 
-function RoomContent({ isHost, eventId, onKicked }) {
+function RoomContent({ isHost, isAdmin, eventId, onKicked }) {
   // Paridad con AgoraLiveRoom: la pantalla del host no se apaga mientras
   // retransmite. Independiente de la consola móvil, que aquí no existe.
   useScreenWakeLock({ enabled: isHost })
@@ -184,8 +184,8 @@ function RoomContent({ isHost, eventId, onKicked }) {
     }
   }, [eventId, attendeeSession])
 
-  // Host can manually ban a participant from chat
-  const handleHostBanFromChat = useCallback(async (identity) => {
+  // The host or an admin bans a participant from the chat (event-chat-admin-moderation)
+  const handleBanFromChat = useCallback(async (identity) => {
     if (chatBannedRef.current.has(identity)) return
     chatBannedRef.current.add(identity)
     setChatBannedIdentities(prev => new Set([...prev, identity]))
@@ -390,9 +390,9 @@ function RoomContent({ isHost, eventId, onKicked }) {
           chatMessages={filteredMessages}
           send={send}
           isSending={isSending}
-          isHost={isHost}
+          canModerate={isHost || isAdmin}
           isChatBanned={isLocalChatBanned}
-          onHostBanFromChat={handleHostBanFromChat}
+          onBanFromChat={handleBanFromChat}
         />
       </div>
     </div>
@@ -869,7 +869,7 @@ function ParticipantTile({ participant: p, isHost, onPromote, onDemote }) {
 // ---------------------------------------------------------------------------
 // Chat
 // ---------------------------------------------------------------------------
-function ChatPanel({ chatMessages, send, isSending, isHost, isChatBanned, onHostBanFromChat }) {
+function ChatPanel({ chatMessages, send, isSending, canModerate, isChatBanned, onBanFromChat }) {
   const [message, setMessage] = useState('')
   const messagesEndRef = useRef(null)
   const [openMenuFor, setOpenMenuFor] = useState(null)
@@ -900,7 +900,7 @@ function ChatPanel({ chatMessages, send, isSending, isHost, isChatBanned, onHost
 
   const handleBanFromChat = (identity, index) => {
     setOpenMenuFor(null)
-    onHostBanFromChat?.(identity)
+    onBanFromChat?.(identity)
   }
 
   return (
@@ -921,8 +921,8 @@ function ChatPanel({ chatMessages, send, isSending, isHost, isChatBanned, onHost
                 </span>
                 <span className="text-gray-600 ml-1 break-words">{msg.message}</span>
               </div>
-              {/* Three-dot menu — host only, not for host messages */}
-              {isHost && !isHostMsg && senderIdentity && (
+              {/* Three-dot menu — host or admin; never on the host's or one's own messages */}
+              {canModerate && !isHostMsg && senderIdentity && !msg.from?.isLocal && (
                 <div className="relative flex-shrink-0 mt-0.5" ref={openMenuFor === i ? menuRef : null}>
                   <button
                     type="button"

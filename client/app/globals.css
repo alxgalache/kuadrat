@@ -174,6 +174,36 @@ html[data-cookie-consent='set'] [data-cookie-banner] {
   display: none;
 }
 
+/* Sala en directo compacta (openspec/changes/live-event-mobile-layout).
+
+   Mientras la sala compacta está montada, useLiveRoomDocument pone
+   `data-live-room` en <html> y el documento deja de desplazarse. No es estética:
+   en Chrome para Android el sobre-desplazamiento del documento hacia abajo es
+   «tirar para recargar», que expulsa de la sala y a quien emite le corta la
+   emisión; y un documento que se desplaza retrae la barra de direcciones y
+   mueve el layout. `html` lleva `overflow-y: scroll` global, de ahí que la
+   regla necesite el atributo para ganar en especificidad. */
+html[data-live-room],
+html[data-live-room] body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+@layer components {
+  /* Escena 16:9 encajada en ancho Y alto (disposición horizontal, o vertical con
+     el tope de alto). No sirve `object-fit: contain`: los recuadros de esquina y
+     el botón de teatro se posicionan respecto al marco 16:9, así que el marco
+     mismo tiene que medir exactamente 16:9 dentro de su caja. */
+  .live-room-stage-box {
+    container-type: size;
+  }
+
+  .live-room-stage-fit {
+    width: min(100cqw, calc(100cqh * 16 / 9));
+    aspect-ratio: 16 / 9;
+  }
+}
+
 /* Indicador de carga de imagen (ver openspec/changes/image-loading-animation).
    Un anillo indeterminado: el arco crece y mengua mientras gira.
 

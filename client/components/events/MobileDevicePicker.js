@@ -34,7 +34,7 @@ export default function MobileDevicePicker({ open, title, devices, activeDeviceI
   return (
     // El toque fuera cierra; el clic dentro no se propaga hasta aquí.
     <div
-      className="absolute inset-0 z-30 flex flex-col bg-black/80 p-3"
+      className="absolute inset-0 z-30 flex flex-col bg-black/80 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       onClick={onClose}
     >
       <div

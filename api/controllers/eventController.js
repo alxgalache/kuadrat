@@ -44,6 +44,18 @@ function agoraAttendeeRole(event, attendee, coHost) {
  * accidental click on their tile would leave the interviewer unable to publish
  * for the rest of the day. Checked before any write.
  */
+// Two roles can ban from the chat (the event host and any admin), so every
+// effective ban leaves a trace of who did it. The host is 'host' even when their
+// account is also an admin: they acted as the host of their own event.
+function logChatBan(req, event, identity) {
+  logger.info({
+    eventId: event.id,
+    identity,
+    actorUserId: req.user.id,
+    actorRole: req.user.id === event.host_user_id ? 'host' : 'admin',
+  }, 'Participant banned from event chat');
+}
+
 function assertNotStaffTarget(attendee) {
   if (Number(attendee.is_staff) === 1) {
     throw new ApiError(400, 'No se puede moderar a un miembro del equipo de la galería', 'Solicitud inválida');
@@ -1207,7 +1219,7 @@ const banFromChat = async (req, res, next) => {
 
     // Only host or admin can ban from chat
     if (!req.user || (req.user.id !== event.host_user_id && req.user.role !== 'admin')) {
-      throw new ApiError(403, 'Solo el host puede expulsar del chat', 'Acceso denegado');
+      throw new ApiError(403, 'Solo el host o un administrador pueden expulsar del chat', 'Acceso denegado');
     }
 
     // Extract attendeeId from identity (viewer-{attendeeId})
@@ -1230,6 +1242,7 @@ const banFromChat = async (req, res, next) => {
       await eventService.markAttendeeChatBanned(attendeeId);
       const eventSocket = req.app.get('eventSocket');
       if (eventSocket) eventSocket.notifyChatBanned(id, identity);
+      logChatBan(req, event, identity);
       return res.status(200).json({ success: true });
     }
 
@@ -1247,6 +1260,7 @@ const banFromChat = async (req, res, next) => {
 
     // Persist in DB
     await eventService.markAttendeeChatBanned(attendeeId);
+    logChatBan(req, event, identity);
 
     res.status(200).json({ success: true });
   } catch (error) {

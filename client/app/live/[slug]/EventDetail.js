@@ -13,6 +13,16 @@ import Breadcrumbs from '@/components/Breadcrumbs'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import useImageLoaded from '@/hooks/useImageLoaded'
 import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
+import LiveRoomShell, { roomCell, stageFrame } from '@/components/events/LiveRoomShell'
+import LiveRoomTopBar from '@/components/events/LiveRoomTopBar'
+import LandscapeStageChrome, { StageChromeGroup } from '@/components/events/LandscapeStageChrome'
+import ChatComposer from '@/components/events/chat/ChatComposer'
+import NewMessagesButton from '@/components/events/chat/NewMessagesButton'
+import useCompactRoomLayout from '@/hooks/useCompactRoomLayout'
+import useAutoHideChrome from '@/hooks/useAutoHideChrome'
+import useChatAutoScroll from '@/hooks/useChatAutoScroll'
+import useScreenWakeLock from '@/hooks/useScreenWakeLock'
+import { LIVE_ROOM_COPY } from '@/lib/constants'
 
 // Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
@@ -115,6 +125,23 @@ export default function EventDetail({
   // Arriba con el resto de hooks: más abajo hay un retorno temprano para el
   // evento que no carga, y detrás de él ya no se puede llamar a ninguno.
   const coverLoader = useImageLoaded(event?.cover_image_url ?? null)
+
+  // Disposición compacta de la sala (openspec/changes/live-event-mobile-layout).
+  // useSyncExternalStore con valor de servidor `false`: la hidratación de esta
+  // página, que se renderiza en servidor, siempre coincide.
+  const { compact, landscape } = useCompactRoomLayout()
+  // Pase de vídeo: panel del chat en horizontal, oculto por defecto (primero el
+  // vídeo) y reiniciado en cada entrada en horizontal.
+  const [videoPanelOpen, setVideoPanelOpen] = useState(false)
+  useEffect(() => {
+    if (landscape) setVideoPanelOpen(false)
+  }, [landscape])
+  const videoChrome = useAutoHideChrome({ enabled: compact && landscape })
+  // Mientras el pase de vídeo se reproduce hay algo que ver: la pantalla del
+  // asistente no debe apagarse (host-screen-wake-lock).
+  const [videoPlaying, setVideoPlaying] = useState(false)
+  useScreenWakeLock({ enabled: videoPlaying })
+  const isAdmin = user?.role === 'admin'
 
   // The gallery admin can sit in any event without registering or paying —
   // charging the owner of the platform to watch a stream organised from their
@@ -402,30 +429,62 @@ export default function EventDetail({
 
   // Active video event — synchronized video player + chat
   if (event.status === 'active' && event.format === 'video' && (hasAccess || isHost)) {
+    const videoLayout = { compact, landscape, panelOpen: videoPanelOpen }
+    const stageCell = roomCell('stage', videoLayout)
+    const chatCell = roomCell('chat', videoLayout)
     return (
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          {/* Event header */}
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-x-3">
-              <h1 className="text-xl font-bold text-gray-900">{event.title}</h1>
-              <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                En directo
-              </span>
+          {/* Event header (desktop only: the compact room has its top bar) */}
+          {!compact && (
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-x-3">
+                <h1 className="text-xl font-bold text-gray-900">{event.title}</h1>
+                <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                  En directo
+                </span>
+              </div>
+              <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
             </div>
-            <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
-          </div>
+          )}
 
-          {/* Video player + chat layout */}
-          {activeVideoUrl ? (
-            <div className="flex flex-col lg:flex-row gap-4">
-              <div className="flex-1 min-h-0">
-                <EventVideoPlayer
-                  videoUrl={activeVideoUrl}
-                  videoStartedAt={event.video_started_at}
-                  eventTitle={event.title}
-                  serverTimeOffset={serverTimeOffset}
-                />
+          {/* Video player + chat layout — one tree in every layout (LiveRoomShell) */}
+          <LiveRoomShell compact={compact} landscape={landscape} panelOpen={videoPanelOpen}>
+            {compact && !landscape && <LiveRoomTopBar />}
+            <div className={compact ? 'contents' : 'flex flex-col lg:flex-row gap-4'}>
+              <div
+                className={compact ? stageCell.className : 'flex-1 min-h-0'}
+                style={stageCell.style}
+                onClick={compact && landscape ? videoChrome.toggle : undefined}
+              >
+                {activeVideoUrl ? (
+                  <EventVideoPlayer
+                    videoUrl={activeVideoUrl}
+                    videoStartedAt={event.video_started_at}
+                    eventTitle={event.title}
+                    serverTimeOffset={serverTimeOffset}
+                    frame={stageFrame(videoLayout)}
+                    onPlayingChange={setVideoPlaying}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center py-16">
+                    <div className={`h-6 w-6 animate-spin rounded-full border-2 mr-3 ${compact ? 'border-gray-600 border-t-white' : 'border-gray-300 border-t-gray-900'}`} />
+                    <p className={`text-sm ${compact ? 'text-gray-300' : 'text-gray-500'}`}>Cargando vídeo...</p>
+                  </div>
+                )}
+                {compact && landscape && (
+                  <LandscapeStageChrome
+                    visible={videoChrome.visible}
+                    connectedCount={null}
+                    topRight={(
+                      <StageChromeGroup
+                        visible={videoChrome.visible}
+                        panelOpen={videoPanelOpen}
+                        onTogglePanel={() => setVideoPanelOpen((open) => !open)}
+                      />
+                    )}
+                  />
+                )}
               </div>
 
               {/* Chat sidebar */}
@@ -433,14 +492,11 @@ export default function EventDetail({
                 chatMessages={chatMessages}
                 sendChatMessage={sendChatMessage}
                 eventId={event.id}
+                compact={compact}
+                cell={chatCell}
               />
             </div>
-          ) : (
-            <div className="flex items-center justify-center py-16">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 mr-3" />
-              <p className="text-sm text-gray-500">Cargando vídeo...</p>
-            </div>
-          )}
+          </LiveRoomShell>
         </div>
       </div>
     )
@@ -471,16 +527,18 @@ export default function EventDetail({
     return (
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          {/* Event header */}
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-x-3">
-              <h1 className="text-xl font-bold text-gray-900">{event.title}</h1>
-              <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                En directo
-              </span>
+          {/* Event header (desktop only: the compact room has its top bar) */}
+          {!compact && (
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-x-3">
+                <h1 className="text-xl font-bold text-gray-900">{event.title}</h1>
+                <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                  En directo
+                </span>
+              </div>
+              <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
             </div>
-            <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
-          </div>
+          )}
 
           {/* Live room */}
           <div>
@@ -499,6 +557,7 @@ export default function EventDetail({
                 allowHostVideoQuality={!!event.allow_host_video_quality}
                 hostEchoCancellation={!!event.host_echo_cancellation}
                 isCoHost={!!agoraCreds.coHost}
+                isAdmin={isAdmin}
                 eventEnded={eventEnded}
               />
             ) : (
@@ -507,6 +566,7 @@ export default function EventDetail({
                 serverUrl={livekitUrl}
                 roomName={event.livekit_room_name}
                 isHost={isHost}
+                isAdmin={isAdmin}
                 eventId={event.id}
                 onKicked={handleKicked}
               />
@@ -715,9 +775,10 @@ export default function EventDetail({
 // ---------------------------------------------------------------------------
 // Chat panel for video events (uses Socket.IO instead of LiveKit)
 // ---------------------------------------------------------------------------
-function VideoChatPanel({ chatMessages, sendChatMessage, eventId }) {
-  const [message, setMessage] = useState('')
-  const messagesEndRef = useRef(null)
+function VideoChatPanel({ chatMessages, sendChatMessage, eventId, compact = false, cell = null }) {
+  // This chat carries no identities: the next message after sending is taken
+  // as one's own echo, so the list follows it even if the user was reading up
+  const justSentRef = useRef(false)
 
   // Get sender name from stored session
   const senderName = useMemo(() => {
@@ -728,44 +789,50 @@ function VideoChatPanel({ chatMessages, sendChatMessage, eventId }) {
     return 'Anónimo'
   }, [eventId])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages.length])
+  const isOwn = useCallback(() => {
+    if (!justSentRef.current) return false
+    justSentRef.current = false
+    return true
+  }, [])
 
-  const handleSend = (e) => {
-    e.preventDefault()
-    if (!message.trim()) return
-    sendChatMessage(senderName, message.trim())
-    setMessage('')
+  // Scrolls ONLY the list — `scrollIntoView` used to scroll the page too
+  const { containerRef, onScroll, hasNew, scrollToBottom } = useChatAutoScroll({ messages: chatMessages, isOwn })
+
+  const handleSend = (text) => {
+    justSentRef.current = true
+    sendChatMessage(senderName, text)
   }
 
   return (
-    <div className="lg:w-80 flex-shrink-0 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white" style={{ height: 'calc(56.25vw * 0.6)', maxHeight: '500px' }}>
-      <div className="px-4 py-3 border-b border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-900">Chat</h3>
-      </div>
-      <div className="flex flex-col flex-1 min-h-0">
-        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 min-h-0">
-          {chatMessages.length === 0 && (
-            <p className="text-xs text-gray-400 italic">Sin mensajes todavía</p>
-          )}
-          {chatMessages.map((msg, i) => (
-            <div key={i} className="text-sm">
-              <span className="font-medium text-gray-900">{msg.sender}</span>
-              <span className="text-gray-600 ml-1">{msg.message}</span>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
+    <div
+      className={compact ? cell.className : 'lg:w-80 flex-shrink-0 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white'}
+      style={compact ? cell.style : { height: 'calc(56.25vw * 0.6)', maxHeight: '500px' }}
+    >
+      {!compact && (
+        <div className="px-4 py-3 border-b border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-900">Chat</h3>
         </div>
-        <form onSubmit={handleSend} className="border-t border-gray-200 px-4 py-3">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Escribe un mensaje..."
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
-          />
-        </form>
+      )}
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={containerRef}
+            onScroll={onScroll}
+            className={`flex-1 overflow-y-auto px-4 py-2 space-y-2 min-h-0 ${compact ? 'overscroll-y-contain' : ''}`}
+          >
+            {chatMessages.length === 0 && (
+              <p className="text-xs text-gray-400 italic">{LIVE_ROOM_COPY.emptyChat}</p>
+            )}
+            {chatMessages.map((msg, i) => (
+              <div key={i} className="text-sm">
+                <span className="font-medium text-gray-900">{msg.sender}</span>
+                <span className="text-gray-600 ml-1 break-words">{msg.message}</span>
+              </div>
+            ))}
+          </div>
+          <NewMessagesButton visible={hasNew} onClick={scrollToBottom} />
+        </div>
+        <ChatComposer onSend={handleSend} compact={compact} />
       </div>
     </div>
   )

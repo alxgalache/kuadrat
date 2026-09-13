@@ -9,7 +9,21 @@ import VideoEffectsMenu from '@/components/events/VideoEffectsMenu'
 import AgoraVideo from '@/components/events/AgoraVideo'
 import ToggleSwitch from '@/components/events/ToggleSwitch'
 import BroadcastStage, { stageStreamTypes } from '@/components/events/BroadcastStage'
-import CoHostControls from '@/components/events/CoHostControls'
+import CoHostControls, { CompactCoHostControls } from '@/components/events/CoHostControls'
+import LiveRoomShell, { roomCell, stageFrame } from '@/components/events/LiveRoomShell'
+import LiveRoomTopBar from '@/components/events/LiveRoomTopBar'
+import LiveRoomSheet, { LiveRoomSheetRow } from '@/components/events/LiveRoomSheet'
+import ParticipantTile, { HandIcon, sortParticipants } from '@/components/events/ParticipantTile'
+import CompactParticipantRow from '@/components/events/CompactParticipantRow'
+import CompactCameraRow from '@/components/events/CompactCameraRow'
+import CompactHostControls from '@/components/events/CompactHostControls'
+import { ControlIconButton, ControlsRow, ControlsSheet } from '@/components/events/CompactControls'
+import LandscapeStageChrome, { StageChromeGroup } from '@/components/events/LandscapeStageChrome'
+import ChatComposer from '@/components/events/chat/ChatComposer'
+import NewMessagesButton from '@/components/events/chat/NewMessagesButton'
+import useCompactRoomLayout from '@/hooks/useCompactRoomLayout'
+import useAutoHideChrome from '@/hooks/useAutoHideChrome'
+import useChatAutoScroll from '@/hooks/useChatAutoScroll'
 import useAgoraRoom from '@/hooks/useAgoraRoom'
 import useAgoraDevices from '@/hooks/useAgoraDevices'
 import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
@@ -22,7 +36,7 @@ import {
   HOST_VIEW_MODES, AGORA_CAMERA_ENCODER_HOST, AGORA_CAMERA_ENCODER_PARTICIPANT, AGORA_VIDEO_QUALITIES,
   AGORA_MIC_ENCODER_HOST, AGORA_MIC_NO_PROCESSING,
   AGORA_HOST_UID, AGORA_HOST_SCREEN_UID, AGORA_LOW_STREAM_PARAMETER, AGORA_SCREEN_ENCODER_BROADCAST,
-  STAGE_COPY,
+  STAGE_COPY, LIVE_ROOM_COPY,
 } from '@/lib/constants'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
 
@@ -40,7 +54,6 @@ const STRIP_TILE_W_MOBILE = 64
 const STRIP_TILE_W_DESKTOP = 96
 const STRIP_TILE_GAP = 8
 const STRIP_ARROW_SPACE = 40
-const STRIP_PADDING_X = 24 // px-3
 
 // ---------------------------------------------------------------------------
 // Theater mode — fullscreen overlay with a paginated participant strip
@@ -51,13 +64,24 @@ const STRIP_PADDING_X = 24 // px-3
 // ALWAYS mounted around the featured media so the whiteboard never changes its
 // position in the React tree — a move would destroy and rejoin the fastboard
 // room, losing the writable session.
-function TheaterShell({ open, onClose, normalClassName = '', children }) {
+function TheaterShell({ open, onClose, normalClassName = '', normalStyle, onNormalClick, lockLandscape = false, children }) {
   const shellRef = useRef(null)
+  // Leído desde una ref: cambiar de disposición con el teatro abierto no debe
+  // volver a pedir la pantalla completa.
+  const lockLandscapeRef = useRef(lockLandscape)
+  lockLandscapeRef.current = lockLandscape
 
   useEffect(() => {
     if (!open) return
     const el = shellRef.current
-    if (el?.requestFullscreen) el.requestFullscreen().catch(() => { /* iOS / denied */ })
+    const locking = lockLandscapeRef.current
+    if (el?.requestFullscreen) {
+      el.requestFullscreen()
+        // Sala compacta: horizontal. Android solo concede el bloqueo DENTRO de la
+        // pantalla completa, así que va cuando esta se resuelve.
+        .then(() => (locking ? screen.orientation?.lock?.('landscape') : undefined))
+        .catch(() => { /* iOS / denied / unsupported */ })
+    }
     // Escape must work even without native fullscreen (overlay-only mode)
     const onKeyDown = (e) => { if (e.key === 'Escape') onClose() }
     const onFullscreenChange = () => { if (!document.fullscreenElement) onClose() }
@@ -66,12 +90,20 @@ function TheaterShell({ open, onClose, normalClassName = '', children }) {
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('fullscreenchange', onFullscreenChange)
+      if (locking) {
+        try { screen.orientation?.unlock?.() } catch { /* unsupported */ }
+      }
       if (document.fullscreenElement) document.exitFullscreen().catch(() => { /* already out */ })
     }
   }, [open, onClose])
 
   return (
-    <div ref={shellRef} className={open ? 'fixed inset-0 z-[60] bg-black flex flex-col' : normalClassName}>
+    <div
+      ref={shellRef}
+      className={open ? 'fixed inset-0 z-[60] bg-black flex flex-col' : normalClassName}
+      style={open ? undefined : normalStyle}
+      onClick={open ? undefined : onNormalClick}
+    >
       {children}
     </div>
   )
@@ -96,7 +128,10 @@ function TheaterButton({ onOpen, className = '' }) {
 // of the fastboard toolbar which lives on the left/bottom edges)
 function TheaterChrome({ stripVisible, onToggleStrip, onClose }) {
   return (
-    <div className="absolute top-3 right-3 z-20 flex gap-x-2">
+    <div
+      className="absolute z-20 flex gap-x-2"
+      style={{ top: 'max(0.75rem, env(safe-area-inset-top))', right: 'max(0.75rem, env(safe-area-inset-right))' }}
+    >
       <button
         type="button"
         onClick={onToggleStrip}
@@ -145,7 +180,9 @@ function TheaterStrip({ entries, visible, renderTile }) {
     const compute = () => {
       const tileW = window.innerWidth >= 640 ? STRIP_TILE_W_DESKTOP : STRIP_TILE_W_MOBILE
       const fits = (w) => Math.max(1, Math.floor((w + STRIP_TILE_GAP) / (tileW + STRIP_TILE_GAP)))
-      const width = el.clientWidth - STRIP_PADDING_X
+      // Padding lateral real: con el área segura (compacto, horizontal) ya no es fijo
+      const styles = window.getComputedStyle(el)
+      const width = el.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight)
       let next = fits(width)
       // Arrows only take space when this many tiles still need pagination
       if (count > next) next = fits(width - 2 * STRIP_ARROW_SPACE)
@@ -167,7 +204,15 @@ function TheaterStrip({ entries, visible, renderTile }) {
   if (!visible || count === 0) return null
 
   return (
-    <div ref={containerRef} className="flex-shrink-0 flex items-center justify-center gap-x-2 px-3 pb-3 pt-2">
+    <div
+      ref={containerRef}
+      className="flex-shrink-0 flex items-center justify-center gap-x-2 pt-2"
+      style={{
+        paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
+        paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
+        paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+      }}
+    >
       {paged && (
         <button
           type="button"
@@ -271,12 +316,30 @@ export default function AgoraLiveRoom({
   allowHostVideoQuality = false,
   hostEchoCancellation = false,
   isCoHost = false,
+  isAdmin = false,
   eventEnded = false,
 }) {
   const isMeeting = interactionMode === 'meeting'
   // The admin interviewing the host (agora-broadcast-cohost). Broadcast only:
   // in a meeting everybody already publishes and the server never flags it.
   const coHostMode = isCoHost && !isHost && !isMeeting
+
+  // Disposición (openspec/changes/live-event-mobile-layout). Una sola lectura
+  // del criterio para toda la sala; el árbol es el mismo en todas.
+  const { compact, landscape } = useCompactRoomLayout()
+  // Panel lateral del horizontal compacto: oculto por defecto para quien solo
+  // mira (primero el vídeo), visible para quien emite (sus controles viven ahí).
+  // Vuelve a su valor por defecto en cada entrada en horizontal: no se persiste.
+  const panelOpenByDefault = isHost || coHostMode || isMeeting
+  const [panelOpen, setPanelOpen] = useState(panelOpenByDefault)
+  useEffect(() => {
+    if (landscape) setPanelOpen(panelOpenByDefault)
+  }, [landscape, panelOpenByDefault])
+  const togglePanel = useCallback(() => setPanelOpen((open) => !open), [])
+  const layout = useMemo(
+    () => ({ compact, landscape, panelOpen, togglePanel }),
+    [compact, landscape, panelOpen, togglePanel]
+  )
 
   // Attendee session (socket join credentials + token renewal)
   const attendeeSession = useMemo(() => {
@@ -363,10 +426,6 @@ export default function AgoraLiveRoom({
     lowStreamParameter: broadcastPublisher ? AGORA_LOW_STREAM_PARAMETER : undefined,
   })
 
-  // La pantalla de quien emite no debe apagarse durante la retransmisión. No
-  // depende de la consola móvil: es la corrección de un defecto de toda vista
-  // que publica, la del host y la del co-presentador.
-  useScreenWakeLock({ enabled: (isHost || coHostMode) && !eventEnded })
 
   // Controles de host: UNA SOLA instancia, por encima del conmutador de modo.
   // Montarla dentro de cada presentación reiniciaría el procesador de fondos
@@ -413,12 +472,16 @@ export default function AgoraLiveRoom({
   )
   const amSpeaker = isHost || !!selfPresence?.speaker
 
-  // Co-presenters cannot be moderated (the server answers 400): the host's chat
-  // menu is not offered on their messages
-  const coHostIdentities = useMemo(
-    () => new Set(socket.presence.filter((p) => p.coHost).map((p) => p.identity)),
+  // Staff cannot be moderated (the server answers 400): the chat menu is not
+  // offered on their messages. `staff` covers the admin in a meeting, where they
+  // are not a co-presenter.
+  const protectedIdentities = useMemo(
+    () => new Set(socket.presence.filter((p) => p.coHost || p.staff).map((p) => p.identity)),
     [socket.presence]
   )
+  // The host and any admin ban from the chat (event-chat-admin-moderation); the
+  // server authorises the CURRENT role on every call.
+  const canModerateChat = isHost || isAdmin
 
   // Rejoining as an already-promoted speaker (page refresh): switch the RTC
   // role without auto-enabling the mic (live promotions go through onPromoted)
@@ -475,7 +538,7 @@ export default function AgoraLiveRoom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket.chatMessages, bannedVersion])
 
-  const handleHostBanFromChat = useCallback(async (identity) => {
+  const handleBanFromChat = useCallback(async (identity) => {
     try {
       await eventsAPI.banFromChat(eventId, identity)
     } catch (err) {
@@ -488,6 +551,14 @@ export default function AgoraLiveRoom({
   // broadcast → everyone mounts. Credentials are refetched when the
   // "everyone writes" flag changes the attendee's expected role.
   const whiteboardState = socket.whiteboard
+
+  // La pantalla no debe apagarse mientras se emite (host y co-presentador, sin
+  // depender de la consola móvil) NI mientras un asistente está viendo algo:
+  // Agora pinta el vídeo remoto en <video> silenciados, y con eso no se puede
+  // contar con que el navegador mantenga la pantalla encendida. Sin nada que
+  // ver («Esperando al host...») no se pide.
+  const hasSomethingToWatch = whiteboardState.active || room.remoteUsers.some((u) => !!u.videoTrack)
+  useScreenWakeLock({ enabled: !eventEnded && (isHost || coHostMode || hasSomethingToWatch) })
   const [wbCreds, setWbCreds] = useState(null)
   const wbFetchingRef = useRef(false)
 
@@ -582,12 +653,19 @@ export default function AgoraLiveRoom({
     )
   }
 
+  const chatCell = roomCell('chat', layout)
+
   return (
-    <>
+    // Un solo árbol en todas las disposiciones (LiveRoomShell): en escritorio el
+    // contenedor y los envoltorios intermedios son `contents` y la vista es la de
+    // siempre; en compacto escena, filas y chat son celdas de su rejilla.
+    <LiveRoomShell compact={compact} landscape={landscape} panelOpen={panelOpen}>
       {room.autoplayBlocked && <AudioActivationOverlay onActivate={room.resumeAudio} />}
 
+      {compact && !landscape && <LiveRoomTopBar connectedCount={socket.presence.length} />}
+
       {room.joinError && (
-        <div className="mb-4 rounded-md bg-red-50 p-4">
+        <div className={compact ? 'absolute inset-x-0 top-0 z-30 bg-red-50 px-4 py-3' : 'mb-4 rounded-md bg-red-50 p-4'}>
           <p className="text-sm text-red-700">{room.joinError}</p>
         </div>
       )}
@@ -595,10 +673,10 @@ export default function AgoraLiveRoom({
       {/* Meeting fills the available viewport height (media column scrolls
           internally, chat keeps full height); broadcast keeps the LiveKit-parity
           two-column layout with the chat height synced to the media area. */}
-      <div className={`flex flex-col lg:flex-row gap-4 ${isMeeting ? 'lg:h-[calc(100dvh-10rem)] lg:min-h-0' : ''}`}>
+      <div className={compact ? 'contents' : `flex flex-col lg:flex-row gap-4 ${isMeeting ? 'lg:h-[calc(100dvh-10rem)] lg:min-h-0' : ''}`}>
         {/* Left column: media area + controls */}
         <div
-          className={`flex-1 min-h-0 flex flex-col ${isMeeting ? 'lg:overflow-y-auto' : ''}`}
+          className={compact ? 'contents' : `flex-1 min-h-0 flex flex-col ${isMeeting ? 'lg:overflow-y-auto' : ''}`}
           ref={videoAreaRef}
         >
           {isMeeting ? (
@@ -612,6 +690,7 @@ export default function AgoraLiveRoom({
               eventId={eventId}
               localUid={uid}
               eventEnded={eventEnded}
+              layout={layout}
               whiteboardElement={whiteboardElement}
               whiteboard={{
                 available: whiteboardAvailable,
@@ -637,6 +716,7 @@ export default function AgoraLiveRoom({
               eventId={eventId}
               localUid={uid}
               eventEnded={eventEnded}
+              layout={layout}
               whiteboardElement={whiteboardElement}
               whiteboard={{
                 available: whiteboardAvailable,
@@ -650,28 +730,33 @@ export default function AgoraLiveRoom({
           )}
         </div>
 
-        {/* Chat sidebar — meeting: full height of the row; broadcast: synced to media area */}
+        {/* Chat — meeting: full height of the row; broadcast: synced to media
+            area; compact: the rest of the shell, composer at the bottom */}
         <div
-          className={`lg:w-80 flex-shrink-0 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white ${
+          className={compact ? chatCell.className : `lg:w-80 flex-shrink-0 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white ${
             isMeeting ? 'h-[60vh] lg:h-auto' : ''
           }`}
-          style={!isMeeting && videoAreaHeight ? { height: videoAreaHeight, maxHeight: videoAreaHeight } : undefined}
+          style={compact ? chatCell.style : (!isMeeting && videoAreaHeight ? { height: videoAreaHeight, maxHeight: videoAreaHeight } : undefined)}
         >
-          <div className="px-4 py-3 border-b border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900">Chat</h3>
-            <p className="text-xs text-gray-500">{socket.presence.length} conectados</p>
-          </div>
+          {!compact && (
+            <div className="px-4 py-3 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900">Chat</h3>
+              <p className="text-xs text-gray-500">{socket.presence.length} conectados</p>
+            </div>
+          )}
           <ChatPanel
             chatMessages={filteredMessages}
             onSend={socket.sendChatMessage}
-            isHost={isHost}
-            protectedIdentities={coHostIdentities}
+            canModerate={canModerateChat}
+            selfIdentity={socket.selfIdentity}
+            protectedIdentities={protectedIdentities}
             isChatBanned={socket.selfChatBanned}
-            onHostBanFromChat={handleHostBanFromChat}
+            onBanFromChat={handleBanFromChat}
+            compact={compact}
           />
         </div>
       </div>
-    </>
+    </LiveRoomShell>
   )
 }
 
@@ -696,7 +781,7 @@ function AudioActivationOverlay({ onActivate }) {
           onClick={onActivate}
           className="w-full rounded-lg bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2"
         >
-          Haz clic para activar el audio
+          {LIVE_ROOM_COPY.activateAudio}
         </button>
       </div>
     </div>
@@ -709,14 +794,22 @@ function AudioActivationOverlay({ onActivate }) {
 function BroadcastArea({
   room, socket, selfPresence, remoteByUid, nameByUid,
   isHost, isCoHost, amSpeaker, eventId, localUid, eventEnded,
-  whiteboardElement, whiteboard, hostControls, allowMobileHostConsole,
+  whiteboardElement, whiteboard, hostControls, allowMobileHostConsole, layout,
 }) {
   const hostRemote = remoteByUid.get(AGORA_HOST_UID)
+  const { compact, landscape, panelOpen, togglePanel } = layout
+  const stageCell = roomCell('stage', layout)
+  const rowsCell = roomCell('rows', layout)
+  const frame = stageFrame(layout)
 
   const [theaterOpen, setTheaterOpen] = useState(false)
   const [stripVisible, setStripVisible] = useState(true)
   const closeTheater = useCallback(() => setTheaterOpen(false), [])
   const openTheater = useCallback(() => setTheaterOpen(true), [])
+
+  // Controles superpuestos de la escena en horizontal compacto. Fijos con la
+  // pizarra en escena: ahí un toque pertenece al lienzo.
+  const chrome = useAutoHideChrome({ enabled: compact && landscape && !theaterOpen, pinned: !!whiteboardElement })
 
   // Modos de vista del host (completa | consola | solo vídeo). Solo existen si
   // el evento los habilita y quien mira es el host.
@@ -879,6 +972,9 @@ function BroadcastArea({
   const handRaised = !!selfPresence?.handRaised
   const toggleHandRaise = () => socket.setHandRaised(!handRaised)
 
+  const handlePromote = useCallback((identity) => promoteParticipant(eventId, identity), [eventId])
+  const handleDemote = useCallback((identity) => demoteParticipant(eventId, identity), [eventId])
+
   return (
     // El envoltorio está SIEMPRE montado y solo cambia de className, igual que
     // TheaterShell: es lo que impide que la pizarra cambie de posición en el
@@ -891,7 +987,14 @@ function BroadcastArea({
           desmontarlo sacaría la pizarra de su posición en el árbol. Igual que
           el envoltorio de fuera, es `contents` cuando no estorba. */}
       <div className={inOverlay ? 'hidden' : 'contents'}>
-      <TheaterShell open={theaterOpen} onClose={closeTheater}>
+      <TheaterShell
+        open={theaterOpen}
+        onClose={closeTheater}
+        normalClassName={stageCell.className}
+        normalStyle={stageCell.style}
+        onNormalClick={compact && landscape ? chrome.toggle : undefined}
+        lockLandscape={compact}
+      >
         {/* One stage for every role: single camera, split or picture-in-picture
             interview, or whiteboard / screen with the cameras in the corner.
             Its content layer keeps the whiteboard at a fixed tree position. */}
@@ -902,7 +1005,12 @@ function BroadcastArea({
           layout={socket.stageLayout}
           theaterOpen={theaterOpen}
           placeholder={stagePlaceholder}
-          theaterButton={showTheaterButton ? <TheaterButton onOpen={openTheater} /> : null}
+          frame={frame}
+          theaterButton={compact && landscape && !theaterOpen ? (
+            <StageChromeGroup visible={chrome.visible} panelOpen={panelOpen} onTogglePanel={togglePanel}>
+              {showTheaterButton ? <TheaterButton onOpen={openTheater} /> : null}
+            </StageChromeGroup>
+          ) : (showTheaterButton ? <TheaterButton onOpen={openTheater} /> : null)}
         />
 
         {theaterOpen && (
@@ -917,7 +1025,7 @@ function BroadcastArea({
               entries={stripEntries}
               visible={stripVisible}
               renderTile={(p) => (
-                <AgoraParticipantTile
+                <ParticipantTile
                   key={p.identity}
                   entry={p}
                   isLocal={p.identity === socket.selfIdentity}
@@ -933,9 +1041,77 @@ function BroadcastArea({
             />
           </>
         )}
+        {compact && landscape && !theaterOpen && (
+          <LandscapeStageChrome
+            visible={chrome.visible}
+            connectedCount={socket.presence.length}
+            bottomLeft={!isHost && !isCoHost && !panelOpen ? (
+              <button
+                type="button"
+                onClick={toggleHandRaise}
+                aria-pressed={handRaised}
+                aria-label={handRaised ? LIVE_ROOM_COPY.lowerHand : LIVE_ROOM_COPY.raiseHand}
+                className={`flex size-11 items-center justify-center rounded-lg text-white [touch-action:manipulation] ${
+                  handRaised ? 'bg-amber-500' : 'bg-black/60 hover:bg-black/80'
+                }`}
+              >
+                <HandIcon className="size-5" />
+              </button>
+            ) : null}
+            bottomLeftPinned={handRaised}
+          />
+        )}
+        {compact && !landscape && !theaterOpen && (isHost || isCoHost) && room.camEnabled && <PortraitBadge />}
         <SpeakingPulseStyle />
       </TheaterShell>
 
+      {/* Filas bajo la escena. En escritorio el envoltorio es `contents` y sus
+          hijos son los de siempre; en compacto es la celda `rows` de la rejilla. */}
+      <div className={compact ? rowsCell.className : 'contents'} style={rowsCell.style}>
+        {compact ? (
+          !theaterOpen && (
+            <>
+              {promotedVideoUsers.length > 0 && (
+                <CompactPromotedRow users={promotedVideoUsers} nameByUid={nameByUid} />
+              )}
+              <CompactParticipantRow
+                presence={socket.presence}
+                selfIdentity={socket.selfIdentity}
+                remoteByUid={remoteByUid}
+                speakingUids={room.speakingUids}
+                viewerIsHost={isHost}
+                localMicEnabled={room.micEnabled}
+                amSpeaker={amSpeaker}
+                showHand={!isHost && !isCoHost}
+                handRaised={handRaised}
+                onToggleHand={toggleHandRaise}
+                onPromote={handlePromote}
+                onDemote={handleDemote}
+                onSelfMute={() => room.setMicrophoneEnabled(false)}
+              />
+              {(isHost || isCoHost) && !landscape && !room.camEnabled && <OrientationHint />}
+              {isHost && (
+                <CompactHostControls
+                  room={room}
+                  hostControls={hostControls}
+                  endLabel="Finalizar stream"
+                  whiteboard={whiteboard}
+                  hostView={allowMobileHostConsole ? { mode: viewMode.mode, onSelect: viewMode.selectMode } : null}
+                />
+              )}
+              {isCoHost && (
+                <CompactCoHostControls
+                  room={room}
+                  hostControls={hostControls}
+                  layout={socket.stageLayout}
+                  onLayoutChange={socket.setStageLayout}
+                  layoutLocked={hasStageContent}
+                />
+              )}
+            </>
+          )
+        ) : (
+          <>
       {/* Promoted viewers grid */}
       {!theaterOpen && promotedVideoUsers.length > 0 && (
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -1015,6 +1191,9 @@ function BroadcastArea({
           </button>
         </div>
       )}
+          </>
+        )}
+      </div>
       </div>
 
       {inOverlay && (
@@ -1212,31 +1391,55 @@ function SpeakingPulseStyle() {
   )
 }
 
-function HandIcon({ className }) {
+async function promoteParticipant(eventId, identity) {
+  try {
+    await eventsAPI.promoteParticipant(eventId, identity)
+  } catch (err) {
+    console.error('Error promoting participant:', err)
+  }
+}
+
+async function demoteParticipant(eventId, identity) {
+  try {
+    await eventsAPI.demoteParticipant(eventId, identity)
+  } catch (err) {
+    console.error('Error demoting participant:', err)
+  }
+}
+
+// Aviso para quien emite desde un móvil en vertical: la orientación de captura
+// queda fijada al activar la cámara por primera vez (la pista se reutiliza).
+function OrientationHint() {
   return (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-      <path fillRule="evenodd" clipRule="evenodd" d="M18.906 3.92194C17.8921 2.88646 16.4461 2.50452 15.0306 2.9073C14.6322 3.02066 14.2173 2.78959 14.104 2.39119C13.9906 1.99279 14.2217 1.57792 14.6201 1.46456C16.5583 0.913072 18.5747 1.43959 19.9778 2.8725C20.2676 3.16846 20.2626 3.64331 19.9666 3.9331C19.6706 4.2229 19.1958 4.2179 18.906 3.92194ZM11.1904 3.30839C10.9763 2.94131 10.3525 2.7187 9.71882 3.08085C9.08746 3.44168 8.97642 4.07772 9.18675 4.4384L11.7124 8.76952C11.9211 9.12734 11.8001 9.58656 11.4423 9.79522C11.0845 10.0039 10.6253 9.88296 10.4166 9.52514L7.89098 5.19403C7.89085 5.19381 7.8911 5.19424 7.89098 5.19403L7.04909 3.75032C6.83503 3.38324 6.21122 3.16063 5.57755 3.52278C4.94619 3.88361 4.83515 4.51965 5.04548 4.88033L8.83397 11.377C9.04263 11.7348 8.92171 12.1941 8.56389 12.4027C8.20607 12.6114 7.74685 12.4905 7.53819 12.1326L5.85442 9.24522C5.64036 8.87814 5.01655 8.65553 4.38288 9.01768C3.75152 9.37851 3.64048 10.0145 3.85081 10.3752L7.6393 16.8719C9.24824 19.631 13.2186 20.5264 16.5856 18.6021C19.9502 16.6792 21.1463 12.8377 19.5411 10.085L17.0154 5.75387C16.8013 5.3868 16.1775 5.16418 15.5439 5.52633C14.9125 5.88716 14.8015 6.5232 15.0118 6.88389L16.6956 9.7713C16.7963 9.94411 16.8239 10.15 16.7721 10.3432C16.7203 10.5365 16.5935 10.701 16.4198 10.8003C14.8774 11.6818 14.4047 13.3863 15.0799 14.5443C15.2886 14.9022 15.1677 15.3614 14.8099 15.57C14.4521 15.7787 13.9928 15.6578 13.7842 15.3C12.7249 13.4835 13.3917 11.2368 15.0475 9.92287L11.1904 3.30839ZM13.9186 5.00916L12.4861 2.55277C11.7703 1.32517 10.163 1.09928 8.97453 1.77853C8.60823 1.98787 8.29668 2.27483 8.06179 2.60775C7.26173 1.72687 5.8839 1.62001 4.83326 2.22046C3.64241 2.90104 3.03012 4.40197 3.74971 5.63596L4.75188 7.35452C4.36684 7.39635 3.98493 7.51742 3.63859 7.71536C2.44774 8.39595 1.83545 9.89687 2.55504 11.1309L6.34352 17.6275C8.45427 21.2471 13.408 22.1458 17.3299 19.9044C21.254 17.6617 22.9513 12.9554 20.8368 9.32937L18.3112 4.99825C17.5953 3.77065 15.9881 3.54476 14.7996 4.22401C14.4495 4.42406 14.1495 4.69498 13.9186 5.00916ZM4.41401 17.859C4.77183 17.6504 5.23105 17.7713 5.43971 18.1291C6.26657 19.5471 7.53066 20.6193 9.08954 21.3151C9.46779 21.4839 9.63757 21.9274 9.46875 22.3057C9.29993 22.6839 8.85645 22.8537 8.4782 22.6849C6.66668 21.8764 5.14688 20.6046 4.14393 18.8847C3.93527 18.5269 4.05619 18.0677 4.41401 17.859Z" />
-    </svg>
+    <p className="border-b border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-500">
+      {LIVE_ROOM_COPY.orientationHint}
+    </p>
   )
 }
 
-function MutedMicBadge() {
+// Etiqueta sobre la propia escena de quien emite en vertical. Nunca la ve la
+// audiencia: se pinta solo en la vista de quien publica.
+function PortraitBadge() {
   return (
-    <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-400">
-      <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
-      </svg>
+    <span className="pointer-events-none absolute left-2 top-2 z-20 rounded bg-black/60 px-1.5 py-0.5 text-[11px] font-medium text-white">
+      {LIVE_ROOM_COPY.portraitBadge}
     </span>
   )
 }
 
-function ActiveMicBadge() {
+// Promoted viewers publishing video, as a horizontal row in the compact room
+function CompactPromotedRow({ users, nameByUid }) {
   return (
-    <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
-      <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-      </svg>
-    </span>
+    <div className="scrollbar-hide flex flex-shrink-0 gap-x-2 overflow-x-auto overscroll-x-contain border-b border-gray-200 bg-white p-2">
+      {users.map((u) => (
+        <div key={u.uid} className="relative aspect-video h-16 flex-shrink-0 overflow-hidden rounded-md bg-black">
+          <AgoraVideo track={u.videoTrack} className="h-full w-full" fit="cover" />
+          <span className="absolute bottom-0.5 left-0.5 max-w-[calc(100%-0.25rem)] truncate rounded bg-black/50 px-1 text-[10px] text-white">
+            {nameByUid.get(Number(u.uid)) || u.uid}
+          </span>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -1257,36 +1460,10 @@ function AgoraParticipantGrid({
   // Host view: exclude host from grid (they see their own video above)
   const gridEntries = viewerIsHost ? presence.filter((p) => !p.isHost) : presence
 
-  const sorted = useMemo(() => {
-    return [...gridEntries].sort((a, b) => {
-      const aHost = a.isHost ? 1 : 0
-      const bHost = b.isHost ? 1 : 0
-      if (aHost !== bHost) return bHost - aHost
-      const aLocal = a.identity === selfIdentity
-      const bLocal = b.identity === selfIdentity
-      if (aLocal && !bLocal) return 1
-      if (!aLocal && bLocal) return -1
-      const aHand = a.handRaised ? 1 : 0
-      const bHand = b.handRaised ? 1 : 0
-      return bHand - aHand
-    })
-  }, [gridEntries, selfIdentity])
+  const sorted = useMemo(() => sortParticipants(gridEntries, selfIdentity), [gridEntries, selfIdentity])
 
-  const handlePromote = useCallback(async (identity) => {
-    try {
-      await eventsAPI.promoteParticipant(eventId, identity)
-    } catch (err) {
-      console.error('Error promoting participant:', err)
-    }
-  }, [eventId])
-
-  const handleDemote = useCallback(async (identity) => {
-    try {
-      await eventsAPI.demoteParticipant(eventId, identity)
-    } catch (err) {
-      console.error('Error demoting participant:', err)
-    }
-  }, [eventId])
+  const handlePromote = useCallback((identity) => promoteParticipant(eventId, identity), [eventId])
+  const handleDemote = useCallback((identity) => demoteParticipant(eventId, identity), [eventId])
 
   if (sorted.length === 0) return null
 
@@ -1294,7 +1471,7 @@ function AgoraParticipantGrid({
     <div className="mt-3 landscape:max-md:max-h-[30vh] landscape:max-md:overflow-y-auto pr-1">
       <div className="flex flex-wrap gap-2">
         {sorted.map((p) => (
-          <AgoraParticipantTile
+          <ParticipantTile
             key={p.identity}
             entry={p}
             isLocal={p.identity === selfIdentity}
@@ -1314,123 +1491,14 @@ function AgoraParticipantGrid({
   )
 }
 
-// `readOnly` renders the tile as pure state (theater strip): no click actions,
-// name styled for the dark overlay background.
-function AgoraParticipantTile({
-  entry, isLocal, viewerIsHost, remoteByUid, speakingUids,
-  localMicEnabled, amSpeaker, wasPromoted, onPromote, onDemote, onSelfMute,
-  readOnly = false,
-}) {
-  const isHostParticipant = entry.isHost
-  // The co-presenter's tile is state only for everybody: the server refuses to
-  // promote or demote staff, and a demote would ban their publishing for 24 h
-  const isCoHostParticipant = !!entry.coHost
-  const handRaised = entry.handRaised
-  const canPublish = isLocal ? amSpeaker : entry.speaker
-
-  // Mic state: local from RTC state; remote from the published audio track
-  const remoteUser = entry.agoraUid != null ? remoteByUid.get(Number(entry.agoraUid)) : null
-  const isMicActive = isLocal ? localMicEnabled : !!remoteUser?.hasAudio
-
-  const initial = isLocal ? 'T' : (entry.name || entry.identity || '?').charAt(0).toUpperCase()
-  const displayName = isLocal ? '(Tu)' : (entry.name || entry.identity || '?')
-  const shortName = isLocal ? '(Tu)' : (displayName.length > 12 ? displayName.slice(0, 11) + '...' : displayName)
-
-  const handleClick = useCallback(() => {
-    if (isHostParticipant || isCoHostParticipant) return
-    if (isLocal) {
-      if (canPublish && isMicActive) onSelfMute?.()
-      return
-    }
-    if (!viewerIsHost) return
-    if (canPublish) {
-      onDemote?.(entry.identity)
-    } else {
-      onPromote?.(entry.identity)
-    }
-  }, [isLocal, viewerIsHost, isHostParticipant, isCoHostParticipant, canPublish, isMicActive, onSelfMute, onPromote, onDemote, entry.identity])
-
-  const getTitle = () => {
-    if (isHostParticipant) return `Host: ${displayName}`
-    if (isCoHostParticipant) return displayName
-    if (isLocal) {
-      if (canPublish && isMicActive) return 'Silenciar tu micrófono'
-      if (!canPublish) return 'Levanta la mano para hablar'
-      return '(Tu)'
-    }
-    if (viewerIsHost && canPublish) return `Silenciar a ${displayName}`
-    if (viewerIsHost) return `Dar la palabra a ${displayName}`
-    return displayName
-  }
-
-  const getTileClasses = () => {
-    if (isHostParticipant) {
-      return 'bg-gray-50 text-gray-900 ring-2 ring-gray-900 cursor-default'
-    }
-    if (isCoHostParticipant) {
-      return isMicActive
-        ? 'bg-green-50 text-green-800 ring-2 ring-green-400 cursor-default'
-        : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
-    }
-    if (isLocal) {
-      if (canPublish) {
-        return isMicActive
-          ? 'bg-green-50 text-green-800 ring-2 ring-green-400 cursor-pointer hover:bg-green-100'
-          : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
-      }
-      return 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
-    }
-    if (canPublish) {
-      return isMicActive
-        ? 'bg-green-50 text-green-800 ring-2 ring-green-400 cursor-pointer hover:bg-green-100'
-        : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
-    }
-    if (wasPromoted) {
-      return viewerIsHost
-        ? 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
-        : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
-    }
-    if (viewerIsHost) {
-      return handRaised
-        ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-300 cursor-pointer hover:bg-amber-100'
-        : 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-pointer hover:bg-red-100'
-    }
-    return 'bg-red-50 text-red-800 ring-2 ring-red-400 cursor-default'
-  }
-
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <button
-        type="button"
-        onClick={readOnly ? undefined : handleClick}
-        className={`relative w-14 h-14 rounded-lg flex items-center justify-center text-lg font-semibold transition-shadow duration-300 ${getTileClasses()} ${readOnly ? '!cursor-default' : ''}`}
-        title={readOnly ? (isLocal ? '(Tu)' : displayName) : getTitle()}
-      >
-        {initial}
-
-        {/* Hand raised icon — top left (hidden when actively speaking) */}
-        {handRaised && !isLocal && !isHostParticipant && (!canPublish || !isMicActive) && (
-          <span className="absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400">
-            <HandIcon className="h-3.5 w-3.5 text-white" />
-          </span>
-        )}
-
-        {/* Mic badge (top-right) */}
-        {!isHostParticipant && (canPublish && isMicActive ? <ActiveMicBadge /> : <MutedMicBadge />)}
-      </button>
-      <span className={`text-xs text-center max-w-16 truncate ${
-        isHostParticipant ? (readOnly ? 'text-white font-semibold' : 'text-gray-900 font-semibold')
-        : isLocal ? (readOnly ? 'text-red-400 font-medium' : 'text-red-600 font-medium')
-        : (readOnly ? 'text-gray-300' : 'text-gray-600')
-      }`}>{isHostParticipant ? 'Host' : shortName}</span>
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Meeting mode — Meet-style grid of large tiles, self-serve controls for all
 // ---------------------------------------------------------------------------
-function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard, hostControls }) {
+function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard, hostControls, layout }) {
+  const { compact, landscape, panelOpen, togglePanel } = layout
+  const stageCell = roomCell('stage', layout)
+  const rowsCell = roomCell('rows', layout)
+  const frame = stageFrame(layout)
   const hostEntry = socket.presence.find((p) => p.isHost)
   const hostScreenSharing = !whiteboardElement && !!hostEntry?.screenSharing
 
@@ -1438,12 +1506,17 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
   // featured area when there's something to highlight — the whiteboard or a shared
   // screen; otherwise the host watches everyone in an equal grid (own tile first),
   // which is better for interacting with all participants.
-  const showFeatured = !!whiteboardElement || hostScreenSharing || !isHost
+  // Compact: everyone, host included, gets the featured box — sixteen equal
+  // squares in portrait leave either tiny tiles or no chat.
+  const showFeatured = compact || !!whiteboardElement || hostScreenSharing || !isHost
 
   const [theaterOpen, setTheaterOpen] = useState(false)
   const [stripVisible, setStripVisible] = useState(true)
   const closeTheater = useCallback(() => setTheaterOpen(false), [])
   const openTheater = useCallback(() => setTheaterOpen(true), [])
+
+  // Controles superpuestos en horizontal compacto (fijos con la pizarra)
+  const chrome = useAutoHideChrome({ enabled: compact && landscape && !theaterOpen, pinned: !!whiteboardElement })
 
   // The featured area can disappear live (the host stops sharing / closes the
   // whiteboard and drops to the equal grid): nothing left to feature
@@ -1482,11 +1555,20 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
   return (
     <>
       {showFeatured && (
-        <TheaterShell open={theaterOpen} onClose={closeTheater} normalClassName="mb-3 flex-shrink-0">
+        <TheaterShell
+          open={theaterOpen}
+          onClose={closeTheater}
+          normalClassName={compact ? stageCell.className : 'mb-3 flex-shrink-0'}
+          normalStyle={stageCell.style}
+          onNormalClick={compact && landscape ? chrome.toggle : undefined}
+          lockLandscape={compact}
+        >
           {whiteboardElement ? (
-            <div className={theaterOpen
-              ? 'relative flex-1 min-h-0 bg-white'
-              : 'rounded-lg overflow-hidden aspect-video w-full relative border border-gray-200 bg-white'}
+            <div
+              className={theaterOpen
+                ? 'relative flex-1 min-h-0 bg-white'
+                : frame ? `${frame.className} bg-white` : 'rounded-lg overflow-hidden aspect-video w-full relative border border-gray-200 bg-white'}
+              style={!theaterOpen && frame ? frame.style : undefined}
             >
               {whiteboardElement}
               {/* Theater for the whiteboard — host and attendees alike */}
@@ -1497,9 +1579,12 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
           ) : (
             <div
               className={`relative transition-shadow duration-300 ${
-                theaterOpen ? 'flex-1 min-h-0 bg-black' : 'bg-black rounded-lg overflow-hidden aspect-video w-full'
+                theaterOpen ? 'flex-1 min-h-0 bg-black' : frame ? `${frame.className} bg-black` : 'bg-black rounded-lg overflow-hidden aspect-video w-full'
               } ${hostSpeaking ? 'ring-2 ring-green-400' : ''}`}
-              style={hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+              style={{
+                ...(!theaterOpen && frame ? frame.style : {}),
+                ...(hostSpeaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : {}),
+              }}
             >
               {hostVideoTrack ? (
                 <AgoraVideo track={hostVideoTrack} className="w-full h-full" fit="contain" />
@@ -1546,10 +1631,36 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
               />
             </>
           )}
+          {compact && landscape && !theaterOpen && (
+            <LandscapeStageChrome
+              visible={chrome.visible}
+              connectedCount={socket.presence.length}
+              topRight={<StageChromeGroup visible={chrome.visible} panelOpen={panelOpen} onTogglePanel={togglePanel} />}
+            />
+          )}
+          {compact && !landscape && !theaterOpen && isHost && room.camEnabled && !whiteboardElement && !room.screenEnabled && (
+            <PortraitBadge />
+          )}
         </TheaterShell>
       )}
 
-      {/* Camera tiles — rows of 5 square tiles (all breakpoints); unmounted
+      <div className={compact ? rowsCell.className : 'contents'} style={rowsCell.style}>
+        {compact ? (
+          !theaterOpen && gridEntries.length > 0 && (
+            <CompactCameraRow
+              entries={gridEntries}
+              selfIdentity={socket.selfIdentity}
+              room={room}
+              remoteByUid={remoteByUid}
+              speakingUids={room.speakingUids}
+              localUid={localUid}
+              viewerIsHost={isHost}
+              onForceMute={socket.requestForceMute}
+            />
+          )
+        ) : (
+          <>
+      {/* Camera tiles — rows of 5 square tiles (desktop); unmounted
           while the theater is open so each track has a single container */}
       {!theaterOpen && gridEntries.length > 0 && (
         <div className="grid grid-cols-5 gap-2">
@@ -1569,13 +1680,22 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
         </div>
       )}
 
-      {/* Bottom control bar: self-serve controls for everyone */}
-      <div className="mt-3 flex-shrink-0">
-        {isHost ? (
-          <AgoraHostControls room={room} hostControls={hostControls} endLabel="Finalizar evento" whiteboard={whiteboard} />
-        ) : (
-          <MeetingSelfControls room={room} />
+          </>
         )}
+
+        {compact && isHost && !landscape && !room.camEnabled && <OrientationHint />}
+
+        {/* Bottom control bar: self-serve controls for everyone. MeetingSelfControls
+            stays mounted across layouts: it owns its device and effect hooks. */}
+        <div className={compact ? '' : 'mt-3 flex-shrink-0'}>
+          {isHost ? (
+            compact
+              ? <CompactHostControls room={room} hostControls={hostControls} endLabel="Finalizar evento" whiteboard={whiteboard} />
+              : <AgoraHostControls room={room} hostControls={hostControls} endLabel="Finalizar evento" whiteboard={whiteboard} />
+          ) : (
+            <MeetingSelfControls room={room} compact={compact} />
+          )}
+        </div>
       </div>
       <SpeakingPulseStyle />
     </>
@@ -1667,9 +1787,10 @@ function MeetingTile({ entry, isLocal, room, remoteByUid, speakingUids, viewerIs
 }
 
 // Meeting self controls for non-host participants (mic, camera, devices)
-function MeetingSelfControls({ room }) {
+function MeetingSelfControls({ room, compact = false }) {
   const [deviceError, setDeviceError] = useState('')
   const [openDeviceMenu, setOpenDeviceMenu] = useState(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const devices = useAgoraDevices({
     enabled: true,
@@ -1726,6 +1847,28 @@ function MeetingSelfControls({ room }) {
       setDeviceError('Error al cambiar el dispositivo')
     }
     setOpenDeviceMenu(null)
+  }
+
+  // Compact presentation of the SAME hooks: switching layout never re-creates
+  // them (the effect processor is 2.1 MB of WASM)
+  if (compact) {
+    return (
+      <>
+        <ControlsRow error={deviceError || videoEffect.message}>
+          <ControlIconButton kind="mic" label={LIVE_ROOM_COPY.mic} active={room.micEnabled} onClick={toggleMic} />
+          <ControlIconButton kind="camera" label={LIVE_ROOM_COPY.camera} active={room.camEnabled} onClick={toggleCamera} />
+          <ControlIconButton kind="more" label={LIVE_ROOM_COPY.moreOptions} onClick={() => setSheetOpen(true)} />
+        </ControlsRow>
+        <ControlsSheet
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          devices={devices}
+          onSelectDevice={selectDevice}
+          speakerSupported={devices.playbackDevices.length > 0}
+          effects={videoEffect.supported ? { videoEffect, camEnabled: room.camEnabled } : null}
+        />
+      </>
+    )
   }
 
   return (
@@ -1795,19 +1938,15 @@ function MeetingSelfControls({ room }) {
 // ---------------------------------------------------------------------------
 // Chat — same UI as EventLiveRoom's ChatPanel over the Socket.IO room
 // ---------------------------------------------------------------------------
-function ChatPanel({ chatMessages, onSend, isHost, isChatBanned, onHostBanFromChat, protectedIdentities }) {
-  const [message, setMessage] = useState('')
-  const messagesContainerRef = useRef(null)
+function ChatPanel({ chatMessages, onSend, canModerate, selfIdentity, isChatBanned, onBanFromChat, protectedIdentities, compact = false }) {
   const [openMenuFor, setOpenMenuFor] = useState(null)
+  const [sheetTarget, setSheetTarget] = useState(null) // compact: { identity, name }
   const menuRef = useRef(null)
 
-  // Keep the newest message visible by scrolling ONLY the inner container.
-  // scrollIntoView also scrolls the page/window, which jumped the whole layout
-  // down when sending a message in the viewport-height meeting layout.
-  useEffect(() => {
-    const el = messagesContainerRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [chatMessages.length])
+  // Own message: the list follows it even if the user was reading further up.
+  // Scrolling happens ONLY inside the list (see useChatAutoScroll).
+  const isOwn = useCallback((msg) => !!msg && !!selfIdentity && msg.identity === selfIdentity, [selfIdentity])
+  const { containerRef, onScroll, hasNew, scrollToBottom } = useChatAutoScroll({ messages: chatMessages, isOwn })
 
   // Close three-dot menu when clicking outside
   useEffect(() => {
@@ -1821,91 +1960,99 @@ function ChatPanel({ chatMessages, onSend, isHost, isChatBanned, onHostBanFromCh
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [openMenuFor])
 
-  const handleSend = (e) => {
-    e.preventDefault()
-    if (!message.trim() || isChatBanned) return
-    onSend(message.trim())
-    setMessage('')
-  }
+  // Host or admin (event-chat-admin-moderation) — never on the host's messages,
+  // on staff (the server answers 400) or on one's own
+  const canModerateMessage = (identity) => (
+    canModerate &&
+    !!identity &&
+    !identity.startsWith('host-') &&
+    identity !== selfIdentity &&
+    !protectedIdentities?.has(identity)
+  )
 
   const handleBanFromChat = (identity) => {
     setOpenMenuFor(null)
-    onHostBanFromChat?.(identity)
+    setSheetTarget(null)
+    onBanFromChat?.(identity)
   }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Messages — inner scroll */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-2 space-y-2 min-h-0">
-        {chatMessages.length === 0 && (
-          <p className="text-xs text-gray-400 italic">Sin mensajes todavía</p>
-        )}
-        {chatMessages.map((msg, i) => {
-          const senderIdentity = msg.identity
-          const isHostMsg = senderIdentity?.startsWith('host-')
-          return (
-            <div key={i} className="text-sm flex items-start gap-x-1">
-              <div className="flex-1 min-w-0">
-                <span className="font-medium text-gray-900">
-                  {msg.name || senderIdentity || 'Anónimo'}
-                </span>
-                <span className="text-gray-600 ml-1 break-words">{msg.message}</span>
-              </div>
-              {/* Three-dot menu — host only, not for host messages */}
-              {isHost && !isHostMsg && senderIdentity && !protectedIdentities?.has(senderIdentity) && (
-                <div className="relative flex-shrink-0 mt-0.5" ref={openMenuFor === i ? menuRef : null}>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={containerRef}
+          onScroll={onScroll}
+          className={`flex-1 overflow-y-auto px-4 py-2 space-y-2 min-h-0 ${compact ? 'overscroll-y-contain' : ''}`}
+        >
+          {chatMessages.length === 0 && (
+            <p className="text-xs text-gray-400 italic">{LIVE_ROOM_COPY.emptyChat}</p>
+          )}
+          {chatMessages.map((msg, i) => {
+            const senderIdentity = msg.identity
+            const senderName = msg.name || senderIdentity || 'Anónimo'
+            return (
+              <div key={i} className="text-sm flex items-start gap-x-1">
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-gray-900">{senderName}</span>
+                  <span className="text-gray-600 ml-1 break-words">{msg.message}</span>
+                </div>
+                {canModerateMessage(senderIdentity) && (compact ? (
+                  // Compact: a touch-sized target opening a sheet — a dropdown
+                  // inside this scroll container is clipped on the last messages
                   <button
                     type="button"
-                    onClick={() => setOpenMenuFor(openMenuFor === i ? null : i)}
-                    className="text-gray-300 hover:text-gray-500 p-0.5 rounded"
-                    title="Opciones"
+                    onClick={() => setSheetTarget({ identity: senderIdentity, name: senderName })}
+                    aria-label={LIVE_ROOM_COPY.messageOptions}
+                    className="-my-1.5 -mr-2 flex size-8 flex-shrink-0 items-center justify-center rounded text-gray-400 hover:text-gray-600 [touch-action:manipulation]"
                   >
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                       <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
                     </svg>
                   </button>
-                  {openMenuFor === i && (
-                    <div className="absolute right-0 top-5 z-20 min-w-max rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                      <button
-                        type="button"
-                        onClick={() => handleBanFromChat(senderIdentity)}
-                        className="block w-full px-4 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
-                      >
-                        Expulsar del chat
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
+                ) : (
+                  <div className="relative flex-shrink-0 mt-0.5" ref={openMenuFor === i ? menuRef : null}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenMenuFor(openMenuFor === i ? null : i)}
+                      className="text-gray-300 hover:text-gray-500 p-0.5 rounded"
+                      title="Opciones"
+                    >
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                      </svg>
+                    </button>
+                    {openMenuFor === i && (
+                      <div className="absolute right-0 top-5 z-20 min-w-max rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                        <button
+                          type="button"
+                          onClick={() => handleBanFromChat(senderIdentity)}
+                          className="block w-full px-4 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+                        >
+                          {LIVE_ROOM_COPY.banFromChat}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+        <NewMessagesButton visible={hasNew} onClick={scrollToBottom} />
       </div>
 
       {/* Input or chat-banned warning */}
-      {isChatBanned ? (
-        <div className="border-t border-gray-200 px-4 py-3">
-          <p className="text-xs text-center text-red-600 font-medium">
-            Has sido expulsado del chat por comportamiento inapropiado.
-          </p>
-        </div>
-      ) : (
-        <form onSubmit={handleSend} className="border-t border-gray-200 px-4 py-3 flex gap-2">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Escribe un mensaje..."
-            className="flex-1 min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
+      <ChatComposer onSend={onSend} compact={compact} banned={isChatBanned} />
+
+      {compact && (
+        <LiveRoomSheet open={!!sheetTarget} title={sheetTarget?.name || ''} onClose={() => setSheetTarget(null)}>
+          <LiveRoomSheetRow
+            label={LIVE_ROOM_COPY.banFromChat}
+            danger
+            onClick={() => sheetTarget && handleBanFromChat(sheetTarget.identity)}
           />
-          <button
-            type="submit"
-            disabled={!message.trim()}
-            className="flex-shrink-0 inline-flex items-center justify-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            Enviar
-          </button>
-        </form>
+        </LiveRoomSheet>
       )}
     </div>
   )

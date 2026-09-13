@@ -233,3 +233,65 @@ describe('stage_layout', () => {
     expect(ack.stageLayout).toBe('split');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Staff flag in presence (Change: live-event-mobile-layout). Clients read it
+// to never offer the chat moderation menu over a staff message — in a meeting
+// the admin is staff without being a co-presenter, and the server answers 400.
+// ---------------------------------------------------------------------------
+describe('staff flag in presence', () => {
+  it('marks the admin as staff in a broadcast', async () => {
+    const { connect } = createFakeServer();
+    const session = await staffSession();
+
+    const ack = await connect().joinRoom(session);
+
+    const self = ack.presence.find((p) => p.identity === `viewer-${session.attendeeId}`);
+    expect(self.staff).toBe(true);
+  });
+
+  it('marks the admin as staff but not co-presenter in a meeting', async () => {
+    const meetingId = randomUUID();
+    await db.execute({
+      sql: `INSERT INTO events
+              (id, title, slug, event_datetime, host_user_id, access_type, category,
+               status, provider, interaction_mode, agora_channel_name)
+            VALUES (?, ?, ?, ?, ?, 'free', 'charla', 'active', 'agora', 'meeting', ?)`,
+      args: [meetingId, 'Reunión socket', `reunion-socket-${stamp}`, new Date().toISOString(), hostId, `event-${meetingId}`],
+    });
+    const { attendee, accessToken } = await eventService.createOrGetStaffAttendee(meetingId, {
+      email: ADMIN_EMAIL,
+      fullName: 'Ada Entrevistadora',
+    });
+    const { connect } = createFakeServer();
+
+    const ack = await connect().joinRoom({ eventId: meetingId, attendeeId: attendee.id, accessToken });
+
+    expect(ack.ok).toBe(true);
+    const self = ack.presence.find((p) => p.identity === `viewer-${attendee.id}`);
+    expect(self.staff).toBe(true);
+    expect(self.coHost).toBe(false);
+  });
+
+  it('keeps the host and ordinary attendees out of the staff', async () => {
+    const { connect } = createFakeServer();
+
+    const hostAck = await connect().joinRoom({ eventId, hostToken: tokenFor(hostId, HOST_EMAIL, 'seller') });
+    const viewerAck = await connect().joinRoom(await viewerSession('staffless'));
+
+    expect(hostAck.presence.find((p) => p.identity === hostAck.identity).staff).toBe(false);
+    expect(viewerAck.presence.find((p) => p.identity === viewerAck.identity).staff).toBe(false);
+  });
+
+  it('keeps the flag when the same identity reconnects', async () => {
+    const { connect } = createFakeServer();
+    const session = await staffSession();
+    await connect().joinRoom(session);
+
+    const ack = await connect().joinRoom(session);
+
+    const entries = ack.presence.filter((p) => p.identity === `viewer-${session.attendeeId}`);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].staff).toBe(true);
+  });
+});

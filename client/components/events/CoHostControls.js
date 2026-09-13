@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import DeviceDropdown from '@/components/events/DeviceDropdown'
 import ToggleSwitch from '@/components/events/ToggleSwitch'
-import { STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY } from '@/lib/constants'
+import { ControlIconButton, ControlsRow, ControlsSheet } from '@/components/events/CompactControls'
+import { STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY, LIVE_ROOM_COPY } from '@/lib/constants'
 
 /**
  * Control bar of the co-presenter (the admin interviewing the host) in an
@@ -100,5 +101,34 @@ export default function CoHostControls({ room, hostControls, layout, onLayoutCha
         <span className="text-xs text-red-600">{deviceError}</span>
       )}
     </div>
+  )
+}
+
+/**
+ * Compact presentation of the same co-presenter controls (live-event-mobile-layout):
+ * microphone, camera and «Más» with sources, speakers and the camera layout —
+ * exactly the restricted set of the desktop bar, from the same single
+ * `useHostMediaControls` instance.
+ */
+export function CompactCoHostControls({ room, hostControls, layout, onLayoutChange, layoutLocked }) {
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const { devices, deviceError, toggleMic, toggleCamera, selectDevice, speakerSelectionSupported } = hostControls
+
+  return (
+    <>
+      <ControlsRow error={deviceError}>
+        <ControlIconButton kind="mic" label={LIVE_ROOM_COPY.mic} active={room.micEnabled} onClick={toggleMic} />
+        <ControlIconButton kind="camera" label={LIVE_ROOM_COPY.camera} active={room.camEnabled} onClick={toggleCamera} />
+        <ControlIconButton kind="more" label={LIVE_ROOM_COPY.moreOptions} onClick={() => setSheetOpen(true)} />
+      </ControlsRow>
+      <ControlsSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        devices={devices}
+        onSelectDevice={selectDevice}
+        speakerSupported={speakerSelectionSupported}
+        stageLayout={{ value: layout, onChange: onLayoutChange, locked: layoutLocked }}
+      />
+    </>
   )
 }
