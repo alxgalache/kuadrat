@@ -44,6 +44,13 @@ El control SHALL estar **deshabilitado mientras la cámara esté apagada** y hab
 
 Cuando el catálogo de fondos esté vacío, el panel SHALL mostrar únicamente las opciones de desenfoque, sin hueco vacío ni mensaje de error.
 
+En la **disposición compacta** de `live-event-mobile-layout`, el control SHALL presentarse como la entrada «Efectos» de la hoja «Más» y no como panel desplegable. Conservará:
+- las mismas opciones y el mismo orden;
+- el check sobre la opción activa;
+- el estado deshabilitado mientras la cámara esté apagada.
+
+Las opciones SHALL pintarse con un único componente compartido por el panel y la hoja (`client/components/events/VideoEffectsOptions.js`). La regla de no renderizar el control en dispositivos móviles (requisito «Compatibilidad — móvil y navegadores no soportados») SHALL seguir aplicándose también en la hoja.
+
 #### Scenario: El control está deshabilitado con la cámara apagada
 - **WHEN** un usuario con la cámara apagada mira la barra de controles
 - **THEN** el control "Efectos" aparece deshabilitado y no se puede desplegar
@@ -60,6 +67,14 @@ Cuando el catálogo de fondos esté vacío, el panel SHALL mostrar únicamente l
 #### Scenario: Catálogo de fondos vacío
 - **WHEN** no hay ninguna imagen declarada en el manifiesto del catálogo
 - **THEN** el panel muestra solo "Ninguno", "Desenfoque suave" y "Desenfoque intenso"
+
+#### Scenario: Efectos en una ventana de escritorio estrecha
+- **WHEN** un host de escritorio con la ventana por debajo de 1024 px abre «Más» y toca «Efectos» con la cámara encendida
+- **THEN** la hoja muestra "Ninguno", "Desenfoque suave", "Desenfoque intenso" y las miniaturas, con la opción activa marcada
+
+#### Scenario: Sin efectos en un teléfono
+- **WHEN** un host abre la hoja «Más» desde un teléfono
+- **THEN** la hoja no contiene la entrada «Efectos»
 
 ### Requirement: Catálogo de fondos servido desde el repositorio
 Las imágenes de fondo SHALL almacenarse como ficheros estáticos en `client/public/fondos-virtuales/` y declararse explícitamente en un manifiesto `client/lib/virtualBackgrounds.js` que exporte una lista de entradas `{ file, label }`, donde `file` es el nombre del fichero y `label` su etiqueta en es-ES mostrada en la UI. El orden del manifiesto SHALL ser el orden de presentación en el panel. La carpeta SHALL incluir un `README.md` que documente los requisitos de las imágenes: relación 16:9 (recomendado 1280×720), producto ancho×alto par, formato JPG o WEBP y peso orientativo por debajo de 300 KB.

@@ -16,6 +16,9 @@ import LiveRoomSheet, { LiveRoomSheetRow } from '@/components/events/LiveRoomShe
 import ParticipantTile, { HandIcon, sortParticipants } from '@/components/events/ParticipantTile'
 import CompactParticipantRow from '@/components/events/CompactParticipantRow'
 import CompactCameraRow from '@/components/events/CompactCameraRow'
+import MeetingGrid from '@/components/events/MeetingGrid'
+import useSpeakerActivity from '@/hooks/useSpeakerActivity'
+import { speakerRanks } from '@/lib/meetingGrid'
 import CompactHostControls from '@/components/events/CompactHostControls'
 import { ControlIconButton, ControlsRow, ControlsSheet } from '@/components/events/CompactControls'
 import LandscapeStageChrome, { StageChromeGroup } from '@/components/events/LandscapeStageChrome'
@@ -165,9 +168,20 @@ function TheaterChrome({ stripVisible, onToggleStrip, onClose }) {
 // rotation in blocks of the visible count. Keeping the component mounted while
 // hidden preserves the pagination position; only the visible window mounts
 // tiles (bounded video decode cost with 16 attendees).
-function TheaterStrip({ entries, visible, renderTile }) {
+//
+// `reorderOnFirstPage` (reuniones, orden por actividad de voz): `entries` llega
+// ya ordenado por quién habla, y ese orden solo se aplica EN VIVO en la primera
+// página (la ventana que empieza en el primer participante) o cuando caben
+// todos sin paginar. Al pasar de página se congela el orden de ese instante —si
+// no, las páginas cambiarían de contenido sin tocar las flechas y quien miraba a
+// alguien lo vería desaparecer—; quien llega mientras tanto va al final. Al
+// volver a la primera página se reanuda. Dentro de la ventana el DOM sigue un
+// orden estable y la colocación la da CSS `order`: ningún vídeo cambia de nodo.
+function TheaterStrip({ entries, visible, renderTile, reorderOnFirstPage = false }) {
   const [start, setStart] = useState(0)
   const [capacity, setCapacity] = useState(1)
+  // Identidades en el orden congelado mientras se navega fuera de la primera página
+  const [frozenOrder, setFrozenOrder] = useState(null)
   const containerRef = useRef(null)
   const count = entries.length
 
@@ -196,10 +210,43 @@ function TheaterStrip({ entries, visible, renderTile }) {
 
   const paged = count > capacity
 
+  // Sin paginación hay una sola página: vuelve al principio y nada queda congelado
+  useEffect(() => {
+    if (!paged) {
+      setStart(0)
+      setFrozenOrder(null)
+    }
+  }, [paged])
+
+  const orderedEntries = useMemo(() => {
+    if (!reorderOnFirstPage || !frozenOrder) return entries
+    const byIdentity = new Map(entries.map((entry) => [entry.identity, entry]))
+    const result = []
+    for (const identity of frozenOrder) {
+      const entry = byIdentity.get(identity)
+      if (entry) {
+        result.push(entry)
+        byIdentity.delete(identity)
+      }
+    }
+    for (const entry of entries) {
+      if (byIdentity.has(entry.identity)) result.push(entry)
+    }
+    return result
+  }, [entries, reorderOnFirstPage, frozenOrder])
+
+  const goTo = useCallback((next) => {
+    if (reorderOnFirstPage) {
+      if (next === 0) setFrozenOrder(null)
+      else if (frozenOrder === null) setFrozenOrder(orderedEntries.map((entry) => entry.identity))
+    }
+    setStart(next)
+  }, [reorderOnFirstPage, frozenOrder, orderedEntries])
+
   const windowEntries = useMemo(() => {
-    if (!paged) return entries
-    return Array.from({ length: Math.min(capacity, count) }, (_, i) => entries[(start + i) % count])
-  }, [entries, paged, start, capacity, count])
+    if (!paged) return orderedEntries
+    return Array.from({ length: Math.min(capacity, count) }, (_, i) => orderedEntries[(start + i) % count])
+  }, [orderedEntries, paged, start, capacity, count])
 
   if (!visible || count === 0) return null
 
@@ -216,7 +263,7 @@ function TheaterStrip({ entries, visible, renderTile }) {
       {paged && (
         <button
           type="button"
-          onClick={() => setStart((s) => ((s - capacity) % count + count) % count)}
+          onClick={() => goTo(((start - capacity) % count + count) % count)}
           className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors flex-shrink-0"
           title="Participantes anteriores"
         >
@@ -226,12 +273,22 @@ function TheaterStrip({ entries, visible, renderTile }) {
         </button>
       )}
       <div className="flex items-end gap-x-2">
-        {windowEntries.map(renderTile)}
+        {reorderOnFirstPage
+          // Stable DOM order (by identity) + CSS `order` for the visual position
+          ? windowEntries
+              .map((entry, position) => ({ entry, position }))
+              .sort((a, b) => (a.entry.identity < b.entry.identity ? -1 : a.entry.identity > b.entry.identity ? 1 : 0))
+              .map(({ entry, position }) => (
+                <div key={entry.identity} style={{ order: position }}>
+                  {renderTile(entry)}
+                </div>
+              ))
+          : windowEntries.map(renderTile)}
       </div>
       {paged && (
         <button
           type="button"
-          onClick={() => setStart((s) => (s + capacity) % count)}
+          onClick={() => goTo((start + capacity) % count)}
           className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors flex-shrink-0"
           title="Participantes siguientes"
         >
@@ -1552,6 +1609,32 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
     ? socket.presence.filter((p) => !p.isHost)
     : [...socket.presence].sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0))
 
+  // Orden por actividad de voz: quien tiene el micrófono abierto y se oye pasa a
+  // los primeros puestos — detrás del host en su propia rejilla. Sale de
+  // `volume-indicator` (Agora informa del nivel de cada usuario cada dos
+  // segundos; es lo mismo que pinta el anillo verde). El propio usuario no se
+  // mueve, para que su recuadro no salte bajo sus ojos. Se aplica con CSS
+  // `order`: ningún vídeo cambia de nodo en el DOM.
+  const speakingIdentities = socket.presence
+    .filter((p) => (
+      !p.isHost &&
+      p.identity !== socket.selfIdentity &&
+      p.agoraUid != null &&
+      room.speakingUids.has(Number(p.agoraUid)) &&
+      !!remoteByUid.get(Number(p.agoraUid))?.hasAudio
+    ))
+    .map((p) => p.identity)
+  const speakerActivity = useSpeakerActivity(speakingIdentities)
+  const ranks = speakerRanks(gridEntries, speakerActivity, {
+    pinnedIdentity: showFeatured ? null : (hostEntry?.identity ?? null),
+    selfIdentity: socket.selfIdentity,
+  })
+  // Theater strip: the same speaker order. TheaterStrip applies it live only on
+  // its first page and freezes it while the user pages through the rest.
+  const orderedStripEntries = [...stripEntries].sort(
+    (a, b) => (ranks.get(a.identity) ?? 0) - (ranks.get(b.identity) ?? 0)
+  )
+
   return (
     <>
       {showFeatured && (
@@ -1615,8 +1698,9 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
               />
               {/* Meeting strip: compact square camera tiles */}
               <TheaterStrip
-                entries={stripEntries}
+                entries={orderedStripEntries}
                 visible={stripVisible}
+                reorderOnFirstPage
                 renderTile={(p) => (
                   <TheaterMeetingTile
                     key={p.identity}
@@ -1656,29 +1740,37 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
               localUid={localUid}
               viewerIsHost={isHost}
               onForceMute={socket.requestForceMute}
+              ranks={ranks}
             />
           )
         ) : (
           <>
-      {/* Camera tiles — rows of 5 square tiles (desktop); unmounted
-          while the theater is open so each track has a single container */}
-      {!theaterOpen && gridEntries.length > 0 && (
-        <div className="grid grid-cols-5 gap-2">
-          {gridEntries.map((p) => (
-            <MeetingTile
-              key={p.identity}
-              entry={p}
-              isLocal={p.identity === socket.selfIdentity}
-              room={room}
-              remoteByUid={remoteByUid}
-              speakingUids={room.speakingUids}
-              viewerIsHost={isHost}
-              localUid={localUid}
-              onForceMute={() => socket.requestForceMute(p.identity)}
-            />
-          ))}
-        </div>
-      )}
+      {/* Camera tiles (desktop), unmounted while the theater is open so each
+          track has a single container.
+          - Host with nothing featured: an equal grid of 3, 4 or 5 columns sized
+            to the column's width AND height, so every tile is visible without
+            scrolling (MeetingGrid, lib/meetingGrid.js).
+          - Featured content above (attendees, or the host sharing): rows of 5.
+          Speakers move forward through CSS `order` in both. */}
+      {!theaterOpen && gridEntries.length > 0 && (() => {
+        const tiles = gridEntries.map((p) => (
+          <MeetingTile
+            key={p.identity}
+            entry={p}
+            isLocal={p.identity === socket.selfIdentity}
+            room={room}
+            remoteByUid={remoteByUid}
+            speakingUids={room.speakingUids}
+            viewerIsHost={isHost}
+            localUid={localUid}
+            order={ranks.get(p.identity)}
+            onForceMute={() => socket.requestForceMute(p.identity)}
+          />
+        ))
+        return showFeatured
+          ? <div className="grid grid-cols-5 gap-2">{tiles}</div>
+          : <MeetingGrid count={gridEntries.length}>{tiles}</MeetingGrid>
+      })()}
 
           </>
         )}
@@ -1702,7 +1794,7 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
   )
 }
 
-function MeetingTile({ entry, isLocal, room, remoteByUid, speakingUids, viewerIsHost, localUid, onForceMute }) {
+function MeetingTile({ entry, isLocal, room, remoteByUid, speakingUids, viewerIsHost, localUid, onForceMute, order }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -1730,7 +1822,10 @@ function MeetingTile({ entry, isLocal, room, remoteByUid, speakingUids, viewerIs
       className={`bg-black rounded-lg overflow-hidden aspect-square relative transition-shadow duration-300 ${
         speaking ? 'ring-2 ring-green-400' : ''
       }`}
-      style={speaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : undefined}
+      style={{
+        ...(order != null ? { order } : {}),
+        ...(speaking ? { animation: 'speaking-pulse 1.5s ease-in-out infinite' } : {}),
+      }}
     >
       {videoTrack ? (
         <AgoraVideo track={videoTrack} className="w-full h-full" fit="cover" />

@@ -15,6 +15,7 @@ import useImageLoaded from '@/hooks/useImageLoaded'
 import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 import LiveRoomShell, { roomCell, stageFrame } from '@/components/events/LiveRoomShell'
 import LiveRoomTopBar from '@/components/events/LiveRoomTopBar'
+import { LeaveEventProvider, LeaveEventButton } from '@/components/events/LeaveEvent'
 import LandscapeStageChrome, { StageChromeGroup } from '@/components/events/LandscapeStageChrome'
 import ChatComposer from '@/components/events/chat/ChatComposer'
 import NewMessagesButton from '@/components/events/chat/NewMessagesButton'
@@ -433,6 +434,7 @@ export default function EventDetail({
     const stageCell = roomCell('stage', videoLayout)
     const chatCell = roomCell('chat', videoLayout)
     return (
+      <LeaveEventProvider role="attendee" inShell={compact}>
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           {/* Event header (desktop only: the compact room has its top bar) */}
@@ -444,7 +446,10 @@ export default function EventDetail({
                   En directo
                 </span>
               </div>
-              <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
+              <div className="flex items-center gap-x-4">
+                <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
+                <LeaveEventButton variant="desktop" />
+              </div>
             </div>
           )}
 
@@ -499,6 +504,7 @@ export default function EventDetail({
           </LiveRoomShell>
         </div>
       </div>
+      </LeaveEventProvider>
     )
   }
 
@@ -524,11 +530,17 @@ export default function EventDetail({
 
   // Active event with a live room (LiveKit or Agora, per event.provider)
   if (event.status === 'active' && ((livekitToken && livekitUrl) || agoraCreds)) {
+    // La sala Agora se muestra en su contenedor compacto en pantallas pequeñas;
+    // la LiveKit no tiene disposición compacta y conserva su cabecera (título y
+    // «Salir del evento») en todos los tamaños.
+    const roomInShell = compact && !!agoraCreds
+    const leaveRole = isHost ? 'host' : (agoraCreds?.coHost ? 'cohost' : 'attendee')
     return (
+      <LeaveEventProvider role={leaveRole} inShell={roomInShell}>
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          {/* Event header (desktop only: the compact room has its top bar) */}
-          {!compact && (
+          {/* Event header (hidden only while the Agora room is in its compact shell) */}
+          {!roomInShell && (
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-x-3">
                 <h1 className="text-xl font-bold text-gray-900">{event.title}</h1>
@@ -536,7 +548,10 @@ export default function EventDetail({
                   En directo
                 </span>
               </div>
-              <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
+              <div className="flex items-center gap-x-4">
+                <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
+                <LeaveEventButton variant="desktop" />
+              </div>
             </div>
           )}
 
@@ -574,6 +589,7 @@ export default function EventDetail({
           </div>
         </div>
       </div>
+      </LeaveEventProvider>
     )
   }
 

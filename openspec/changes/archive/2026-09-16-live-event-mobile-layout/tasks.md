@@ -172,18 +172,18 @@ El backend va primero y es mínimo: presencia del socket, texto y traza de un co
 - [x] 11.2 `docker compose exec -e NODE_ENV=production client npm run build` completa sin errores. (Ejecutado en un contenedor efímero sobre una copia del código, para no pisar el `.next` del `next dev` en marcha: `BUILD_EXIT=0` y tabla de rutas completa.)
 - [x] 11.3 Revisar en el navegador de escritorio (≥ 1024 × 500 px) la vista previa de `/live` y, con emulación móvil de Chrome, la disposición compacta en vertical y horizontal de las salas que se puedan abrir en local. (Verificado en local: `/live` y la página previa de un evento en escritorio sin errores de hidratación, y fuera de la sala sin `data-live-room` ni `viewport-fit=cover`. No había ningún evento activo en preproducción y la ventana no admitió el redimensionado, así que la sala compacta en sí queda para el grupo 12.)
 
-## 12. Verificación manual (operador)
+## 12. Verificación manual (operador — verificado en preproducción el 14/09/2026)
 
-- [ ] 12.1 iPhone real en BrowserStack Live (recomendado) o TestMu AI, con Safari en un modelo con isla dinámica:
+- [x] 12.1 iPhone real en BrowserStack Live (recomendado) o TestMu AI, con Safari en un modelo con isla dinámica:
   - vertical sin scroll de página;
   - teclado sin ampliación y que no se cierra al enviar;
   - horizontal sin controles bajo la isla y con franja negra;
   - pase de vídeo en pantalla completa nativa que vuelve sincronizado.
-- [ ] 12.2 Chrome Android con la barra de direcciones arriba y abajo: sin saltos, sin *pull-to-refresh*, y deslizar al final de la fila no navega atrás.
-- [ ] 12.3 Reunión con varios participantes desde un móvil: la fila de cámaras se desliza y el host silencia desde la hoja.
-- [ ] 12.4 Girar el móvil con la pizarra activa sin perder la escritura. Girar como host sin corte para la audiencia.
-- [ ] 12.5 Bloqueo de pantalla del asistente: con vídeo en escena no se apaga; con «Esperando al host...» sí.
-- [ ] 12.6 Admin moderando:
+- [x] 12.2 Chrome Android con la barra de direcciones arriba y abajo: sin saltos, sin *pull-to-refresh*, y deslizar al final de la fila no navega atrás.
+- [x] 12.3 Reunión con varios participantes desde un móvil: la fila de cámaras se desliza y el host silencia desde la hoja.
+- [x] 12.4 Girar el móvil con la pizarra activa sin perder la escritura. Girar como host sin corte para la audiencia.
+- [x] 12.5 Bloqueo de pantalla del asistente: con vídeo en escena no se apaga; con «Esperando al host...» sí.
+- [x] 12.6 Admin moderando:
   - «Entrar como administrador» en un stream Agora, una reunión Agora y un evento LiveKit;
   - menú sobre mensajes de asistentes, y no sobre los propios, los del host ni los del staff;
   - la expulsión surte efecto;
@@ -204,3 +204,43 @@ El backend va primero y es mínimo: presencia del socket, texto y traza de un co
   - en la consola móvil del host, que en compacto el conmutador vive en la hoja «Más»;
   - en el bloqueo de pantalla, que aplica también a los asistentes con algo que ver;
   - en «Interviews in Agora broadcast events», que el admin (co-presentador o no) tiene el menú «Expulsar del chat» y que la presencia expone `staff`.
+
+## 14. Ajustes tras la verificación en preproducción (14/09/2026)
+
+- [x] 14.1 Añadir a `client/lib/constants.js` `LEAVE_EVENT_COPY`, `MEETING_GRID_COLUMN_OPTIONS`, `MEETING_GRID_MAX_ROWS`, `MEETING_GRID_GAP_PX`, `MEETING_GRID_MIN_TILE_PX` y `MEETING_SPEAKER_HOLD_MS`, con el porqué de cada valor. **Riesgo alto: fichero compartido.** Solo se añade.
+- [x] 14.2 Crear `client/components/events/LeaveEvent.js`.
+  - `LeaveEventProvider`: estado, rol y navegación con `router.push('/')`; pinta `ConfirmDialog` fuera del contenedor compacto.
+  - `useLeaveEvent`.
+  - `LeaveEventConfirm`: `InlineConfirm` dentro del contenedor.
+  - `LeaveEventButton` con las variantes `desktop`, `compact` y `onDark`.
+- [x] 14.3 En `client/app/live/[slug]/EventDetail.js`:
+  - envolver la rama de vídeo y la de sala en `LeaveEventProvider`, con rol `host`, `cohost` o `attendee`;
+  - añadir `LeaveEventButton` a la cabecera junto a los asistentes;
+  - ocultar la cabecera solo si la sala es Agora y está en su contenedor compacto (`roomInShell`): la sala LiveKit no tiene disposición compacta y la conserva en todos los tamaños.
+- [x] 14.4 En `client/components/events/LiveRoomTopBar.js`, convertir el logo en enlace a `/` que abre la confirmación, y añadir `LeaveEventButton` compacto a la derecha.
+- [x] 14.5 En `client/components/events/LandscapeStageChrome.js`, añadir `LeaveEventButton onDark` junto al indicador. En `client/components/events/LiveRoomShell.js`, pintar `LeaveEventConfirm` como último hijo del contenedor compacto.
+- [x] 14.6 Crear `client/lib/meetingGrid.js`: `meetingGridColumns` (3/4/5, máximo 3 filas), `meetingTileSize` (ancho y alto a la vez) y `speakerRanks` (host fijado, hablantes por inicio, resto por llegada, el propio usuario sin promover).
+- [x] 14.7 Crear `client/components/events/MeetingGrid.js`: caja `flex-1 min-h-0` medida con `ResizeObserver`, rejilla centrada con `repeat(columnas, lado px)`.
+- [x] 14.8 Crear `client/hooks/useSpeakerActivity.js`: activo sin plazo mientras se oye, plazo de `MEETING_SPEAKER_HOLD_MS` desde que deja de oírse, e instante de inicio conservado al volver a hablar dentro del plazo.
+- [x] 14.9 En `MeetingArea` de `client/components/AgoraLiveRoom.js`:
+  - derivar las identidades que hablan (nivel sobre el umbral y `hasAudio`, sin host ni el propio usuario) y calcular `ranks`;
+  - usar `MeetingGrid` para el host sin contenido destacado y conservar las 5 columnas bajo el destacado;
+  - pasar `order` a `MeetingTile` y `ranks` a `CompactCameraRow`.
+- [x] 14.10 En `client/components/events/CompactCameraRow.js`, aplicar `order` desde `ranks` en cada cuadrado.
+- [x] 14.11 Lint de los ficheros tocados y compilación del cliente sin errores.
+- [x] 14.12 Verificación manual (operador):
+  - salir del evento desde escritorio y móvil, confirmando y cancelando, como asistente y como host;
+  - logo en móvil;
+  - rejilla del host con 3, 10 y 15 participantes sin scroll;
+  - promoción de quien habla en la vista del host y en la de un asistente;
+  - banda del teatro en una reunión: quien habla sube mientras se está en la primera página, y el orden se congela al pasar de página.
+- [x] 14.13 Documentar en `CLAUDE.md` la salida del evento, la rejilla del host y el orden por voz.
+- [x] 14.14 En `TheaterStrip` de `client/components/AgoraLiveRoom.js`:
+  - prop `reorderOnFirstPage`;
+  - orden en vivo con la ventana en `start = 0` o sin paginación;
+  - orden congelado por identidades al salir de la primera página, con los recién llegados al final;
+  - descongelado al volver a `start = 0` o al dejar de paginar;
+  - DOM estable por identidad y posición con CSS `order`.
+- [x] 14.15 En `MeetingArea` de `client/components/AgoraLiveRoom.js`, pasar a la banda del teatro de la reunión `stripEntries` ordenado por `ranks` y `reorderOnFirstPage`. La banda del stream no cambia.
+- [x] 14.16 Lint y build de producción del cliente sin errores tras 14.14 y 14.15; documentar la regla de la primera página en `CLAUDE.md`.
+

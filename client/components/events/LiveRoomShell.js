@@ -3,6 +3,7 @@
 import { useRef } from 'react'
 import useLiveRoomDocument from '@/hooks/useLiveRoomDocument'
 import useLiveRoomViewport from '@/hooks/useLiveRoomViewport'
+import { LeaveEventConfirm } from '@/components/events/LeaveEvent'
 import { LIVE_ROOM_PANEL_WIDTH, LIVE_ROOM_STAGE_MAX_HEIGHT_RATIO } from '@/lib/constants'
 
 const PORTRAIT_TEMPLATE = {
@@ -31,6 +32,8 @@ const PORTRAIT_TEMPLATE = {
  *   descendientes `fixed` (teatro, consola). El desplazamiento va con `top`.
  * - `--room-h` / `--room-top` los escribe useLiveRoomViewport desde
  *   `visualViewport`; `100dvh` es solo el valor antes de la primera medición.
+ * - La confirmación de «Salir del evento» se pinta aquí, como hija del
+ *   contenedor, detrás de los hijos para no desplazar su posición en el árbol.
  *
  * @param {object} props
  * @param {boolean} props.compact
@@ -61,6 +64,7 @@ export default function LiveRoomShell({ compact, landscape, panelOpen = true, ch
       style={{ top: 'var(--room-top, 0px)', height: 'var(--room-h, 100dvh)', ...template }}
     >
       {children}
+      <LeaveEventConfirm />
     </div>
   )
 }

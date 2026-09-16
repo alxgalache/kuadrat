@@ -30,7 +30,7 @@ Con `interaction_mode='meeting'`, la disposición de cámaras SHALL depender del
 
 **Disposición de escritorio.**
 - **Asistentes (no host):** el **host (o su pantalla compartida) SHALL mostrarse en un recuadro destacado a todo el ancho** del contenedor (grande, `aspect-video`) y el resto de participantes **debajo, en un grid en filas de 5 tiles cuadrados** (5 columnas y relación de aspecto 1:1).
-- **Host:** cuando NO comparte pantalla ni pizarra, todas las cámaras (incluida la suya, **la primera y del mismo tamaño** que las demás) SHALL mostrarse en ese mismo grid de filas de 5 tiles cuadrados, sin recuadro destacado. Cuando el host comparte pantalla o activa la pizarra, esta SHALL ocupar el recuadro destacado a todo el ancho con los participantes debajo.
+- **Host:** cuando NO comparte pantalla ni pizarra, todas las cámaras (incluida la suya, **la primera y del mismo tamaño** que las demás) SHALL mostrarse en un grid de tiles cuadrados sin recuadro destacado (`client/components/events/MeetingGrid.js`), con **3, 4 o 5 columnas**: el menor de esos valores que reparta los tiles en **3 filas como máximo** (`MEETING_GRID_COLUMN_OPTIONS`, `MEETING_GRID_MAX_ROWS`). Con más de 15 tiles SHALL usar 5 columnas. El lado del tile SHALL ser el mayor que quepa a la vez en el ancho y en el alto disponibles de la columna de medios, de modo que todos los tiles se vean sin scroll, también con una cuarta fila. Cuando el host comparte pantalla o activa la pizarra, esta SHALL ocupar el recuadro destacado a todo el ancho con los participantes debajo, en filas de 5.
 - **Chat lateral** (mismo `ChatPanel` por Socket.IO): SHALL ocupar **siempre toda la altura disponible de la página**. La columna de medios SHALL hacer scroll interno y el chat NO SHALL cambiar de altura al compartir pantalla ni al aumentar el número de participantes.
 
 **Disposición compacta.** Todos los roles, host incluido, SHALL ver:
@@ -76,8 +76,17 @@ El grid de 5 columnas NO SHALL usarse en esta disposición.
 
 #### Scenario: Vista del host — grid de tiles iguales
 - **WHEN** en escritorio el host de un meeting no comparte pantalla ni tiene la pizarra activa
-- **THEN** ve todas las cámaras (incluida la suya, la primera y del mismo tamaño que las demás) en el grid de filas de 5 tiles cuadrados, sin recuadro destacado
-- **AND** al compartir pantalla o activar la pizarra, esta pasa al recuadro destacado a todo el ancho y los participantes quedan debajo
+- **THEN** ve todas las cámaras (incluida la suya, la primera y del mismo tamaño que las demás) en un grid de tiles cuadrados, sin recuadro destacado
+- **AND** al compartir pantalla o activar la pizarra, esta pasa al recuadro destacado a todo el ancho y los participantes quedan debajo en filas de 5
+
+#### Scenario: Grid del host con pocos participantes
+- **WHEN** el host de un meeting en escritorio está con 3 participantes (4 tiles)
+- **THEN** el grid tiene 3 columnas y 2 filas, con tiles más grandes que en un grid de 5 columnas
+
+#### Scenario: Grid del host lleno
+- **WHEN** el host está con 14 participantes (15 tiles)
+- **THEN** el grid tiene 5 columnas y 3 filas y todos los tiles se ven sin scroll
+- **AND** con 16 participantes (17 tiles) el grid tiene 5 columnas y 4 filas, con tiles más pequeños que siguen viéndose todos sin scroll
 
 #### Scenario: Enviar un mensaje en el chat no desplaza la página
 - **WHEN** cualquier participante o el host escribe un mensaje en el chat y pulsa Enter
@@ -141,3 +150,59 @@ La detección de spam SHALL ejecutarse en el servidor del chat con los mismos um
 #### Scenario: Spam auto-detectado en servidor
 - **WHEN** una identidad supera 10 mensajes en 10 segundos
 - **THEN** el servidor la chat-banea, registra el ban email+IP en `event_bans` y deja de difundir sus mensajes
+
+## ADDED Requirements
+
+### Requirement: Orden por actividad de voz en las reuniones
+En `interaction_mode='meeting'`, los tiles de cámara SHALL ordenarse por actividad de voz en todos los grids y filas de la sala:
+- el grid del host en escritorio;
+- el grid de 5 columnas bajo el recuadro destacado;
+- la fila horizontal de cámaras de la disposición compacta.
+
+**Criterio de «hablando».** SHALL salir de `volume-indicator` de Agora (`client.enableAudioVolumeIndicator()`, un informe cada dos segundos con el nivel 0-100 de cada usuario, ya consumido por `useAgoraRoom` como `speakingUids`). Un participante está hablando cuando su nivel supera `AGORA_SPEAKING_VOLUME_THRESHOLD` **y** tiene el micrófono publicado (`hasAudio`).
+
+**Orden** (`speakerRanks` en `client/lib/meetingGrid.js`):
+1. En el grid del host sin recuadro destacado, el tile del host, siempre el primero.
+2. Los participantes que están hablando o hablaron hace menos de `MEETING_SPEAKER_HOLD_MS` (6 s), ordenados por el instante en que **empezaron** a hablar. Quien vuelve a hablar dentro de ese plazo conserva su puesto.
+3. El resto, en orden de llegada.
+
+**Reglas:**
+- El tile del propio usuario NO SHALL promoverse.
+- El orden SHALL aplicarse con CSS `order`, sin reordenar los nodos del DOM, de modo que ningún vídeo cambie de contenedor ni se interrumpa.
+- La memoria de actividad SHALL vivir en `client/hooks/useSpeakerActivity.js`.
+- **Banda del teatro:** SHALL aplicar el mismo orden solo mientras muestra su primera página (la ventana que empieza en el primer participante) o cuando todos los tiles caben sin paginar.
+  - Al pasar a otra página con las flechas, el orden SHALL congelarse tal como estaba en ese instante; los participantes que lleguen mientras tanto se añaden al final.
+  - Al volver a la primera página, el orden por voz SHALL reanudarse.
+  - Dentro de la ventana, el orden SHALL aplicarse también con CSS `order`, sin reordenar los nodos del DOM.
+
+#### Scenario: Un participante empieza a hablar
+- **WHEN** en un meeting con 10 participantes el octavo activa el micrófono y habla
+- **THEN** en el grid del host su tile pasa a la posición inmediatamente posterior a la del host
+- **AND** en la fila de los asistentes pasa a la primera posición
+
+#### Scenario: Diálogo entre dos participantes
+- **WHEN** dos participantes se alternan hablando con pausas de menos de 6 s
+- **THEN** los dos ocupan los primeros puestos, en el orden en que empezaron a hablar, sin intercambiarse a cada turno
+
+#### Scenario: Deja de hablar
+- **WHEN** un participante promovido deja de hablar durante más de 6 s
+- **THEN** su tile vuelve a su posición por orden de llegada
+
+#### Scenario: Micrófono cerrado
+- **WHEN** un participante tiene el micrófono silenciado
+- **THEN** su tile no se promueve aunque haya ruido en su entorno
+
+#### Scenario: El propio usuario habla
+- **WHEN** un asistente habla con el micrófono abierto
+- **THEN** su propio tile no cambia de posición en su vista
+- **AND** los demás ven su tile promovido
+
+#### Scenario: Banda del teatro en la primera página
+- **WHEN** un asistente tiene el teatro abierto en la primera página de la banda y empieza a hablar un participante que estaba en otra página
+- **THEN** ese participante aparece al principio de la banda
+
+#### Scenario: Banda del teatro en otra página
+- **WHEN** el asistente ha pasado a la segunda página de la banda y alguien empieza a hablar
+- **THEN** el contenido de las páginas no cambia mientras navega
+- **AND** al volver a la primera página, quien habla aparece al principio
+

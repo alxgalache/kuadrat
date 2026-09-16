@@ -2,6 +2,7 @@
 
 import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline'
 import { LiveIndicator } from '@/components/events/LiveRoomTopBar'
+import { LeaveEventButton } from '@/components/events/LeaveEvent'
 import { LIVE_ROOM_COPY } from '@/lib/constants'
 
 const fade = (visible) => `transition-opacity duration-200 motion-reduce:transition-none ${
@@ -46,7 +47,7 @@ export function StageChromeGroup({ visible, panelOpen, onTogglePanel, children }
 
 /**
  * Controles superpuestos de la escena en la disposición horizontal compacta: el
- * indicador «EN DIRECTO» arriba a la izquierda y, abajo a la izquierda, lo que
+ * indicador «EN DIRECTO» y «Salir» arriba a la izquierda y, abajo a la izquierda, lo que
  * se pase en `bottomLeft` (la mano del asistente con el panel oculto).
  *
  * Posicionados SUMANDO el área segura: un `absolute` se mide desde el borde del
@@ -65,8 +66,12 @@ export default function LandscapeStageChrome({ visible, connectedCount, topRight
       <div
         className={`absolute z-20 ${fade(visible)}`}
         style={{ top: '0.5rem', left: 'calc(env(safe-area-inset-left) + 0.5rem)' }}
+        onClick={stop}
       >
-        <LiveIndicator connectedCount={connectedCount} onDark />
+        <div className="flex items-center gap-x-2">
+          <LiveIndicator connectedCount={connectedCount} onDark />
+          <LeaveEventButton variant="onDark" />
+        </div>
       </div>
       {topRight && (
         <div

@@ -419,6 +419,41 @@ export const LIVE_ROOM_COPY = {
   unmute: 'Activar sonido',
 };
 
+// Salir del evento (live-event-leave). El botón «Salir del evento» —en todas
+// las salas, escritorio y compacta— y el logo de la sala compacta piden
+// confirmación antes de llevar a la página de inicio. Quien emite recibe un
+// mensaje distinto: salir detiene SU emisión, pero no termina el evento.
+export const LEAVE_EVENT_COPY = {
+  button: 'Salir del evento',
+  buttonShort: 'Salir',
+  logoLabel: 'Ir a la página de inicio',
+  title: 'Salir del evento',
+  confirm: 'Confirmar',
+  cancel: 'Cancelar',
+  leaving: 'Saliendo...',
+  message: {
+    attendee: 'Vas a salir del evento y volver a la página de inicio. Podrás volver a entrar mientras siga en directo.',
+    host: 'Vas a salir de la sala y volver a la página de inicio. Tu emisión se detendrá para los asistentes, pero el evento seguirá activo: para terminarlo para todos, usa «Finalizar».',
+    cohost: 'Vas a salir de la sala y volver a la página de inicio. Dejarás de emitir, pero el evento seguirá activo.',
+  },
+};
+
+// Rejilla de cámaras del host en una reunión (escritorio, sin contenido
+// destacado): el menor número de columnas de esta lista que reparta los
+// recuadros en MEETING_GRID_MAX_ROWS filas como máximo. Con más recuadros de los
+// que caben (16-17), la última opción y una fila más: el tamaño se ajusta al alto
+// disponible, así que siguen viéndose todos sin scroll (lib/meetingGrid.js).
+export const MEETING_GRID_COLUMN_OPTIONS = [3, 4, 5];
+export const MEETING_GRID_MAX_ROWS = 3;
+export const MEETING_GRID_GAP_PX = 8; // gap-2 de la rejilla
+export const MEETING_GRID_MIN_TILE_PX = 64;
+
+// Orden por actividad de voz en reuniones. `volume-indicator` de Agora informa
+// cada dos segundos; quien deja de oírse conserva su puesto este tiempo (tres
+// informes) para que un diálogo entre dos personas no reordene la rejilla a
+// cada frase.
+export const MEETING_SPEAKER_HOLD_MS = 6000;
+
 // Public brand name — the user-facing marketplace brand.
 // "Kuadrat" is only the internal codename; any text shown to buyers, sellers,
 // or visitors should use these constants instead of the repo/project name.

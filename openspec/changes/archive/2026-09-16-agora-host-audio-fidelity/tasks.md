@@ -27,13 +27,13 @@
 
 ## 4. Verificación en dispositivo (obligatoria antes de cerrar)
 
-- [ ] 4.1 Receptor inalámbrico en modo **Mono** y conectado por USB-C al Pixel 9 Pro
-- [ ] 4.2 Con `chrome://inspect` desde un portátil, abrir `chrome://webrtc-internals` de la pestaña del evento y confirmar que el bitrate de audio sube respecto a una retransmisión anterior
-- [ ] 4.3 Confirmar en `getSettings()` de la pista que el dispositivo activo es el receptor y **no** el micrófono interno del teléfono — es el fallo silencioso que este cambio persigue
-- [ ] 4.4 Evento de prueba con un segundo cliente escuchando, comparando a oído con una grabación anterior
-- [ ] 4.5 Probar el camino contrario: evento con la casilla marcada, dar la palabra a un participante con el host en altavoz, y comprobar que no hay eco
-- [ ] 4.6 Comprobar que cambiar de micrófono en caliente no interrumpe la emisión ni altera el perfil
-- [ ] 4.7 Regresión en `interaction_mode='meeting'`: sin cambios de comportamiento ni en el host ni en los asistentes
+- [x] 4.1 Receptor inalámbrico en modo **Mono** y conectado por USB-C al Pixel 9 Pro
+- [x] 4.2 Con `chrome://inspect` desde un portátil, abrir `chrome://webrtc-internals` de la pestaña del evento y confirmar que el bitrate de audio sube respecto a una retransmisión anterior
+- [x] 4.3 Confirmar en `getSettings()` de la pista que el dispositivo activo es el receptor y **no** el micrófono interno del teléfono — es el fallo silencioso que este cambio persigue
+- [x] 4.4 Evento de prueba con un segundo cliente escuchando, comparando a oído con una grabación anterior
+- [x] 4.5 Probar el camino contrario: evento con la casilla marcada, dar la palabra a un participante con el host en altavoz, y comprobar que no hay eco
+- [x] 4.6 Comprobar que cambiar de micrófono en caliente no interrumpe la emisión ni altera el perfil
+- [x] 4.7 Regresión en `interaction_mode='meeting'`: sin cambios de comportamiento ni en el host ni en los asistentes
 
 ## 5. Documentación
 

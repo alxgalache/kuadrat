@@ -407,6 +407,20 @@ Por encima del umbral la vista de escritorio no cambia. **LiveKit queda fuera** 
   * Un toque muestra los controles y el volumen desaparece con `(hover: none)`, porque iOS ignora `video.volume`.
   * En iPhone, sin pantalla completa de elementos, se usa el reproductor nativo; al salir (`webkitendfullscreen`) se resincroniza y se reanuda, porque la corrección de deriva ignora los vídeos pausados.
   * El teatro y el reproductor bloquean la orientación en horizontal tras resolverse la pantalla completa, que es cuando Android lo concede.
+* **Salir del evento (`live-event-leave`).**
+  * **Dónde está.** Todas las salas (Agora, LiveKit y vídeo) tienen «Salir del evento»: en la cabecera de escritorio, en la barra superior compacta y en los controles superpuestos en horizontal. El logo de la sala compacta es un enlace a `/` que **nunca navega sin preguntar**.
+  * **Un solo proveedor.** `LeaveEventProvider` (`client/components/events/LeaveEvent.js`) se instancia en `EventDetail`. Dentro del contenedor compacto, la confirmación la pinta `LiveRoomShell`; fuera, el proveedor con `ConfirmDialog`.
+  * **Salir no finaliza el evento**, ni para el host: el mensaje del host se lo advierte. La navegación es de cliente, y las limpiezas de la sala hacen el resto (canal, socket, bloqueo de pantalla, `data-live-room`).
+  * **La cabecera se oculta solo con `compact && agoraCreds`:** LiveKit no tiene contenedor compacto y conserva la suya en todos los tamaños.
+* **Rejilla del host en reunión** (escritorio, sin contenido destacado; `MeetingGrid` y `lib/meetingGrid.js`).
+  * **Columnas:** 3, 4 o 5, la menor que no pase de 3 filas; con 16-17 recuadros, 5 columnas y 4 filas.
+  * **Tamaño:** el lado que cabe a la vez en ancho y alto de la columna medida, así que no hay scroll.
+  * **Bajo el recuadro destacado siguen las 5 columnas.**
+* **Orden por actividad de voz en reunión.**
+  * **Criterio.** Sale de `volume-indicator` (Agora informa cada 2 s): nivel sobre el umbral **y** `hasAudio`.
+  * **Memoria.** `useSpeakerActivity` mantiene el puesto 6 s después de dejar de oírse. Los hablantes se ordenan por cuándo **empezaron** a hablar, porque «el último primero» intercambiaría a dos interlocutores a cada turno.
+  * **Posición.** El host va fijo el primero en su rejilla, y el propio usuario no se promueve.
+  * **Con CSS `order`, nunca reordenando el DOM:** los `<video>` de Agora no cambian de nodo. La banda del teatro solo se reordena mientras muestra su **primera página**. Al pasar de página congela el orden de ese instante (quien llega va al final) y al volver a la primera lo reanuda: reordenarla siempre cambiaría el contenido de las páginas sin tocar las flechas.
 * **Verificación en iPhone sin dispositivo:** BrowserStack Live (iPhones reales en la nube, prueba gratuita) o TestMu AI (antes LambdaTest). Chrome DevTools no reproduce la isla dinámica, el teclado ni la barra de Safari.
 * **Punto ciego conocido:** `client/` sigue sin runner de tests. La disposición compacta está verificada con lint y build; el comportamiento en dispositivo lo verifica el operador con la matriz de `tasks.md`.
 

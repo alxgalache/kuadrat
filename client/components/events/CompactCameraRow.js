@@ -36,9 +36,13 @@ function MicIcon({ active }) {
  *
  * Tocar un cuadrado abre la hoja del participante: nombre, estado y, para el
  * host, «Silenciar micrófono».
+ *
+ * `ranks` (identidad → puesto, speakerRanks) lleva a quien habla a los primeros
+ * puestos con CSS `order`: el DOM no se reordena, así que ningún vídeo se mueve
+ * de nodo ni se interrumpe.
  */
 export default function CompactCameraRow({
-  entries, selfIdentity, room, remoteByUid, speakingUids, localUid, viewerIsHost, onForceMute,
+  entries, selfIdentity, room, remoteByUid, speakingUids, localUid, viewerIsHost, onForceMute, ranks = null,
 }) {
   const scrollerRef = useRef(null)
   const observerRef = useRef(null)
@@ -130,7 +134,7 @@ export default function CompactCameraRow({
             onClick={() => setSelectedIdentity(entry.identity)}
             aria-label={info.name}
             className={`relative flex-shrink-0 overflow-hidden rounded-lg bg-gray-900 transition-shadow duration-300 [touch-action:manipulation] ${info.speaking ? 'ring-2 ring-green-400' : ''}`}
-            style={{ width: TILE_SIZE, height: TILE_SIZE, ...(info.speaking ? PULSE_STYLE : {}) }}
+            style={{ width: TILE_SIZE, height: TILE_SIZE, order: ranks?.get(entry.identity), ...(info.speaking ? PULSE_STYLE : {}) }}
           >
             {mountVideo ? (
               <AgoraVideo track={info.videoTrack} className="h-full w-full" fit="cover" />

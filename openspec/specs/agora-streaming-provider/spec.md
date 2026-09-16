@@ -159,7 +159,9 @@ La presencia de la sala Socket.IO SHALL ser la fuente de verdad del grid de part
 - **THEN** el servidor emite `presence_left` y su tile desaparece del grid
 
 ### Requirement: Chat de eventos Agora con enforcement en servidor
-El chat de eventos Agora SHALL ir por la sala Socket.IO autenticada: `event_chat_message { text }` → el servidor SHALL descartar mensajes de identidades con `chat_banned=1` (consultando `eventService.isAttendeeChatBanned`) y difundir `{ identity, name, message, timestamp }` al resto. No SHALL entregarse historial a quien se une tarde (paridad con el chat LiveKit). El `ChatPanel` del cliente SHALL conservar la UI actual (mensajes, input, autoscroll, "Sin mensajes todavía", menú de tres puntos del host, aviso es-ES al expulsado).
+El chat de eventos Agora SHALL ir por la sala Socket.IO autenticada: `event_chat_message { text }` → el servidor SHALL descartar mensajes de identidades con `chat_banned=1` (consultando `eventService.isAttendeeChatBanned`) y difundir `{ identity, name, message, timestamp }` al resto. No SHALL entregarse historial a quien se une tarde (paridad con el chat LiveKit).
+
+El `ChatPanel` del cliente SHALL conservar la UI actual: mensajes, input, "Sin mensajes todavía", menú de tres puntos del host **y del admin** (ver `event-chat-admin-moderation`) y aviso es-ES al expulsado. El autodesplazamiento SHALL seguir el requisito «Autodesplazamiento del chat» de `live-event-mobile-layout`: la lista solo sigue al último mensaje si el usuario ya estaba al final o el mensaje es propio, y en otro caso ofrece «Mensajes nuevos».
 
 #### Scenario: Mensaje difundido
 - **WHEN** un asistente sin ban envía un mensaje
@@ -170,12 +172,26 @@ El chat de eventos Agora SHALL ir por la sala Socket.IO autenticada: `event_chat
 - **THEN** el servidor no lo difunde a nadie
 - **AND** el cliente del expulsado muestra el aviso "Has sido expulsado del chat por comportamiento inapropiado."
 
+#### Scenario: Leer mensajes antiguos mientras llegan nuevos
+- **WHEN** un participante ha subido en el chat y llega un mensaje de otra persona
+- **THEN** su posición de lectura no cambia y aparece «Mensajes nuevos»
+
 ### Requirement: Moderación de chat y anti-spam en eventos Agora
-La expulsión del chat SHALL reutilizar los endpoints actuales (`POST /api/events/:id/participants/:identity/ban-from-chat` para el host y `report-spam`) con rama Agora: persistir `chat_banned` (y en spam, además `event_bans` por email+IP) y emitir `chat_banned {identity}` por Socket.IO. La detección de spam SHALL ejecutarse en el servidor del chat con los mismos umbrales actuales (más de 10 mensajes en 10 s, constantes compartidas), aplicando el mismo efecto que `report-spam`.
+La expulsión del chat SHALL reutilizar los endpoints actuales con rama Agora:
+- `POST /api/events/:id/participants/:identity/ban-from-chat`, para el host **o un usuario con rol `admin`**, con la autorización definida en `event-chat-admin-moderation`;
+- `report-spam`.
+
+La rama Agora SHALL persistir `chat_banned` (y en spam, además `event_bans` por email+IP) y emitir `chat_banned {identity}` por Socket.IO.
+
+La detección de spam SHALL ejecutarse en el servidor del chat con los mismos umbrales actuales (más de 10 mensajes en 10 s, constantes compartidas), aplicando el mismo efecto que `report-spam`.
 
 #### Scenario: Host expulsa del chat desde un mensaje
 - **WHEN** el host usa "Expulsar del chat" en el menú de un mensaje
 - **THEN** el asistente queda `chat_banned` en BD, sus mensajes dejan de difundirse y su cliente muestra el estado de expulsado
+
+#### Scenario: Admin expulsa del chat desde un mensaje
+- **WHEN** un admin que está en la sala usa "Expulsar del chat" en el menú de un mensaje de un asistente
+- **THEN** el efecto es el mismo que cuando lo hace el host
 
 #### Scenario: Spam auto-detectado en servidor
 - **WHEN** una identidad supera 10 mensajes en 10 segundos
@@ -217,9 +233,22 @@ Los endpoints actuales `POST /api/events/:id/participants/:identity/promote|demo
 ### Requirement: Sala en directo Agora — modo broadcast con paridad LiveKit
 `client/components/AgoraLiveRoom.js` (nuevo, import dinámico `ssr:false`; `EventDetail.js` selecciona componente por `event.provider`) SHALL replicar en modo `broadcast` la UI/UX de `EventLiveRoom.js`: layout de dos columnas con chat lateral de altura sincronizada al área de vídeo; área de vídeo del host 16:9 negra con "Esperando al host..." (viewer) / "Tu vista de presentador" (host); grid de cámaras de promovidos; grid de tiles de iniciales con los mismos estados, colores, badges de micro, orden (host primero, mano levantada priorizada, local al final con "(Tu)") y acciones por clic; controles de host (toggles Micrófono/Cámara/Pantalla + selectores de dispositivos + "Finalizar stream" con `ConfirmDialog`); botón de mano para viewers; pantalla completa para viewers; contador "N conectados". La lógica RTC SHALL encapsularse en `client/hooks/useAgoraRoom.js` y la de sala en `client/hooks/useEventRoomSocket.js`; los umbrales/constantes compartidos SHALL vivir en `client/lib/constants.js`. Todos los textos SHALL ser los es-ES actuales.
 
+Esta paridad SHALL aplicarse a la **disposición de escritorio**. En la **disposición compacta** definida por `live-event-mobile-layout`, la sala SHALL conservar los mismos estados, colores, badges, orden y textos, pero con la presentación de esa capacidad:
+- una fila horizontal de tiles con el botón de mano fijo a la izquierda;
+- las acciones sobre un tile a través de su hoja, en lugar del clic directo;
+- los controles de host en la fila compacta;
+- el chat bajo la escena, con su campo de escribir abajo.
+
+`EventLiveRoom.js` NO SHALL cambiar en ninguna disposición.
+
 #### Scenario: Viewer entra a un broadcast Agora activo
-- **WHEN** un asistente con acceso entra a `/live/{slug}` de un evento Agora broadcast activo
+- **WHEN** un asistente con acceso entra a `/live/{slug}` de un evento Agora broadcast activo desde un navegador de escritorio
 - **THEN** ve el mismo layout que en un evento LiveKit: vídeo del host, tiles de participantes, botón de mano y chat lateral funcional
+
+#### Scenario: Viewer entra desde un móvil
+- **WHEN** el mismo asistente entra desde un móvil en vertical
+- **THEN** ve la disposición compacta: barra superior, escena, fila de participantes con la mano a la izquierda y chat con el campo abajo
+- **AND** los tiles muestran los mismos estados, colores y orden que en escritorio
 
 #### Scenario: Selección de componente por proveedor
 - **WHEN** `EventDetail.js` recibe un evento activo `provider='agora'` y credenciales del endpoint de token
@@ -238,15 +267,24 @@ La sala Agora SHALL habilitar `client.enableAudioVolumeIndicator()` y usar el ev
 - **THEN** aparece el overlay "Activar audio" y, tras el clic, el audio del evento se oye con normalidad
 
 ### Requirement: Selector de dispositivos del host (Agora)
-El host de un evento Agora SHALL disponer del mismo selector de dispositivos que la spec `host-device-selector` (chevrons junto a Micrófono/Cámara, "Altavoces" solo selector, sin selector en Pantalla; mismo dropdown, cierre por clic-fuera/Escape, dispositivo activo con check, hot-plug). La lógica SHALL implementarse en `client/hooks/useAgoraDevices.js` sobre `AgoraRTC.getMicrophones()/getCameras()/getPlaybackDevices()`, `track.setDevice()`, `audioTrack.setPlaybackDevice()` y los callbacks `onMicrophoneChanged`/`onCameraChanged`/`onPlaybackDeviceChanged`. El dropdown presentacional SHALL extraerse a `client/components/events/DeviceDropdown.js` y reutilizarse desde el `DeviceSelector` LiveKit actual sin alterar su lógica (tarea de riesgo: tocar componente estable).
+El host de un evento Agora SHALL disponer del mismo selector de dispositivos que la spec `host-device-selector`: chevrons junto a Micrófono/Cámara, "Altavoces" solo selector, sin selector en Pantalla; mismo dropdown, cierre por clic-fuera/Escape, dispositivo activo con check y hot-plug.
+
+La lógica SHALL implementarse en `client/hooks/useAgoraDevices.js` sobre `AgoraRTC.getMicrophones()/getCameras()/getPlaybackDevices()`, `track.setDevice()`, `audioTrack.setPlaybackDevice()` y los callbacks `onMicrophoneChanged`/`onCameraChanged`/`onPlaybackDeviceChanged`. El dropdown presentacional SHALL extraerse a `client/components/events/DeviceDropdown.js` y reutilizarse desde el `DeviceSelector` LiveKit actual sin alterar su lógica (tarea de riesgo: tocar componente estable).
+
+En la **disposición compacta** de `live-event-mobile-layout`, la selección de fuente NO SHALL usar el dropdown. SHALL hacerse desde la hoja «Más», con la lista de filas grandes de `client/components/events/MobileDevicePicker.js`, sobre los mismos datos y las mismas funciones de cambio, con el dispositivo activo marcado.
 
 #### Scenario: Cambio de micrófono en caliente
 - **WHEN** el host de un evento Agora selecciona otro micrófono en el dropdown
 - **THEN** el track de audio publicado cambia de dispositivo sin recargar y el stream continúa para los asistentes
 
+#### Scenario: Cambio de micrófono desde el móvil
+- **WHEN** el host en disposición compacta abre «Más», toca «Micrófono» y elige otro dispositivo
+- **THEN** el track de audio publicado cambia de dispositivo sin recargar y la lista marca el nuevo como activo
+
 #### Scenario: Altavoces no soportados
 - **WHEN** el navegador no expone dispositivos `audiooutput`
-- **THEN** el control "Altavoces" no se renderiza (degradación igual a la actual)
+- **THEN** el control "Altavoces" no se renderiza en la vista de escritorio (degradación igual a la actual)
+- **AND** en la hoja «Más» de la disposición compacta aparece deshabilitado con el motivo
 
 ### Requirement: Compartir pantalla del host (Agora)
 El toggle «Pantalla» del host SHALL comportarse según el modo de interacción.
@@ -293,34 +331,67 @@ Si un cliente es expulsado del canal (kicking rule `join_channel` → `connectio
 - **THEN** el asistente ve la pantalla de expulsión es-ES y es redirigido, sin poder reconectar con la sesión borrada
 
 ### Requirement: Sala en directo Agora — modo meeting (grid de cámaras)
-Con `interaction_mode='meeting'`, la disposición de cámaras SHALL depender del rol del espectador. Para los **asistentes** (no host), el **host (o su pantalla compartida) SHALL mostrarse en un recuadro destacado a todo el ancho** del contenedor (grande, `aspect-video`) y el resto de participantes **debajo, en un grid en filas de 5 tiles cuadrados** (5 columnas y relación de aspecto 1:1 en TODOS los tamaños de pantalla, móvil incluido). El vídeo de cada tile SHALL recortarse centrado para llenar el cuadrado manteniendo su relación de aspecto (`fit: 'cover'`, equivalente a `object-fit: cover` de CSS): se asume la pérdida de los laterales (o franjas superior/inferior) de la imagen de la webcam. Para el **host**, cuando NO comparte pantalla ni pizarra, todas las cámaras (incluida la suya, **la primera y del mismo tamaño** que las demás) SHALL mostrarse en ese mismo grid de filas de 5 tiles cuadrados, sin recuadro destacado; cuando el host comparte pantalla o activa la pizarra, esta SHALL ocupar el recuadro destacado a todo el ancho con los participantes debajo. Cada tile SHALL mostrar: vídeo de cámara (o avatar de inicial si está apagada), nombre, badge de estado de micro y anillo de "hablando"; el tile propio SHALL marcarse "(Tu)". TODOS los participantes SHALL entrar como PUBLISHER con **micrófono muteado y cámara apagada por defecto**, y disponer en la barra inferior de controles propios: activar/silenciar micrófono, encender/apagar cámara y selectores de dispositivo. El host SHALL disponer además de compartir pantalla (se muestra en el recuadro destacado del host), silenciar a un participante (`force_mute`), expulsar del chat y "Finalizar evento". El **chat lateral** (mismo `ChatPanel` por Socket.IO) SHALL ocupar **siempre toda la altura disponible de la página**: la columna de medios SHALL hacer scroll interno y el chat NO SHALL cambiar de altura al compartir pantalla ni al aumentar el número de participantes. No SHALL mostrarse el botón de levantar la mano (todos pueden hablar).
+Con `interaction_mode='meeting'`, la disposición de cámaras SHALL depender del rol del espectador y de la disposición de la sala (escritorio o compacta, según `live-event-mobile-layout`).
+
+**Disposición de escritorio.**
+- **Asistentes (no host):** el **host (o su pantalla compartida) SHALL mostrarse en un recuadro destacado a todo el ancho** del contenedor (grande, `aspect-video`) y el resto de participantes **debajo, en un grid en filas de 5 tiles cuadrados** (5 columnas y relación de aspecto 1:1).
+- **Host:** cuando NO comparte pantalla ni pizarra, todas las cámaras (incluida la suya, **la primera y del mismo tamaño** que las demás) SHALL mostrarse en un grid de tiles cuadrados sin recuadro destacado (`client/components/events/MeetingGrid.js`), con **3, 4 o 5 columnas**: el menor de esos valores que reparta los tiles en **3 filas como máximo** (`MEETING_GRID_COLUMN_OPTIONS`, `MEETING_GRID_MAX_ROWS`). Con más de 15 tiles SHALL usar 5 columnas. El lado del tile SHALL ser el mayor que quepa a la vez en el ancho y en el alto disponibles de la columna de medios, de modo que todos los tiles se vean sin scroll, también con una cuarta fila. Cuando el host comparte pantalla o activa la pizarra, esta SHALL ocupar el recuadro destacado a todo el ancho con los participantes debajo, en filas de 5.
+- **Chat lateral** (mismo `ChatPanel` por Socket.IO): SHALL ocupar **siempre toda la altura disponible de la página**. La columna de medios SHALL hacer scroll interno y el chat NO SHALL cambiar de altura al compartir pantalla ni al aumentar el número de participantes.
+
+**Disposición compacta.** Todos los roles, host incluido, SHALL ver:
+- el recuadro destacado 16:9: la pizarra o la pantalla compartida si están activas; si no, la cámara del host (la propia, para el host) o su avatar;
+- debajo, la fila horizontal de cámaras cuadradas 1:1 y la fila de controles compacta definidas en `live-event-mobile-layout`;
+- el chat, en el alto restante bajo los controles, con scroll interno.
+
+El grid de 5 columnas NO SHALL usarse en esta disposición.
+
+**En ambas disposiciones.**
+- El vídeo de cada tile SHALL recortarse centrado para llenar el cuadrado manteniendo su relación de aspecto (`fit: 'cover'`, equivalente a `object-fit: cover` de CSS): se asume la pérdida de los laterales (o franjas superior/inferior) de la imagen de la webcam.
+- Cada tile SHALL mostrar: vídeo de cámara (o avatar de inicial si está apagada), nombre, badge de estado de micro y anillo de "hablando". El tile propio SHALL marcarse "(Tu)".
+- TODOS los participantes SHALL entrar como PUBLISHER con **micrófono muteado y cámara apagada por defecto**, y disponer de controles propios: activar/silenciar micrófono, encender/apagar cámara y selectores de dispositivo.
+- El host SHALL disponer además de: compartir pantalla (se muestra en el recuadro destacado del host), silenciar a un participante (`force_mute`), expulsar del chat y "Finalizar evento".
+- No SHALL mostrarse el botón de levantar la mano (todos pueden hablar).
 
 #### Scenario: Taller con cámaras (host destacado + filas de 5 cuadradas)
-- **WHEN** 8 asistentes entran a un evento Agora meeting activo
+- **WHEN** 8 asistentes entran a un evento Agora meeting activo desde escritorio
 - **THEN** el host se muestra en un recuadro grande a todo el ancho y los participantes aparecen debajo en filas de 5 tiles cuadrados 1:1 (avatar si su cámara está apagada), muteados por defecto
 - **AND** el vídeo de cada tile se ve recortado centrado, sin deformarse
 
-#### Scenario: Grid cuadrado también en móvil
-- **WHEN** un asistente abre el mismo meeting desde un dispositivo móvil
-- **THEN** los tiles de participantes se organizan igualmente en filas de 5 recuadros cuadrados 1:1
+#### Scenario: Fila de cámaras en móvil
+- **WHEN** un asistente abre el mismo meeting desde un móvil en vertical
+- **THEN** el host se muestra en el recuadro destacado 16:9 y los participantes en una fila horizontal de recuadros cuadrados 1:1 que se desliza con el dedo
+- **AND** no se muestra el grid de 5 columnas
+
+#### Scenario: Host en móvil sin pantalla ni pizarra
+- **WHEN** el host de un meeting abre la sala desde un móvil en vertical sin compartir pantalla ni pizarra
+- **THEN** ve su propia cámara en el recuadro destacado y a los participantes en la fila de cámaras
 
 #### Scenario: Host modera un micrófono abierto
 - **WHEN** el host silencia a un participante con ruido de fondo
 - **THEN** el micrófono del participante queda muteado para todos y este puede volver a activarlo cuando lo necesite
 
 #### Scenario: Pantalla compartida en meeting
-- **WHEN** el host comparte pantalla en un meeting
+- **WHEN** el host comparte pantalla en un meeting visto desde escritorio
 - **THEN** la pantalla ocupa el recuadro destacado del host a todo el ancho y los participantes permanecen debajo en filas de 5 tiles cuadrados
 - **AND** la altura del chat lateral no cambia
 
 #### Scenario: Chat a altura completa con muchos participantes
-- **WHEN** el número de participantes crece hasta requerir scroll en la zona de cámaras
+- **WHEN** en escritorio el número de participantes crece hasta requerir scroll en la zona de cámaras
 - **THEN** la columna de cámaras hace scroll interno y el chat lateral mantiene toda la altura disponible de la página (no se estira ni se encoge)
 
 #### Scenario: Vista del host — grid de tiles iguales
-- **WHEN** el host de un meeting no comparte pantalla ni tiene la pizarra activa
-- **THEN** ve todas las cámaras (incluida la suya, la primera y del mismo tamaño que las demás) en el grid de filas de 5 tiles cuadrados, sin recuadro destacado
-- **AND** al compartir pantalla o activar la pizarra, esta pasa al recuadro destacado a todo el ancho y los participantes quedan debajo
+- **WHEN** en escritorio el host de un meeting no comparte pantalla ni tiene la pizarra activa
+- **THEN** ve todas las cámaras (incluida la suya, la primera y del mismo tamaño que las demás) en un grid de tiles cuadrados, sin recuadro destacado
+- **AND** al compartir pantalla o activar la pizarra, esta pasa al recuadro destacado a todo el ancho y los participantes quedan debajo en filas de 5
+
+#### Scenario: Grid del host con pocos participantes
+- **WHEN** el host de un meeting en escritorio está con 3 participantes (4 tiles)
+- **THEN** el grid tiene 3 columnas y 2 filas, con tiles más grandes que en un grid de 5 columnas
+
+#### Scenario: Grid del host lleno
+- **WHEN** el host está con 14 participantes (15 tiles)
+- **THEN** el grid tiene 5 columnas y 3 filas y todos los tiles se ven sin scroll
+- **AND** con 16 participantes (17 tiles) el grid tiene 5 columnas y 4 filas, con tiles más pequeños que siguen viéndose todos sin scroll
 
 #### Scenario: Enviar un mensaje en el chat no desplaza la página
 - **WHEN** cualquier participante o el host escribe un mensaje en el chat y pulsa Enter
@@ -455,3 +526,147 @@ Es una palanca de **coste**: Agora factura por asistente según la resolución a
 
 - **WHEN** se consulta un evento creado antes de este cambio
 - **THEN** `allow_host_video_quality` vale `0` y el host emite en 720p
+
+### Requirement: Orden por actividad de voz en las reuniones
+En `interaction_mode='meeting'`, los tiles de cámara SHALL ordenarse por actividad de voz en todos los grids y filas de la sala:
+- el grid del host en escritorio;
+- el grid de 5 columnas bajo el recuadro destacado;
+- la fila horizontal de cámaras de la disposición compacta.
+
+**Criterio de «hablando».** SHALL salir de `volume-indicator` de Agora (`client.enableAudioVolumeIndicator()`, un informe cada dos segundos con el nivel 0-100 de cada usuario, ya consumido por `useAgoraRoom` como `speakingUids`). Un participante está hablando cuando su nivel supera `AGORA_SPEAKING_VOLUME_THRESHOLD` **y** tiene el micrófono publicado (`hasAudio`).
+
+**Orden** (`speakerRanks` en `client/lib/meetingGrid.js`):
+1. En el grid del host sin recuadro destacado, el tile del host, siempre el primero.
+2. Los participantes que están hablando o hablaron hace menos de `MEETING_SPEAKER_HOLD_MS` (6 s), ordenados por el instante en que **empezaron** a hablar. Quien vuelve a hablar dentro de ese plazo conserva su puesto.
+3. El resto, en orden de llegada.
+
+**Reglas:**
+- El tile del propio usuario NO SHALL promoverse.
+- El orden SHALL aplicarse con CSS `order`, sin reordenar los nodos del DOM, de modo que ningún vídeo cambie de contenedor ni se interrumpa.
+- La memoria de actividad SHALL vivir en `client/hooks/useSpeakerActivity.js`.
+- **Banda del teatro:** SHALL aplicar el mismo orden solo mientras muestra su primera página (la ventana que empieza en el primer participante) o cuando todos los tiles caben sin paginar.
+  - Al pasar a otra página con las flechas, el orden SHALL congelarse tal como estaba en ese instante; los participantes que lleguen mientras tanto se añaden al final.
+  - Al volver a la primera página, el orden por voz SHALL reanudarse.
+  - Dentro de la ventana, el orden SHALL aplicarse también con CSS `order`, sin reordenar los nodos del DOM.
+
+#### Scenario: Un participante empieza a hablar
+- **WHEN** en un meeting con 10 participantes el octavo activa el micrófono y habla
+- **THEN** en el grid del host su tile pasa a la posición inmediatamente posterior a la del host
+- **AND** en la fila de los asistentes pasa a la primera posición
+
+#### Scenario: Diálogo entre dos participantes
+- **WHEN** dos participantes se alternan hablando con pausas de menos de 6 s
+- **THEN** los dos ocupan los primeros puestos, en el orden en que empezaron a hablar, sin intercambiarse a cada turno
+
+#### Scenario: Deja de hablar
+- **WHEN** un participante promovido deja de hablar durante más de 6 s
+- **THEN** su tile vuelve a su posición por orden de llegada
+
+#### Scenario: Micrófono cerrado
+- **WHEN** un participante tiene el micrófono silenciado
+- **THEN** su tile no se promueve aunque haya ruido en su entorno
+
+#### Scenario: El propio usuario habla
+- **WHEN** un asistente habla con el micrófono abierto
+- **THEN** su propio tile no cambia de posición en su vista
+- **AND** los demás ven su tile promovido
+
+#### Scenario: Banda del teatro en la primera página
+- **WHEN** un asistente tiene el teatro abierto en la primera página de la banda y empieza a hablar un participante que estaba en otra página
+- **THEN** ese participante aparece al principio de la banda
+
+#### Scenario: Banda del teatro en otra página
+- **WHEN** el asistente ha pasado a la segunda página de la banda y alguien empieza a hablar
+- **THEN** el contenido de las páginas no cambia mientras navega
+- **AND** al volver a la primera página, quien habla aparece al principio
+
+### Requirement: Perfil de codificación de audio explícito para el host
+
+Toda pista de micrófono **del host** de una sala Agora SHALL crearse con un `encoderConfig` explícito de 48 kHz, mono y 128 kbps (`high_quality`), definido como `AGORA_MIC_ENCODER_HOST` en `client/lib/constants.js` y entregado a `useAgoraRoom` por el mismo camino que `cameraEncoderConfig`.
+
+Omitirlo no aplica el defecto documentado. El SDK guarda `_encoderConfig = {}` cuando no se le pasa configuración, y cada parámetro de Opus se escribe en el SDP bajo su propio guardián (`r.bitrate && ...`, `r.sampleRate && ...`, `r.stereo && ...`), de modo que **no se declara ninguno** y Chrome negocia Opus a su bitrate por defecto, aproximadamente 32 kbps y adaptativo hacia abajo.
+
+Las pistas de micrófono de los asistentes y de los participantes promocionados SHALL seguir creándose sin `encoderConfig`, igual que hoy. La asimetría por rol es la misma que la capacidad ya aplica al vídeo.
+
+El perfil **no** SHALL reaplicarse tras cambiar de micrófono con `setDevice`: a diferencia de la cámara, `setDevice` reconstruye las constraints desde las de la pista y conserva el perfil. Tampoco existe forma de hacerlo — `ILocalAudioTrack` no expone `setEncoderConfiguration`.
+
+#### Scenario: Host retransmitiendo con equipo propio
+
+- **WHEN** el host activa el micrófono en una sala Agora
+- **THEN** la pista se publica declarando 48 kHz mono a 128 kbps
+- **AND** el SDP negociado lleva `maxaveragebitrate` y `maxplaybackrate`
+
+#### Scenario: Asistente al que se le da la palabra
+
+- **WHEN** un participante levanta la mano y el host le habilita el audio
+- **THEN** su pista se crea sin perfil explícito, exactamente como antes de este cambio
+
+#### Scenario: Cambio de micrófono en caliente
+
+- **WHEN** el host cambia de fuente de audio durante la retransmisión
+- **THEN** el perfil y el procesado de la pista se conservan sin ninguna acción adicional
+- **AND** no se recrea la pista ni se interrumpe la emisión
+
+#### Scenario: Micrófono apagado y vuelto a encender
+
+- **WHEN** el host silencia el micrófono y lo reactiva
+- **THEN** la pista se reutiliza y el perfil sigue siendo el mismo
+
+### Requirement: El procesado 3A del navegador se desactiva en la pista del host
+
+La pista de micrófono del host de una sala `interaction_mode='broadcast'` SHALL crearse con `AEC: false`, `ANS: false` y `AGC: false`, salvo que el evento indique lo contrario mediante `events.host_echo_cancellation`.
+
+En `interaction_mode='meeting'` el procesado **no** SHALL alterarse para nadie, tampoco para el host: hay hasta diecisiete emisores de audio simultáneos y el host oye a todos, de modo que quitarle la cancelación de eco acoplaría a la sala entera. El perfil de codificación del requisito anterior sí aplica en las dos modalidades — el bitrate y el procesado son ejes independientes.
+
+En Android este ajuste no desactiva un filtro: **decide la ruta de captura**. Chromium elige `AAUDIO_INPUT_PRESET_VOICE_COMMUNICATION` cuando se pide cancelación de eco y `AAUDIO_INPUT_PRESET_GENERIC` cuando no, y el comentario del propio código señala que el segundo existe para «prioritizing USB or wired headsets over the internal phone microphone». Con el preset de comunicaciones, el sistema aplica su cadena de voz —limitada en banda— y el enrutado pasa por la selección de dispositivo de comunicaciones, que no garantiza que se use el receptor conectado por USB.
+
+Las pistas de micrófono de asistentes y participantes promocionados SHALL conservar el procesado del navegador. Es su cancelación de eco la que impide que se oigan a sí mismos con retardo al escuchar al host por altavoz.
+
+#### Scenario: Conferencia sin audio de participantes
+
+- **WHEN** el host retransmite un evento `broadcast` con `host_echo_cancellation = 0`
+- **THEN** su micrófono se abre por la ruta de medios del sistema
+- **AND** el receptor externo conectado por USB tiene prioridad sobre el micrófono interno del dispositivo
+
+#### Scenario: Participante promocionado en el mismo evento
+
+- **WHEN** ese mismo evento da la palabra a un asistente
+- **THEN** la pista del asistente conserva cancelación de eco, supresión de ruido y control de ganancia
+
+#### Scenario: Host de una reunión
+
+- **WHEN** el host publica su micrófono en un evento `interaction_mode='meeting'`
+- **THEN** su pista conserva el procesado del navegador, igual que antes de este cambio
+- **AND** aun así se publica con el perfil de 48 kHz mono a 128 kbps
+
+#### Scenario: Evento existente anterior al cambio
+
+- **WHEN** se retransmite un evento `broadcast` creado antes de este cambio
+- **THEN** `host_echo_cancellation` vale `0` y el host emite sin procesado 3A
+
+### Requirement: La cancelación de eco del host se recupera por evento
+
+El sistema SHALL disponer de la columna `events.host_echo_cancellation` (INTEGER, `NOT NULL DEFAULT 0`), definida en `api/config/database.js` en el `CREATE TABLE` y en su `safeAlter`, aceptada como booleano opcional por `createEventSchema` y `updateEventSchema`, normalizada con `toFlag` en las dos ramas de `eventAdminController`, incluida en el `INSERT` de `eventService.createEvent` y en `allowedFields` de `eventService.updateEvent`.
+
+SHALL exponerse como checkbox **«El host escuchará a los invitados por altavoz»** en los formularios de creación y edición, visible solo con `format='live'`, `provider='agora'` e `interaction_mode='broadcast'`. La condición es más estrecha que la de `allow_host_video_quality` porque en `interaction_mode='meeting'` el procesado no se altera para nadie.
+
+Con el flag a `1`, la configuración de la pista SHALL **omitir** las tres claves `AEC`, `ANS` y `AGC` en lugar de pasarlas a `true`. No son equivalentes: en Chrome, pasar `ANS: true` de forma explícita añade además `googHighpassFilter`, que el camino por defecto no activa. Omitirlas reproduce el comportamiento anterior a este cambio byte a byte.
+
+El `encoderConfig` del requisito anterior SHALL aplicarse con independencia del valor de este flag.
+
+#### Scenario: Retransmisión interactiva con altavoces
+
+- **WHEN** un evento tiene `host_echo_cancellation = 1` y el host activa el micrófono
+- **THEN** la pista se crea sin ninguna de las tres claves de procesado
+- **AND** conserva el perfil de 48 kHz mono a 128 kbps
+
+#### Scenario: Casilla no ofrecida fuera de su ámbito
+
+- **WHEN** el admin edita un evento LiveKit, o uno Agora con `interaction_mode='meeting'`
+- **THEN** la casilla no se muestra y el campo no se envía
+
+#### Scenario: Cambio de la casilla con la retransmisión en curso
+
+- **WHEN** el admin marca la casilla mientras el host ya tiene el micrófono publicado
+- **THEN** la emisión en curso no cambia, porque el perfil queda fijado al crear la pista
+- **AND** el nuevo valor se aplica la próxima vez que se crea la pista

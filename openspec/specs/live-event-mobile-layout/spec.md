@@ -1,4 +1,9 @@
-## ADDED Requirements
+# live-event-mobile-layout Specification
+
+## Purpose
+TBD - created by archiving change live-event-mobile-layout. Update Purpose after archive.
+
+## Requirements
 
 ### Requirement: Activación de la disposición compacta
 
@@ -137,9 +142,10 @@ Ningún control interactivo ni texto SHALL quedar bajo el notch, la isla dinámi
 
 En disposición compacta vertical, el contenedor SHALL mostrar una barra superior de 44 px (`client/components/events/LiveRoomTopBar.js`) con:
 
-- a la izquierda, el logo (`BrandLogo`), **sin enlace**;
+- a la izquierda, el logo (`BrandLogo`), como enlace a la página de inicio que abre antes la confirmación de salida (`live-event-leave`);
 - a la derecha, el indicador «EN DIRECTO» con un punto rojo;
-- en las salas Agora, el número de conectados de la presencia de la sala (el mismo que muestra la cabecera del chat de escritorio), con etiqueta accesible «N conectados».
+- en las salas Agora, el número de conectados de la presencia de la sala (el mismo que muestra la cabecera del chat de escritorio), con etiqueta accesible «N conectados»;
+- en el extremo derecho, «Salir» (`live-event-leave`).
 
 En la vista de un evento `format='video'` la barra NO SHALL mostrar número. La barra NO SHALL mostrar el título del evento ni otros controles. SHALL ocultarse en disposición horizontal y con el teclado abierto.
 
@@ -148,10 +154,10 @@ En la vista de un evento `format='video'` la barra NO SHALL mostrar número. La 
 - **WHEN** un asistente entra en un stream Agora con 23 personas conectadas
 - **THEN** la barra muestra el logo, «EN DIRECTO» y «23»
 
-#### Scenario: El logo no saca de la sala
+#### Scenario: El logo pide confirmación
 
 - **WHEN** el asistente toca el logo
-- **THEN** no hay navegación y sigue en la sala
+- **THEN** aparece la confirmación de salida y, si cancela, sigue en la sala
 
 #### Scenario: Pase de vídeo
 
@@ -230,6 +236,7 @@ Debajo SHALL mostrarse una fila de cámaras **cuadradas 1:1** con los demás par
 - **Contenido de cada cuadrado:** vídeo recortado centrado (`fit: 'cover'`), nombre, insignia de micrófono y anillo de «hablando», como en escritorio.
 - **Vídeo sólo en los visibles:** únicamente los cuadrados dentro del área visible de la fila, más un cuadrado de margen, SHALL montar `AgoraVideo`. El resto SHALL mostrar el avatar con la inicial.
 - **Tocar:** tocar un cuadrado SHALL abrir la hoja del participante.
+- **Orden:** el de los cuadrados SHALL seguir el requisito «Orden por actividad de voz en las reuniones» de `agora-streaming-provider`.
 
 La rejilla de 5 columnas de escritorio no cambia.
 
@@ -443,7 +450,7 @@ Con el panel oculto, la escena SHALL ocupar toda la columna.
 
 **Controles superpuestos** sobre la escena:
 
-- arriba a la izquierda, el indicador «EN DIRECTO» y los conectados;
+- arriba a la izquierda, el indicador «EN DIRECTO», los conectados y «Salir» (`live-event-leave`);
 - arriba a la derecha, en el mismo grupo que el botón de teatro, el conmutador del panel, con `aria-expanded` y etiqueta «Mostrar chat» u «Ocultar chat»;
 - abajo a la izquierda, el botón de mano para el asistente de `broadcast` mientras el panel está oculto.
 

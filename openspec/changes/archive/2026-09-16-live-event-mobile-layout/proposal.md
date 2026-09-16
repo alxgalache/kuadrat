@@ -59,6 +59,13 @@ Por petición del operador, el cambio incluye además una corrección ajena al m
 - **La API ya lo permitía y no cambia de contrato.** `ban-from-chat` acepta al host o a un usuario con rol `admin`, tomado de la fila de `users` en cada petición. Sólo se corrige el texto del 403, que decía «Solo el host puede expulsar del chat», y se añade una traza con quién expulsó.
 - **El menú no se ofrece** sobre mensajes propios, del host ni del **staff**. Hoy el cliente sólo protege al co-presentador (`coHost`, que sólo existe en `broadcast`), así que en una reunión el host veía el menú sobre el admin y el servidor respondía 400. La presencia de la sala pasa a exponer `staff` para cerrar ese hueco.
 
+### Ajustes tras la verificación en preproducción (14/09/2026)
+
+- **Salir del evento.** Todas las salas (Agora, LiveKit y pase de vídeo), en escritorio y en compacto, tienen un botón «Salir del evento». Lleva a la página de inicio tras una confirmación con «Confirmar» y «Cancelar». En la sala compacta, el logo de 140d pasa a ser un enlace a la página de inicio con esa misma confirmación. El mensaje distingue al host y al co-presentador: salir detiene su emisión, pero no termina el evento.
+- **Rejilla del host en reunión.** En escritorio y sin contenido destacado, pasa de 5 columnas fijas a 3, 4 o 5 según el número de recuadros: la menor que no pase de 3 filas. El tamaño del recuadro se ajusta al alto disponible, para que se vean todos sin scroll.
+- **Orden por actividad de voz en reunión.** Quien tiene el micrófono abierto y se oye pasa a los primeros puestos de la rejilla del host, tras su propio recuadro, de la fila o rejilla de los asistentes y, mientras muestra su primera página, de la banda del modo teatro. Es viable con `volume-indicator` de Agora, que ya alimenta el anillo de «hablando».
+- **Corrección de paso.** La sala LiveKit en móvil había perdido su cabecera, porque se ocultaba en compacto aunque LiveKit no tenga contenedor compacto. Vuelve, ahora con «Salir del evento».
+
 ## Capabilities
 
 ### New Capabilities
@@ -72,6 +79,7 @@ Por petición del operador, el cambio incluye además una corrección ajena al m
   - disposición horizontal y pase de vídeo en táctil;
   - orientación del teatro y aviso de orientación a quien emite;
   - conservación del estado al cambiar de disposición.
+- `live-event-leave`: botón «Salir del evento» en todas las salas, logo de la sala compacta como enlace a la página de inicio y confirmación de salida según el rol.
 - `event-chat-admin-moderation`: menú «Expulsar del chat» para el admin en las salas Agora y LiveKit, autorización y traza del endpoint, e identificación del staff en la presencia para no ofrecer el menú sobre sus mensajes.
 
 ### Modified Capabilities
@@ -82,6 +90,7 @@ Por petición del operador, el cambio incluye además una corrección ajena al m
   - El selector de dispositivos del host se presenta en compacto como lista táctil en la hoja «Más».
   - El chat conserva el menú del host **y del admin** y cambia su autodesplazamiento.
   - La moderación del chat se abre al admin.
+  - El grid del host en reunión pasa a 3, 4 o 5 columnas ajustadas al alto, y los tiles de reunión se ordenan por actividad de voz.
 - `agora-broadcast-cohost`: el co-presentador, que es siempre admin, gana el menú «Expulsar del chat» fuera de su lista cerrada de controles de medios. En el cliente, la protección del staff frente a ese menú deja de limitarse al co-presentador.
 - `agora-host-mobile-console`: el modo `full` pasa a ser «la vista normal de la sala», que en pantallas pequeñas es la disposición compacta, y allí el conmutador de modo vive en la hoja «Más». La lógica de controles sigue siendo una, con una presentación más.
 - `agora-virtual-background`: en compacto, «Efectos» es una entrada de la hoja «Más» en lugar de un desplegable junto a la cámara. La exclusión en móviles no cambia.

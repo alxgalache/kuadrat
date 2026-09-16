@@ -162,7 +162,7 @@ Se verifica tras implementar en un iPhone real en la nube (sección «Verificaci
 ### D7. Barra superior: logo, «EN DIRECTO» y conectados
 
 - 44 px más la inserción superior.
-- `BrandLogo` a `h-5`, **sin enlace**: salir cuesta una reconexión y, a quien emite, cortar la emisión.
+- `BrandLogo` a `h-5`, **enlace a la página de inicio que siempre pregunta antes** (D19): salir cuesta una reconexión y, a quien emite, cortar la emisión.
 - A la derecha, punto rojo, «EN DIRECTO» y el número de la presencia (el mismo que la cabecera del chat de escritorio), con `aria-label` «N conectados».
 - **Sin título:** no tiene ninguna acción asociada y ya está en la pestaña.
 - **Pase de vídeo sin número:** no hay presencia.
@@ -343,6 +343,39 @@ El overlay de audio pasa de «Haz clic para activar el audio» a «Activar el au
 - **Traza.** Desde que dos roles pueden expulsar, `banFromChat` registra con `logger.info` `{ eventId, identity, actorUserId, actorRole }`. `actorRole` vale `'host'` si quien expulsa es el host, aunque sea también admin; si no, `'admin'`. No se escribe en BD.
 - **Texto del 403:** «Solo el host o un administrador pueden expulsar del chat».
 - **Fuera:** el botón en el panel de admin del evento, deshacer una expulsión (tampoco existe para el host) y el chat del pase de vídeo (sin moderación para nadie).
+
+### D19. Salir del evento: un proveedor, dos lugares donde pintar la confirmación
+
+`LeaveEventProvider` (`client/components/events/LeaveEvent.js`) se instancia en `EventDetail` alrededor de la rama de sala y de la de vídeo. Guarda si la confirmación está abierta, el rol de quien sale y la navegación (`router.push('/')`). El logo compacto y los tres botones «Salir» (cabecera, barra superior y controles superpuestos) abren la **misma** confirmación.
+
+- **Navegación de cliente.** La sala se desmonta y cada limpieza hace lo suyo: abandonar el canal RTC, cerrar el socket, soltar el bloqueo de pantalla, retirar `data-live-room` y `viewport-fit`. No hace falta ningún «salir» explícito.
+- **Dónde se pinta.**
+  - Dentro de la sala compacta, `LiveRoomShell` pinta `LeaveEventConfirm` como último hijo (la misma regla sin portales que el resto de su interfaz).
+  - Fuera, el proveedor pinta el `ConfirmDialog` común.
+  - Qué caso aplica lo dice `inShell`, que `EventDetail` calcula con la misma lectura de `useCompactRoomLayout`.
+- **Mensaje por rol.** A un asistente, que puede volver a entrar. Al host, que su emisión se detiene pero el evento sigue, y que para terminarlo está «Finalizar». Al co-presentador, que deja de emitir. Salir nunca finaliza el evento: son dos gestos distintos y confundirlos corta un directo en público.
+- **Fuera del teatro y de la consola.** Desde ahí se vuelve primero a la vista normal. Añadir botones de salida a superposiciones a pantalla completa es invitar a pulsarlos por error.
+- **Corrección incluida.** La cabecera de sala se ocultaba con `compact` también en LiveKit, que no tiene contenedor compacto: en un móvil la sala LiveKit perdía el título y ahora habría perdido la salida. Ahora se oculta solo con `compact && agoraCreds`.
+
+### D20. Rejilla del host en reunión: 3, 4 o 5 columnas, y un tamaño que cabe en alto
+
+Con 5 columnas fijas, en una reunión de pocas personas los recuadros quedaban diminutos justo donde ver las caras es la función. `meetingGridColumns(n)` elige la **menor** de 3, 4 y 5 que reparta `n` recuadros (el del host incluido) en 3 filas o menos: 1-9 → 3 columnas, 10-12 → 4, 13-15 → 5. Con 16-17 (el máximo de la modalidad) ninguna opción cabe en 3 filas; se usan 5 columnas y 4 filas, porque la lista 3/4/5 es la restricción pedida.
+
+**Menos columnas no basta: también hay que medir el alto.** Tres filas de recuadros al ancho de la columna (~1000 px ÷ 3 ≈ 330 px) miden ~1000 px de alto en una columna de ~740, y eso era scroll. `MeetingGrid` mide su caja (`flex-1 min-h-0` en la columna de medios, que en escritorio tiene alto fijo) con un `ResizeObserver`. `meetingTileSize` toma el lado que cabe a la vez en ancho y en alto, y la rejilla se centra. Así se ven todos sin scroll, también con la cuarta fila.
+
+**Bajo el recuadro destacado (asistentes, o el host compartiendo) se conservan las 5 columnas.** El destacado ya ocupa la mayor parte del alto, y con 3 columnas los recuadros de debajo quedarían fuera de la pantalla. En compacto la vista no cambia: el host ve su recuadro destacado y la fila horizontal.
+
+### D21. Orden por actividad de voz: viable con `volume-indicator`, con memoria y sin mover nodos
+
+**Viabilidad, comprobada en la referencia de la API de Agora.** Con `enableAudioVolumeIndicator()`, el cliente emite `volume-indicator` «cada dos segundos, hable o no alguien», con el nivel entero 0-100 de cada usuario. `useAgoraRoom` ya lo consume para el anillo verde (`speakingUids`, umbral `AGORA_SPEAKING_VOLUME_THRESHOLD`). No hace falta ninguna API más.
+
+- **«Hablando» = nivel sobre el umbral Y micrófono publicado** (`hasAudio`). Sin la segunda condición, un nivel residual de alguien silenciado bastaría para promoverlo.
+- **Memoria (`useSpeakerActivity`).** `speakingUids` no cambia mientras la misma persona sigue hablando, así que no hay latido por informe. Quien está en la lista está activo sin plazo, y los `MEETING_SPEAKER_HOLD_MS` (6 s, tres informes) empiezan a contar cuando sale de ella. Las pausas entre frases no reordenan la rejilla.
+- **Orden de los hablantes: por cuándo EMPEZARON a hablar, no por el último que habló.** Con «el último primero», un diálogo entre dos personas intercambiaría sus recuadros a cada turno. Con «por inicio», el que se suma aparece detrás de quien ya hablaba y los dos se quedan quietos.
+- **El propio usuario no se promueve.** Ver saltar tu propio recuadro al empezar a hablar es desconcertante, y no aporta nada a quien habla. Los demás sí le ven subir.
+- **Host fijo el primero en su rejilla.** El pedido es «siempre a continuación del host».
+- **CSS `order`, no reordenar el DOM.** React movería los nodos con `insertBefore`, y el `<video>` de Agora cambiaría de sitio en mitad de la reproducción. Con `order`, el DOM queda quieto y solo cambia la colocación. Funciona igual en la rejilla, en el grid de 5 y en la fila horizontal. La contrapartida es que el orden de tabulación sigue el de llegada.
+- **La banda del teatro solo se reordena en su primera página** (añadido el 14/09/2026 a petición del operador). Va paginada en bloques y en bucle: reordenarla siempre sacaría a alguien de la página que se estaba mirando, y las páginas cambiarían de contenido sin tocar las flechas. `TheaterStrip` recibe la lista ya ordenada por voz y la aplica en vivo mientras la ventana empieza en el primer participante, o cuando no hay paginación. Al pasar de página congela el orden de ese instante (quien llega mientras tanto va al final) y al volver a la primera lo reanuda. La primera página es la que más se mira y la única donde «quien habla aparece al principio» tiene sentido. Dentro de la ventana, el DOM sigue un orden estable por identidad y la colocación la da CSS `order`, igual que en la rejilla. La banda del stream no se toca.
 
 ## Verificación en iPhone sin dispositivo
 
