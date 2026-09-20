@@ -1630,9 +1630,19 @@ function AgoraParticipantGrid({
           promovería a otra persona, en directo. Con el puntero dentro, la fila
           se congela y se reanuda al salir. En la sala compacta no hace falta:
           allí un toque abre la hoja y no actúa. */}
+      {/* `py-1` no es estético: las insignias de micrófono y de mano se dibujan
+          4 px por encima del cuadrado (`-top-1`) y el anillo 2, así que
+          `overflow-hidden` —que está para que una capacidad todavía sin medir
+          no desborde la columna— las decapitaba. Misma razón por la que la fila
+          compacta lleva `py-2`.
+          Solo vertical, y eso es medible: el envoltorio del cuadrado mide 64 px
+          y el botón 56, luego los 4 px que la insignia sobresale a izquierda y
+          derecha ya los absorbe ese centrado — comprobado con la fila ajustada
+          al píxel, recorte lateral 0. Un relleno horizontal obligaría además a
+          un margen negativo para no mover los cuadrados. */}
       <div
         ref={containerRef}
-        className="flex gap-2 overflow-hidden"
+        className="flex gap-2 overflow-hidden py-1"
         onPointerEnter={() => setFrozenOrder(orderedEntries.map((entry) => entry.identity))}
         onPointerLeave={() => setFrozenOrder(null)}
       >

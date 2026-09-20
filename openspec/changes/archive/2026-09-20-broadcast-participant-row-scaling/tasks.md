@@ -39,22 +39,24 @@
 
 ## 6. Verificación a mano (no hay runner en `client/`)
 
-- [ ] 6.1 Escritorio 1280 px, 8 asistentes: una fila, sin recuadro de resto.
-- [ ] 6.2 Escritorio, 300 asistentes simulados: una sola altura de fila; cuadrados pintados + ocultos = 300; estrechar la ventana reduce cuadrados y sube el número.
-- [ ] 6.3 Tres manos levantadas en orden A, B, C: aparecen en ese orden; dar la palabra a A hace avanzar a B y C; B baja la mano y C queda el primero.
-- [ ] 6.4 Dos promovidos, uno hablando: el que habla va antes dentro de su escalón; con pausas de menos de 6 s no se mueve.
-- [ ] 6.5 20 manos levantadas y 2 con la palabra en una fila de 8 huecos: los 2 con la palabra siguen visibles.
-- [ ] 6.6 Cuadrado propio: visible siempre, el último antes del contador, y no salta al levantar la mano uno mismo.
-- [ ] 6.7 Congelado bajo el puntero: con el ratón sobre la fila, levantar la mano desde otra sesión no mueve nada; al salir el puntero, se reordena.
-- [ ] 6.8 Lista completa en escritorio: buscar «jose» encuentra «José»; dar la palabra deja la lista abierta; con 312 participantes se pintan 100 y sale el aviso.
-- [ ] 6.9 Móvil 390 px: 20 cuadrados y «+N más» al final del scroll; abre la hoja de la lista; deslizar al final no navega atrás.
-- [ ] 6.10 Móvil en horizontal y modo teatro: la banda del teatro y los controles superpuestos siguen igual.
-- [ ] 6.11 Modo `meeting` (escritorio y compacto) y un evento LiveKit: sin cambios visibles.
-- [ ] 6.12 Co-presentador (admin en un broadcast): su cuadrado va detrás del host, sin acciones, y la lista no le ofrece ninguna.
-- [ ] 6.13 Cliente nuevo contra api sin `handRaisedAt` (revertir 1.2 en local): las manos ordenan por llegada y nada falla.
+- [x] 6.1 Escritorio 1280 px, 8 asistentes: una fila, sin recuadro de resto.
+- [x] 6.2 Escritorio, 300 asistentes simulados: una sola altura de fila; cuadrados pintados + ocultos = 300; estrechar la ventana reduce cuadrados y sube el número.
+- [x] 6.3 Tres manos levantadas en orden A, B, C: aparecen en ese orden; dar la palabra a A hace avanzar a B y C; B baja la mano y C queda el primero.
+- [x] 6.4 Dos promovidos, uno hablando: el que habla va antes dentro de su escalón; con pausas de menos de 6 s no se mueve.
+- [x] 6.5 20 manos levantadas y 2 con la palabra en una fila de 8 huecos: los 2 con la palabra siguen visibles.
+- [x] 6.6 Cuadrado propio: visible siempre, el último antes del contador, y no salta al levantar la mano uno mismo.
+- [x] 6.7 Congelado bajo el puntero: con el ratón sobre la fila, levantar la mano desde otra sesión no mueve nada; al salir el puntero, se reordena.
+- [x] 6.8 Lista completa en escritorio: buscar «jose» encuentra «José»; dar la palabra deja la lista abierta; con 312 participantes se pintan 100 y sale el aviso.
+- [x] 6.9 Móvil 390 px: 20 cuadrados y «+N más» al final del scroll; abre la hoja de la lista; deslizar al final no navega atrás.
+- [x] 6.10 Móvil en horizontal y modo teatro: la banda del teatro y los controles superpuestos siguen igual.
+- [x] 6.11 Modo `meeting` (escritorio y compacto) y un evento LiveKit: sin cambios visibles.
+- [x] 6.12 Co-presentador (admin en un broadcast): su cuadrado va detrás del host, sin acciones, y la lista no le ofrece ninguna.
+- [x] 6.13 Cliente nuevo contra api sin `handRaisedAt` (revertir 1.2 en local): las manos ordenan por llegada y nada falla.
+
+- [x] 6.14 Corregido el recorte de las insignias detectado en preproducción (`py-1` en la fila de escritorio), comprobado con medidas en navegador: recorte 4,0 → 0,0 px, posición y capacidad sin cambios.
 
 ## 7. Cierre
 
 - [x] 7.1 `npm run lint` en `client/` y build de producción (`docker compose exec -e NODE_ENV=production client npm run build`).
 - [x] 7.2 Actualizar `CLAUDE.md` con la sección de la fila de participantes de broadcast: la regla de «quien tiene la palabra nunca se oculta», el porqué del `handRaisedAt` en servidor, el porqué de reordenar el DOM aquí y no en `meeting`, y el punto ciego de las pruebas.
-- [ ] 7.3 `openspec/changes/broadcast-participant-row-scaling` listo para `/opsx:archive`.
+- [x] 7.3 `openspec/changes/broadcast-participant-row-scaling` listo para `/opsx:archive`.

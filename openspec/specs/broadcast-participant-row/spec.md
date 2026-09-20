@@ -1,4 +1,9 @@
-## ADDED Requirements
+# broadcast-participant-row Specification
+
+## Purpose
+TBD - created by archiving change broadcast-participant-row-scaling. Update Purpose after archive.
+
+## Requirements
 
 ### Requirement: Fila única de participantes con recuadro de resto
 
@@ -10,6 +15,8 @@ En un evento Agora `interaction_mode='broadcast'`, los cuadrados de participante
 Cuando no quepan todos, el **último hueco** de la fila SHALL ocuparlo un recuadro gris con el número de participantes **ocultos** («+12»), nunca el total, y en escritorio la palabra «más» en la línea de etiqueta que los cuadrados ya llevan debajo. Por encima de 999 ocultos SHALL mostrar «+999». Su etiqueta accesible SHALL nombrar la acción completa en es-ES.
 
 Cuando todos quepan, el recuadro NO SHALL renderizarse.
+
+La fila SHALL reservar holgura vertical (`py-1`) dentro de la caja recortada: las insignias de micrófono y de mano se dibujan 4 px por encima del cuadrado y el anillo 2, de modo que sin ella `overflow-hidden` las recorta. NO SHALL hacer falta holgura horizontal, porque el envoltorio de cada cuadrado (64 px) centra un botón de 56 y ese margen ya absorbe el saliente lateral.
 
 La ventana visible SHALL calcularse con una única función pura (`rowWindow` en `client/lib/participantRow.js`), compartida por las dos disposiciones. Los anchos, huecos y topes SHALL vivir en `client/lib/constants.js` y los textos en `LIVE_ROOM_COPY`.
 
