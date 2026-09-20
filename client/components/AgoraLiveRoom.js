@@ -13,12 +13,14 @@ import CoHostControls, { CompactCoHostControls } from '@/components/events/CoHos
 import LiveRoomShell, { roomCell, stageFrame } from '@/components/events/LiveRoomShell'
 import LiveRoomTopBar from '@/components/events/LiveRoomTopBar'
 import LiveRoomSheet, { LiveRoomSheetRow } from '@/components/events/LiveRoomSheet'
-import ParticipantTile, { HandIcon, sortParticipants } from '@/components/events/ParticipantTile'
+import ParticipantTile, { HandIcon, MoreParticipantsTile } from '@/components/events/ParticipantTile'
+import ParticipantList from '@/components/events/ParticipantList'
 import CompactParticipantRow from '@/components/events/CompactParticipantRow'
 import CompactCameraRow from '@/components/events/CompactCameraRow'
 import MeetingGrid from '@/components/events/MeetingGrid'
 import useSpeakerActivity from '@/hooks/useSpeakerActivity'
 import { speakerRanks } from '@/lib/meetingGrid'
+import { participantRanks, rowWindow } from '@/lib/participantRow'
 import CompactHostControls from '@/components/events/CompactHostControls'
 import { ControlIconButton, ControlsRow, ControlsSheet } from '@/components/events/CompactControls'
 import LandscapeStageChrome, { StageChromeGroup } from '@/components/events/LandscapeStageChrome'
@@ -39,6 +41,7 @@ import {
   HOST_VIEW_MODES, AGORA_CAMERA_ENCODER_HOST, AGORA_CAMERA_ENCODER_PARTICIPANT, AGORA_VIDEO_QUALITIES,
   AGORA_MIC_ENCODER_HOST, AGORA_MIC_NO_PROCESSING,
   AGORA_HOST_UID, AGORA_HOST_SCREEN_UID, AGORA_LOW_STREAM_PARAMETER, AGORA_SCREEN_ENCODER_BROADCAST,
+  BROADCAST_ROW_TILE_W_DESKTOP, BROADCAST_ROW_GAP_PX, BROADCAST_ROW_FALLBACK_CAPACITY,
   STAGE_COPY, LIVE_ROOM_COPY,
 } from '@/lib/constants'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
@@ -1031,6 +1034,35 @@ function BroadcastArea({
 
   const handlePromote = useCallback((identity) => promoteParticipant(eventId, identity), [eventId])
   const handleDemote = useCallback((identity) => demoteParticipant(eventId, identity), [eventId])
+  const handleSelfMute = useCallback(() => room.setMicrophoneEnabled(false), [room])
+
+  // Fila de participantes: las entradas de ESTA vista (el host no se ve a sí
+  // mismo, su vídeo ya está arriba) y el puesto de cada uno. Se calcula aquí,
+  // una sola vez, y lo consumen la fila de escritorio, la compacta y la lista
+  // completa — tres copias del criterio es lo que documenta `zoneResolver`.
+  const participantEntries = useMemo(
+    () => (isHost ? socket.presence.filter((p) => !p.isHost) : socket.presence),
+    [socket.presence, isHost]
+  )
+  // Quién se está oyendo, con el mismo criterio del modo meeting: nivel por
+  // encima del umbral Y micrófono publicado. El propio no se promueve.
+  const speakingIdentities = participantEntries
+    .filter((p) => (
+      !p.isHost &&
+      p.identity !== socket.selfIdentity &&
+      p.agoraUid != null &&
+      room.speakingUids.has(Number(p.agoraUid)) &&
+      !!remoteByUid.get(Number(p.agoraUid))?.hasAudio
+    ))
+    .map((p) => p.identity)
+  const speakerActivity = useSpeakerActivity(speakingIdentities)
+  const participantOrder = useMemo(
+    () => participantRanks(participantEntries, {
+      selfIdentity: socket.selfIdentity,
+      activity: speakerActivity,
+    }),
+    [participantEntries, socket.selfIdentity, speakerActivity]
+  )
 
   return (
     // El envoltorio está SIEMPRE montado y solo cambia de className, igual que
@@ -1132,10 +1164,10 @@ function BroadcastArea({
                 <CompactPromotedRow users={promotedVideoUsers} nameByUid={nameByUid} />
               )}
               <CompactParticipantRow
-                presence={socket.presence}
+                entries={participantEntries}
+                ranks={participantOrder}
                 selfIdentity={socket.selfIdentity}
                 remoteByUid={remoteByUid}
-                speakingUids={room.speakingUids}
                 viewerIsHost={isHost}
                 localMicEnabled={room.micEnabled}
                 amSpeaker={amSpeaker}
@@ -1144,7 +1176,7 @@ function BroadcastArea({
                 onToggleHand={toggleHandRaise}
                 onPromote={handlePromote}
                 onDemote={handleDemote}
-                onSelfMute={() => room.setMicrophoneEnabled(false)}
+                onSelfMute={handleSelfMute}
               />
               {(isHost || isCoHost) && !landscape && !room.camEnabled && <OrientationHint />}
               {isHost && (
@@ -1190,15 +1222,16 @@ function BroadcastArea({
           open: its tiles reappear in the theater strip) */}
       {!theaterOpen && (
         <AgoraParticipantGrid
-          presence={socket.presence}
+          entries={participantEntries}
+          ranks={participantOrder}
           selfIdentity={socket.selfIdentity}
           remoteByUid={remoteByUid}
-          speakingUids={room.speakingUids}
           viewerIsHost={isHost}
-          eventId={eventId}
           localMicEnabled={room.micEnabled}
           amSpeaker={amSpeaker}
-          onSelfMute={() => room.setMicrophoneEnabled(false)}
+          onPromote={handlePromote}
+          onDemote={handleDemote}
+          onSelfMute={handleSelfMute}
         />
       )}
 
@@ -1501,49 +1534,166 @@ function CompactPromotedRow({ users, nameByUid }) {
 }
 
 // ---------------------------------------------------------------------------
-// Participant grid (broadcast) — presence-driven, same states/colors/order as
-// the LiveKit ParticipantGrid
+// Participant row (broadcast, desktop) — presence-driven, UNA sola fila con la
+// capacidad medida, recuadro «+N más» y la lista completa desplegable.
 // ---------------------------------------------------------------------------
+/**
+ * Al contrario que las rejillas del modo `meeting`, esta fila reordena y
+ * desmonta nodos del DOM en vez de aplicar CSS `order`: sus cuadrados no llevan
+ * `<video>` de Agora, y montar un nodo por asistente es precisamente el coste
+ * que se elimina. Cada cuadrado lleva `key={identity}`, así que React mueve el
+ * nodo en lugar de recrearlo.
+ */
 function AgoraParticipantGrid({
-  presence, selfIdentity, remoteByUid, speakingUids, viewerIsHost,
-  eventId, localMicEnabled, amSpeaker, onSelfMute,
+  entries, ranks, selfIdentity, remoteByUid, viewerIsHost,
+  localMicEnabled, amSpeaker, onPromote, onDemote, onSelfMute,
 }) {
   // Track identities that were ever promoted (red styling after demotion)
   const everSpeakerRef = useRef(new Set())
-  for (const p of presence) {
+  for (const p of entries) {
     if (p.speaker && !p.isHost) everSpeakerRef.current.add(p.identity)
   }
 
-  // Host view: exclude host from grid (they see their own video above)
-  const gridEntries = viewerIsHost ? presence.filter((p) => !p.isHost) : presence
+  const containerRef = useRef(null)
+  const [capacity, setCapacity] = useState(BROADCAST_ROW_FALLBACK_CAPACITY)
+  const [listOpen, setListOpen] = useState(false)
+  // Orden congelado mientras el puntero está dentro de la fila (ver más abajo)
+  const [frozenOrder, setFrozenOrder] = useState(null)
+  const hasEntries = entries.length > 0
 
-  const sorted = useMemo(() => sortParticipants(gridEntries, selfIdentity), [gridEntries, selfIdentity])
+  // Cuántos huecos caben, contando el del contador. Misma fórmula que la banda
+  // del teatro, y por eso el elemento tiene ancho fijo: con un paso variable la
+  // cuenta sería falsa.
+  useEffect(() => {
+    if (!hasEntries) return
+    const el = containerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const compute = () => {
+      const styles = window.getComputedStyle(el)
+      const width = el.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight)
+      const pitch = BROADCAST_ROW_TILE_W_DESKTOP + BROADCAST_ROW_GAP_PX
+      setCapacity(Math.max(1, Math.floor((width + BROADCAST_ROW_GAP_PX) / pitch)))
+    }
+    compute()
+    const observer = new ResizeObserver(compute)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasEntries])
 
-  const handlePromote = useCallback((identity) => promoteParticipant(eventId, identity), [eventId])
-  const handleDemote = useCallback((identity) => demoteParticipant(eventId, identity), [eventId])
+  const orderedEntries = useMemo(() => {
+    const byRank = [...entries].sort((a, b) => (ranks.get(a.identity) ?? 0) - (ranks.get(b.identity) ?? 0))
+    if (!frozenOrder) return byRank
+    const byIdentity = new Map(byRank.map((entry) => [entry.identity, entry]))
+    const result = []
+    for (const identity of frozenOrder) {
+      const entry = byIdentity.get(identity)
+      if (entry) {
+        result.push(entry)
+        byIdentity.delete(identity)
+      }
+    }
+    // Quien llegue con la fila congelada se añade al final, como en la banda
+    for (const entry of byRank) {
+      if (byIdentity.has(entry.identity)) result.push(entry)
+    }
+    return result
+  }, [entries, ranks, frozenOrder])
 
-  if (sorted.length === 0) return null
+  const orderRanks = useMemo(
+    () => new Map(orderedEntries.map((entry, index) => [entry.identity, index])),
+    [orderedEntries]
+  )
+
+  // Escape cierra el panel esté donde esté el foco — con un `onKeyDown` en el
+  // div solo cerraría con el foco dentro, y quien lo abre está en el recuadro,
+  // que queda fuera. Mismo criterio que `LiveRoomSheet`.
+  useEffect(() => {
+    if (!listOpen) return
+    const onKeyDown = (e) => { if (e.key === 'Escape') setListOpen(false) }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [listOpen])
+
+  const { tiles, more } = rowWindow({
+    entries: orderedEntries,
+    ranks: orderRanks,
+    selfIdentity,
+    capacity,
+  })
+
+  if (!hasEntries) return null
 
   return (
-    <div className="mt-3 landscape:max-md:max-h-[30vh] landscape:max-md:overflow-y-auto pr-1">
-      <div className="flex flex-wrap gap-2">
-        {sorted.map((p) => (
+    <div className="mt-3">
+      {/* En escritorio el clic sobre un cuadrado da o quita la palabra
+          directamente: un reordenamiento entre el `mousedown` y el `click`
+          promovería a otra persona, en directo. Con el puntero dentro, la fila
+          se congela y se reanuda al salir. En la sala compacta no hace falta:
+          allí un toque abre la hoja y no actúa. */}
+      <div
+        ref={containerRef}
+        className="flex gap-2 overflow-hidden"
+        onPointerEnter={() => setFrozenOrder(orderedEntries.map((entry) => entry.identity))}
+        onPointerLeave={() => setFrozenOrder(null)}
+      >
+        {tiles.map((p) => (
           <ParticipantTile
             key={p.identity}
             entry={p}
             isLocal={p.identity === selfIdentity}
             viewerIsHost={viewerIsHost}
             remoteByUid={remoteByUid}
-            speakingUids={speakingUids}
             localMicEnabled={localMicEnabled}
             amSpeaker={amSpeaker}
             wasPromoted={everSpeakerRef.current.has(p.identity)}
-            onPromote={handlePromote}
-            onDemote={handleDemote}
+            onPromote={onPromote}
+            onDemote={onDemote}
             onSelfMute={onSelfMute}
           />
         ))}
+        {more > 0 && (
+          <MoreParticipantsTile
+            count={more}
+            total={entries.length}
+            expanded={listOpen}
+            onClick={() => setListOpen((open) => !open)}
+          />
+        )}
       </div>
+
+      {/* Panel en línea, no un diálogo: nada dentro de la sala se renderiza con
+          un portal a `document.body`, y en escritorio no hay motivo para
+          introducir un segundo sistema de diálogos. */}
+      {listOpen && (
+        <div className="mt-2 overflow-hidden rounded-md bg-white ring-1 ring-gray-200">
+          <div className="flex items-center justify-between gap-x-3 border-b border-gray-200 pl-4">
+            <h3 className="text-sm font-semibold text-gray-900">
+              {LIVE_ROOM_COPY.participants} ({entries.length})
+            </h3>
+            <button
+              type="button"
+              onClick={() => setListOpen(false)}
+              className="flex h-11 items-center px-4 text-sm text-gray-600 hover:text-gray-900"
+            >
+              {LIVE_ROOM_COPY.close}
+            </button>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            <ParticipantList
+              entries={entries}
+              ranks={ranks}
+              selfIdentity={selfIdentity}
+              remoteByUid={remoteByUid}
+              viewerIsHost={viewerIsHost}
+              localMicEnabled={localMicEnabled}
+              amSpeaker={amSpeaker}
+              onPromote={onPromote}
+              onDemote={onDemote}
+              onSelfMute={onSelfMute}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

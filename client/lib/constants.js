@@ -400,7 +400,18 @@ export const LIVE_ROOM_COPY = {
   // Vale para ratón y para dedo; «Haz clic» no.
   activateAudio: 'Activar el audio',
   participant: 'Participante',
+  participants: 'Participantes',
   you: '(Tu)',
+  // Recuadro de resto de la fila de participantes. Dentro del cuadrado va
+  // «+12» (techo «+999», que a 44 px es lo último que se lee) y en escritorio
+  // «más» en la línea de etiqueta que los cuadrados ya llevan debajo — sin
+  // ella la fila perdería 16 px de alto y se vería desigual.
+  moreCount: (n) => (n > 999 ? '+999' : `+${n}`),
+  moreSuffix: 'más',
+  moreParticipants: (n) => `Ver los ${n} participantes restantes`,
+  searchParticipants: 'Buscar por nombre',
+  noParticipantsFound: 'Nadie coincide con esa búsqueda',
+  listTruncated: (shown, total) => `Mostrando ${shown} de ${total}. Escribe para buscar.`,
   roleHost: 'Host',
   roleCoHost: 'Co-presentador',
   stateSpeaking: 'Con la palabra',
@@ -451,8 +462,32 @@ export const MEETING_GRID_MIN_TILE_PX = 64;
 // Orden por actividad de voz en reuniones. `volume-indicator` de Agora informa
 // cada dos segundos; quien deja de oírse conserva su puesto este tiempo (tres
 // informes) para que un diálogo entre dos personas no reordene la rejilla a
-// cada frase.
+// cada frase. Lo reutiliza tal cual la fila de participantes de un `broadcast`
+// (lib/participantRow.js): mismo valor y mismo comportamiento, así que se
+// conserva el nombre en vez de renombrarlo y arrastrar un requisito que no
+// cambia.
 export const MEETING_SPEAKER_HOLD_MS = 6000;
+
+// Fila de participantes de un evento `broadcast` (lib/participantRow.js).
+//
+// El elemento de escritorio tiene ancho FIJO de 64 px: hoy medía entre 56 (el
+// cuadrado) y 64 (la etiqueta truncada a max-w-16) según lo largo que fuera el
+// nombre, y medir la capacidad de la fila con un paso variable da un número
+// falso. No se ve el cambio: la etiqueta ya truncaba ahí.
+export const BROADCAST_ROW_TILE_W_DESKTOP = 64;
+export const BROADCAST_ROW_GAP_PX = 8; // gap-2 de la fila
+// Capacidad antes de la primera medición del ResizeObserver. El observador
+// dispara al observar, antes de pintar, así que en la práctica no se ve; la
+// constante solo evita el parpadeo de una fila vacía si no lo hiciera.
+export const BROADCAST_ROW_FALLBACK_CAPACITY = 12;
+// Tope de cuadrados de la fila compacta, que sí se desplaza: el tope no está
+// para que quepan, sino para que deslizar tenga fin. La fila pinta un hueco más
+// (el del contador), de modo que con exactamente 21 asistentes se ven los 21 en
+// lugar de 20 y un «+1 más».
+export const BROADCAST_ROW_COMPACT_MAX = 20;
+// Filas que pinta la lista completa de participantes. Mil filas en el DOM de
+// una sala con vídeo se notan; la respuesta es el buscador, no el scroll.
+export const PARTICIPANT_LIST_MAX_ROWS = 100;
 
 // Public brand name — the user-facing marketplace brand.
 // "Kuadrat" is only the internal codename; any text shown to buyers, sellers,

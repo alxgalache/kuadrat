@@ -47,23 +47,38 @@ function MicBadge({ active, size }) {
 }
 
 /**
- * Participant order of the broadcast grid, the compact row and the theater
- * strip — ONE function, so every presentation lists people identically: host
- * first, the local participant last, raised hands before the rest.
+ * Recuadro «+N más» que cierra la fila de participantes cuando no caben todos.
+ *
+ * Ocupa exactamente el mismo hueco que un cuadrado — en escritorio, con su
+ * línea de etiqueta incluida, porque sin ella la fila perdería 16 px de alto y
+ * se vería desigual. Al pulsarlo se abre la lista completa, que es lo que
+ * impide que truncar la fila le quite al host la única forma de dar la palabra
+ * a quien no ha levantado la mano.
  */
-export function sortParticipants(entries, selfIdentity) {
-  return [...entries].sort((a, b) => {
-    const aHost = a.isHost ? 1 : 0
-    const bHost = b.isHost ? 1 : 0
-    if (aHost !== bHost) return bHost - aHost
-    const aLocal = a.identity === selfIdentity
-    const bLocal = b.identity === selfIdentity
-    if (aLocal && !bLocal) return 1
-    if (!aLocal && bLocal) return -1
-    const aHand = a.handRaised ? 1 : 0
-    const bHand = b.handRaised ? 1 : 0
-    return bHand - aHand
-  })
+export function MoreParticipantsTile({ count, total, size = 'default', onClick, expanded = false }) {
+  const s = SIZES[size]
+  const compact = size === 'compact'
+
+  const button = (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={LIVE_ROOM_COPY.moreParticipants(total)}
+      aria-expanded={expanded}
+      className={`relative ${s.tile} flex-shrink-0 rounded-lg flex items-center justify-center font-semibold bg-gray-50 text-gray-600 ring-1 ring-gray-300 cursor-pointer hover:bg-gray-100 [touch-action:manipulation]`}
+    >
+      <span aria-hidden="true">{LIVE_ROOM_COPY.moreCount(count)}</span>
+    </button>
+  )
+
+  if (compact) return button
+
+  return (
+    <div className="flex w-16 flex-shrink-0 flex-col items-center gap-1">
+      {button}
+      <span className="w-full truncate text-center text-xs text-gray-600">{LIVE_ROOM_COPY.moreSuffix}</span>
+    </div>
+  )
 }
 
 /**
@@ -202,10 +217,12 @@ export default function ParticipantTile({
 
   if (compact) return tile
 
+  // Ancho FIJO de 64 px (w-16): la fila de escritorio mide su capacidad con un
+  // paso constante, y el nombre ya truncaba justo ahí.
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex w-16 flex-shrink-0 flex-col items-center gap-1">
       {tile}
-      <span className={`text-xs text-center max-w-16 truncate ${
+      <span className={`w-full truncate text-center text-xs ${
         isHostParticipant ? (readOnly ? 'text-white font-semibold' : 'text-gray-900 font-semibold')
         : isLocal ? (readOnly ? 'text-red-400 font-medium' : 'text-red-600 font-medium')
         : (readOnly ? 'text-gray-300' : 'text-gray-600')

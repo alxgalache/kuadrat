@@ -1,17 +1,11 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
-import ParticipantTile, { HandIcon, sortParticipants, participantMediaState } from '@/components/events/ParticipantTile'
+import { useRef, useState } from 'react'
+import ParticipantTile, { HandIcon, MoreParticipantsTile, participantMediaState } from '@/components/events/ParticipantTile'
+import ParticipantList from '@/components/events/ParticipantList'
 import LiveRoomSheet, { LiveRoomSheetRow } from '@/components/events/LiveRoomSheet'
-import { LIVE_ROOM_COPY } from '@/lib/constants'
-
-function participantStateLabel(entry, { canPublish, isMicActive }) {
-  if (entry.isHost) return LIVE_ROOM_COPY.roleHost
-  if (entry.coHost) return LIVE_ROOM_COPY.roleCoHost
-  if (canPublish) return isMicActive ? LIVE_ROOM_COPY.stateMicOn : LIVE_ROOM_COPY.stateMicOff
-  if (entry.handRaised) return LIVE_ROOM_COPY.stateHandRaised
-  return LIVE_ROOM_COPY.stateListening
-}
+import { participantStateLabel, rowWindow } from '@/lib/participantRow'
+import { BROADCAST_ROW_COMPACT_MAX, LIVE_ROOM_COPY } from '@/lib/constants'
 
 /**
  * Fila de participantes de un stream (`broadcast`) en la sala compacta.
@@ -23,32 +17,45 @@ function participantStateLabel(entry, { canPublish, isMicActive }) {
  * - `overscroll-behavior-x: contain`: en Chrome para Android, seguir deslizando
  *   al final de un contenedor dispara la navegación hacia atrás.
  * - Tocar un cuadrado abre su hoja (nombre, estado y acciones del rol); nunca
- *   actúa directamente.
+ *   actúa directamente. Por eso esta fila, al revés que la de escritorio, no
+ *   congela su orden bajo el puntero: no hay acción que equivocar.
+ * - La fila se corta en BROADCAST_ROW_COMPACT_MAX cuadrados y cierra con el
+ *   recuadro «+N más», que abre la lista completa. El tope no está para que
+ *   quepan, sino para que deslizar tenga fin: con cientos de asistentes, el
+ *   scroll sin fin era el problema.
  *
- * Mismo orden, colores y estados que la rejilla de escritorio: el tile y la
- * función de orden son los mismos (ParticipantTile).
+ * Mismo orden, colores y estados que la fila de escritorio: el cuadrado, el
+ * orden (`participantRanks`) y la ventana (`rowWindow`) son los mismos.
  */
 export default function CompactParticipantRow({
-  presence, selfIdentity, remoteByUid, speakingUids, viewerIsHost,
+  entries, ranks, selfIdentity, remoteByUid, viewerIsHost,
   localMicEnabled, amSpeaker, showHand, handRaised, onToggleHand,
   onPromote, onDemote, onSelfMute,
 }) {
-  const [selectedIdentity, setSelectedIdentity] = useState(null)
+  // null | { kind: 'participant', identity } | { kind: 'list' }
+  const [sheet, setSheet] = useState(null)
 
   // Identities that were ever promoted (red styling after demotion) — same
-  // bookkeeping as the desktop grid
+  // bookkeeping as the desktop row
   const everSpeakerRef = useRef(new Set())
-  for (const p of presence) {
+  for (const p of entries) {
     if (p.speaker && !p.isHost) everSpeakerRef.current.add(p.identity)
   }
 
-  const entries = useMemo(
-    () => sortParticipants(viewerIsHost ? presence.filter((p) => !p.isHost) : presence, selfIdentity),
-    [presence, viewerIsHost, selfIdentity]
-  )
+  // Un hueco más que el tope: el del contador. Así, con exactamente 21
+  // asistentes se ven los 21 en lugar de 20 y un «+1 más».
+  const { tiles, more } = rowWindow({
+    entries,
+    ranks,
+    selfIdentity,
+    capacity: BROADCAST_ROW_COMPACT_MAX + 1,
+  })
 
-  const selected = selectedIdentity ? presence.find((p) => p.identity === selectedIdentity) || null : null
-  const closeSheet = () => setSelectedIdentity(null)
+  const selected = sheet?.kind === 'participant'
+    ? entries.find((p) => p.identity === sheet.identity) || null
+    : null
+  const listOpen = sheet?.kind === 'list'
+  const closeSheet = () => setSheet(null)
 
   let sheetBody = null
   if (selected) {
@@ -109,7 +116,7 @@ export default function CompactParticipantRow({
       )}
 
       <div className="scrollbar-hide flex h-full min-w-0 flex-1 items-center gap-x-2 overflow-x-auto overscroll-x-contain px-2 py-2">
-        {entries.map((p) => (
+        {tiles.map((p) => (
           <ParticipantTile
             key={p.identity}
             size="compact"
@@ -117,17 +124,46 @@ export default function CompactParticipantRow({
             isLocal={p.identity === selfIdentity}
             viewerIsHost={viewerIsHost}
             remoteByUid={remoteByUid}
-            speakingUids={speakingUids}
             localMicEnabled={localMicEnabled}
             amSpeaker={amSpeaker}
             wasPromoted={everSpeakerRef.current.has(p.identity)}
-            onSelect={(entry) => setSelectedIdentity(entry.identity)}
+            onSelect={(entry) => setSheet({ kind: 'participant', identity: entry.identity })}
           />
         ))}
+        {more > 0 && (
+          <MoreParticipantsTile
+            size="compact"
+            count={more}
+            total={entries.length}
+            expanded={listOpen}
+            onClick={() => setSheet({ kind: 'list' })}
+          />
+        )}
       </div>
 
       <LiveRoomSheet open={!!selected} title={selectedTitle} onClose={closeSheet}>
         {sheetBody}
+      </LiveRoomSheet>
+
+      <LiveRoomSheet
+        open={listOpen}
+        title={`${LIVE_ROOM_COPY.participants} (${entries.length})`}
+        onClose={closeSheet}
+      >
+        {listOpen && (
+          <ParticipantList
+            entries={entries}
+            ranks={ranks}
+            selfIdentity={selfIdentity}
+            remoteByUid={remoteByUid}
+            viewerIsHost={viewerIsHost}
+            localMicEnabled={localMicEnabled}
+            amSpeaker={amSpeaker}
+            onPromote={onPromote}
+            onDemote={onDemote}
+            onSelfMute={onSelfMute}
+          />
+        )}
       </LiveRoomSheet>
     </div>
   )

@@ -30,8 +30,9 @@ const DEFAULT_STAGE_LAYOUT = 'split';
 
 module.exports = function setupEventSocket(io) {
   // eventId → Map<identity, { identity, name, isHost, agoraUid, handRaised,
-  //                           speaker, chatBanned, attendeeId, email,
-  //                           ipAddress, socketIds:Set, msgTimestamps:[] }>
+  //                           handRaisedAt, speaker, chatBanned, attendeeId,
+  //                           email, ipAddress, socketIds:Set,
+  //                           msgTimestamps:[] }>
   const eventRooms = new Map();
 
   // eventId → { active, everyoneWrites } — whiteboard toggle state (optional
@@ -60,6 +61,11 @@ module.exports = function setupEventSocket(io) {
       isHost: entry.isHost,
       agoraUid: entry.agoraUid,
       handRaised: entry.handRaised,
+      // Instante (epoch ms del servidor) en que levantó la mano, null sin mano.
+      // Ordena las manos como una cola de turno en la fila de participantes
+      // (broadcast-participant-row). Sellarlo en el cliente no vale: quien entra
+      // tarde — o el host al recargar — marcaría todas con el mismo Date.now().
+      handRaisedAt: entry.handRaisedAt ?? null,
       speaker: entry.speaker,
       chatBanned: entry.chatBanned,
       screenSharing: !!entry.screenSharing,
@@ -153,6 +159,7 @@ module.exports = function setupEventSocket(io) {
           staff: false,
           agoraUid: 1,
           handRaised: false,
+          handRaisedAt: null,
           speaker: true,
           chatBanned: false,
           attendeeId: null,
@@ -197,6 +204,7 @@ module.exports = function setupEventSocket(io) {
         staff: Number(attendee.is_staff) === 1,
         agoraUid: attendee.agora_uid != null ? Number(attendee.agora_uid) : null,
         handRaised: false,
+        handRaisedAt: null,
         speaker: coHost || attendee.speaker_granted === 1,
         chatBanned: attendee.chat_banned === 1,
         attendeeId: attendee.id,
@@ -269,7 +277,9 @@ module.exports = function setupEventSocket(io) {
         let entry;
         if (existing) {
           // Same identity reconnecting (refresh, second tab): merge sockets,
-          // refresh the re-validated fields.
+          // refresh the re-validated fields. `handRaised`/`handRaisedAt` are
+          // deliberately NOT overwritten: the raised hand and its place in the
+          // queue survive a page reload.
           existing.socketIds.add(socket.id);
           existing.name = result.entry.name;
           existing.agoraUid = result.entry.agoraUid ?? existing.agoraUid;
@@ -347,7 +357,13 @@ module.exports = function setupEventSocket(io) {
       const entry = eventRooms.get(eventRoomId)?.get(identity);
       // The co-presenter already has the floor: no hand to raise
       if (!entry || entry.isHost || entry.coHost) return;
-      entry.handRaised = !!raised;
+      const next = !!raised;
+      // The instant is stamped ONLY on the false → true transition. A second
+      // `hand_raise {raised:true}` (double tap, tab reconnect) must not send
+      // whoever has been waiting five minutes to the back of the queue.
+      if (next && !entry.handRaised) entry.handRaisedAt = Date.now();
+      if (!next) entry.handRaisedAt = null;
+      entry.handRaised = next;
       io.to(roomName(eventRoomId)).emit('presence_updated', publicPresence(entry));
     });
 
@@ -442,15 +458,16 @@ module.exports = function setupEventSocket(io) {
     },
 
     /**
-     * Notify a promotion: marks speaker, clears the raised hand (parity with
-     * LiveKit clearing the attribute) and signals the target to renew its
-     * token and start publishing.
+     * Notify a promotion: marks speaker, clears the raised hand and its
+     * instant (parity with LiveKit clearing the attribute) and signals the
+     * target to renew its token and start publishing.
      */
     notifyPromoted(eventId, identity) {
       const entry = eventRooms.get(eventId)?.get(identity);
       if (entry) {
         entry.speaker = true;
         entry.handRaised = false;
+        entry.handRaisedAt = null;
         io.to(roomName(eventId)).emit('presence_updated', publicPresence(entry));
       }
       emitToIdentity(eventId, identity, 'promoted', { identity });
