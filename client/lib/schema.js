@@ -12,6 +12,7 @@
 // Por eso `compact()` es la última operación de todos los constructores.
 
 import { SITE, SITE_URL } from './siteInfo'
+import { DEFAULT_OG_IMAGE, DEFAULT_OG_IMAGE_SQUARE } from './metadata'
 
 // Elimina claves cuyo valor es null, undefined, cadena vacía (o sólo espacios),
 // array vacío u objeto vacío. Recursivo, porque los nodos anidados
@@ -111,7 +112,9 @@ export function buildOrganization() {
     alternateName: SITE.legalName,
     url: SITE.url,
     logo: absoluteUrl('/brand/140d.png'),
-    image: absoluteUrl('/brand/og-image.jpg'),
+    // Las dos proporciones de la tarjeta del sitio, desde `lib/metadata.js`,
+    // para que un cambio de nombre del fichero no deje aquí la versión vieja.
+    image: [DEFAULT_OG_IMAGE.url, DEFAULT_OG_IMAGE_SQUARE.url],
     description: SITE.oneLiner,
     sameAs: SITE.social,
     foundingDate: SITE.foundingDate,

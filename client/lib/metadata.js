@@ -44,11 +44,35 @@ export const OG_LOCALE = 'es_ES'
 // La tarjeta genérica del sitio. Es el `og:image` de toda ruta que no tenga una
 // imagen propia — nunca se deja vacío, porque una publicación sin imagen pierde
 // una fracción grande de las visitas frente a una con ella.
+//
+// El logotipo NO puede llenar el ancho de la tarjeta. Muchos consumidores no
+// pintan los 1200×630 sino un recorte CENTRADO: cuadrado en la miniatura de
+// ChatGPT Ads, en las previas pequeñas de WhatsApp, Telegram y Slack y en la
+// tarjeta `summary` de X; 4:5 en los anuncios verticales de Meta. La
+// versión anterior llevaba «140D» de x=105 a x=1135 y un recorte 1:1 (x=285…915)
+// dejaba sólo «4Ø». Aquí las letras miden 480 px, centradas: caben en el
+// cuadrado central con 75 px de margen y en el 4:5 con 12.
+//
+// **Cambiar esta imagen es cambiar el nombre del fichero, nunca sobrescribirlo.**
+// Facebook, LinkedIn, Slack y Telegram guardan la vista previa por URL, así que
+// un fichero reemplazado con el mismo nombre seguiría saliendo recortado durante
+// semanas. Generación, verificación y refresco de cachés: docs/og-image.md.
 export const DEFAULT_OG_IMAGE = {
-  url: `${SITE_URL}/brand/og-image.jpg`,
+  url: `${SITE_URL}/brand/og-image-v2.jpg`,
   width: 1200,
   height: 630,
+  type: 'image/jpeg',
   alt: '140d - Galería de Arte Online',
+}
+
+// Misma composición en 1:1. No va en `og:image`: con dos, cada consumidor elige
+// a su manera cuál pinta. Se publica en el JSON-LD de la organización, junto a la
+// apaisada, y es el fichero que se sube a mano donde un gestor de anuncios pide
+// una imagen cuadrada.
+export const DEFAULT_OG_IMAGE_SQUARE = {
+  url: `${SITE_URL}/brand/og-image-square-v2.jpg`,
+  width: 1200,
+  height: 1200,
 }
 
 // Los originales del CDN pesan demasiado para compartirse: la obra medida en
