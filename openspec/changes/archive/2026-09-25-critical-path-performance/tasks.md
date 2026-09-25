@@ -60,8 +60,10 @@ Procedimiento, para repetirlo igual al final: `npx lighthouse@13 <url> --only-ca
 - [x] 6.7 **Puerta:** compilación de producción; `rrweb` ausente de los chunks que referencia el HTML de `/galeria` y presente en uno asíncrono pedido tras `load`. Si no, probar en orden `import('@sentry/browser')` y `Sentry.lazyLoadIntegration('replayIntegration')` (este último añade `https://browser.sentry-cdn.com` a `script-src` en `client/next.config.js`). Anotar la opción elegida en el comentario del fichero.
   - Hecho: `import("@sentry/nextjs")` sacaba rrweb del bundle inicial pero el chunk diferido llevaba el SDK entero (105 KB gzip). Con una reexportación con nombre (`lib/sentryReplay.js`) el chunk es sólo Replay: 39 KB gzip, pedido a los 244 ms con `load` a los 194 ms.
 - [x] 6.8 Comprobar que el código de Stripe Elements, del paso de envío y DOMPurify no aparece en los chunks iniciales de `/galeria`; atribuir lo que quede con `next experimental-analyze`.
-- [ ] 6.9 Recorrido de compra en preproducción: añadir una obra, abrir la cesta desde el icono (en frío y tras precarga), dirección, envío, pago de prueba con Stripe; `/pago-cancelado` → «volver a la cesta» abre la cesta; abrir una biografía desde la rejilla y desde una ficha; abrir la newsletter desde el banner y desde el pie.
-- [ ] 6.10 Provocar un error en preproducción tras la carga (`/api/sentry-example-api` o equivalente de cliente) y comprobar que llega a Sentry; con `SENTRY_ENABLE_DEV`/staging, que una sesión muestreada incluye grabación.
+- [x] 6.9 Recorrido de compra en preproducción: añadir una obra, abrir la cesta desde el icono (en frío y tras precarga), dirección, envío, pago de prueba con Stripe; `/pago-cancelado` → «volver a la cesta» abre la cesta; abrir una biografía desde la rejilla y desde una ficha; abrir la newsletter desde el banner y desde el pie.
+  - Hecho por el usuario en preproducción (25/09/2026): recorrido de compra y prueba general correctos.
+- [x] 6.10 Provocar un error en preproducción tras la carga (`/api/sentry-example-api` o equivalente de cliente) y comprobar que llega a Sentry; con `SENTRY_ENABLE_DEV`/staging, que una sesión muestreada incluye grabación.
+  - Hecho por el usuario en preproducción: error de cliente (lanzado con `setTimeout` desde la consola) y `/api/sentry-example-api` llegan a Sentry. Ojo: los eventos de preproducción figuran con `environment: production` (el SDK toma `NODE_ENV`).
 
 ## 7. `preconnect`, prefetch y vídeo de portada
 
@@ -91,5 +93,7 @@ Procedimiento, para repetirlo igual al final: `npx lighthouse@13 <url> --only-ca
   - Lectura: con red lenta real, lo que parte el primer pintado por la mitad es el CSS en línea (C no mejora sobre A); el recorte de JS parte el TBT por la mitad y baja el LCP simulado. El CSS en línea cuesta **+39 KB gzip** de HTML —el triple de lo estimado en el diseño, porque la segunda copia va escapada como cadena JSON en el payload RSC— y aun así gana en los dos modos. Se mantiene.
   - El recorte de JS inicial es de 55–66 KB gzip por ruta (~17 %), menos que los 90–110 estimados. Los 39 KB de Replay siguen descargándose, pero tras `load`.
 - [x] 8.4 `CLAUDE.md`: sección nueva con las reglas de este cambio (CSS en línea y su puerta; patrón «bajo demanda + precarga por intención»; Replay diferida; listados sembrados sin recarga; `Content-Type` solo con cuerpo; `preconnect` por ruta; cargador de Plausible). Actualizar las frases que dejan de ser ciertas en «LCP de los listados» y en «Plausible Analytics» («Two `<Script>` tags»).
-- [ ] 8.5 Preproducción: recorrido de 2.3, 5.6, 6.9 y 7.4; comprobar `docker stats` del contenedor `client` tras recorrer el catálogo (caché ISR con el CSS en línea).
-- [ ] 8.6 Producción con `./deploy/deploy.sh` (purga de la caché de páginas incluida). PSI tres veces sobre `/galeria`, `/` y `/galeria/p/[slug]`; anotar la mediana junto a la línea base.
+- [x] 8.5 Preproducción: recorrido de 2.3, 5.6, 6.9 y 7.4; comprobar `docker stats` del contenedor `client` tras recorrer el catálogo (caché ISR con el CSS en línea).
+  - Hecho por el usuario en preproducción.
+- [x] 8.6 Producción con `./deploy/deploy.sh` (purga de la caché de páginas incluida). PSI tres veces sobre `/galeria`, `/` y `/galeria/p/[slug]`; anotar la mediana junto a la línea base.
+  - Marcada como hecha a petición del usuario; la mediana de PSI en producción no quedó registrada en este fichero.
