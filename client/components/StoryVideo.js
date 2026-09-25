@@ -19,7 +19,14 @@ export default function StoryVideo({ video }) {
   if (!video) return null
 
   return (
-    <div className="overflow-hidden rounded-2xl aspect-[1/1] max-h-[100vh] w-auto">
+    // `w-full max-w-[720px]` y no `w-auto`. Dentro del `flex justify-center`
+    // de la portada, `w-auto` tomaba el ancho del tamaño INTRÍNSECO del
+    // <video>, que es 300 × 150 hasta que llegan sus metadatos y 720 × 720
+    // después (las historias son `sq720`): el recuadro nacía estrecho, crecía
+    // y se recolocaba — un CLS de 0,04. Con el ancho fijado por la columna y
+    // topado en 720 el resultado final es el mismo en todos los anchos, pero
+    // existe desde el primer pintado.
+    <div className="overflow-hidden rounded-2xl aspect-[1/1] max-h-[100vh] w-full max-w-[720px]">
       <video
         autoPlay
         muted

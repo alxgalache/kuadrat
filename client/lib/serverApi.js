@@ -171,25 +171,32 @@ export async function fetchAuthorOtherProducts(authorSlug, limit = 100) {
  * distintas. Por eso el componente de servidor la sortea, la usa aquí Y se la
  * pasa al cliente. Ver `lib/catalogOrderSeed.js`.
  *
- * Devuelve `[]` ante cualquier fallo, como el resto del módulo, y eso es
- * deliberado: estas dos rutas se prerrenderizan en `docker build`, así que un
- * corte de la API durante la compilación tiene que degradar a «rejilla sin
- * sembrar» —el comportamiento anterior, que el cliente resuelve al montar— y
- * nunca romper el despliegue. Mismo criterio que el `generateStaticParams`
+ * Devuelve `{ products, hasMore }`. `hasMore` viaja con los productos porque
+ * es lo que permite al cliente NO repetir esta misma petición al montar: sin
+ * él, la única forma de saber si había página 2 era volver a pedir la 1, y eso
+ * era una petición a la API —con su preflight— en cada visita, para obtener lo
+ * que ya estaba en el HTML. Ver `useGalleryProducts`.
+ *
+ * Ante cualquier fallo devuelve una siembra vacía, como el resto del módulo, y
+ * eso es deliberado: estas dos rutas se prerrenderizan en `docker build`, así
+ * que un corte de la API durante la compilación tiene que degradar a «rejilla
+ * sin sembrar» —el comportamiento anterior, que el cliente resuelve al montar—
+ * y nunca romper el despliegue. Mismo criterio que el `generateStaticParams`
  * vacío de las fichas.
  */
 async function fetchCatalogPage(resource, seed, limit) {
+  const empty = { products: [], hasMore: false }
   try {
     const params = new URLSearchParams({ page: '1', limit: String(limit) })
     if (seed !== null && seed !== undefined) params.append('seed', String(seed))
     const res = await fetch(`${DATA_API_URL}/${resource}?${params.toString()}`, {
       next: { revalidate: 300 },
     })
-    if (!res.ok) return []
+    if (!res.ok) return empty
     const data = await res.json()
-    return data.products || []
+    return { products: data.products || [], hasMore: Boolean(data.hasMore) }
   } catch {
-    return []
+    return empty
   }
 }
 

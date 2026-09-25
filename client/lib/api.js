@@ -125,8 +125,21 @@ async function apiRequest(endpoint, options = {}) {
   // Detect FormData to avoid setting Content-Type so browser sets boundary
   const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
 
+  // Sin `method`, fetch hace un GET.
+  const method = (fetchOptions.method || 'GET').toUpperCase();
+
+  // `Content-Type` describe un cuerpo, y un GET o un HEAD no lo llevan. No es
+  // una cuestión de estilo: `application/json` no es uno de los tres valores
+  // que admite una petición CORS simple, así que declararlo convertía CADA
+  // lectura anónima a la API (catálogo, autores, subastas, sorteos, eventos)
+  // en dos peticiones —un OPTIONS de preflight y la real— con un viaje de ida
+  // y vuelta de más antes de poder pedir nada. En el resto de métodos se
+  // conserva tal cual: o llevan cuerpo JSON, o llevan `Authorization`, que
+  // exige preflight igualmente.
+  const sendsContentType = !isFormData && method !== 'GET' && method !== 'HEAD';
+
   const headers = {
-    ...(!isFormData && { 'Content-Type': 'application/json' }),
+    ...(sendsContentType && { 'Content-Type': 'application/json' }),
     ...(token && { Authorization: `Bearer ${token}` }),
     ...fetchOptions.headers,
   };
@@ -140,7 +153,6 @@ async function apiRequest(endpoint, options = {}) {
     const url = `${API_URL}${endpoint}`;
 
     // Deduplicate only GET requests with identical URL + method
-    const method = (config.method || 'GET').toUpperCase();
     const dedupeKey = method === 'GET' ? `${method}:${url}` : null;
 
     if (dedupeKey && inflightRequests.has(dedupeKey)) {

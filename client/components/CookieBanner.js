@@ -32,10 +32,15 @@ export default function CookieBanner() {
           (sesión, carrito y pagos) y no se pueden desactivar. Las de publicidad nos permiten
           medir los resultados de nuestras campañas. Puedes aceptarlas
           todas o quedarte solo con las necesarias. Más información en nuestra{' '}
+          {/* Sin prefetch: abre una pestaña nueva, que es una carga completa y
+              no aprovecha el router de esta. Con el banner visible en cada
+              primera visita, el prefetch eran seis peticiones RSC que ninguna
+              navegación iba a usar. */}
           <Link
             href="/legal/politica-de-cookies"
             target="_blank"
             rel="noopener noreferrer"
+            prefetch={false}
             className="font-semibold text-black hover:text-gray-800"
           >
             Política de Cookies

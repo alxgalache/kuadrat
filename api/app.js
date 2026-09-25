@@ -97,6 +97,14 @@ app.use(helmet({
 app.use(cors({
   origin: config.clientUrl,
   credentials: true,
+  // Access-Control-Max-Age. Sin él el navegador guarda cada preflight 5 s y
+  // toda petición autenticada (lleva `Authorization`, que siempre exige
+  // preflight) paga un OPTIONS y un viaje de ida y vuelta extra. 7200 es el
+  // tope que aplica Chrome; Firefox admite hasta 86400. La caché es POR URL,
+  // así que ayuda a las peticiones repetidas, no a la primera de cada una.
+  // Solo cachea el permiso de una lista de orígenes que no cambia en caliente:
+  // revocar uno ya exige desplegar.
+  maxAge: 7200,
 }));
 
 // Trust proxy - required when behind a reverse proxy (nginx, Docker, etc.)

@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import {
   fetchAuthor,
+  fetchAuthors,
   fetchAuthorOtherProducts,
   getAuthorImageUrl,
   getAuthorSocialImage,
@@ -8,6 +9,7 @@ import {
 } from '@/lib/serverApi'
 import { buildOpenGraph, buildTwitter, socialImageUrl } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
+import ApiPreconnect from '@/components/ApiPreconnect'
 import { buildPerson, buildItemList, buildBreadcrumb, stripHtml } from '@/lib/schema'
 import GalleryMasAuthorContent from './GalleryMasAuthorContent'
 
@@ -82,9 +84,12 @@ export async function generateMetadata({ params }) {
 export default async function GalleryMasAuthorPage({ params }) {
   const { authorSlug } = await params
 
-  const [author, products] = await Promise.all([
+  const [author, products, authors] = await Promise.all([
     fetchAuthor(authorSlug),
     fetchAuthorOtherProducts(authorSlug),
+    // La lista del filtro de autores, sembrada para que el cliente no la
+    // pida al montar (ver `useGalleryAuthors`).
+    fetchAuthors('other'),
   ])
 
   if (!author) notFound()
@@ -124,6 +129,10 @@ export default async function GalleryMasAuthorPage({ params }) {
 
   return (
     <>
+      {/* La rejilla de la ficha de artista vuelve a pedir su primera página
+          al montar (ver `useGalleryProducts`): es una de las rutas que
+          consultan la API durante la carga. */}
+      <ApiPreconnect />
       <JsonLd data={personSchema} />
       <JsonLd data={productsSchema} />
       <JsonLd data={breadcrumbSchema} />
@@ -145,7 +154,7 @@ export default async function GalleryMasAuthorPage({ params }) {
           nada nuevo a la API. Al sembrarlas, sus enlaces `<a href>` pasan a
           existir en el HTML servido, que es lo que permite a un rastreador
           sin JavaScript llegar desde el artista hasta cada obra. */}
-      <GalleryMasAuthorContent params={params} initialProducts={products} />
+      <GalleryMasAuthorContent params={params} initialProducts={products} initialAuthors={authors} />
     </>
   )
 }

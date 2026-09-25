@@ -18,12 +18,9 @@ import {Elements, useStripe, useElements} from '@stripe/react-stripe-js'
 import StripeCardPayment from './StripeCardPayment'
 import StripeExpressCheckout from './StripeExpressCheckout'
 import ShippingStep from './shipping/ShippingStep'
-import {SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, SHIPPING_VERIFICATION_ERRORS} from '@/lib/constants'
+import {SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, SHIPPING_VERIFICATION_ERRORS, REVOLUT_ORDER_STORAGE_KEY} from '@/lib/constants'
 import {validateSpanishTaxId, normalizeSpanishTaxId} from '@/lib/spanishTaxId'
 import {trackInitiateCheckout, cartToContents} from '@/lib/metaPixel'
-
-// Key used to persist a pending Revolut order for a given cart in sessionStorage
-const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache'
 
 // Step constants for clarity
 const STEP_CART = 1

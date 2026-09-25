@@ -8,9 +8,17 @@ import { Bars3Icon, XMarkIcon, ShoppingCartIcon, UserCircleIcon, ArrowUturnLeftI
 import { useAuth } from '@/contexts/AuthContext'
 import { useCart } from '@/contexts/CartContext'
 import BrandLogo from '@/components/BrandLogo'
-import ShoppingCartDrawer from '@/components/ShoppingCartDrawer'
-import { SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, IMPERSONATION_COPY } from '@/lib/constants'
+import { useOnDemandComponent } from '@/hooks/useOnDemandComponent'
+import { afterLoadIdle } from '@/lib/idle'
+import { SENDCLOUD_ENABLED, SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, IMPERSONATION_COPY, REVOLUT_ORDER_STORAGE_KEY } from '@/lib/constants'
 import { canPublishProducts, canManageShipments, canSeeOrders } from '@/lib/sellerCapabilities'
+
+// La cesta se descarga bajo demanda. Con Stripe Elements, el autocompletado de
+// direcciones, el paso de envío y lo que queda de Revolut era el bloque más
+// pesado del JavaScript inicial, y viajaba en TODAS las páginas porque esta
+// navbar vive en el layout raíz y la importaba de forma estática, aunque la
+// inmensa mayoría de las visitas no la abre nunca.
+const loadShoppingCartDrawer = () => import('@/components/ShoppingCartDrawer')
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -21,6 +29,12 @@ export default function Navbar() {
   const { getTotalItems, animationTrigger } = useCart()
   const router = useRouter()
   const pathname = usePathname()
+  const {
+    Component: ShoppingCartDrawer,
+    open: cartDrawerOpen,
+    preload: preloadCartDrawer,
+    mount: mountCartDrawer,
+  } = useOnDemandComponent(loadShoppingCartDrawer, cartOpen, () => setCartOpen(false))
 
   const isNavActive = (href) => {
     return pathname.startsWith(href)
@@ -99,6 +113,31 @@ export default function Navbar() {
       return () => clearTimeout(timer)
     }
   }, [animationTrigger])
+
+  // Quien ya tiene artículos en la cesta es quien la va a abrir: se descarga en
+  // reposo tras la carga, para que ese primer clic no espere a nada. Tras
+  // `load` y no antes, o competiría con las imágenes que aún están llegando.
+  const hasCartItems = totalCartItems > 0
+  useEffect(() => {
+    if (!hasCartItems) return
+    return afterLoadIdle(preloadCartDrawer)
+  }, [hasCartItems, preloadCartDrawer])
+
+  // La cesta tiene un efecto de MONTAJE que restaura una orden Revolut
+  // pendiente de sessionStorage, o la cancela si la cesta cambió desde que se
+  // creó. Cargada sólo al abrirla, esa cancelación esperaría a que alguien la
+  // abriera. Si hay una orden pendiente, se monta cerrada en reposo, como
+  // antes se montaba al cargar la página.
+  useEffect(() => {
+    let pendingRevolutOrder = false
+    try {
+      pendingRevolutOrder = Boolean(window.sessionStorage.getItem(REVOLUT_ORDER_STORAGE_KEY))
+    } catch {
+      // sessionStorage bloqueado: tampoco la cesta podría leer la orden.
+    }
+    if (!pendingRevolutOrder) return
+    return afterLoadIdle(mountCartDrawer)
+  }, [mountCartDrawer])
 
   // Listen for custom event to open cart drawer from other pages
   useEffect(() => {
@@ -326,6 +365,12 @@ export default function Navbar() {
           <button
             type="button"
             onClick={() => setCartOpen(true)}
+            // Precarga por intención: el chunk de la cesta empieza a bajar al
+            // acercar el puntero, al enfocar el botón o al tocarlo —el
+            // `touchstart` llega antes que el `click`—.
+            onPointerEnter={preloadCartDrawer}
+            onFocus={preloadCartDrawer}
+            onTouchStart={preloadCartDrawer}
             className="relative -m-2.5 inline-flex items-center justify-center rounded-md p-2.5 text-gray-900 hover:text-gray-600"
           >
             <span className="sr-only">Abrir carrito</span>
@@ -595,8 +640,10 @@ export default function Navbar() {
         </DialogPanel>
       </Dialog>
 
-      {/* Shopping Cart Drawer */}
-      <ShoppingCartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
+      {/* Shopping Cart Drawer — sólo existe desde la primera vez que hace falta */}
+      {ShoppingCartDrawer && (
+        <ShoppingCartDrawer open={cartDrawerOpen} onClose={() => setCartOpen(false)} />
+      )}
     </header>
   )
 }

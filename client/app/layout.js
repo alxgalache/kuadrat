@@ -214,9 +214,23 @@ export default function RootLayout({ children }) {
                 __html: `window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()`,
               }}
             />
+            {/* Cargador EN LÍNEA, no `<Script src>`. En App Router,
+                `afterInteractive` con `src` hace un `ReactDOM.preload` del
+                script: un <link rel="preload"> de prioridad ALTA a otro origen,
+                con su DNS, TCP y TLS, metido en el <head> y compitiendo con la
+                hoja de estilos y las imágenes del LCP antes del primer pintado
+                —para un script que de todos modos no se ejecuta hasta hidratar—.
+                Next no precarga los scripts en línea, así que la descarga (6 KB)
+                empieza al hidratar, que es cuando el tracker ya se ejecutaba:
+                las páginas vistas registradas no cambian. No es `lazyOnload`
+                a propósito: ese espera al evento `load` (todas las imágenes) y
+                a reposo, y en móvil lento dejaría de contar las salidas rápidas. */}
             <Script
+              id="plausible-loader"
               strategy="afterInteractive"
-              src="https://analytics.140d.art/js/pa-JOgfdmGauUrT5eiOHnIDj.js"
+              dangerouslySetInnerHTML={{
+                __html: `(function(){var s=document.createElement('script');s.async=true;s.src='https://analytics.140d.art/js/pa-JOgfdmGauUrT5eiOHnIDj.js';document.head.appendChild(s)})()`,
+              }}
             />
           </>
         )}

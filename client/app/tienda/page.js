@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { fetchOthersCatalog } from '@/lib/serverApi'
+import { fetchOthersCatalog, fetchAuthors } from '@/lib/serverApi'
 import { drawOrderSeed } from '@/lib/catalogOrderSeed'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import LegacyAuthorQueryRedirect from '@/components/LegacyAuthorQueryRedirect'
@@ -11,11 +11,11 @@ import GalleryMasContent from './GalleryMasContent'
 // descargarse hasta los 554 ms, porque dependía de hidratar primero y de que
 // respondiera `/api/others` después (202 → 550 ms), con el HTML servido a 84 ms.
 //
-// `fetchOthersCatalog` devuelve `[]` ante cualquier fallo: si la API no responde
-// durante `docker build` esta ruta se hornea sin sembrar y el cliente la
-// resuelve al montar, exactamente como antes. Un corte de red no puede romper
-// un despliegue — mismo criterio que el `generateStaticParams` vacío de las
-// fichas.
+// `fetchOthersCatalog` y `fetchAuthors` devuelven una siembra vacía ante cualquier
+// fallo: si la API no responde durante `docker build` esta ruta se hornea
+// sin sembrar y el cliente la resuelve al montar, exactamente como antes. Un
+// corte de red no puede romper un despliegue — mismo criterio que el
+// `generateStaticParams` vacío de las fichas.
 export const revalidate = 300
 
 export default async function GalleryMasPage() {
@@ -32,7 +32,14 @@ export default async function GalleryMasPage() {
   // azar por visita, pero el visitante vería cómo se rebaraja el catálogo justo
   // después de pintarse y las cuatro imágenes precargadas se tirarían.
   const seed = drawOrderSeed()
-  const initialProducts = await fetchOthersCatalog(seed, DEFAULT_PAGE_SIZE)
+  // Catálogo y autores en paralelo. Los dos viajan al cliente para que éste
+  // no tenga que pedir nada al montar: ni la página 1, que ya está aquí, ni
+  // la lista del filtro de autores, cuya llegada tardía empujaba la rejilla
+  // (el CLS de esta página). Ver `useGalleryProducts` y `useGalleryAuthors`.
+  const [catalog, authors] = await Promise.all([
+    fetchOthersCatalog(seed, DEFAULT_PAGE_SIZE),
+    fetchAuthors('other'),
+  ])
 
   return (
     <>
@@ -45,7 +52,10 @@ export default async function GalleryMasPage() {
       <Suspense fallback={null}>
         <LegacyAuthorQueryRedirect base="/tienda" />
       </Suspense>
-      <GalleryMasContent initialProducts={initialProducts} initialSeed={seed} />
+      <GalleryMasContent
+        initialCatalog={{ products: catalog.products, seed, hasMore: catalog.hasMore }}
+        initialAuthors={authors}
+      />
     </>
   )
 }

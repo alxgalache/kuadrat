@@ -27,6 +27,13 @@ export const CART_EXPIRY_DAYS = 10;
 export const CART_STORAGE_KEY = 'kuadrat_cart';
 export const CART_TIMESTAMP_KEY = 'kuadrat_cart_timestamp';
 
+// Orden Revolut pendiente de la cesta, en sessionStorage. La leen DOS sitios:
+// la cesta, que al montar la restaura o la cancela si la cesta cambió, y la
+// navbar, que monta la cesta en reposo cuando existe —la cesta se descarga
+// bajo demanda, y sin ese montaje la cancelación esperaría a que alguien la
+// abriera—. Un literal en cada uno podría divergir sin que nada lo señalara.
+export const REVOLUT_ORDER_STORAGE_KEY = 'kuadrat_revolut_order_cache';
+
 // Pagination
 export const DEFAULT_PAGE_SIZE = 12;
 export const ADMIN_PAGE_SIZE = 20;

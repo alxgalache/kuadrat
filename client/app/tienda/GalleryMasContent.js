@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { othersAPI, getOthersImageUrl } from '@/lib/api'
-import AuthorModal from '@/components/AuthorModal'
+import AuthorModal from '@/components/LazyAuthorModal'
 import AuthorSidebar from '@/components/AuthorSidebar'
 import AuthorMobileFilter from '@/components/AuthorMobileFilter'
 import ProductGrid from '@/components/ProductGrid'
@@ -12,7 +12,7 @@ import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
 import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
 
-export default function GalleryMasContent({ initialProducts = null, initialSeed = null }) {
+export default function GalleryMasContent({ initialCatalog = null, initialAuthors = null }) {
   const router = useRouter()
   // Esta ruta NO filtra: el filtro por artista vive en su propia URL
   // (`/tienda/autor/[slug]`) y tiene su propio componente. Aquí era
@@ -30,8 +30,8 @@ export default function GalleryMasContent({ initialProducts = null, initialSeed 
   // Se invoca ANTES que useGalleryProducts: la instantánea tiene que estar
   // disponible en el efecto de montaje del listado.
   const restoration = useGridScrollRestoration()
-  const { authors } = useGalleryAuthors('other', selectedAuthorSlug)
-  const { products, loading, error, page, isFading, loadMoreProps } = useGalleryProducts(othersAPI, selectedAuthorSlug, restoration, initialProducts, initialSeed)
+  const { authors } = useGalleryAuthors('other', selectedAuthorSlug, initialAuthors)
+  const { products, loading, error, page, isFading, loadMoreProps } = useGalleryProducts(othersAPI, selectedAuthorSlug, restoration, initialCatalog)
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)

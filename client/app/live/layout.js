@@ -1,4 +1,5 @@
 import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
+import ApiPreconnect from '@/components/ApiPreconnect'
 
 const OG_DESCRIPTION =
   'Asiste a eventos de arte en directo: masterclasses, charlas, entrevistas y más. ' +
@@ -22,5 +23,11 @@ export const metadata = {
 }
 
 export default function EspaciosLayout({ children }) {
-  return children
+  return (
+    <>
+      {/* Estas rutas consultan la API durante la carga. */}
+      <ApiPreconnect />
+      {children}
+    </>
+  )
 }

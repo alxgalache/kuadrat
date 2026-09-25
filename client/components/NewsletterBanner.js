@@ -2,8 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { XMarkIcon } from '@heroicons/react/20/solid'
-import NewsletterSubscribeModal from '@/components/NewsletterSubscribeModal'
+import { useOnDemandComponent } from '@/hooks/useOnDemandComponent'
 import { NEWSLETTER_ENABLED, NEWSLETTER_COPY, NEWSLETTER_BANNER_DISMISSED_KEY } from '@/lib/constants'
+
+// El formulario de suscripción se descarga la primera vez que alguien lo abre:
+// este banner vive en el layout raíz, así que importarlo de forma estática lo
+// metía en el JavaScript inicial de todas las páginas.
+const loadNewsletterSubscribeModal = () => import('@/components/NewsletterSubscribeModal')
 
 // Owns the newsletter subscribe modal globally plus the first-visit bottom
 // banner. The footer icon opens the modal by dispatching `open-newsletter-modal`
@@ -11,6 +16,11 @@ import { NEWSLETTER_ENABLED, NEWSLETTER_COPY, NEWSLETTER_BANNER_DISMISSED_KEY } 
 export default function NewsletterBanner() {
   const [modalOpen, setModalOpen] = useState(false)
   const [bannerVisible, setBannerVisible] = useState(false)
+  const { Component: NewsletterSubscribeModal, open: modalShown } = useOnDemandComponent(
+    loadNewsletterSubscribeModal,
+    modalOpen,
+    () => setModalOpen(false),
+  )
 
   // First visit: show the banner unless it was dismissed before.
   useEffect(() => {
@@ -78,7 +88,9 @@ export default function NewsletterBanner() {
         </div>
       )}
 
-      <NewsletterSubscribeModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      {NewsletterSubscribeModal && (
+        <NewsletterSubscribeModal open={modalShown} onClose={() => setModalOpen(false)} />
+      )}
     </>
   )
 }

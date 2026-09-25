@@ -5,6 +5,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { SENTRY_ENABLED, SENTRY_TRACES_SAMPLE_RATE } from "./lib/sentryEnv";
 import { isAgoraInterruptedPlayback } from "./lib/sentryNoise";
+import { afterLoadIdle } from "./lib/idle";
 
 Sentry.init({
   dsn: "https://053a88f0de66024cc2190230b04d7686@o4510473239330816.ingest.de.sentry.io/4510562852798544",
@@ -14,8 +15,10 @@ Sentry.init({
   // way in every environment). See client/lib/sentryEnv.js.
   enabled: SENTRY_ENABLED,
 
-  // Add optional integrations for additional features
-  integrations: [Sentry.replayIntegration()],
+  // Session Replay NO va aquí: se registra tras la carga, al final de este
+  // fichero. Los dos ratios de abajo sí, porque la integración los lee al
+  // registrarse.
+  integrations: [],
 
   // Define how likely traces are sampled. Override with
   // NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE; defaults to 0.1.
@@ -87,6 +90,33 @@ Sentry.init({
     if (isAgoraInterruptedPlayback(event, hint)) return null;
     return event;
   },
+});
+
+// --- Session Replay, fuera de la ruta crítica ---
+//
+// rrweb, el grabador de Replay, eran ~35–40 KB gzip del chunk principal de
+// TODAS las páginas, descargados y evaluados antes del primer pintado para
+// grabar sesiones que se muestrean al 10 %. Además traía uno de los avisos de
+// «JavaScript antiguo» de PageSpeed (su parche de `Array.from`). Se registra
+// tras el evento `load` y en reposo, con `addIntegration`.
+//
+// Lo que se pierde, y se acepta: un error ocurrido antes de ese momento llega a
+// Sentry igual que siempre, pero sin grabación; y una sesión muestreada empieza
+// a grabar después de cargar. La captura de errores, el tracing y
+// `onRouterTransitionStart` siguen activos desde el primer instante.
+//
+// A través de `lib/sentryReplay.js` y no con `import("@sentry/nextjs")`: el
+// import del paquete entero descargaba el SDK completo otra vez (105 KB gzip)
+// para usar una sola función. Comprobado en la compilación de producción: rrweb
+// no aparece en ningún chunk que referencie el HTML.
+afterLoadIdle(() => {
+  import("./lib/sentryReplay")
+    .then(({ replayIntegration }) => {
+      Sentry.addIntegration(replayIntegration());
+    })
+    .catch(() => {
+      // Sin Replay la aplicación funciona igual; no hay nada que avisar.
+    });
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

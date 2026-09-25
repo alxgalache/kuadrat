@@ -35,31 +35,48 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
  *     recolocaría el scroll sobre una rejilla que ya no es la misma.
  *   · Con `authorSlug` no se envía ninguna: un solo artista no se entrelaza, y
  *     el filtro se comporta exactamente igual que antes.
+ *
+ * `initialCatalog` es la siembra del componente de servidor: `{ products,
+ * seed, hasMore }`. Los tres van juntos porque sólo significan algo juntos: la
+ * semilla es la que ordenó esos productos, y `hasMore` dice si hay página 2
+ * bajo esa misma semilla.
  */
 export function useGalleryProducts(
   productAPI,
   authorSlug = null,
   restoration = null,
-  initialProducts = null,
-  initialSeed = null,
+  initialCatalog = null,
 ) {
-  // `initialProducts` lo resuelve el componente de servidor. Sirve para UNA
-  // cosa concreta y medible: que los enlaces `<a href>` a cada obra existan en
-  // el HTML servido.
+  const initialProducts = initialCatalog?.products ?? null
+  const initialSeed = initialCatalog?.seed ?? null
+  const initialHasMore = initialCatalog?.hasMore ?? null
+
+  // Los productos sembrados sirven, primero, para que los enlaces `<a href>` a
+  // cada obra existan en el HTML servido. Antes de sembrar, NINGUNA página del
+  // sitio servía un solo enlace a una ficha de obra sin JavaScript —comprobado
+  // en producción sobre /, /galeria, /galeria/artistas, /tienda y las fichas de
+  // artista: cero en todas—: un rastreador que no ejecuta JavaScript podía
+  // recorrer el sitio entero sin llegar jamás a una obra.
   //
-  // Antes de esto, NINGUNA página del sitio servía un solo enlace a una ficha
-  // de obra sin JavaScript —comprobado en producción sobre /, /galeria,
-  // /galeria/artistas, /tienda y las fichas de artista: cero en todas—. Las
-  // obras estaban en el sitemap, pero huérfanas de enlaces internos: un
-  // rastreador que no ejecuta JavaScript podía recorrer el sitio entero sin
-  // llegar jamás a una obra.
-  //
-  // Sembrar aquí NO cambia el comportamiento tras montar: el efecto de montaje
-  // sigue llamando a `loadInitial()` igual que siempre, así que el scroll
-  // infinito y la restauración de posición funcionan exactamente como antes.
-  // Lo único que cambia es lo que hay en el HTML antes de que el navegador
-  // ejecute nada.
+  // Y sirven, además, para NO repetir la carga al montar cuando la siembra está
+  // completa —productos y `hasMore`—. Hasta ahora el efecto de montaje volvía a
+  // pedir la página 1 siempre, porque era la única forma de saber si había una
+  // página 2: una petición a la API (con su preflight CORS) en cada visita a
+  // /galeria y /tienda para obtener lo que ya estaba en el HTML. Ahora sólo se
+  // repite cuando hace falta de verdad: al volver atrás con una instantánea
+  // (hay que rehidratar N páginas), o cuando la siembra está incompleta (la API
+  // falló durante la compilación, o las fichas de artista, que siembran para el
+  // JSON-LD pero no traen `hasMore`).
   const sembrado = Array.isArray(initialProducts) && initialProducts.length > 0
+  // Con una instantánea pendiente la siembra NO cuenta como completa, aunque lo
+  // sea: al volver atrás el navegador recoloca el scroll antes de que llegue la
+  // rehidratación de N páginas, y con `hasMore` ya en verdadero el centinela
+  // del scroll infinito —visible sobre una rejilla de sólo 12— disparaba la
+  // página 2 en paralelo a la restauración. Así `hasMore` arranca en falso,
+  // como siempre en ese camino, hasta que la restauración lo fije.
+  const siembraCompletaRef = useRef(
+    sembrado && typeof initialHasMore === 'boolean' && !restoration?.snapshot,
+  )
 
   const [products, setProducts] = useState(sembrado ? initialProducts : [])
   const [loading, setLoading] = useState(!sembrado)
@@ -70,7 +87,7 @@ export function useGalleryProducts(
   // cargadas. Un corte de red dejaba al visitante sin nada.
   const [loadMoreError, setLoadMoreError] = useState(false)
   const [page, setPage] = useState(1)
-  const [hasMore, setHasMore] = useState(false)
+  const [hasMore, setHasMore] = useState(siembraCompletaRef.current ? initialHasMore : false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   // Con datos sembrados el grid arranca visible. Dejarlo a opacidad 0 habría
   // sustituido el «Cargando...» por un hueco en blanco hasta el fundido, que
@@ -85,7 +102,7 @@ export function useGalleryProducts(
   // ocurrido; sin estos espejos volvería a pedir la página que se acaba de
   // traer.
   const pageRef = useRef(1)
-  const hasMoreRef = useRef(false)
+  const hasMoreRef = useRef(siembraCompletaRef.current ? initialHasMore : false)
   // La carga incremental la lee fuera del ciclo de render, igual que las dos de
   // arriba: `loadMore` no debe recrearse cuando cambia la semilla.
   const seedRef = useRef(null)
@@ -140,6 +157,24 @@ export function useGalleryProducts(
       const restorePages = snapshot
         ? Math.min(snapshot.pages, GRID_RESTORE_MAX_PAGES)
         : 1
+
+      // Siembra completa y nada que restaurar: la rejilla del HTML ES la página
+      // 1 bajo esta semilla y `hasMore` ya se conoce. No se pide nada; sólo se
+      // adopta la semilla para las páginas siguientes y se le comunica a la
+      // restauración, que la guardará en la instantánea al abrir una ficha.
+      //
+      // `isInitialLoad` se apaga con el estado y NO con la referencia: en
+      // desarrollo StrictMode ejecuta el efecto de montaje dos veces seguidas,
+      // y si esta rama consumiera la referencia, la segunda llamada se tomaría
+      // por un cambio de filtro —fundido, semilla nueva y petición—, es decir,
+      // rebarajaría el catálogo ante los ojos del visitante.
+      if (initial && !snapshot && siembraCompletaRef.current) {
+        const semilla = authorSlug ? null : initialSeedRef.current
+        seedRef.current = semilla
+        restorationRef.current?.setOrderSeed(semilla)
+        setIsInitialLoad(false)
+        return
+      }
 
       // If not initial load, fade out before loading new products
       if (!initial) {

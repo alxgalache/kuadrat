@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import {
   fetchAuthor,
+  fetchAuthors,
   fetchAuthorArtProducts,
   getAuthorImageUrl,
   getAuthorSocialImage,
@@ -8,6 +9,7 @@ import {
 } from '@/lib/serverApi'
 import { buildOpenGraph, buildTwitter, socialImageUrl } from '@/lib/metadata'
 import JsonLd from '@/components/JsonLd'
+import ApiPreconnect from '@/components/ApiPreconnect'
 import { buildPerson, buildItemList, buildBreadcrumb, stripHtml } from '@/lib/schema'
 import GalleryAuthorContent from './GalleryAuthorContent'
 
@@ -85,9 +87,12 @@ export default async function GalleryAuthorPage({ params }) {
   // Las dos peticiones en paralelo. `fetchAuthor` la comparte con
   // generateMetadata: Next deduplica los fetch idénticos dentro del mismo
   // render, así que esto no añade ni un viaje a la API.
-  const [author, works] = await Promise.all([
+  const [author, works, authors] = await Promise.all([
     fetchAuthor(authorSlug),
     fetchAuthorArtProducts(authorSlug),
+    // La lista del filtro de autores, sembrada para que el cliente no la
+    // pida al montar (ver `useGalleryAuthors`).
+    fetchAuthors('art'),
   ])
 
   // 404 de verdad. Antes se renderizaba el componente cliente igualmente y el
@@ -133,6 +138,10 @@ export default async function GalleryAuthorPage({ params }) {
 
   return (
     <>
+      {/* La rejilla de la ficha de artista vuelve a pedir su primera página
+          al montar (ver `useGalleryProducts`): es una de las rutas que
+          consultan la API durante la carga. */}
+      <ApiPreconnect />
       <JsonLd data={personSchema} />
       <JsonLd data={worksSchema} />
       <JsonLd data={breadcrumbSchema} />
@@ -154,7 +163,7 @@ export default async function GalleryAuthorPage({ params }) {
           nada nuevo a la API. Al sembrarlas, sus enlaces `<a href>` pasan a
           existir en el HTML servido, que es lo que permite a un rastreador
           sin JavaScript llegar desde el artista hasta cada obra. */}
-      <GalleryAuthorContent params={params} initialProducts={works} />
+      <GalleryAuthorContent params={params} initialProducts={works} initialAuthors={authors} />
     </>
   )
 }

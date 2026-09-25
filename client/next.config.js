@@ -6,6 +6,26 @@ const nextConfig = {
   // read_only: true, which prevents the default handler from writing to .next/server/
   cacheHandler: require.resolve('./cache-handler.js'),
   cacheMaxMemorySize: 0,
+  experimental: {
+    // La hoja global viaja DENTRO del HTML, como <style>, en lugar de como un
+    // <link rel="stylesheet"> aparte. Medido en producción con 4G lenta real
+    // (Lighthouse con throttling aplicado, 25/09/2026): el HTML llegaba a los
+    // 700 ms y en ese instante el navegador lanzaba a la vez la hoja (14 KB,
+    // lo único que bloquea el render), la fuente, cuatro imágenes y ~400 KB de
+    // JavaScript. La prioridad «VeryHigh» de la hoja no la protegía —nginx no
+    // reordena lo que ya está en los búferes TCP— y terminaba a los 2.680 ms:
+    // dos segundos de página en blanco esperando 14 KB. En línea, sus bytes van
+    // en el flujo del documento, que se envía el primero.
+    //
+    // Sólo afecta a las respuestas HTML; la navegación de cliente (RSC) sigue
+    // pidiendo el fichero, que se cachea como `immutable`.
+    //
+    // Contrapartida aceptada: el HTML pesa ~13 KB gzip más y una recarga
+    // completa vuelve a traer el CSS, que como fichero se cacheaba un año. El
+    // público es de primera visita (tráfico de Instagram), que es el caso que
+    // gana. Y cada entrada de la caché ISR en memoria guarda ~70 KB más.
+    inlineCss: true,
+  },
   images: {
     dangerouslyAllowLocalIP: true,
     // Los basenames son UUID y una imagen nueva es un fichero nuevo: una URL

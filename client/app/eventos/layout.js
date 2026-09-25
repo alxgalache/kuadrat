@@ -4,6 +4,7 @@
 // sorteos existen desde entonces y no aparecían en el título ni en la
 // descripción de la única página que los lista.
 import { buildOpenGraph, buildTwitter } from '@/lib/metadata'
+import ApiPreconnect from '@/components/ApiPreconnect'
 
 const OG_DESCRIPTION =
   'Subastas de arte en directo y sorteos de obra original de artistas emergentes.'
@@ -31,5 +32,11 @@ export const metadata = {
 }
 
 export default function EventosLayout({ children }) {
-  return children
+  return (
+    <>
+      {/* Estas rutas consultan la API durante la carga. */}
+      <ApiPreconnect />
+      {children}
+    </>
+  )
 }

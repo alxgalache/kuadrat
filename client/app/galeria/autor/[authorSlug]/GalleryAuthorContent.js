@@ -3,7 +3,7 @@
 import { use, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { artAPI, getArtImageUrl } from '@/lib/api'
-import AuthorModal from '@/components/AuthorModal'
+import AuthorModal from '@/components/LazyAuthorModal'
 import AuthorSidebar from '@/components/AuthorSidebar'
 import AuthorMobileFilter from '@/components/AuthorMobileFilter'
 import ProductGrid from '@/components/ProductGrid'
@@ -12,7 +12,7 @@ import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
 import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
 
-export default function GalleryAuthorContent({ params, initialProducts = null }) {
+export default function GalleryAuthorContent({ params, initialProducts = null, initialAuthors = null }) {
   const router = useRouter()
   const resolvedParams = use(params)
   const authorSlug = resolvedParams.authorSlug
@@ -23,8 +23,8 @@ export default function GalleryAuthorContent({ params, initialProducts = null })
   // Se invoca ANTES que useGalleryProducts: la instantánea tiene que estar
   // disponible en el efecto de montaje del listado.
   const restoration = useGridScrollRestoration()
-  const { authors } = useGalleryAuthors('art', authorSlug)
-  const { products, loading, error, page, isFading, loadMoreProps } = useGalleryProducts(artAPI, authorSlug, restoration, initialProducts)
+  const { authors } = useGalleryAuthors('art', authorSlug, initialAuthors)
+  const { products, loading, error, page, isFading, loadMoreProps } = useGalleryProducts(artAPI, authorSlug, restoration, { products: initialProducts })
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)
