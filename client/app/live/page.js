@@ -5,9 +5,10 @@ import Image from 'next/image'
 import useImageLoaded from '@/hooks/useImageLoaded'
 import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
 import Link from 'next/link'
-import { eventsAPI } from '@/lib/api'
+import { eventsAPI, authorsAPI } from '@/lib/api'
 import EventCalendar from '@/components/EventCalendar'
 import EventCountdown from '@/components/EventCountdown'
+import AuthorModal from '@/components/LazyAuthorModal'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,10 +71,25 @@ export default function EspaciosPage() {
   const [eventsForMonth, setEventsForMonth] = useState([])
   const [calendarYear, setCalendarYear] = useState(null)
   const [calendarMonth, setCalendarMonth] = useState(null)
+  const [hostAuthor, setHostAuthor] = useState(null)
+  const [hostModalOpen, setHostModalOpen] = useState(false)
 
   useEffect(() => {
     setSelectedDate(todayStr())
   }, [])
+
+  // Mismo flujo que «Presentado por» en la ficha del evento (EventDetail).
+  const handleViewHostAuthor = async (hostSlug) => {
+    try {
+      const data = await authorsAPI.getBySlug(hostSlug)
+      if (data?.author) {
+        setHostAuthor(data.author)
+        setHostModalOpen(true)
+      }
+    } catch (err) {
+      console.error('Failed to load host author:', err)
+    }
+  }
 
   // Load events for visible calendar month
   const loadMonthEvents = useCallback(async (year, month) => {
@@ -147,11 +163,20 @@ export default function EspaciosPage() {
     return (
       <div className="space-y-6">
         {eventsForDate.map((event) => (
-          <Link
-            key={event.id}
-            href={`/live/${event.slug}`}
-            className="block group"
-          >
+          // La tarjeta no es un <a>: el nombre del anfitrión es un botón que
+          // abre su biografía, y un botón dentro de un enlace es HTML inválido.
+          // El enlace va en el título y lo estira a toda la tarjeta un <span>
+          // `absolute inset-0` (z-10, porque la imagen, `relative` y posterior
+          // en el DOM, se pintaría encima y se quedaría los clics). El botón
+          // del anfitrión sube a z-20 para quedar por encima de ese <span>.
+          //
+          // `isolate` hace de la tarjeta su propio contexto de apilamiento, y
+          // no sobra: sin él, esos z-10/z-20 compiten en el contexto raíz con
+          // todo lo superpuesto de la página, y el z-20 del botón se pintaba
+          // por ENCIMA de la biografía (el Dialog de Headless UI va en un
+          // portal a <body> con `z-10`). Con él, la tarjeta entera apila como
+          // z-0 y los dos índices sólo ordenan su interior.
+          <div key={event.id} className="group relative isolate">
             {/* Tarjeta horizontal: texto a la izquierda, imagen difuminada a la
                 derecha. Sin sombra al pasar el puntero, a propósito.
 
@@ -189,7 +214,10 @@ export default function EspaciosPage() {
                 </div>
 
                 <h3 className="mt-3 text-lg font-semibold tracking-tight text-gray-900 [@media(hover:hover)]:group-hover:text-gray-600">
-                  {event.title}
+                  <Link href={`/live/${event.slug}`}>
+                    <span aria-hidden="true" className="absolute inset-0 z-10" />
+                    {event.title}
+                  </Link>
                 </h3>
 
                 {event.description && (
@@ -219,9 +247,23 @@ export default function EspaciosPage() {
                 </div>
 
                 {/* Quién */}
+                {/* Flex en vez de `truncate` en el <p>: un botón es un elemento
+                    atómico, y la elipsis lo ocultaría entero («por …») en vez
+                    de recortar el nombre. */}
                 {event.host_name && (
-                  <p className="mt-1 truncate text-sm text-gray-500">
-                    por <span className="font-medium text-gray-700">{event.host_name}</span>
+                  <p className="mt-1 flex gap-x-1 text-sm text-gray-500">
+                    <span className="shrink-0">por</span>
+                    {event.host_slug ? (
+                      <button
+                        type="button"
+                        onClick={() => handleViewHostAuthor(event.host_slug)}
+                        className="relative z-20 min-w-0 text-left font-medium text-gray-700 hover:underline"
+                      >
+                        <span className="block truncate">{event.host_name}</span>
+                      </button>
+                    ) : (
+                      <span className="min-w-0 truncate font-medium text-gray-700">{event.host_name}</span>
+                    )}
                   </p>
                 )}
 
@@ -241,7 +283,7 @@ export default function EspaciosPage() {
                 <EventCardImage src={event.cover_image_url} alt={event.title} />
               )}
             </div>
-          </Link>
+          </div>
         ))}
       </div>
     )
@@ -271,6 +313,12 @@ export default function EspaciosPage() {
           </main>
         </div>
       </div>
+
+      <AuthorModal
+        author={hostAuthor}
+        open={hostModalOpen}
+        onClose={() => setHostModalOpen(false)}
+      />
     </div>
   )
 }
