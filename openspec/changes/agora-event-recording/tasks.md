@@ -100,7 +100,7 @@
 
 ## 14. Puesta en marcha y verificación (operador)
 
-- [ ] 14.1 Preproducción (staging): Cloud Recording activado una vez en el proyecto de Agora «140d» (compartido con producción: las variables `AGORA_*` no cambian); bucket y usuario IAM propios según `docs/grabaciones-eventos.md`; reglas de ciclo de vida comprobadas en la consola de S3 (allí la api no puede leerlas); las cuatro `AGORA_RECORDING_S3_*` de staging en su `api/.env`.
+- [ ] 14.1 Preproducción (staging): Cloud Recording activado una vez en el proyecto de Agora «140d» (compartido con producción: las variables `AGORA_*` no cambian); bucket y usuario IAM propios según `docs/grabaciones-eventos.md`; reglas de ciclo de vida comprobadas en la consola de S3 (allí la api no puede leerlas); las cuatro `AGORA_RECORDING_S3_*` de staging en `api/.env.staging` (el fichero que carga `docker-compose.pre2.yml`, no `api/.env`).
 - [ ] 14.2 `broadcast` en preproducción, comprobando cada fichero en la consola de S3: host solo; host + co-presentador; host + pantalla compartida (cambio a vertical y vuelta); los tres a la vez; promovido hablando sin cámara. Revisar la geometría real de los diseños y que el audio suena a 128 kbps.
 - [ ] 14.3 `meeting` en preproducción con tres personas, una entrando tarde y otra compartiendo pantalla: pistas de audio y vídeo de cada uid en la consola de S3 (staging no tiene credenciales de lectura; los nombres en el panel se comprueban con la primera reunión grabada en producción).
 - [ ] 14.4 Interrupción: parar la tarea a mano con `stop` por la REST y comprobar que en ≤ 30 s hay una tarea nueva con uid 4 y llega el email `interrupted`.

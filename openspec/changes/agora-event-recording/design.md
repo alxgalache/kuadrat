@@ -192,7 +192,7 @@ sin tarea viva y el evento graba   → start, salvo tope de intentos, enfriamien
 
 1. **AWS, dos veces (producción y preproducción)**: bucket de grabaciones en `eu-west-1` con Block Public Access, sin versionado, con las reglas de ciclo de vida de D14; usuario IAM propio con la política de sólo `s3:PutObject` sobre su bucket. Sólo en producción: `s3:ListBucket`, `s3:GetObject` y `s3:GetLifecycleConfiguration` sobre el bucket de grabaciones, añadidos al rol de la instancia. Procedimiento completo en `docs/grabaciones-eventos.md`.
 2. **Agora**: activar Cloud Recording **una vez** en el proyecto «140d», que comparten los dos entornos.
-3. **Variables** en `api/.env` del entorno.
+3. **Variables** en el fichero de entorno de la api de cada entorno: `api/.env` en producción, `api/.env.staging` en staging (`docker-compose.pre2.yml`).
 4. **Despliegue** con `./deploy/deploy.sh` (api y cliente juntos por la casilla del formulario). `initializeDatabase()` crea la tabla y la columna; `DEFAULT 0` sin backfill.
 5. **Verificación en preproducción** con su propio bucket y usuario IAM (matriz en `tasks.md`), comprobando los ficheros y la regla de ciclo de vida en la consola de S3, ya que allí no hay credenciales de lectura para el panel. El listado y la descarga desde el panel se verifican con la primera grabación de producción.
 6. **Vuelta atrás**: vaciar las variables desactiva la función entera (el reconciliador no arranca nada y la casilla desaparece); la columna y la tabla son inertes.

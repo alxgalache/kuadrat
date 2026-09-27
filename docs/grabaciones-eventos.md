@@ -223,7 +223,8 @@ borrar nada. Y cada fichero vive como mucho 30 días.
 **Rotación** (si se sospecha una filtración o por higiene):
 
 1. Crear una segunda clave de acceso en el mismo usuario.
-2. Cambiar las dos variables en `api/.env` y reiniciar la api
+2. Cambiar las dos variables en el fichero de entorno de la api (`api/.env` en
+   producción, `api/.env.staging` en staging) y reiniciar la api
    (`./deploy/deploy.sh` o reinicio del contenedor). Hazlo fuera de un evento
    grabado: el grabador en marcha conserva la clave con la que arrancó.
 3. Desactivar y luego borrar la clave antigua.
@@ -305,7 +306,7 @@ lugar de los ficheros, y la descarga se hace desde la consola de S3.
 Las cuatro `AGORA_*` **no cambian**: son las del proyecto «140d», iguales en los
 dos entornos, como hoy. Se añaden cuatro nuevas, **distintas en cada entorno**:
 
-| Variable | Producción (`api/.env` de la EC2) | Staging (`api/.env` del Mac mini) |
+| Variable | Producción (`api/.env` de la EC2) | Staging (`api/.env.staging` del Mac mini) |
 |---|---|---|
 | `AGORA_RECORDING_S3_BUCKET` | nombre real del bucket de producción | nombre real del bucket de staging |
 | `AGORA_RECORDING_S3_REGION` | `eu-west-1` | `eu-west-1` |
@@ -321,6 +322,12 @@ AGORA_RECORDING_S3_ACCESS_KEY=AKIA...
 AGORA_RECORDING_S3_SECRET_KEY=...
 ```
 
+- **Staging no lee `api/.env`**: `docker-compose.pre2.yml` carga
+  `api/.env.staging`. Es ahí donde van sus cuatro variables.
+- **Sin comillas.** Una secret key de AWS sólo tiene letras, números, `/` y `+`,
+  y ninguno es especial para Docker Compose ni para `dotenv`, aunque la clave
+  empiece por `/`. Sólo harían falta comillas con espacios, `#`, `$` o comillas
+  dentro del valor. Sin espacios alrededor del `=` ni al final de la línea.
 - **Las tres primeras vacías = grabación desactivada**: la casilla del formulario
   aparece deshabilitada con «La grabación no está configurada en este entorno».
 - **Configuración a medias = la api no arranca**, con un mensaje que nombra la
