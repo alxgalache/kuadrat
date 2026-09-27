@@ -363,7 +363,7 @@ Whether the cart offers pickup for **store (`other`) products** is decided by on
 * **`systemAudio: 'include'` / `windowAudio: 'system'`** are hints `getDisplayMedia` receives through the video config; they make Chrome offer system audio on the screen and window tabs.
 * **Platforms:** Windows — tab and system audio. macOS — tab audio always; system audio only with Chrome 141+ on macOS 14.2+. Safari — never. Linux — out of scope by decision (depends on the system's audio stack). Where the host cannot share audio, the co-presenter can (see «Interviews»).
 * **`'enable'` was rejected**: it makes audio mandatory and the call fails without it; `'auto'` keeps a silent share possible exactly as before.
-* **Known blind spot:** no automated test — the client has no runner, and what the picker offers depends on OS and browser version. Verified by hand per `openspec/changes/agora-event-recording/tasks.md` §14.9–14.12.
+* **Known blind spot:** no automated test — the client has no runner, and what the picker offers depends on OS and browser version. Verified by hand per `openspec/changes/archive/2026-09-27-agora-event-recording/tasks.md` §14.9–14.12.
 
 ## Agora Virtual Backgrounds (client-only)
 

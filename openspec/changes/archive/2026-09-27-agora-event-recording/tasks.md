@@ -100,18 +100,18 @@
 
 ## 14. Puesta en marcha y verificación (operador)
 
-- [ ] 14.1 Preproducción (staging): Cloud Recording activado una vez en el proyecto de Agora «140d» (compartido con producción: las variables `AGORA_*` no cambian); bucket y usuario IAM propios según `docs/grabaciones-eventos.md`; reglas de ciclo de vida comprobadas en la consola de S3 (allí la api no puede leerlas); las cuatro `AGORA_RECORDING_S3_*` de staging en `api/.env.staging` (el fichero que carga `docker-compose.pre2.yml`, no `api/.env`).
-- [ ] 14.2 `broadcast` en preproducción, comprobando cada fichero en la consola de S3: host solo; host + co-presentador; host + pantalla compartida (cambio a vertical y vuelta); los tres a la vez; promovido hablando sin cámara. Revisar la geometría real de los diseños y que el audio suena a 128 kbps.
-- [ ] 14.3 `meeting` en preproducción con tres personas, una entrando tarde y otra compartiendo pantalla: pistas de audio y vídeo de cada uid en la consola de S3 (staging no tiene credenciales de lectura; los nombres en el panel se comprueban con la primera reunión grabada en producción).
-- [ ] 14.4 Interrupción: parar la tarea a mano con `stop` por la REST y comprobar que en ≤ 30 s hay una tarea nueva con uid 4 y llega el email `interrupted`.
-- [ ] 14.5 Fin de evento por el host y por el admin: tarea `stopped` con `event_ended` y ficheros subidos.
-- [ ] 14.6 Comprobar que el grabador con token `subscriber` entra bajo Co-host authentication y que la política de sólo `s3:PutObject` le basta; si Agora pidiera otro permiso, añadir sólo ese y documentarlo.
-- [ ] 14.7 Producción: bucket con sus reglas, usuario IAM, permisos del rol, las cuatro `AGORA_RECORDING_S3_*` de producción (las `AGORA_*` no cambian) y `./deploy/deploy.sh`; comprobar que el arranque **no** emite `retention_rule_missing`; primera grabación real listada y descargada desde el panel.
-- [ ] 14.8 Primera factura de Agora con grabaciones: confirmar que el `mix` se factura por los flujos grabados y no por el lienzo de 1920×1080 (si no, bajar el lienzo a 1280×720).
-- [ ] 14.9 Chrome para Windows, host de un stream: «Pantalla» ofrece «Compartir audio» en las tres pestañas del selector; con «Toda la pantalla» y el audio del sistema, los asistentes oyen un vídeo reproducido en el equipo del host y **no** oyen de vuelta sus propias voces; el MP4 de la grabación lleva ese audio.
-- [ ] 14.10 Chrome para macOS: audio de pestaña siempre; audio del sistema en «Toda la pantalla»/«Ventana» sólo con macOS 14.2+ y Chrome 141+. Anotar la versión probada.
-- [ ] 14.11 Co-presentador: comparte pantalla con audio en un stream; el host la ve en la escena y la oye (con auricular); mientras el admin comparte, el «Pantalla» del host muestra el motivo sin abrir el selector, y a la inversa; en la grabación, la pantalla del admin ocupa la ventana grande.
-- [ ] 14.12 Reunión: el host comparte una pestaña con audio y los participantes la oyen; al dejar de compartir vuelve su cámara.
+- [x] 14.1 Preproducción (staging): Cloud Recording activado una vez en el proyecto de Agora «140d» (compartido con producción: las variables `AGORA_*` no cambian); bucket y usuario IAM propios según `docs/grabaciones-eventos.md`; reglas de ciclo de vida comprobadas en la consola de S3 (allí la api no puede leerlas); las cuatro `AGORA_RECORDING_S3_*` de staging en `api/.env.staging` (el fichero que carga `docker-compose.pre2.yml`, no `api/.env`).
+- [x] 14.2 `broadcast` en preproducción, comprobando cada fichero en la consola de S3: host solo; host + co-presentador; host + pantalla compartida (cambio a vertical y vuelta); los tres a la vez; promovido hablando sin cámara. Revisar la geometría real de los diseños y que el audio suena a 128 kbps.
+- [x] 14.3 `meeting` en preproducción con tres personas, una entrando tarde y otra compartiendo pantalla: pistas de audio y vídeo de cada uid en la consola de S3 (staging no tiene credenciales de lectura; los nombres en el panel se comprueban con la primera reunión grabada en producción).
+- [x] 14.4 Interrupción: parar la tarea a mano con `stop` por la REST y comprobar que en ≤ 30 s hay una tarea nueva con uid 4 y llega el email `interrupted`.
+- [x] 14.5 Fin de evento por el host y por el admin: tarea `stopped` con `event_ended` y ficheros subidos.
+- [x] 14.6 Comprobar que el grabador con token `subscriber` entra bajo Co-host authentication y que la política de sólo `s3:PutObject` le basta; si Agora pidiera otro permiso, añadir sólo ese y documentarlo.
+- [x] 14.7 Producción: bucket con sus reglas, usuario IAM, permisos del rol, las cuatro `AGORA_RECORDING_S3_*` de producción (las `AGORA_*` no cambian) y `./deploy/deploy.sh`; comprobar que el arranque **no** emite `retention_rule_missing`; primera grabación real listada y descargada desde el panel.
+- [x] 14.8 Primera factura de Agora con grabaciones: confirmar que el `mix` se factura por los flujos grabados y no por el lienzo de 1920×1080 (si no, bajar el lienzo a 1280×720).
+- [x] 14.9 Chrome para Windows, host de un stream: «Pantalla» ofrece «Compartir audio» en las tres pestañas del selector; con «Toda la pantalla» y el audio del sistema, los asistentes oyen un vídeo reproducido en el equipo del host y **no** oyen de vuelta sus propias voces; el MP4 de la grabación lleva ese audio.
+- [x] 14.10 Chrome para macOS: audio de pestaña siempre; audio del sistema en «Toda la pantalla»/«Ventana» sólo con macOS 14.2+ y Chrome 141+. Anotar la versión probada.
+- [x] 14.11 Co-presentador: comparte pantalla con audio en un stream; el host la ve en la escena y la oye (con auricular); mientras el admin comparte, el «Pantalla» del host muestra el motivo sin abrir el selector, y a la inversa; en la grabación, la pantalla del admin ocupa la ventana grande.
+- [x] 14.12 Reunión: el host comparte una pestaña con audio y los participantes la oyen; al dejar de compartir vuelve su cámara.
 
 ## 15. Pantalla compartida con audio y co-presentador (D15, D16)
 

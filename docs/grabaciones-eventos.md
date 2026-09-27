@@ -3,7 +3,7 @@
 Guía operativa de la grabación en la nube de los eventos Agora. Cubre el alta en
 Agora y en AWS (una vez por entorno), la activación por evento, la descarga de
 las grabaciones, la supresión anticipada que pida un participante y qué hacer
-ante cada alerta. Decisiones y motivos: `openspec/changes/agora-event-recording`.
+ante cada alerta. Decisiones y motivos: `openspec/changes/archive/2026-09-27-agora-event-recording`.
 
 **Alcance: producción y preproducción (staging).** Las dos comparten **el mismo
 proyecto de Agora** («140d») y cada una tiene **su propio bucket y su propia
