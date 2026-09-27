@@ -9,6 +9,8 @@ import { MEETING_MAX_ATTENDEES } from '@/lib/constants'
 import { ArrowLeftIcon } from '@heroicons/react/20/solid'
 import { SELLER_KIND_LABELS } from '@/lib/constants'
 import { sellerKindOf } from '@/lib/sellerCapabilities'
+import { supportsRecording } from '@/lib/eventRecording'
+import RecordingCheckbox from '@/components/admin/RecordingCheckbox'
 
 function NewEventPageContent() {
   const router = useRouter()
@@ -34,6 +36,7 @@ function NewEventPageContent() {
   const [allowMobileHostConsole, setAllowMobileHostConsole] = useState(false)
   const [allowHostVideoQuality, setAllowHostVideoQuality] = useState(false)
   const [hostEchoCancellation, setHostEchoCancellation] = useState(false)
+  const [recordingEnabled, setRecordingEnabled] = useState(false)
   const [status, setStatus] = useState('draft')
 
   // Un solo predicado con nombre para la combinación que soporta la consola
@@ -53,6 +56,10 @@ function NewEventPageContent() {
   // silencio. Su defecto es 0 = SIN procesado, que es la ruta de captura buena.
   const supportsHostEchoCancellation =
     format === 'live' && provider === 'agora' && interactionMode === 'broadcast'
+
+  // Grabación en la nube (agora-event-recording): los dos modos de Agora en
+  // directo. El predicado vive en lib/eventRecording.js, espejo del servidor.
+  const supportsEventRecording = supportsRecording({ provider, format })
 
   const [sellers, setSellers] = useState([])
   const [loadingSellers, setLoadingSellers] = useState(true)
@@ -128,6 +135,9 @@ function NewEventPageContent() {
           : {}),
         ...(supportsHostEchoCancellation
           ? { host_echo_cancellation: hostEchoCancellation }
+          : {}),
+        ...(supportsEventRecording
+          ? { recording_enabled: recordingEnabled }
           : {}),
         status,
       })
@@ -446,6 +456,16 @@ function NewEventPageContent() {
                     </span>
                   </span>
                 </label>
+              </div>
+            )}
+
+            {supportsEventRecording && (
+              <div className="mt-4">
+                <RecordingCheckbox
+                  checked={recordingEnabled}
+                  onChange={setRecordingEnabled}
+                  interactionMode={interactionMode}
+                />
               </div>
             )}
 

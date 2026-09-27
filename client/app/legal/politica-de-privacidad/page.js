@@ -29,7 +29,7 @@ export default function PrivacyPolicyPage() {
           Política de Privacidad
         </h1>
         <p className="mt-2 text-sm text-gray-500">
-          Última actualización: Agosto 2026
+          Última actualización: Septiembre 2026
         </p>
 
         <div className="mt-10 space-y-8 text-sm leading-7 text-gray-700">
@@ -106,8 +106,49 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
 
+          <section id="grabacion-de-eventos" className="scroll-mt-24">
+            <h2 className="text-lg font-semibold text-gray-900">7. Grabación de Eventos en Directo</h2>
+            <p className="mt-3">
+              Algunos eventos en directo de 140d se graban. Cuando es así, lo indicamos en la ficha
+              del evento y antes de acceder a él, y durante el evento se muestra el aviso «Grabando».
+            </p>
+            <ul className="mt-3 list-disc pl-5 space-y-1">
+              <li>
+                <strong>Qué se graba:</strong> la imagen y la voz de quienes intervienen. En un stream,
+                el host, el co-presentador y los asistentes a los que se da la palabra: al recibirla se
+                activa su micrófono, que pueden silenciar en cualquier momento, y su imagen solo si
+                activan la cámara. En una reunión, cada participante mientras tenga la cámara o el
+                micrófono activados. Nunca se graba el chat ni a los asistentes que solo miran y
+                escuchan.
+              </li>
+              <li>
+                <strong>Finalidad:</strong> permitir consultar el contenido del evento después de su
+                celebración y reutilizarlo.
+              </li>
+              <li>
+                <strong>Base legal:</strong> para el host y el co-presentador, la relación que les une
+                con 140d para impartir el evento. Para los asistentes que intervienen, su
+                consentimiento, que prestan al pedir la palabra o al activar la cámara o el micrófono
+                tras el aviso previo. Puedes asistir sin ser grabado: basta con no pedir la palabra ni
+                activar la cámara o el micrófono.
+              </li>
+              <li>
+                <strong>Encargados del tratamiento:</strong> Agora, que realiza la grabación en su
+                región europea, y Amazon Web Services, que la almacena en la Unión Europea.
+              </li>
+              <li>
+                <strong>Conservación:</strong> 30 días naturales desde la celebración del evento.
+                Transcurrido ese plazo, la grabación se elimina automáticamente.
+              </li>
+              <li>
+                <strong>Tus derechos:</strong> además de los indicados en el apartado siguiente, puedes
+                pedirnos en info@140d.art que suprimamos tu intervención antes de que venza ese plazo.
+              </li>
+            </ul>
+          </section>
+
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">7. Tus Derechos</h2>
+            <h2 className="text-lg font-semibold text-gray-900">8. Tus Derechos</h2>
             <p className="mt-3">
               De conformidad con el Reglamento General de Protección de Datos (RGPD), tienes derecho a:
             </p>
@@ -125,7 +166,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">8. Cookies</h2>
+            <h2 className="text-lg font-semibold text-gray-900">9. Cookies</h2>
             <p className="mt-3">
               Nuestro sitio web utiliza cookies técnicas necesarias para el funcionamiento de la plataforma, y cookies
               para la gestión de métricas y analíticas de publicidad (Meta).
@@ -133,7 +174,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">9. Modificaciones</h2>
+            <h2 className="text-lg font-semibold text-gray-900">10. Modificaciones</h2>
             <p className="mt-3">
               Nos reservamos el derecho de actualizar esta política de privacidad en cualquier momento.
               Cualquier cambio será publicado en esta página con la fecha de la última actualización.

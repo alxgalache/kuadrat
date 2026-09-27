@@ -11,8 +11,14 @@ const { ApiError } = require('../middleware/errorHandler');
 //    screen in `broadcast` events. A single AgoraRTCClient cannot publish two
 //    video tracks (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS` in 4.24.6), so
 //    showing the camera over the screen needs a second uid in the channel.
+//  - RECORDER_UID_BASE (3) … 12: the Agora Cloud Recording service
+//    (agora-event-recording). The recorder joins the channel as an audience
+//    member with uid 3 + attempt, one uid per attempt, so that a recorder left
+//    behind by a lost attempt can never block the next one (acquire refuses a
+//    uid already present in the channel). Capped at 10 attempts per event.
 const HOST_UID = 1;
 const HOST_SCREEN_UID = 2;
+const RECORDER_UID_BASE = 3;
 const FIRST_ATTENDEE_UID = 101;
 
 // Default RTC token TTL: 4 hours (parity with LiveKit tokens).
@@ -148,6 +154,9 @@ async function ensureAttendeeUid(eventId, attendeeId) {
 // Docs: POST/GET/DELETE https://api.agora.io/dev/v1/kicking-rule
 // ---------------------------------------------------------------------------
 
+// Shared with agoraRecordingService: the Cloud Recording REST API uses the
+// very same customer credentials, and building the header in two places is
+// two places to rotate.
 function restHeaders() {
   const credentials = Buffer.from(
     `${config.agora.customerId}:${config.agora.customerSecret}`
@@ -303,6 +312,8 @@ function isConfigured() {
 module.exports = {
   HOST_UID,
   HOST_SCREEN_UID,
+  RECORDER_UID_BASE,
+  restHeaders,
   generateRtcToken,
   ensureAttendeeUid,
   banPublish,

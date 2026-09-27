@@ -378,6 +378,9 @@ export default function AgoraLiveRoom({
   isCoHost = false,
   isAdmin = false,
   eventEnded = false,
+  // agora-event-recording: the event is recorded and live → «Grabando» in
+  // every presentation of the room (top bar, landscape chrome, host console).
+  recording = false,
 }) {
   const isMeeting = interactionMode === 'meeting'
   // The admin interviewing the host (agora-broadcast-cohost). Broadcast only:
@@ -556,12 +559,18 @@ export default function AgoraLiveRoom({
   }, [isMeeting, isHost, socket.joined, selfPresence])
 
   // Keep the presence screen-sharing flag in sync (host only; lets meeting
-  // grids feature the shared screen)
+  // grids feature the shared screen, and puts the screen in the big window of
+  // a cloud recording — agora-event-recording). Re-declared on EVERY (re)join
+  // (`joinVersion`), not only when the share toggles: presence lives in the
+  // api's memory, so an api restart forgets it, and without this a resumed
+  // recording would stay in the adaptive layout for the rest of a share
+  // already in progress. `joined` would not do: an auto-reconnect goes from
+  // true to true. Emitting before the join would be dropped by the server.
   const setScreenSharing = socket.setScreenSharing
   useEffect(() => {
-    if (!isHost) return
+    if (!isHost || !socket.joined) return
     setScreenSharing(room.screenEnabled)
-  }, [isHost, room.screenEnabled, setScreenSharing])
+  }, [isHost, socket.joined, socket.joinVersion, room.screenEnabled, setScreenSharing])
 
   // agoraUid → RTC remote user / presence name lookups
   const remoteByUid = useMemo(() => {
@@ -722,7 +731,7 @@ export default function AgoraLiveRoom({
     <LiveRoomShell compact={compact} landscape={landscape} panelOpen={panelOpen}>
       {room.autoplayBlocked && <AudioActivationOverlay onActivate={room.resumeAudio} />}
 
-      {compact && !landscape && <LiveRoomTopBar connectedCount={socket.presence.length} />}
+      {compact && !landscape && <LiveRoomTopBar connectedCount={socket.presence.length} recording={recording} />}
 
       {room.joinError && (
         <div className={compact ? 'absolute inset-x-0 top-0 z-30 bg-red-50 px-4 py-3' : 'mb-4 rounded-md bg-red-50 p-4'}>
@@ -741,6 +750,7 @@ export default function AgoraLiveRoom({
         >
           {isMeeting ? (
             <MeetingArea
+              recording={recording}
               hostControls={hostControls}
               room={room}
               socket={socket}
@@ -763,6 +773,7 @@ export default function AgoraLiveRoom({
             />
           ) : (
             <BroadcastArea
+              recording={recording}
               hostControls={hostControls}
               allowMobileHostConsole={allowMobileHostConsole}
               room={room}
@@ -855,6 +866,7 @@ function BroadcastArea({
   room, socket, selfPresence, remoteByUid, nameByUid,
   isHost, isCoHost, amSpeaker, eventId, localUid, eventEnded,
   whiteboardElement, whiteboard, hostControls, allowMobileHostConsole, layout,
+  recording = false,
 }) {
   const hostRemote = remoteByUid.get(AGORA_HOST_UID)
   const { compact, landscape, panelOpen, togglePanel } = layout
@@ -1134,6 +1146,7 @@ function BroadcastArea({
           <LandscapeStageChrome
             visible={chrome.visible}
             connectedCount={socket.presence.length}
+            recording={recording}
             bottomLeft={!isHost && !isCoHost && !panelOpen ? (
               <button
                 type="button"
@@ -1294,6 +1307,7 @@ function BroadcastArea({
             connectedCount={socket.presence.length}
             videoElement={overlayVideo}
             modeSwitcher={modeSwitcher}
+            recording={recording}
           />
         ) : (
           <HostPreviewMode videoElement={overlayVideo} modeSwitcher={modeSwitcher} />
@@ -1711,7 +1725,7 @@ function AgoraParticipantGrid({
 // ---------------------------------------------------------------------------
 // Meeting mode — Meet-style grid of large tiles, self-serve controls for all
 // ---------------------------------------------------------------------------
-function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard, hostControls, layout }) {
+function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard, hostControls, layout, recording = false }) {
   const { compact, landscape, panelOpen, togglePanel } = layout
   const stageCell = roomCell('stage', layout)
   const rowsCell = roomCell('rows', layout)
@@ -1879,6 +1893,7 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
             <LandscapeStageChrome
               visible={chrome.visible}
               connectedCount={socket.presence.length}
+              recording={recording}
               topRight={<StageChromeGroup visible={chrome.visible} panelOpen={panelOpen} onTogglePanel={togglePanel} />}
             />
           )}

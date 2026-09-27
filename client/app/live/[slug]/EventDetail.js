@@ -24,6 +24,9 @@ import useAutoHideChrome from '@/hooks/useAutoHideChrome'
 import useChatAutoScroll from '@/hooks/useChatAutoScroll'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
 import { LIVE_ROOM_COPY } from '@/lib/constants'
+import RecordingBadge from '@/components/events/RecordingBadge'
+import RecordingNotice from '@/components/events/RecordingNotice'
+import { isRecordingBadgeVisible } from '@/lib/eventRecording'
 
 // Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
@@ -547,6 +550,7 @@ export default function EventDetail({
                 <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
                   En directo
                 </span>
+                {isRecordingBadgeVisible(event) && <RecordingBadge />}
               </div>
               <div className="flex items-center gap-x-4">
                 <span className="text-sm text-gray-500">{attendeeCount} asistentes</span>
@@ -571,6 +575,7 @@ export default function EventDetail({
                 allowMobileHostConsole={!!event.allow_mobile_host_console}
                 allowHostVideoQuality={!!event.allow_host_video_quality}
                 hostEchoCancellation={!!event.host_echo_cancellation}
+                recording={isRecordingBadgeVisible(event)}
                 isCoHost={!!agoraCreds.coHost}
                 isAdmin={isAdmin}
                 eventEnded={eventEnded}
@@ -690,6 +695,9 @@ export default function EventDetail({
                 </p>
               )}
             </div>
+
+            {/* agora-event-recording: notice before entering a recorded event */}
+            <RecordingNotice event={event} className="mt-6" />
 
             {/* Countdown */}
             <div className="mt-6">

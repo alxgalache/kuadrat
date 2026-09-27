@@ -121,6 +121,14 @@ const createEventSchema = z.object({
       z.literal(0),
       z.literal(1),
     ], { message: 'Valor inválido para la cancelación de eco del host' }).optional(),
+    // Grabación con Agora Cloud Recording (agora-event-recording). Mismo
+    // contrato que los flags de host: se guarda siempre y sólo tiene efecto
+    // con provider='agora' y format='live' (ver utils/eventRecording.js).
+    recording_enabled: z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ], { message: 'Valor inválido para la grabación del evento' }).optional(),
   }).strip().superRefine(validateProviderRules),
 });
 
@@ -191,6 +199,14 @@ const updateEventSchema = z.object({
       z.literal(0),
       z.literal(1),
     ], { message: 'Valor inválido para la cancelación de eco del host' }).optional(),
+    // Grabación con Agora Cloud Recording (agora-event-recording). Mismo
+    // contrato que los flags de host: se guarda siempre y sólo tiene efecto
+    // con provider='agora' y format='live' (ver utils/eventRecording.js).
+    recording_enabled: z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ], { message: 'Valor inválido para la grabación del evento' }).optional(),
   }).strip().superRefine(validateProviderRulesPartial),
 });
 
@@ -314,6 +330,34 @@ const excludeEventCreditSchema = z.object({
   }).strip(),
 });
 
+/**
+ * GET /api/admin/events/:id/recordings (agora-event-recording)
+ */
+const eventRecordingsSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'Evento inválido'),
+  }),
+});
+
+/**
+ * GET /api/admin/events/:id/recordings/:recordingId/download?file=<name>.mp4
+ *
+ * Only a bare MP4 file name: no slash can get through, so the key the server
+ * builds (the task's own prefix + this name) can never leave that folder. The
+ * client never names a bucket or a key.
+ */
+const recordingDownloadSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'Evento inválido'),
+    recordingId: z.string().uuid('Grabación inválida'),
+  }),
+  query: z.object({
+    file: z.string()
+      .max(255, 'Nombre de fichero demasiado largo')
+      .regex(/^[A-Za-z0-9_.-]+\.mp4$/, 'Nombre de fichero inválido'),
+  }),
+});
+
 module.exports = {
   registerAttendeeSchema,
   createPaymentSchema,
@@ -331,4 +375,6 @@ module.exports = {
   verifyPasswordSchema,
   markEventFinishedSchema,
   excludeEventCreditSchema,
+  eventRecordingsSchema,
+  recordingDownloadSchema,
 };

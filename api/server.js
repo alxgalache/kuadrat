@@ -25,6 +25,7 @@ const startConfirmationScheduler = require('./scheduler/confirmationScheduler');
 const startShipmentRetryScheduler = require('./scheduler/shipmentRetryScheduler');
 const startEventCreditScheduler = require('./scheduler/eventCreditScheduler');
 const startBackupScheduler = require('./scheduler/backupScheduler');
+const startRecordingScheduler = require('./scheduler/recordingScheduler');
 
 // Initialize database and start server
 async function startServer() {
@@ -70,6 +71,10 @@ async function startServer() {
       // Start daily database backup scheduler (change: turso-s3-backups).
       // No-op unless DB_BACKUP_ENABLED and a backup bucket are configured.
       startBackupScheduler();
+
+      // Start the Agora Cloud Recording reconciler (change: agora-event-recording).
+      // No-op unless AGORA_RECORDING_S3_* are configured.
+      startRecordingScheduler(app);
     });
 
     // Register graceful shutdown

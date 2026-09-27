@@ -4,18 +4,21 @@ import Link from 'next/link'
 import { UserIcon } from '@heroicons/react/20/solid'
 import BrandLogo from '@/components/BrandLogo'
 import { LeaveEventButton, useLeaveEvent } from '@/components/events/LeaveEvent'
+import RecordingBadge from '@/components/events/RecordingBadge'
 import { LIVE_ROOM_COPY, LEAVE_EVENT_COPY } from '@/lib/constants'
 
 /**
  * «EN DIRECTO» y, si hay presencia, el número de conectados. Lo comparten la
  * barra superior (fondo claro) y los controles superpuestos de la disposición
- * horizontal (`onDark`).
+ * horizontal (`onDark`). Con `recording`, la insignia «Grabando» del evento
+ * grabado (agora-event-recording) va pegada al «EN DIRECTO», en las dos.
  */
-export function LiveIndicator({ connectedCount = null, onDark = false }) {
+export function LiveIndicator({ connectedCount = null, onDark = false, recording = false }) {
   return (
     <div className={`flex items-center gap-x-2 ${onDark ? 'rounded-md bg-black/60 px-2 py-1 text-white' : 'text-gray-900'}`}>
       <span aria-hidden="true" className="size-2 flex-shrink-0 rounded-full bg-red-500" />
       <span className="text-xs font-semibold tracking-wide">{LIVE_ROOM_COPY.live}</span>
+      {recording && <RecordingBadge onDark={onDark} />}
       {connectedCount != null && (
         <span
           aria-label={LIVE_ROOM_COPY.connected(connectedCount)}
@@ -42,8 +45,9 @@ export function LiveIndicator({ connectedCount = null, onDark = false }) {
  *
  * @param {object} props
  * @param {number|null} [props.connectedCount] - null en los pases de vídeo (sin presencia)
+ * @param {boolean} [props.recording] - Evento grabado: insignia «Grabando»
  */
-export default function LiveRoomTopBar({ connectedCount = null }) {
+export default function LiveRoomTopBar({ connectedCount = null, recording = false }) {
   const leave = useLeaveEvent()
 
   const handleLogoClick = (e) => {
@@ -66,7 +70,7 @@ export default function LiveRoomTopBar({ connectedCount = null }) {
         <BrandLogo className="h-5 w-auto" />
       </Link>
       <div className="flex items-center gap-x-3">
-        <LiveIndicator connectedCount={connectedCount} />
+        <LiveIndicator connectedCount={connectedCount} recording={recording} />
         <LeaveEventButton variant="compact" />
       </div>
     </div>

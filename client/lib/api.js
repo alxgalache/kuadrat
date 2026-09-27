@@ -1322,6 +1322,23 @@ export const adminAPI = {
       });
     },
 
+    // Agora Cloud Recording (agora-event-recording)
+    getRecordingAvailability: async () => {
+      return apiRequest('/admin/events/recording/availability');
+    },
+
+    getRecordings: async (id) => {
+      return apiRequest(`/admin/events/${id}/recordings`);
+    },
+
+    // Signed on click, never ahead of time: the URL stops working when the
+    // server's temporary AWS credentials rotate.
+    getRecordingDownloadUrl: async (id, recordingId, file) => {
+      return apiRequest(
+        `/admin/events/${id}/recordings/${recordingId}/download?file=${encodeURIComponent(file)}`
+      );
+    },
+
     cancel: async (id) => {
       return apiRequest(`/admin/events/${id}`, {
         method: 'PUT',

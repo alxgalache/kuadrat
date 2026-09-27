@@ -53,6 +53,12 @@ export default function useEventRoomSocket({
   const [selfIdentity, setSelfIdentity] = useState(null)
   const [selfChatBanned, setSelfChatBanned] = useState(false)
   const [joined, setJoined] = useState(false)
+  // Ticks on EVERY successful join, reconnections included. `joined` cannot
+  // say "we just joined again": a Socket.IO auto-reconnect goes from true to
+  // true without passing through false. Consumers that must re-declare state
+  // the server keeps only in memory (the host's screen-share flag, which the
+  // cloud recording layout reads — agora-event-recording) depend on this.
+  const [joinVersion, setJoinVersion] = useState(0)
   // Whiteboard toggle state (optional phase): { active, everyoneWrites }
   const [whiteboard, setWhiteboard] = useState({ active: false, everyoneWrites: false })
   // Broadcast stage camera layout ('split' | 'pip'), directed by the co-presenter
@@ -93,6 +99,7 @@ export default function useEventRoomSocket({
         })
         setStageLayoutState(response.stageLayout === STAGE_LAYOUTS.PIP ? STAGE_LAYOUTS.PIP : STAGE_LAYOUTS.SPLIT)
         setJoined(true)
+        setJoinVersion((version) => version + 1)
       })
     }
 
@@ -192,6 +199,7 @@ export default function useEventRoomSocket({
 
   return {
     joined,
+    joinVersion,
     presence,
     chatMessages,
     selfIdentity,

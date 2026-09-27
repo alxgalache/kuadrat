@@ -463,6 +463,63 @@ config.useS3 = !!config.aws.s3Bucket;
 // additionally refuses to start without a bucket (see backupScheduler.js).
 config.backup.enabled = optionalBool('DB_BACKUP_ENABLED', false) && config.nodeEnv !== 'test';
 
+// --- Agora Cloud Recording (change: agora-event-recording) ---
+// Activation is by configuration being present, same criterion as the backups.
+// A PARTIAL configuration fails startup instead of silently disabling the
+// feature: the admin would tick «Grabar el evento», save, get a 200 and
+// record nothing — the silent failure this project does not accept.
+//
+// The access key is NOT the application's AWS credential (the app keeps using
+// the instance role for everything it reads). It belongs to an IAM user whose
+// only permission is s3:PutObject on the recordings bucket, and it exists only
+// to be handed to Agora inside the `start` request, which is the only way
+// Cloud Recording accepts a destination.
+config.recording = (() => {
+  const explicitRegion = process.env.AGORA_RECORDING_S3_REGION || '';
+  const settings = {
+    bucket: optional('AGORA_RECORDING_S3_BUCKET', ''),
+    region: explicitRegion || 'eu-west-1',
+    accessKey: optional('AGORA_RECORDING_S3_ACCESS_KEY', ''),
+    secretKey: optional('AGORA_RECORDING_S3_SECRET_KEY', ''),
+  };
+  // The region alone does not count as intent: it has a default and
+  // .env.example ships it filled in, so a copied example must still boot.
+  const anySet = !!(settings.bucket || settings.accessKey || settings.secretKey);
+  if (!anySet) return { ...settings, regionCode: null, configured: false, enabled: false };
+
+  const needed = {
+    AGORA_RECORDING_S3_BUCKET: settings.bucket,
+    AGORA_RECORDING_S3_ACCESS_KEY: settings.accessKey,
+    AGORA_RECORDING_S3_SECRET_KEY: settings.secretKey,
+    AGORA_APP_ID: config.agora.appId,
+    AGORA_APP_CERTIFICATE: config.agora.appCertificate,
+    AGORA_CUSTOMER_ID: config.agora.customerId,
+    AGORA_CUSTOMER_SECRET: config.agora.customerSecret,
+  };
+  const missing = Object.keys(needed).filter((name) => !needed[name]);
+  if (missing.length > 0) {
+    console.error(
+      `[ENV] Agora Cloud Recording is partially configured. Missing: ${missing.join(', ')}. ` +
+        'Set all of them or none of the AGORA_RECORDING_S3_* variables.'
+    );
+    process.exit(1);
+  }
+
+  const { agoraRegionCodeFor } = require('../utils/agoraStorageRegions');
+  const regionCode = agoraRegionCodeFor(settings.region);
+  if (regionCode === null) {
+    console.error(
+      `[ENV] Invalid AGORA_RECORDING_S3_REGION: "${settings.region}". ` +
+        'Must be a European AWS region with an Agora Cloud Recording code (see utils/agoraStorageRegions.js).'
+    );
+    process.exit(1);
+  }
+
+  // Unconditionally off under test, whatever the env file says: .env.test sets
+  // every variable above ON PURPOSE so that this line is what refuses.
+  return { ...settings, regionCode, configured: true, enabled: config.nodeEnv !== 'test' };
+})();
+
 /**
  * Returns the list of env var names that must be set before a fiscal export
  * can be generated (Change #4: stripe-connect-fiscal-report). Empty array

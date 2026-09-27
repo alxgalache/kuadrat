@@ -8,6 +8,7 @@ const logger = require('../config/logger');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const agoraService = require('../services/agoraService');
+const agoraRecordingService = require('../services/agoraRecordingService');
 const whiteboardService = require('../services/whiteboardService');
 const s3Service = require('../services/s3Service');
 const stripeService = require('../services/stripeService');
@@ -893,6 +894,10 @@ const endEvent = async (req, res, next) => {
     if (eventSocket) {
       eventSocket.broadcastEventEnded(req.params.id);
     }
+
+    // Stop the cloud recording now (agora-event-recording). Fire-and-forget:
+    // the host's «Finalizar stream» must not wait for Agora.
+    agoraRecordingService.triggerReconcile(req.params.id, { eventSocket });
 
     res.status(200).json({ success: true });
   } catch (error) {

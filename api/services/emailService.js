@@ -3984,6 +3984,126 @@ const sendBackupFailureEmail = async ({ env, dateKey, key, error }) => {
   return { success: true, messageId: info.messageId };
 };
 
+// Alert the business inbox when an Agora Cloud Recording goes wrong (change:
+// agora-event-recording). An event is live while this fires, so each text
+// says what can still be done about it. Same three-channel pattern as the
+// backup alert: log and Sentry are raised by agoraRecordingService itself.
+// `detail` never carries a secret: the service builds it from HTTP status and
+// Agora codes, and scrubs the one free-text field it keeps.
+const RECORDING_ALERT_COPY = {
+  start_failed: {
+    subject: 'La grabación del evento no ha podido arrancar',
+    lead: 'La grabación en la nube de este evento <strong>no ha arrancado</strong>. El evento sigue en directo con normalidad; el sistema lo reintentará cada minuto hasta 10 veces.',
+    action: 'Si el evento es importante, grábalo también en local como respaldo mientras se revisa la configuración (variables AGORA_RECORDING_S3_*, Cloud Recording activado en la consola de Agora, permisos del usuario IAM).',
+  },
+  interrupted: {
+    subject: 'La grabación del evento se ha interrumpido',
+    lead: 'La grabación en la nube de este evento <strong>se ha detenido sola</strong> en Agora. Se está reanudando en una tarea nueva, así que la grabación quedará en varias partes y puede faltar un tramo corto.',
+    action: 'No hace falta hacer nada si llega a reanudarse. Las partes aparecen por orden en la sección «Grabaciones» de la ficha del evento.',
+  },
+  gave_up: {
+    subject: 'Se ha dejado de intentar grabar el evento',
+    lead: 'Se han <strong>agotado los intentos</strong> de grabación de este evento y no se volverá a intentar.',
+    action: 'Graba en local lo que quede del evento si lo necesitas, y revisa los logs de la api y Sentry antes del próximo evento grabado.',
+  },
+  stop_failed: {
+    subject: 'La grabación del evento no ha podido detenerse',
+    lead: 'No se ha podido <strong>detener</strong> la grabación en Agora. Se reintentará cada dos minutos; si no lo consigue, Agora la detendrá sola al quedarse el canal vacío.',
+    action: 'Comprueba en la sección «Grabaciones» de la ficha del evento que la tarea acaba como «Detenida».',
+  },
+  retention_rule_missing: {
+    subject: 'Las grabaciones de eventos no caducan a los 30 días',
+    lead: 'El bucket de grabaciones <strong>no tiene la regla de ciclo de vida</strong> que elimina las grabaciones a los 30 días, o no se ha podido leer. La política de privacidad promete ese plazo.',
+    action: 'Crea o corrige la regla siguiendo docs/grabaciones-eventos.md. Las grabaciones siguen funcionando mientras tanto.',
+  },
+};
+
+const sendRecordingAlertEmail = async ({ eventTitle, eventId, kind, detail }) => {
+  const recipient = config.business.email;
+  if (!recipient) {
+    logger.warn('No BUSINESS_EMAIL/EMAIL_FROM configured, skipping recording alert email');
+    return { success: false, error: 'no recipient configured' };
+  }
+  const copy = RECORDING_ALERT_COPY[kind] || {
+    subject: 'Incidencia en la grabación de un evento',
+    lead: 'Se ha producido una incidencia en la grabación en la nube de un evento.',
+    action: 'Revisa los logs de la api y Sentry.',
+  };
+  const clientUrl = config.clientUrl || 'http://localhost:3000';
+  const row = (label, value) =>
+    `<tr>
+      <td style="padding: 8px 12px; font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 1px solid #e5e7eb;">${escapeForEmail(label)}</td>
+      <td style="padding: 8px 12px; font-size: 14px; color: #374151; border-bottom: 1px solid #e5e7eb;">${escapeForEmail(value)}</td>
+    </tr>`;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>${escapeForEmail(copy.subject)}</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 40px 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 22px; font-weight: 600; color: #111827;">${escapeForEmail(copy.subject)}</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">${copy.lead}</p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 24px;">
+                <tbody>
+                  ${eventTitle ? row('Evento', eventTitle) : ''}
+                  ${eventId ? row('Ficha de admin', `${clientUrl}/admin/espacios/${eventId}`) : ''}
+                  ${row('Momento', new Date().toISOString())}
+                  ${row('Detalle', detail || '—')}
+                </tbody>
+              </table>
+              <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #374151;">${escapeForEmail(copy.action)}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">Este es un correo automático. Por favor no responder.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const logoAttachment = getLogoAttachment();
+  const mailOptions = {
+    from: getFormattedSender(),
+    to: recipient,
+    subject: eventTitle ? `${copy.subject}: ${eventTitle}` : copy.subject,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  };
+
+  const info = await sendMail(mailOptions);
+  logger.info({ recipient, messageId: info.messageId, eventId, kind }, 'Recording alert email sent');
+  return { success: true, messageId: info.messageId };
+};
+
 // Send an inquiry email to the commercial inbox when a visitor submits the
 // "request info / different payment / different shipping" form on an art
 // product detail page. The Reply-To header points at the visitor's email so
@@ -4276,6 +4396,7 @@ module.exports = {
   sendQuoteRequestEmail,
   // Database backups to S3
   sendBackupFailureEmail,
+  sendRecordingAlertEmail,
   // Test-only: inspect / reset the in-memory outbox filled by the `noop`
   // transport. Always defined, but only ever populated when sending is inert.
   __getOutbox,

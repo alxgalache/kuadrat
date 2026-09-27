@@ -950,3 +950,71 @@ export const SELLER_KIND_CONFIRM_COPY = {
     `Vas a cambiar a ${name} de «${fromLabel}» a «${toLabel}». Se cerrará su sesión y, al volver a entrar, las secciones disponibles en su panel serán las del nuevo tipo.`,
   confirmText: 'Cambiar tipo y guardar',
 };
+
+// Grabación en la nube de los eventos Agora (agora-event-recording). El plazo
+// de 30 días tiene que decir lo mismo aquí, en la política de privacidad y en
+// las normas de los eventos: lo aplica una regla del bucket, no la aplicación.
+export const EVENT_RECORDING_RETENTION_DAYS = 30;
+
+export const EVENT_RECORDING_COPY = {
+  checkboxLabel: 'Grabar el evento (audio y vídeo)',
+  helpBroadcast:
+    'Se guarda un único vídeo con todo lo que aparece en escena (las cámaras y la pantalla compartida) y el audio de todos los que intervienen.',
+  helpMeeting:
+    'Se guarda una pista de audio y otra de vídeo por cada participante, para poder editarlas por separado.',
+  helpCommon:
+    'La grabación empieza al iniciar el evento y se detiene sola al finalizarlo o a las 3 horas del inicio. Los asistentes verán un aviso antes de entrar y durante el evento. Las grabaciones se eliminan a los 30 días.',
+  unavailable: 'La grabación no está configurada en este entorno.',
+  badge: 'Grabando',
+  badgeAria: 'Este evento se está grabando (audio y vídeo)',
+  noticeBroadcast:
+    'Este evento se graba (audio y vídeo). Si el host te da la palabra, tu voz —y tu imagen, si activas la cámara— quedarán en la grabación, que se conserva 30 días.',
+  noticeMeeting:
+    'Esta reunión se graba (audio y vídeo). Tu imagen y tu voz quedarán grabadas mientras tengas la cámara o el micrófono activados. La grabación se conserva 30 días.',
+  noticeLink: 'Más información',
+  privacyHref: '/legal/politica-de-privacidad#grabacion-de-eventos',
+  panel: {
+    title: 'Grabaciones',
+    retention: (days) =>
+      `Las grabaciones se eliminan automáticamente a los ${days} días. Para reutilizarlas, descárgalas antes.`,
+    empty: 'Todavía no hay grabaciones de este evento.',
+    loadError: 'No se pudieron cargar las grabaciones.',
+    part: (n) => `Parte ${n}`,
+    status: {
+      starting: 'Arrancando',
+      recording: 'Grabando',
+      stopping: 'Deteniéndose',
+      stopped: 'Detenida',
+      interrupted: 'Interrumpida',
+      failed: 'Fallida',
+    },
+    stopReason: {
+      event_ended: 'Fin del evento',
+      max_duration: 'Límite de 3 horas',
+      recording_disabled: 'Grabación desactivada',
+    },
+    started: 'Inicio',
+    stopped: 'Fin',
+    reason: 'Motivo',
+    error: 'Error',
+    availableUntil: (date) => `Disponible hasta el ${date}`,
+    expired: 'Eliminada por el plazo de conservación',
+    noFiles: 'Sin ficheros',
+    listError: 'No se pudo leer el contenido de esta parte en el almacenamiento.',
+    download: 'Descargar',
+    preparing: 'Preparando…',
+    downloadError: 'No se pudo preparar la descarga.',
+    participants: 'Participantes',
+    tracks: { audio: 'Audio', video: 'Vídeo' },
+    host: 'Host',
+    unknownParticipant: 'Sin identificar',
+    sessionCommand: 'Descargar la sesión completa',
+    participantCommand: 'Descargar sus pistas',
+    copy: 'Copiar',
+    copied: 'Copiado',
+    cliHint:
+      'Las pistas de una reunión se descargan con AWS CLI y acceso de lectura al bucket (ver docs/grabaciones-eventos.md). Para convertirlas a MP4, usa el script de Agora en una máquina Linux x86.',
+    noCredentials:
+      'En este entorno la aplicación no puede leer el almacenamiento. Consulta los ficheros en la consola de S3:',
+  },
+};

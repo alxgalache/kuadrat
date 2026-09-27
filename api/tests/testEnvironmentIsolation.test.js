@@ -71,4 +71,18 @@ describe('test environment isolation', () => {
       expect(emailService.__getOutbox()).toHaveLength(0);
     });
   });
+
+  describe('Agora Cloud Recording', () => {
+    // .env.test sets every AGORA_RECORDING_S3_* variable on purpose: the
+    // environment asks for recording, and the code must still refuse.
+    it('is configured by the env file and still disabled under test', () => {
+      expect(config.recording.configured).toBe(true);
+      expect(config.recording.enabled).toBe(false);
+    });
+
+    it('never reaches Agora from the service when nothing is injected', () => {
+      const agoraRecordingService = require('../services/agoraRecordingService');
+      expect(agoraRecordingService.recordingEnabled()).toBe(false);
+    });
+  });
 });

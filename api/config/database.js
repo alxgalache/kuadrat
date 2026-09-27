@@ -654,6 +654,13 @@ async function initializeDatabase() {
         -- palabra, porque entonces el eco importa más que la fidelidad. Solo
         -- tiene efecto con provider='agora' e interaction_mode='broadcast'.
         host_echo_cancellation INTEGER NOT NULL DEFAULT 0,
+        -- Graba el evento con Agora Cloud Recording (audio y vídeo). El modo no
+        -- se elige aquí: lo decide interaction_mode (broadcast graba un único
+        -- vídeo compuesto, meeting una pista por participante). Solo tiene
+        -- efecto con provider='agora' y format='live', el predicado vive en
+        -- api/utils/eventRecording.js y en su espejo del cliente. DEFAULT 0 sin
+        -- backfill: ningún evento anterior al cambio se graba
+        recording_enabled INTEGER NOT NULL DEFAULT 0,
         agora_channel_name TEXT,
         whiteboard_room_uuid TEXT,
         video_started_at DATETIME,
@@ -694,6 +701,43 @@ async function initializeDatabase() {
         -- sellerRoutes, and generateEventAttendeeInvoice. listAttendees does
         -- NOT filter it — the admin panel should show who was in the room.
         is_staff INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+      )
+    `);
+
+    // ── Event recordings (agora-event-recording) ─────────────
+    // One row per Agora Cloud Recording task. An event can have several: a
+    // task interrupted mid-event is replaced by a new one (new attempt, new
+    // folder). The reconciler in agoraRecordingService is the only writer.
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS event_recordings (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK(mode IN ('mix','individual')),
+        -- Número de intento dentro del evento, desde 0. El uid del grabador es
+        -- 3 + attempt, dentro de la franja reservada 1-100 que nunca se asigna
+        -- a asistentes, y un uid por intento evita que un grabador perdido de
+        -- un intento anterior bloquee el siguiente
+        attempt INTEGER NOT NULL,
+        recorder_uid INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('starting','recording','stopping','stopped','interrupted','failed')),
+        stop_reason TEXT CHECK(stop_reason IN ('event_ended','max_duration','recording_disabled')),
+        resource_id TEXT,
+        sid TEXT,
+        -- Bucket y carpeta en los que Agora escribe esta tarea, guardados en la
+        -- fila para que un cambio de configuración no deje huérfanas las
+        -- tareas anteriores. La carpeta solo lleva letras y números, que es lo
+        -- único que admite el fileNamePrefix de Agora
+        s3_bucket TEXT NOT NULL,
+        s3_prefix TEXT NOT NULL,
+        applied_layout TEXT CHECK(applied_layout IN ('adaptive','screen')),
+        upload_status TEXT,
+        file_list TEXT,
+        error TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME,
+        stopped_at DATETIME,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
       )
     `);
@@ -919,6 +963,8 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE events ADD COLUMN allow_mobile_host_console INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE events ADD COLUMN allow_host_video_quality INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE events ADD COLUMN host_echo_cancellation INTEGER NOT NULL DEFAULT 0');
+    // agora-event-recording — no backfill: no pre-existing event is recorded.
+    await safeAlter('ALTER TABLE events ADD COLUMN recording_enabled INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE events ADD COLUMN agora_channel_name TEXT');
     await safeAlter('ALTER TABLE events ADD COLUMN whiteboard_room_uuid TEXT');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN agora_uid INTEGER');
@@ -1339,6 +1385,13 @@ async function initializeDatabase() {
     // Change #3 — partial indexes for eventCreditScheduler lookups
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_pending_credit ON events(finished_at, host_credited_at) WHERE access_type='paid' AND host_credited_at IS NULL`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendees_credit ON event_attendees(event_id, status, host_credited_at)`);
+    // agora-event-recording — at most ONE live task per event, enforced by the
+    // database: the lifecycle transitions and the scheduler may try to start
+    // the same recording at the same instant, and the losing INSERT must fail
+    // here instead of paying for a second recorder. The attempt index keeps two
+    // concurrent starts from computing the same attempt (and recorder uid).
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_recordings_live ON event_recordings(event_id) WHERE status IN ('starting','recording','stopping')`);
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_recordings_attempt ON event_recordings(event_id, attempt)`);
 
     // Draws
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_draw_participations_draw ON draw_participations(draw_id)`);

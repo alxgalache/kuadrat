@@ -12,6 +12,10 @@
  *     GOOD PATH: 0 is no processing, which on Android is what makes Chrome open
  *     the mic with AAUDIO_INPUT_PRESET_GENERIC instead of the voice-call chain.
  *     It is only turned on when the host plays guests' audio out loud.
+ *   · `recording_enabled`         — Agora Cloud Recording for the event
+ *     (agora-event-recording). Not a host flag, but it travels the very same
+ *     four-place write path and fails the same silent way, so it rides the
+ *     same matrix.
  *
  * They share a test because they share a failure mode, and it is silent in both
  * directions. The write path crosses four places — the two Zod schemas, the
@@ -79,6 +83,7 @@ describe.each([
   ['allow_mobile_host_console'],
   ['allow_host_video_quality'],
   ['host_echo_cancellation'],
+  ['recording_enabled'],
 ])('events.%s', (column) => {
   test('defaults to 0 when the field is not sent', async () => {
     const hostUserId = await insertHost()
@@ -175,6 +180,7 @@ describe.each([
   ['allow_mobile_host_console'],
   ['allow_host_video_quality'],
   ['host_echo_cancellation'],
+  ['recording_enabled'],
 ])('the write path keeps all four places in step for %s', (column) => {
   const fs = require('fs')
   const path = require('path')

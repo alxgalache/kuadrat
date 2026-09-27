@@ -59,8 +59,9 @@ export function StageChromeGroup({ visible, panelOpen, onTogglePanel, children }
  * @param {React.ReactNode} [props.topRight] - Si la escena no tiene ranura propia
  * @param {React.ReactNode} [props.bottomLeft]
  * @param {boolean} [props.bottomLeftPinned] - Visible aunque el resto se oculte (mano levantada)
+ * @param {boolean} [props.recording] - Evento grabado: insignia «Grabando»
  */
-export default function LandscapeStageChrome({ visible, connectedCount, topRight = null, bottomLeft = null, bottomLeftPinned = false }) {
+export default function LandscapeStageChrome({ visible, connectedCount, topRight = null, bottomLeft = null, bottomLeftPinned = false, recording = false }) {
   return (
     <>
       <div
@@ -69,7 +70,7 @@ export default function LandscapeStageChrome({ visible, connectedCount, topRight
         onClick={stop}
       >
         <div className="flex items-center gap-x-2">
-          <LiveIndicator connectedCount={connectedCount} onDark />
+          <LiveIndicator connectedCount={connectedCount} onDark recording={recording} />
           <LeaveEventButton variant="onDark" />
         </div>
       </div>

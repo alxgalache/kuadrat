@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import MobileDevicePicker from '@/components/events/MobileDevicePicker'
 import InlineConfirm from '@/components/events/InlineConfirm'
 import { HOST_CONSOLE_COPY, HOST_VIEW_MODES, HOST_VIEW_MODE_LABELS, AGORA_VIDEO_QUALITIES } from '@/lib/constants'
+import RecordingBadge from '@/components/events/RecordingBadge'
 
 const MIC_LEVEL_POLL_MS = 100
 
@@ -37,6 +38,7 @@ export default function HostConsole({
   connectedCount,
   videoElement,
   modeSwitcher,
+  recording = false,
 }) {
   const [showEndConfirm, setShowEndConfirm] = useState(false)
   const [picker, setPicker] = useState(null) // 'audioinput' | 'videoinput' | 'audiooutput'
@@ -71,6 +73,7 @@ export default function HostConsole({
         <div className="flex min-w-0 items-center gap-x-2">
           <span className="h-2 w-2 flex-shrink-0 rounded-full bg-red-500" />
           <span className="text-xs font-semibold tracking-wide">{HOST_CONSOLE_COPY.live}</span>
+          {recording && <RecordingBadge onDark />}
           <span className="truncate text-xs text-gray-400">
             · {HOST_CONSOLE_COPY.connected(connectedCount)}
           </span>

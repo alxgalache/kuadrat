@@ -14,6 +14,7 @@ const jwt = require('jsonwebtoken');
 const config = require('../config/env');
 const logger = require('../config/logger');
 const eventService = require('../services/eventService');
+const agoraRecordingService = require('../services/agoraRecordingService');
 
 // Server-side spam thresholds. Keep in sync with SPAM_MAX_MESSAGES /
 // SPAM_WINDOW_MS in client/lib/constants.js (same values the LiveKit client
@@ -52,6 +53,20 @@ module.exports = function setupEventSocket(io) {
   function getRoom(eventId) {
     if (!eventRooms.has(eventId)) eventRooms.set(eventId, new Map());
     return eventRooms.get(eventId);
+  }
+
+  // Whether the event's host is flagging a screen share in the presence. The
+  // ONLY source of that state for the cloud recording layout
+  // (agora-event-recording): read on demand, never copied elsewhere. No host
+  // presence (not joined yet, or lost on an api restart until they rejoin)
+  // reads as false.
+  function isHostScreenSharing(eventId) {
+    const room = eventRooms.get(eventId);
+    if (!room) return false;
+    for (const entry of room.values()) {
+      if (entry.isHost) return !!entry.screenSharing;
+    }
+    return false;
   }
 
   function publicPresence(entry) {
@@ -376,6 +391,10 @@ module.exports = function setupEventSocket(io) {
       if (!entry || !entry.isHost) return;
       entry.screenSharing = !!active;
       io.to(roomName(eventRoomId)).emit('presence_updated', publicPresence(entry));
+      // The cloud recording of a broadcast puts the shared screen in the big
+      // window: reconcile now instead of waiting for the next 30 s pass. Never
+      // awaited, never throws, no-op when recording is not enabled.
+      agoraRecordingService.triggerReconcile(eventRoomId, { isHostScreenSharing });
     });
 
     // In-room host moderation: ask a participant to mute (soft mute, meeting
@@ -447,6 +466,14 @@ module.exports = function setupEventSocket(io) {
      */
     getEventRoomPresence(eventId) {
       return presenceList(eventId);
+    },
+
+    /**
+     * Whether the host flags a screen share (agora-event-recording reads it
+     * to choose the composite layout).
+     */
+    isHostScreenSharing(eventId) {
+      return isHostScreenSharing(eventId);
     },
 
     /**

@@ -1,4 +1,8 @@
-const { S3Client, PutObjectCommand, CopyObjectCommand, HeadObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+const {
+  S3Client, PutObjectCommand, CopyObjectCommand, HeadObjectCommand, DeleteObjectCommand,
+  ListObjectsV2Command, GetObjectCommand, GetBucketLifecycleConfigurationCommand,
+} = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const config = require('../config/env');
 const logger = require('../config/logger');
 
@@ -184,4 +188,75 @@ async function listFiles(prefix) {
     .map(key => key.replace(prefix, ''));
 }
 
-module.exports = { uploadFile, uploadObject, deleteFile, listFiles, getObjectHeaders, setCacheControl, MEDIA_CACHE_CONTROL };
+// ---------------------------------------------------------------------------
+// Event recordings bucket (change: agora-event-recording)
+//
+// Agora WRITES to that bucket with its own put-only key; the app only READS,
+// through the instance role like everything else here (s3:ListBucket,
+// s3:GetObject and s3:GetLifecycleConfiguration on that bucket). Nothing here
+// deletes: the 30-day retention is the bucket's lifecycle rule.
+// ---------------------------------------------------------------------------
+
+/**
+ * Every object under a prefix, following continuation tokens. A long meeting
+ * is tens of thousands of segments, so this is paged, never a single call.
+ * @returns {Promise<Array<{ key: string, size: number, lastModified: Date|null }>>}
+ */
+async function listObjectsIn({ bucket, region, prefix }) {
+  const client = getClientForRegion(region);
+  const objects = [];
+  let continuationToken;
+  do {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+    for (const obj of response.Contents || []) {
+      if (obj.Key === prefix) continue;
+      objects.push({ key: obj.Key, size: Number(obj.Size) || 0, lastModified: obj.LastModified || null });
+    }
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return objects;
+}
+
+/**
+ * A short-lived GET URL that makes the browser download the object straight
+ * from S3 — no byte of video crosses the api container. Signed with the
+ * instance role's TEMPORARY credentials, so it stops working when those
+ * rotate: callers must sign on click, never ahead of time.
+ */
+async function getPresignedDownloadUrl({ bucket, region, key, expiresIn = 900, downloadName }) {
+  const client = getClientForRegion(region);
+  const safeName = String(downloadName || key.split('/').pop()).replace(/[^A-Za-z0-9_.-]/g, '_');
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ResponseContentDisposition: `attachment; filename="${safeName}"`,
+    }),
+    { expiresIn }
+  );
+}
+
+/**
+ * The bucket's lifecycle rules. A bucket without any configuration answers
+ * NoSuchLifecycleConfiguration, which is "no rules", not a read failure.
+ */
+async function getLifecycleRules({ bucket, region }) {
+  const client = getClientForRegion(region);
+  try {
+    const response = await client.send(new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }));
+    return response.Rules || [];
+  } catch (err) {
+    if (err?.name === 'NoSuchLifecycleConfiguration') return [];
+    throw err;
+  }
+}
+
+module.exports = {
+  uploadFile, uploadObject, deleteFile, listFiles, getObjectHeaders, setCacheControl, MEDIA_CACHE_CONTROL,
+  listObjectsIn, getPresignedDownloadUrl, getLifecycleRules,
+};

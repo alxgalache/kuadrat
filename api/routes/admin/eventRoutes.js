@@ -4,12 +4,15 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 const eventAdminController = require('../../controllers/eventAdminController')
+const eventRecordingAdminController = require('../../controllers/eventRecordingAdminController')
 const { validate } = require('../../middleware/validate')
 const {
   createEventSchema,
   updateEventSchema,
   markEventFinishedSchema,
   excludeEventCreditSchema,
+  eventRecordingsSchema,
+  recordingDownloadSchema,
 } = require('../../validators/eventSchemas')
 
 // Configure multer for event video uploads
@@ -54,10 +57,34 @@ router.post('/', validate(createEventSchema), eventAdminController.createEvent);
 router.get('/', eventAdminController.listEvents);
 
 /**
+ * GET /api/admin/events/recording/availability
+ * Whether this environment can record (Agora Cloud Recording configured) and
+ * can hand out downloads (the app's own AWS credentials). Declared ABOVE the
+ * /:id routes so Express never reads «recording» as an event id.
+ */
+router.get('/recording/availability', eventRecordingAdminController.getRecordingAvailability);
+
+/**
  * GET /api/admin/espacios/:id
  * Get event details
  */
 router.get('/:id', eventAdminController.getEvent);
+
+/**
+ * GET /api/admin/events/:id/recordings
+ * Cloud recordings of the event, read from the bucket (agora-event-recording)
+ */
+router.get('/:id/recordings', validate(eventRecordingsSchema), eventRecordingAdminController.listEventRecordings);
+
+/**
+ * GET /api/admin/events/:id/recordings/:recordingId/download?file=<name>.mp4
+ * Short-lived presigned URL, signed on click (agora-event-recording)
+ */
+router.get(
+  '/:id/recordings/:recordingId/download',
+  validate(recordingDownloadSchema),
+  eventRecordingAdminController.getRecordingDownloadUrl
+);
 
 /**
  * PUT /api/admin/espacios/:id

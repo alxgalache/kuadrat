@@ -9,6 +9,9 @@ import { MEETING_MAX_ATTENDEES } from '@/lib/constants'
 import { ArrowLeftIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid'
 import { SELLER_KIND_LABELS } from '@/lib/constants'
 import { sellerKindOf } from '@/lib/sellerCapabilities'
+import { supportsRecording, isEventRecorded } from '@/lib/eventRecording'
+import RecordingCheckbox from '@/components/admin/RecordingCheckbox'
+import EventRecordingsPanel from '@/components/admin/EventRecordingsPanel'
 
 function EventDetailContent({ id }) {
   const router = useRouter()
@@ -85,6 +88,7 @@ function EventDetailContent({ id }) {
     allow_mobile_host_console: !!ev.allow_mobile_host_console,
     allow_host_video_quality: !!ev.allow_host_video_quality,
     host_echo_cancellation: !!ev.host_echo_cancellation,
+    recording_enabled: !!ev.recording_enabled,
     status: ev.status || 'draft',
   })
 
@@ -122,6 +126,9 @@ function EventDetailContent({ id }) {
   const supportsHostEchoCancellation =
     form.format === 'live' && form.provider === 'agora' && form.interaction_mode === 'broadcast'
 
+  // Grabación en la nube: mismo predicado que el formulario de creación.
+  const supportsEventRecording = supportsRecording({ provider: form.provider, format: form.format })
+
   const handleSave = async () => {
     setError('')
 
@@ -152,6 +159,7 @@ function EventDetailContent({ id }) {
       if (!supportsMobileHostConsole) delete payload.allow_mobile_host_console
       if (!supportsHostVideoQuality) delete payload.allow_host_video_quality
       if (!supportsHostEchoCancellation) delete payload.host_echo_cancellation
+      if (!supportsEventRecording) delete payload.recording_enabled
       await adminAPI.events.update(id, payload)
 
       // Upload new video file if selected
@@ -538,6 +546,13 @@ function EventDetailContent({ id }) {
                     </span>
                   </label>
                 )}
+                {supportsEventRecording && (
+                  <RecordingCheckbox
+                    checked={form.recording_enabled}
+                    onChange={(checked) => setForm({ ...form, recording_enabled: checked })}
+                    interactionMode={form.interaction_mode}
+                  />
+                )}
                 {form.format === 'video' && (
                   <div className="space-y-3">
                     <fieldset>
@@ -689,6 +704,9 @@ function EventDetailContent({ id }) {
                     </div>
                   </div>
                 </div>
+
+                {/* Cloud recordings (agora-event-recording) */}
+                {isEventRecorded(event) && <EventRecordingsPanel eventId={event.id} />}
 
                 {/* Participant management for active events */}
                 {event.status === 'active' && (

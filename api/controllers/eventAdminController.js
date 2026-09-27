@@ -3,6 +3,7 @@ const fs = require('fs');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const marketingEmailService = require('../services/marketingEmailService');
+const agoraRecordingService = require('../services/agoraRecordingService');
 const { promoteAgoraParticipant, demoteAgoraParticipant } = require('./eventController');
 const logger = require('../config/logger');
 
@@ -37,6 +38,7 @@ const createEvent = async (req, res, next) => {
       cover_image_url, access_type, price, currency, format, content_type,
       category, video_url, max_attendees, status, provider, interaction_mode,
       allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
+      recording_enabled,
     } = req.body;
 
     if (!title || !event_datetime || !host_user_id || !category) {
@@ -75,6 +77,7 @@ const createEvent = async (req, res, next) => {
       allow_mobile_host_console: toFlag(allow_mobile_host_console),
       allow_host_video_quality: toFlag(allow_host_video_quality),
       host_echo_cancellation: toFlag(host_echo_cancellation),
+      recording_enabled: toFlag(recording_enabled),
     });
 
     // Marketing announcement (non-blocking; never throws; guarded send-once)
@@ -175,6 +178,7 @@ const updateEvent = async (req, res, next) => {
       allow_mobile_host_console: toFlag(req.body.allow_mobile_host_console),
       allow_host_video_quality: toFlag(req.body.allow_host_video_quality),
       host_echo_cancellation: toFlag(req.body.host_echo_cancellation),
+      recording_enabled: toFlag(req.body.recording_enabled),
     });
 
     // Marketing announcement on transition into 'scheduled' (guarded send-once)
@@ -274,6 +278,11 @@ const startEvent = async (req, res, next) => {
       eventSocket.broadcastEventStarted(req.params.id);
     }
 
+    // Cloud recording (agora-event-recording): start it now rather than on the
+    // next reconciler pass. Never awaited — the event must not wait for Agora —
+    // and a no-op unless the event is recordable and recording is configured.
+    agoraRecordingService.triggerReconcile(req.params.id, { eventSocket });
+
     res.status(200).json({
       success: true,
       title: 'Evento iniciado',
@@ -326,6 +335,10 @@ const endEvent = async (req, res, next) => {
     if (eventSocket) {
       eventSocket.broadcastEventEnded(req.params.id);
     }
+
+    // Stop the cloud recording now (agora-event-recording). Fire-and-forget:
+    // the reconciler would stop it within 30 s anyway.
+    agoraRecordingService.triggerReconcile(req.params.id, { eventSocket });
 
     res.status(200).json({
       success: true,
@@ -625,6 +638,10 @@ const markFinished = async (req, res, next) => {
       { eventId: id, adminId: req.user?.id, finishedAt: updated?.finished_at },
       '[eventAdmin] mark-finished'
     );
+
+    // A recording left running by an event whose end hook never fired stops
+    // here (agora-event-recording). Fire-and-forget.
+    agoraRecordingService.triggerReconcile(id, { eventSocket: req.app?.get?.('eventSocket') });
 
     res.status(200).json({
       success: true,
