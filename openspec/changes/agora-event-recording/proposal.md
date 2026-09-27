@@ -12,8 +12,10 @@ Los eventos en directo de 140d (charlas, masterclasses, entrevistas, reuniones) 
 - **Un reconciliador en el servidor** (nuevo scheduler, cada 30 s) es la autoridad del ciclo de vida: arranca la grabación cuando el evento pasa a `active`, la detiene cuando termina, la reanuda si se interrumpe, ajusta el diseño cuando cambia la pantalla compartida y la corta a los **180 minutos**. Las transiciones de inicio y fin del evento lo invocan al momento para no esperar al siguiente ciclo.
 - **Alertas por tres canales** (log + Sentry + email a `BUSINESS_EMAIL`) si una grabación no arranca, se interrumpe o se abandona tras agotar los reintentos.
 - **Sección «Grabaciones» en la ficha de admin del evento**: estado de cada tarea, descarga de los MP4 del stream con URL prefirmada de vida corta, y en reuniones la lista de participantes (uid → nombre) con el comando exacto para descargar sus pistas.
-- **Aviso RGPD**: insignia «Grabando» en todas las presentaciones de la sala mientras el evento esté activo, aviso en la ficha y en el modal de acceso antes de entrar (con el plazo de 30 días), apartado nuevo en la política de privacidad (qué se graba, finalidad, base legal, encargados, conservación de 30 días naturales y derechos) y mención en las normas de los eventos.
+- **Información sólo en los textos legales**: apartado nuevo en la política de privacidad (los eventos pueden grabarse, qué se graba, finalidad, base legal, encargados, conservación de 30 días naturales y derechos) y resumen con enlace en las normas de los eventos. La casilla del registro acepta las dos. **La interfaz no muestra ninguna indicación de grabación** a asistentes ni host, y las respuestas públicas de eventos no llevan el flag.
 - **Corrección de paso en el cliente**: el host vuelve a emitir `screen_share` tras cada (re)unión a la sala, para que la presencia —y con ella el diseño de la grabación— sobreviva a un reinicio de la api.
+- **La pantalla se comparte con su audio** (corrección de un fallo anterior a este cambio): `createScreenVideoTrack` se llamaba con `'disable'`, así que Chrome no ofrecía «Compartir audio» en ninguna pestaña del selector. Ahora recibe una configuración de audio sin procesado de voz y con `restrictOwnAudio` (para no devolver al canal las voces de la sala), y la pista de audio, si la persona la comparte, se publica y se graba con la pantalla. Windows y macOS (Chrome 141+ en macOS 14.2+ para el audio del sistema); Linux fuera de alcance.
+- **El co-presentador de un stream también comparte pantalla**, en la misma pantalla de la escena (uid 2) que el host y nunca a la vez: si el navegador del host no puede compartir audio, lo hace el admin. `screen-token` acepta al co-presentador y responde 409 `SCREEN_SHARE_IN_USE` mientras el otro comparte; `screen_share` se acepta de los dos y la grabación sigue la pantalla de cualquiera de ellos.
 
 ## Non-goals
 
@@ -24,17 +26,19 @@ Los eventos en directo de 140d (charlas, masterclasses, entrevistas, reuniones) 
 - Replicar en la grabación el diseño exacto de `BroadcastStage` (split/pip elegido por el co-presentador).
 - Borrado de grabaciones desde la aplicación: la caducidad la aplica el bucket y la supresión anticipada que pida un participante se hace a mano, siguiendo `docs/grabaciones-eventos.md`.
 - Avisar por email de que una grabación está a punto de caducar.
-- Estado de grabación en vivo para el host o los asistentes: la insignia refleja la configuración del evento; los fallos se avisan al admin por las alertas.
+- Cualquier indicación de grabación a asistentes u host (insignia, aviso previo o estado en vivo), por decisión de negocio. Los fallos se avisan al admin por las alertas.
 
 ## Capabilities
 
 ### New Capabilities
 - `agora-cloud-recording`: grabación en la nube de los eventos Agora — casilla por evento, predicado único de grabación, configuración de cada modo (`mix` para `broadcast`, `individual` para `meeting`), almacenamiento S3 y credencial delegada, reconciliador con techo de 180 minutos, reanudación acotada, diseño según la pantalla compartida, alertas y aislamiento en test.
 - `event-recording-access`: acceso del admin a las grabaciones — disponibilidad por entorno, listado por tarea leído del bucket, descarga prefirmada de los MP4, correspondencia uid → participante y comandos de descarga de las pistas de una reunión.
-- `event-recording-disclosure`: información a los participantes — insignia «Grabando» en la sala, aviso antes del acceso por modo de interacción y textos legales.
+- `event-recording-disclosure`: información a los participantes — ninguna indicación en la interfaz ni en las respuestas públicas, aceptación de la política de privacidad en el registro y textos legales.
 
 ### Modified Capabilities
-<!-- Ninguna: la señal `screen_share` no tiene hoy requisito propio en openspec/specs; su reemisión tras la unión queda especificada en `agora-cloud-recording`. -->
+- `agora-streaming-provider`: «Compartir pantalla del host (Agora)» — la pantalla lleva su audio, el uid 2 es la pantalla de la escena para host y co-presentador (token, 409, regla de suscripción, limpieza ante `UID_CONFLICT`).
+- `agora-broadcast-cohost`: el co-presentador gana el control «Pantalla», y su presencia acepta `screen_share`.
+- `agora-broadcast-stage`: el contenido de la escena es la pantalla del uid 2, la comparta quien la comparta.
 
 ## Impact
 
@@ -42,6 +46,7 @@ Los eventos en directo de 140d (charlas, masterclasses, entrevistas, reuniones) 
 - **Esquema de base de datos** (`api/config/database.js`, alto riesgo): columna `events.recording_enabled` (en el `CREATE TABLE` y con `safeAlter`) y tabla nueva `event_recordings` con un índice único parcial que impide dos tareas vivas por evento.
 - **Backend**: `api/services/agoraRecordingService.js` (nuevo), `api/scheduler/recordingScheduler.js` (nuevo, arrancado desde `api/server.js`), `api/services/agoraService.js` (uids reservados del grabador y cabecera REST compartida), `api/services/s3Service.js` (listado y URL prefirmada), `api/services/emailService.js` (alerta), `api/config/env.js`, `api/validators/eventSchemas.js`, `api/services/eventService.js`, `api/controllers/eventAdminController.js`, `api/controllers/eventController.js`, `api/socket/eventSocket.js`, `api/routes/admin/eventRoutes.js`.
 - **Frontend**: `client/app/admin/espacios/nuevo/page.js`, `client/app/admin/espacios/[id]/page.js`, `client/lib/eventRecording.js` (nuevo), `client/lib/constants.js`, la sala (`client/components/AgoraLiveRoom.js`, `client/app/live/[slug]/EventDetail.js`, barra compacta, cromo horizontal, consola del host), `client/components/EventAccessModal.js`, `client/app/legal/politica-de-privacidad/page.js`, `client/app/legal/normas-eventos/page.js`.
+- **Pantalla con audio y co-presentador**: `client/hooks/useAgoraRoom.js`, `client/hooks/useHostMediaControls.js`, `client/components/events/CoHostControls.js`, `client/components/AgoraLiveRoom.js`, `client/lib/constants.js`; en la api, `eventController.getScreenToken`, `eventService.getStaffAttendeeByEmail`, `eventSocket.js` (`getStageScreenSharer`, `isStageScreenSharing`) y la ruta `screen-token`.
 - **Dependencia nueva**: `@aws-sdk/s3-request-presigner` en `api/`.
 - **Integración externa**: Agora Cloud Recording REST (`/v1/apps/{appid}/cloud_recording/...`), con las credenciales de cliente que ya usa la moderación. Requiere activar Cloud Recording en la consola de Agora.
 - **Infraestructura AWS**: bucket de grabaciones por entorno (Block Public Access, sin versionado, regla de ciclo de vida de 30 días y de limpieza de subidas multiparte incompletas), usuario IAM por entorno con `s3:PutObject` sólo sobre su bucket, y `s3:ListBucket` + `s3:GetObject` + `s3:GetLifecycleConfiguration` añadidos al rol de la instancia de producción. Preproducción no tiene rol: allí el panel muestra bucket y prefijo, y los ficheros y la regla se comprueban en la consola de S3. Variables nuevas: `AGORA_RECORDING_S3_BUCKET`, `AGORA_RECORDING_S3_REGION`, `AGORA_RECORDING_S3_ACCESS_KEY`, `AGORA_RECORDING_S3_SECRET_KEY`. Ninguna `NEXT_PUBLIC_*`.

@@ -300,3 +300,26 @@ describe('GET /api/admin/events/:id/recordings/:recordingId/download', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('attendees and hosts never learn that an event is recorded', () => {
+  test('the public event endpoints do not carry recording_enabled; the admin one does', async () => {
+    const eventId = await createEvent('broadcast');
+
+    const bySlug = await request(app).get(`/api/events/rec-admin-${eventId}`);
+    expect(bySlug.status).toBe(200);
+    expect(bySlug.body.event.id).toBe(eventId);
+    expect(bySlug.body.event).not.toHaveProperty('recording_enabled');
+
+    const list = await request(app).get('/api/events').query({ from: '2026-10-01', to: '2026-10-02' });
+    expect(list.status).toBe(200);
+    const listed = list.body.events.find((e) => e.id === eventId);
+    expect(listed).toBeDefined();
+    expect(listed).not.toHaveProperty('recording_enabled');
+
+    const admin = await request(app)
+      .get(`/api/admin/events/${eventId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(admin.status).toBe(200);
+    expect(admin.body.event.recording_enabled).toBe(1);
+  });
+});

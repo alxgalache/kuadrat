@@ -35,16 +35,16 @@
 - [x] 5.2 Registro sin secretos: los logs de la REST sólo llevan `{ eventId, recordingId, mode, cname, uid, httpStatus, agoraCode }`; nunca el cuerpo de `acquire`/`start`/`update`.
 - [x] 5.3 `startTask`: `INSERT` en `starting` (el perdedor del índice único termina sin error), `acquire` → guardar `resource_id`, `start` → guardar `sid`, `started_at`, `applied_layout` y pasar a `recording`; cualquier fallo → `failed` con `error`.
 - [x] 5.4 `stopTask`: `UPDATE` condicional `recording → stopping`, `stop` con `async_stop: false`, guardar `file_list`, `upload_status`, `stopped_at`, `stop_reason` → `stopped`; 404 → `stopped`.
-- [x] 5.5 `reconcileEvent(eventId, { isHostScreenSharing })`, serializado por evento: arranques colgados → `failed`; parada por `event_ended` / `max_duration` / `recording_disabled`; `query` tras la gracia de 90 s (404 o estado de salida → `interrupted`); reintento de `stopping` colgado; `updateLayout` cuando el diseño deseado difiere del aplicado (sólo `mix`); arranque con tope de intentos, enfriamiento y techo. Con `config.recording.enabled = false` no arranca nada pero sí para lo vivo.
+- [x] 5.5 `reconcileEvent(eventId, { isStageScreenSharing })`, serializado por evento: arranques colgados → `failed`; parada por `event_ended` / `max_duration` / `recording_disabled`; `query` tras la gracia de 90 s (404 o estado de salida → `interrupted`); reintento de `stopping` colgado; `updateLayout` cuando el diseño deseado difiere del aplicado (sólo `mix`); arranque con tope de intentos, enfriamiento y techo. Con `config.recording.enabled = false` no arranca nada pero sí para lo vivo.
 - [x] 5.6 Alertas por tres canales (patrón de `dbBackupService.runBackupSafely`) con deduplicación en memoria: `start_failed` y `gave_up` por evento, `interrupted` y `stop_failed` por tarea. Nunca escapan del reconciliador.
 - [x] 5.7 `api/services/emailService.js`: `sendRecordingAlertEmail({ eventTitle, eventId, kind, detail })` a `BUSINESS_EMAIL` en es-ES, con un texto por tipo que diga qué hacer (p. ej. grabar en local como respaldo si no arranca).
-- [x] 5.8 `api/scheduler/recordingScheduler.js` (nuevo): node-cron cada 30 s, sin solapar pasadas; candidatos = eventos `active` con grabación elegible ∪ eventos con tarea viva; `isHostScreenSharing` desde `app.get('eventSocket')`.
+- [x] 5.8 `api/scheduler/recordingScheduler.js` (nuevo): node-cron cada 30 s, sin solapar pasadas; candidatos = eventos `active` con grabación elegible ∪ eventos con tarea viva; `isStageScreenSharing` desde `app.get('eventSocket')`.
 - [x] 5.9 `agoraRecordingService.js`: `checkRetentionRule()` — con `config.recording.enabled` y `config.useS3`, leer la configuración de ciclo de vida del bucket y exigir una regla `Enabled` que expire `eventos/` (o todo el bucket) en ≤ 30 días; si falta, es más larga o la lectura falla, alerta `retention_rule_missing` por los tres canales, una vez por arranque, sin bloquear grabaciones. El scheduler la llama al arrancar.
 - [x] 5.10 `api/server.js`: arrancar el scheduler junto a los demás (nunca desde `app.js`).
 
 ## 6. Enganches del ciclo de vida y de la pantalla compartida
 
-- [x] 6.1 `api/socket/eventSocket.js`: exponer `isHostScreenSharing(eventId)` en el objeto que devuelve el módulo (lee la entrada del host en la presencia; sin presencia, `false`).
+- [x] 6.1 `api/socket/eventSocket.js`: exponer `isStageScreenSharing(eventId)` en el objeto que devuelve el módulo (lee las entradas del host y del co-presentador en la presencia; sin presencia, `false`).
 - [x] 6.2 Mismo fichero: en el manejador `screen_share`, tras actualizar la presencia, llamar a `reconcileEvent` sin esperar y registrando el error.
 - [x] 6.3 `api/controllers/eventAdminController.js`: llamada sin espera a `reconcileEvent` en `startEvent`, `endEvent` y `markEventFinished`.
 - [x] 6.4 `api/controllers/eventController.js`: llamada sin espera a `reconcileEvent` en `endEvent` (host).
@@ -70,7 +70,7 @@
 ## 9. Cliente: formulario de admin
 
 - [x] 9.1 `client/lib/eventRecording.js` (nuevo): `isRecordingEligible(event)` y `isEventRecorded(event)`, espejo del predicado del servidor, y la función pura que construye los comandos de AWS CLI (sesión completa y por uid).
-- [x] 9.2 `client/lib/constants.js`: `EVENT_RECORDING_COPY` (etiqueta y ayudas de la casilla por modo, «no configurada», estados y motivos en es-ES, textos del panel, insignia y avisos de acceso por modo).
+- [x] 9.2 `client/lib/constants.js`: `EVENT_RECORDING_COPY` (etiqueta y ayudas de la casilla por modo, «no configurada», estados y motivos en es-ES, textos del panel).
 - [x] 9.3 `client/lib/api.js`: `getRecordingAvailability()`, `getEventRecordings(id)` y `getRecordingDownloadUrl(id, recordingId, file)` en el cliente de admin de eventos.
 - [x] 9.4 `client/app/admin/espacios/nuevo/page.js`: casilla visible con `provider='agora'` y `format='live'`, texto de ayuda por modo, deshabilitada con explicación si `recordingAvailable` es falso; enviar `recording_enabled`.
 - [x] 9.5 `client/app/admin/espacios/[id]/page.js`: la misma casilla en la edición, cargando el valor guardado.
@@ -82,11 +82,11 @@
 
 ## 11. Cliente: información a los participantes
 
-- [x] 11.1 `client/components/events/RecordingBadge.js` (nuevo): punto rojo + «Grabando», `aria-label` con el aviso completo, variantes clara y sobre fondo oscuro.
-- [x] 11.2 Montar la insignia en la cabecera de escritorio de `client/app/live/[slug]/EventDetail.js`, en `client/components/events/LiveRoomTopBar.js`, en `client/components/events/LandscapeStageChrome.js` y en `client/components/events/HostConsole.js`, condicionada a `isEventRecorded(event)` y `status === 'active'`.
-- [x] 11.3 Aviso previo por modo en la ficha (`EventDetail.js`, antes de entrar) y en `client/components/EventAccessModal.js`, con el plazo de 30 días y enlace al ancla del apartado de grabación de la política de privacidad.
-- [x] 11.4 `client/app/legal/politica-de-privacidad/page.js`: apartado «Grabación de eventos en directo» con ancla (`#grabacion-de-eventos`): qué se graba en cada modo, finalidad, base legal (relación con el host y co-presentador; consentimiento de quien interviene tras el aviso, pudiendo asistir sin ser grabado), encargados (Agora en su región europea, AWS en la UE), conservación de 30 días naturales con eliminación automática, supresión anticipada en info@140d.art. Renumerar los apartados siguientes y actualizar «Última actualización».
-- [x] 11.5 `client/app/legal/normas-eventos/page.js`: los eventos marcados se graban, se avisa antes y durante, y la grabación se conserva 30 días, con enlace al apartado de la política.
+- [x] 11.1 Retirar toda indicación de grabación de la interfaz de asistentes y host (decisión de negocio tras la verificación): borrar `client/components/events/RecordingBadge.js` y `RecordingNotice.js`, quitar la prop `recording` de `AgoraLiveRoom`, `BroadcastArea`, `MeetingArea`, `LiveRoomTopBar`/`LiveIndicator`, `LandscapeStageChrome` y `HostConsole`, y los avisos de `EventDetail.js` y `EventAccessModal.js`, con sus textos en `EVENT_RECORDING_COPY` y los predicados que sólo los servían.
+- [x] 11.2 `api/controllers/eventController.js`: `toPublicEvent` quita `recording_enabled` de `GET /api/events` y `GET /api/events/:slug`; test en `api/tests/eventRecordingAdmin.test.js` (públicas sin el campo, admin con él).
+- [x] 11.3 `client/components/EventAccessModal.js`: la casilla del registro dice «Acepto las normas y términos para la participación en eventos en directo y la política de privacidad», con un enlace a cada documento en pestaña nueva.
+- [x] 11.4 `client/app/legal/politica-de-privacidad/page.js`: apartado «Grabación de eventos en directo» con ancla (`#grabacion-de-eventos`): los eventos pueden grabarse y se informa aquí, sin aviso por evento; qué se graba en cada modo; finalidad; base legal (relación con el host y co-presentador; consentimiento de quien interviene sabiendo, por la política aceptada al registrarse, que el evento puede grabarse, pudiendo asistir sin ser grabado); encargados (Agora en su región europea, AWS en la UE); conservación de 30 días naturales con eliminación automática; supresión anticipada en info@140d.art. Renumerar los apartados siguientes y actualizar «Última actualización».
+- [x] 11.5 `client/app/legal/normas-eventos/page.js`: resumen (los eventos pueden grabarse, a quién se graba en cada modo, 30 días) y enlace al apartado de la política.
 
 ## 12. Cliente: reemisión de la pantalla compartida
 
@@ -96,7 +96,7 @@
 ## 13. Documentación
 
 - [x] 13.1 `docs/grabaciones-eventos.md` (nuevo): activar Cloud Recording en la consola de Agora; crear el bucket de cada entorno (eu-west-1, Block Public Access, **sin versionado** y por qué); reglas de ciclo de vida en JSON (expiración de 30 días sobre `eventos/` y limpieza de subidas multiparte incompletas a 1 día); usuario IAM por entorno y política JSON de sólo `s3:PutObject`; permisos `s3:ListBucket` + `s3:GetObject` + `s3:GetLifecycleConfiguration` para el rol de la instancia de producción; supresión anticipada a petición de un participante (qué borrar en cada modo); variables; qué se graba en cada modo; descargar un MP4; descargar las pistas de una reunión con AWS CLI; convertirlas con `convert_v2.py` en Linux x86; costes; alertas; rotación de la clave IAM; puntos ciegos.
-- [x] 13.2 `CLAUDE.md`: sección «Grabación de eventos Agora (Cloud Recording)» con las reglas que sostienen el diseño (modo por `interaction_mode`, `#allstream#`, `audioProfile: 1`, prefijo alfanumérico, token sin renovación, reconciliador como autoridad, techo, credencial delegada, bucket como fuente de verdad, 30 días aplicados por el bucket y sin versionado, insignia de configuración) y la entrada de las variables en «Environment Variables».
+- [x] 13.2 `CLAUDE.md`: sección «Grabación de eventos Agora (Cloud Recording)» con las reglas que sostienen el diseño (modo por `interaction_mode`, `#allstream#`, `audioProfile: 1`, prefijo alfanumérico, token sin renovación, reconciliador como autoridad, techo, credencial delegada, bucket como fuente de verdad, 30 días aplicados por el bucket y sin versionado, ninguna indicación de grabación fuera de admin y de los textos legales) y la entrada de las variables en «Environment Variables».
 
 ## 14. Puesta en marcha y verificación (operador)
 
@@ -108,3 +108,18 @@
 - [ ] 14.6 Comprobar que el grabador con token `subscriber` entra bajo Co-host authentication y que la política de sólo `s3:PutObject` le basta; si Agora pidiera otro permiso, añadir sólo ese y documentarlo.
 - [ ] 14.7 Producción: bucket con sus reglas, usuario IAM, permisos del rol, las cuatro `AGORA_RECORDING_S3_*` de producción (las `AGORA_*` no cambian) y `./deploy/deploy.sh`; comprobar que el arranque **no** emite `retention_rule_missing`; primera grabación real listada y descargada desde el panel.
 - [ ] 14.8 Primera factura de Agora con grabaciones: confirmar que el `mix` se factura por los flujos grabados y no por el lienzo de 1920×1080 (si no, bajar el lienzo a 1280×720).
+- [ ] 14.9 Chrome para Windows, host de un stream: «Pantalla» ofrece «Compartir audio» en las tres pestañas del selector; con «Toda la pantalla» y el audio del sistema, los asistentes oyen un vídeo reproducido en el equipo del host y **no** oyen de vuelta sus propias voces; el MP4 de la grabación lleva ese audio.
+- [ ] 14.10 Chrome para macOS: audio de pestaña siempre; audio del sistema en «Toda la pantalla»/«Ventana» sólo con macOS 14.2+ y Chrome 141+. Anotar la versión probada.
+- [ ] 14.11 Co-presentador: comparte pantalla con audio en un stream; el host la ve en la escena y la oye (con auricular); mientras el admin comparte, el «Pantalla» del host muestra el motivo sin abrir el selector, y a la inversa; en la grabación, la pantalla del admin ocupa la ventana grande.
+- [ ] 14.12 Reunión: el host comparte una pestaña con audio y los participantes la oyen; al dejar de compartir vuelve su cámara.
+
+## 15. Pantalla compartida con audio y co-presentador (D15, D16)
+
+- [x] 15.1 `client/lib/constants.js`: `AGORA_SCREEN_AUDIO_CONFIG` (sin `AEC`/`AGC`/`ANS`, con `restrictOwnAudio`), `AGORA_SCREEN_CAPTURE_OPTIONS` (`systemAudio`, `windowAudio`) y `SCREEN_SHARE_COPY` (motivos en es-ES).
+- [x] 15.2 `client/hooks/useAgoraRoom.js`: helper `createScreenTracks` (nunca `'disable'`; normaliza `[vídeo, audio]` y vídeo solo), `screenAudioTrackRef` publicado, despublicado y cerrado en las dos rutas, en `becomeAudience` y al desmontar; el cliente principal ignora el uid 2 sólo mientras esta página lo publica; `UID_CONFLICT` al unirse → `SCREEN_SHARE_IN_USE`; desconexión del segundo cliente por `UID_CONFLICT`/`UID_BANNED` → limpieza y suscripción a la pantalla que lo sustituye.
+- [x] 15.3 `client/hooks/useHostMediaControls.js`: parámetro `screenShareHeldBy`; rechazo con motivo antes del selector; `SCREEN_SHARE_IN_USE` (409 en `title` o código de Agora) → mensaje propio.
+- [x] 15.4 `client/components/AgoraLiveRoom.js`: modo `separate-client` para host y co-presentador de un stream; `screenShareHeldBy` desde la presencia; la escena pinta la pantalla local de quien comparte o la remota del uid 2; el co-presentador emite y reemite `screen_share`.
+- [x] 15.5 `client/components/events/CoHostControls.js`: «Pantalla» en escritorio y en compacto (con el motivo en «Más» si el navegador no puede).
+- [x] 15.6 `api/socket/eventSocket.js`: `screen_share` aceptado del host y del co-presentador; `getStageScreenSharer` e `isStageScreenSharing` (renombrado desde `isHostScreenSharing` en el servicio, el scheduler y los tests).
+- [x] 15.7 `api/services/eventService.js` (`getStaffAttendeeByEmail`) y `eventController.getScreenToken`: host o co-presentador (`isBroadcastCohost`), 409 `SCREEN_SHARE_IN_USE` mientras la tiene el otro, renovación para quien la tiene.
+- [x] 15.8 Tests: `agoraBroadcastCohost.test.js` (token del co-presentador, 403 a un admin sin asiento y a uno degradado, 409 en los dos sentidos, renovación de quien la tiene) y `eventSocketCohost.test.js` (`screen_share` del co-presentador aceptado y del asistente ignorado); suite completa, lint y build de producción en verde.

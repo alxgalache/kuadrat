@@ -205,11 +205,13 @@ export const AGORA_VIDEO_QUALITY_STORAGE_KEY = 'kuadrat.agora.videoQuality';
 // ---------------------------------------------------------------------------
 // Escena de los eventos stream: co-presentador y pantalla con cámara
 // ---------------------------------------------------------------------------
-// uids reservados al host. Espejo de api/services/agoraService.js: los
-// asistentes empiezan en 101. El host usa DOS porque un cliente de Agora solo
-// puede publicar una pista de vídeo (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS`
-// en 4.24.6): la pantalla va en un segundo cliente para que la cámara siga en
-// el aire mientras se comparte.
+// uids reservados. Espejo de api/services/agoraService.js: los asistentes
+// empiezan en 101. Hay DOS porque un cliente de Agora solo puede publicar una
+// pista de vídeo (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS` en 4.24.6): la
+// pantalla va en un segundo cliente para que la cámara siga en el aire
+// mientras se comparte. El uid 2 es la pantalla de la ESCENA, no la del host:
+// en un stream la publica el host o el co-presentador, uno cada vez. El nombre
+// se conservó para no tocar a sus consumidores.
 export const AGORA_HOST_UID = 1;
 export const AGORA_HOST_SCREEN_UID = 2;
 
@@ -258,6 +260,42 @@ export const AGORA_LOW_STREAM_PARAMETER = { width: 480, height: 270, framerate: 
 // Misma forma `{ max }` que la tabla del SDK: limita la captura sin forzarla,
 // así que una pantalla 16:10 queda aún más holgada.
 export const AGORA_SCREEN_ENCODER_BROADCAST = { width: { max: 1792 }, height: { max: 1008 }, frameRate: 30 };
+
+// Audio de la pantalla compartida, segundo argumento de `createScreenVideoTrack`.
+//
+// Pasar un OBJETO en vez de `'disable'` es lo que hace que el SDK llame a
+// `getDisplayMedia` con `audio` (literal del bundle 4.24.6:
+// `screenAudio: supportShareAudio && withAudio !== 'disable' ? config || true :
+// undefined`). Chrome sólo pinta el interruptor «Compartir audio» del selector
+// cuando la página pide audio: con `'disable'`, que es lo que había, no aparecía
+// ni en Windows (pestaña, ventana y pantalla completa) ni en macOS 14.2+ con
+// Chrome 141+ (ventana y pantalla), ni en Linux (sólo pestaña). Si la persona
+// no marca el interruptor, el SDK devuelve sólo la pista de vídeo.
+//
+// - Sin procesado de voz (AEC/AGC/ANS a `false`): lo que se comparte es la
+//   música o el sonido de un vídeo, y la supresión de ruido lo trataría como
+//   ruido. Mismo razonamiento que AGORA_MIC_NO_PROCESSING del host.
+// - `restrictOwnAudio` (Chrome 141+; el SDK sólo lo envía si el navegador lo
+//   admite): quita de la captura el audio que reproduce ESTA página. Sin él,
+//   compartir «Toda la pantalla» con el audio del sistema devolvería al canal
+//   las voces de los invitados que suenan en el ordenador de quien comparte, y
+//   cada uno se oiría a sí mismo con retardo.
+export const AGORA_SCREEN_AUDIO_CONFIG = { AEC: false, AGC: false, ANS: false, restrictOwnAudio: true };
+
+// Pistas de captura de `getDisplayMedia` que ofrecen el audio del sistema en
+// las pestañas «Ventana» y «Toda la pantalla». Son los valores por defecto de
+// Chrome; se declaran para no depender de ellos. El SDK sólo los envía a las
+// versiones que los entienden (105+ `systemAudio`, 141+ `windowAudio`).
+export const AGORA_SCREEN_CAPTURE_OPTIONS = { systemAudio: 'include', windowAudio: 'system' };
+
+// Una sola pantalla en la escena de un stream: el uid 2 la comparten el host y
+// el co-presentador, y quien la tiene la tiene hasta que deje de compartir.
+export const SCREEN_SHARE_COPY = {
+  heldByHost: 'El host está compartiendo pantalla. Podrás compartir la tuya cuando termine.',
+  heldByCoHost: 'El co-presentador está compartiendo pantalla. Podrás compartir la tuya cuando termine.',
+  inUse: 'Otra persona está compartiendo pantalla. Podrás compartir la tuya cuando termine.',
+  failed: 'No se pudo compartir pantalla',
+};
 
 // Tamaño de los recuadros, en porcentaje del ancho de la escena. El de esquina
 // es mayor porque con dos cámaras aloja dos mitades 8:9 dentro de un 16:9.
@@ -963,16 +1001,8 @@ export const EVENT_RECORDING_COPY = {
   helpMeeting:
     'Se guarda una pista de audio y otra de vídeo por cada participante, para poder editarlas por separado.',
   helpCommon:
-    'La grabación empieza al iniciar el evento y se detiene sola al finalizarlo o a las 3 horas del inicio. Los asistentes verán un aviso antes de entrar y durante el evento. Las grabaciones se eliminan a los 30 días.',
+    'La grabación empieza al iniciar el evento y se detiene sola al finalizarlo o a las 3 horas del inicio. Los asistentes no ven ningún aviso: la grabación se comunica en la política de privacidad que aceptan al registrarse. Las grabaciones se eliminan a los 30 días.',
   unavailable: 'La grabación no está configurada en este entorno.',
-  badge: 'Grabando',
-  badgeAria: 'Este evento se está grabando (audio y vídeo)',
-  noticeBroadcast:
-    'Este evento se graba (audio y vídeo). Si el host te da la palabra, tu voz —y tu imagen, si activas la cámara— quedarán en la grabación, que se conserva 30 días.',
-  noticeMeeting:
-    'Esta reunión se graba (audio y vídeo). Tu imagen y tu voz quedarán grabadas mientras tengas la cámara o el micrófono activados. La grabación se conserva 30 días.',
-  noticeLink: 'Más información',
-  privacyHref: '/legal/politica-de-privacidad#grabacion-de-eventos',
   panel: {
     title: 'Grabaciones',
     retention: (days) =>

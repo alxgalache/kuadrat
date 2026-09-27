@@ -155,7 +155,8 @@ function ageSeconds(sqlValue) {
 /**
  * The composite layout for a broadcast. Two states only: adaptive (one
  * publisher fills the canvas, several share it in equal windows) and, while
- * the host shares a screen, vertical with the screen (uid 2) in the big
+ * the host or the co-presenter shares a screen, vertical with the stage
+ * screen (uid 2, whichever of the two publishes it) in the big
  * window. Replicating BroadcastStage exactly is a non-goal: it would be a
  * second copy of the stage logic.
  */
@@ -426,7 +427,7 @@ function isUniqueViolation(err) {
 // Task operations
 // ---------------------------------------------------------------------------
 
-async function startTask(event, attempt, windowStartMs, { isHostScreenSharing } = {}) {
+async function startTask(event, attempt, windowStartMs, { isStageScreenSharing } = {}) {
   const mode = recordingModeFor(event);
   const id = randomUUID();
   const fileNamePrefix = buildFileNamePrefix(event.id, id);
@@ -434,8 +435,8 @@ async function startTask(event, attempt, windowStartMs, { isHostScreenSharing } 
   const recorderUid = recorderUidFor(attempt);
   const cname = event.agora_channel_name;
   const screenSharing = mode === 'mix'
-    && typeof isHostScreenSharing === 'function'
-    && !!isHostScreenSharing(event.id);
+    && typeof isStageScreenSharing === 'function'
+    && !!isStageScreenSharing(event.id);
   const layout = mode === 'mix' ? mixLayoutFor(screenSharing) : null;
   const logContext = { eventId: event.id, recordingId: id, mode, cname, uid: recorderUid };
   const stamp = sqlNow();
@@ -583,11 +584,11 @@ async function queryTask(task) {
   }
 }
 
-async function ensureLayout(task, event, isHostScreenSharing) {
+async function ensureLayout(task, event, isStageScreenSharing) {
   // Without the presence reader the desired layout is unknown: leave it be,
   // rather than flipping a running screen layout back to adaptive.
-  if (typeof isHostScreenSharing !== 'function') return;
-  const desired = mixLayoutFor(!!isHostScreenSharing(event.id));
+  if (typeof isStageScreenSharing !== 'function') return;
+  const desired = mixLayoutFor(!!isStageScreenSharing(event.id));
   if (desired.layout === task.applied_layout) return;
   try {
     const result = await recordingRequest(
@@ -619,7 +620,7 @@ async function ensureLayout(task, event, isHostScreenSharing) {
 // Reconciler
 // ---------------------------------------------------------------------------
 
-async function reconcileEventNow(eventId, { isHostScreenSharing } = {}) {
+async function reconcileEventNow(eventId, { isStageScreenSharing } = {}) {
   const event = await loadEvent(eventId);
   if (!event) return;
   const tasks = await loadTasks(eventId);
@@ -677,7 +678,7 @@ async function reconcileEventNow(eventId, { isHostScreenSharing } = {}) {
       }
     }
     if (live) {
-      if (live.mode === 'mix') await ensureLayout(live, event, isHostScreenSharing);
+      if (live.mode === 'mix') await ensureLayout(live, event, isStageScreenSharing);
       return;
     }
   }
@@ -695,7 +696,7 @@ async function reconcileEventNow(eventId, { isHostScreenSharing } = {}) {
   const lastFailed = [...tasks].reverse().find((t) => t.status === 'failed');
   if (lastFailed && ageSeconds(lastFailed.updated_at) < RECORDING_RETRY_COOLDOWN_SECONDS) return;
 
-  await startTask(event, attempts, windowStartMs, { isHostScreenSharing });
+  await startTask(event, attempts, windowStartMs, { isStageScreenSharing });
 }
 
 // Per-event serialisation inside the process.
@@ -706,8 +707,9 @@ const chains = new Map();
  * Safe to call from anywhere, any number of times.
  *
  * @param {string} eventId
- * @param {{ isHostScreenSharing?: (eventId: string) => boolean }} [options]
- *   Reader of the host's screen-sharing flag in the socket presence. Without
+ * @param {{ isStageScreenSharing?: (eventId: string) => boolean }} [options]
+ *   Reader of the stage screen's flag in the socket presence (host or
+ *   co-presenter). Without
  *   it the layout is left untouched.
  */
 function reconcileEvent(eventId, options = {}) {
@@ -725,13 +727,13 @@ function reconcileEvent(eventId, options = {}) {
  * Fire-and-forget entry point for the lifecycle endpoints and the socket:
  * never awaited, never throws. A no-op when recording is not enabled.
  */
-function triggerReconcile(eventId, { eventSocket = null, isHostScreenSharing = null } = {}) {
+function triggerReconcile(eventId, { eventSocket = null, isStageScreenSharing = null } = {}) {
   if (!recordingEnabled() || !eventId) return;
-  const reader = isHostScreenSharing
-    || (eventSocket && typeof eventSocket.isHostScreenSharing === 'function'
-      ? eventSocket.isHostScreenSharing.bind(eventSocket)
+  const reader = isStageScreenSharing
+    || (eventSocket && typeof eventSocket.isStageScreenSharing === 'function'
+      ? eventSocket.isStageScreenSharing.bind(eventSocket)
       : undefined);
-  reconcileEvent(eventId, { isHostScreenSharing: reader }).catch((err) => {
+  reconcileEvent(eventId, { isStageScreenSharing: reader }).catch((err) => {
     logger.error({ eventId, err }, '[agoraRecording] Reconciliation failed');
   });
 }

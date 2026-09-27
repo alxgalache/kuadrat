@@ -295,3 +295,61 @@ describe('staff flag in presence', () => {
     expect(entries[0].staff).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Stage screen (Change: agora-event-recording). uid 2 is ONE screen for the
+// host and the co-presenter: either may flag it, the recording layout and the
+// screen-token guard read who holds it, and nobody else can claim it.
+// ---------------------------------------------------------------------------
+describe('stage screen share', () => {
+  const agoraRecordingService = require('../services/agoraRecordingService');
+  let trigger;
+
+  beforeEach(() => {
+    trigger = jest.spyOn(agoraRecordingService, 'triggerReconcile').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    trigger.mockRestore();
+  });
+
+  it('accepts the co-presenter flagging the stage screen and triggers the recording layout', async () => {
+    const { connect, helpers, broadcasts } = createFakeServer();
+    const cohost = connect();
+    const session = await staffSession();
+    await cohost.joinRoom(session);
+
+    cohost.send('screen_share', { active: true });
+
+    expect(helpers.getStageScreenSharer(eventId)).toBe(`viewer-${session.attendeeId}`);
+    expect(helpers.isStageScreenSharing(eventId)).toBe(true);
+    const update = broadcasts.find((b) => b.event === 'presence_updated')?.payload;
+    expect(update).toMatchObject({ identity: `viewer-${session.attendeeId}`, coHost: true, screenSharing: true });
+    expect(trigger).toHaveBeenCalledWith(eventId, { isStageScreenSharing: expect.any(Function) });
+
+    cohost.send('screen_share', { active: false });
+    expect(helpers.getStageScreenSharer(eventId)).toBeNull();
+  });
+
+  it('reports the host as the holder while the host shares', async () => {
+    const { connect, helpers } = createFakeServer();
+    const host = connect();
+    await host.joinRoom({ eventId, hostToken: tokenFor(hostId, HOST_EMAIL, 'seller') });
+
+    host.send('screen_share', { active: true });
+
+    expect(helpers.getStageScreenSharer(eventId)).toBe(`host-${hostId}`);
+  });
+
+  it('ignores an ordinary attendee claiming the stage screen', async () => {
+    const { connect, helpers, broadcasts } = createFakeServer();
+    const viewer = connect();
+    await viewer.joinRoom(await viewerSession('pantalla'));
+
+    viewer.send('screen_share', { active: true });
+
+    expect(helpers.getStageScreenSharer(eventId)).toBeNull();
+    expect(broadcasts.map((b) => b.event)).not.toContain('presence_updated');
+    expect(trigger).not.toHaveBeenCalled();
+  });
+});

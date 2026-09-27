@@ -10,9 +10,15 @@ import { STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY, LIVE_ROOM_COPY } from '
  * Control bar of the co-presenter (the admin interviewing the host) in an
  * Agora broadcast event.
  *
- * Deliberately narrow: microphone, camera, speakers and the camera layout. No
- * screen share, whiteboard, effects, quality or "Finalizar stream" — two people
- * operating those at once produce incompatible states.
+ * Deliberately narrow: microphone, camera, speakers, screen share and the
+ * camera layout. No whiteboard, effects, quality or "Finalizar stream" — two
+ * people operating those at once produce incompatible states.
+ *
+ * Screen share is the exception because it cannot collide: the stage has ONE
+ * screen (uid 2), whoever of the two takes it first holds it, and the other is
+ * told why (useHostMediaControls, plus a 409 from the server). It exists so the
+ * interviewer can put a screen WITH its audio on stage when the host's browser
+ * cannot share audio.
  *
  * A PRESENTATION of `useHostMediaControls`, instantiated once in AgoraLiveRoom
  * exactly as for the host, never a second copy of the device logic.
@@ -26,7 +32,7 @@ import { STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY, LIVE_ROOM_COPY } from '
  */
 export default function CoHostControls({ room, hostControls, layout, onLayoutChange, layoutLocked }) {
   const [openDeviceMenu, setOpenDeviceMenu] = useState(null)
-  const { devices, deviceError, toggleMic, toggleCamera, selectDevice: selectDeviceFn } = hostControls
+  const { devices, deviceError, toggleMic, toggleCamera, toggleScreenShare, selectDevice: selectDeviceFn } = hostControls
 
   const selectDevice = (kind) => async (device) => {
     await selectDeviceFn(kind)(device)
@@ -59,6 +65,10 @@ export default function CoHostControls({ room, hostControls, layout, onLayoutCha
           activeDeviceId={devices.activeCamId}
           onSelect={selectDevice('videoinput')}
         />
+      </div>
+      <div className="flex items-center gap-x-2">
+        <span className="text-sm text-gray-700">Pantalla</span>
+        <ToggleSwitch checked={room.screenEnabled} onChange={toggleScreenShare} />
       </div>
       {devices.playbackDevices.length > 0 && (
         <div className="relative flex items-center gap-x-2">
@@ -106,19 +116,25 @@ export default function CoHostControls({ room, hostControls, layout, onLayoutCha
 
 /**
  * Compact presentation of the same co-presenter controls (live-event-mobile-layout):
- * microphone, camera and «Más» with sources, speakers and the camera layout —
- * exactly the restricted set of the desktop bar, from the same single
- * `useHostMediaControls` instance.
+ * microphone, camera, screen (where the browser can share one) and «Más» with
+ * sources, speakers and the camera layout — exactly the restricted set of the
+ * desktop bar, from the same single `useHostMediaControls` instance.
  */
 export function CompactCoHostControls({ room, hostControls, layout, onLayoutChange, layoutLocked }) {
   const [sheetOpen, setSheetOpen] = useState(false)
-  const { devices, deviceError, toggleMic, toggleCamera, selectDevice, speakerSelectionSupported } = hostControls
+  const {
+    devices, deviceError, toggleMic, toggleCamera, toggleScreenShare, selectDevice,
+    screenShareSupported, speakerSelectionSupported,
+  } = hostControls
 
   return (
     <>
       <ControlsRow error={deviceError}>
         <ControlIconButton kind="mic" label={LIVE_ROOM_COPY.mic} active={room.micEnabled} onClick={toggleMic} />
         <ControlIconButton kind="camera" label={LIVE_ROOM_COPY.camera} active={room.camEnabled} onClick={toggleCamera} />
+        {screenShareSupported && (
+          <ControlIconButton kind="screen" label={LIVE_ROOM_COPY.screen} active={room.screenEnabled} onClick={toggleScreenShare} />
+        )}
         <ControlIconButton kind="more" label={LIVE_ROOM_COPY.moreOptions} onClick={() => setSheetOpen(true)} />
       </ControlsRow>
       <ControlsSheet
@@ -127,6 +143,7 @@ export function CompactCoHostControls({ room, hostControls, layout, onLayoutChan
         devices={devices}
         onSelectDevice={selectDevice}
         speakerSupported={speakerSelectionSupported}
+        screenUnsupported={!screenShareSupported}
         stageLayout={{ value: layout, onChange: onLayoutChange, locked: layoutLocked }}
       />
     </>

@@ -126,12 +126,14 @@ export default function EventRulesPage() {
           <section>
             <h2 className="text-lg font-semibold text-gray-900">7. Grabación de Eventos</h2>
             <p className="mt-3">
-              Algunos eventos se graban (audio y vídeo) para poder consultarlos y reutilizar su
-              contenido después. Te avisamos antes de acceder, en la ficha del evento, y durante el
-              evento con el aviso «Grabando». En un stream se graba a quien recibe la palabra; en una
-              reunión, a cada participante mientras tenga la cámara o el micrófono activados. La
-              grabación se conserva 30 días y después se elimina automáticamente. Tienes todos los
-              detalles en el apartado{' '}
+              Los eventos en directo pueden grabarse (audio y vídeo) para poder consultarlos y
+              reutilizar su contenido después. En un stream se graba a quien recibe la palabra (al
+              recibirla se activa su micrófono, que puede silenciar en cualquier momento, y su imagen
+              solo si activa la cámara); en una reunión, a cada participante mientras tenga la cámara
+              o el micrófono activados. Nunca se graba el chat ni a quien solo mira y escucha. La
+              grabación se conserva 30 días naturales y después se elimina automáticamente. La
+              finalidad, la base legal, los encargados del tratamiento y cómo pedir que se suprima tu
+              intervención están en el apartado{' '}
               <Link href="/legal/politica-de-privacidad#grabacion-de-eventos" className="font-medium text-gray-900 underline hover:text-gray-700">
                 Grabación de eventos en directo
               </Link>{' '}

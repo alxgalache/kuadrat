@@ -55,18 +55,23 @@ module.exports = function setupEventSocket(io) {
     return eventRooms.get(eventId);
   }
 
-  // Whether the event's host is flagging a screen share in the presence. The
-  // ONLY source of that state for the cloud recording layout
-  // (agora-event-recording): read on demand, never copied elsewhere. No host
-  // presence (not joined yet, or lost on an api restart until they rejoin)
-  // reads as false.
-  function isHostScreenSharing(eventId) {
+  // Who is flagging the stage screen (uid 2) in the presence: the host or the
+  // broadcast co-presenter, who share that one screen. The ONLY source of that
+  // state for the cloud recording layout (agora-event-recording) and for the
+  // screen-token guard: read on demand, never copied elsewhere. No presence
+  // (not joined yet, or lost on an api restart until they rejoin) reads as
+  // nobody.
+  function getStageScreenSharer(eventId) {
     const room = eventRooms.get(eventId);
-    if (!room) return false;
+    if (!room) return null;
     for (const entry of room.values()) {
-      if (entry.isHost) return !!entry.screenSharing;
+      if ((entry.isHost || entry.coHost) && entry.screenSharing) return entry.identity;
     }
-    return false;
+    return null;
+  }
+
+  function isStageScreenSharing(eventId) {
+    return getStageScreenSharer(eventId) !== null;
   }
 
   function publicPresence(entry) {
@@ -382,19 +387,21 @@ module.exports = function setupEventSocket(io) {
       io.to(roomName(eventRoomId)).emit('presence_updated', publicPresence(entry));
     });
 
-    // Host flags screen sharing so meeting grids can feature their tile
-    // (RTC alone can't distinguish a screen track from a camera track)
+    // Host (or broadcast co-presenter) flags screen sharing so meeting grids
+    // can feature their tile and the other presenter knows the stage screen is
+    // taken (RTC alone can't distinguish a screen track from a camera track,
+    // nor tell who is behind uid 2)
     socket.on('screen_share', ({ active } = {}) => {
       const { eventRoomId, identity } = socket.data || {};
       if (!eventRoomId || !identity) return;
       const entry = eventRooms.get(eventRoomId)?.get(identity);
-      if (!entry || !entry.isHost) return;
+      if (!entry || (!entry.isHost && !entry.coHost)) return;
       entry.screenSharing = !!active;
       io.to(roomName(eventRoomId)).emit('presence_updated', publicPresence(entry));
       // The cloud recording of a broadcast puts the shared screen in the big
       // window: reconcile now instead of waiting for the next 30 s pass. Never
       // awaited, never throws, no-op when recording is not enabled.
-      agoraRecordingService.triggerReconcile(eventRoomId, { isHostScreenSharing });
+      agoraRecordingService.triggerReconcile(eventRoomId, { isStageScreenSharing });
     });
 
     // In-room host moderation: ask a participant to mute (soft mute, meeting
@@ -469,11 +476,19 @@ module.exports = function setupEventSocket(io) {
     },
 
     /**
-     * Whether the host flags a screen share (agora-event-recording reads it
-     * to choose the composite layout).
+     * Whether the host or the co-presenter flags the stage screen
+     * (agora-event-recording reads it to choose the composite layout).
      */
-    isHostScreenSharing(eventId) {
-      return isHostScreenSharing(eventId);
+    isStageScreenSharing(eventId) {
+      return isStageScreenSharing(eventId);
+    },
+
+    /**
+     * Presence identity of whoever holds the stage screen, or null. The
+     * screen-token endpoint refuses the other presenter while it is taken.
+     */
+    getStageScreenSharer(eventId) {
+      return getStageScreenSharer(eventId);
     },
 
     /**

@@ -1,7 +1,9 @@
 /**
  * Client mirror of `api/utils/eventRecording.js` (agora-event-recording): the
- * ONE place the client decides whether an event is recorded. The admin form,
- * the in-room «Grabando» badge and the pre-access notice all go through it;
+ * ONE place the client decides whether an event is recorded. Admin screens
+ * only: attendees and hosts are never shown anything about the recording (the
+ * disclosure is the privacy policy they accept when registering), and the
+ * public event endpoints do not even carry `recording_enabled`.
  * `recording_enabled` is stored for any provider and only has effect here.
  */
 
@@ -13,16 +15,6 @@ export function supportsRecording({ provider, format } = {}) {
 /** Mirror of the server's isRecordingEligible. */
 export function isEventRecorded(event) {
   return !!event && Number(event.recording_enabled) === 1 && supportsRecording(event)
-}
-
-/** The in-room badge: a recorded event while it is live. */
-export function isRecordingBadgeVisible(event) {
-  return isEventRecorded(event) && event.status === 'active'
-}
-
-/** broadcast → one composite video; meeting → one track per participant. */
-export function isPerParticipantRecording(event) {
-  return !!event && event.interaction_mode === 'meeting'
 }
 
 /**

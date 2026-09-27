@@ -574,12 +574,12 @@ describe('composite layout follows the screen share', () => {
     configure(fake);
     const eventId = await createEvent();
     let sharing = false;
-    const isHostScreenSharing = () => sharing;
-    await svc.reconcileEvent(eventId, { isHostScreenSharing });
+    const isStageScreenSharing = () => sharing;
+    await svc.reconcileEvent(eventId, { isStageScreenSharing });
 
     sharing = true;
     clock += 2 * MINUTE;
-    await svc.reconcileEvent(eventId, { isHostScreenSharing });
+    await svc.reconcileEvent(eventId, { isStageScreenSharing });
     let update = fake.calls.filter((c) => c.kind === 'updateLayout').pop();
     expect(update.body).toEqual({
       cname: `event-${eventId}`,
@@ -589,7 +589,7 @@ describe('composite layout follows the screen share', () => {
     expect((await tasksOf(eventId))[0].applied_layout).toBe('screen');
 
     sharing = false;
-    await svc.reconcileEvent(eventId, { isHostScreenSharing });
+    await svc.reconcileEvent(eventId, { isStageScreenSharing });
     update = fake.calls.filter((c) => c.kind === 'updateLayout').pop();
     expect(update.body.clientRequest).toEqual({ mixedVideoLayout: 1, backgroundColor: '#000000' });
     expect((await tasksOf(eventId))[0].applied_layout).toBe('adaptive');
@@ -599,14 +599,14 @@ describe('composite layout follows the screen share', () => {
     const fake = createFakeAgora();
     configure(fake);
     const eventId = await createEvent();
-    await svc.reconcileEvent(eventId, { isHostScreenSharing: () => false });
+    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => false });
     fake.handlers.updateLayout = () => ({ status: 500, body: {} });
 
-    await svc.reconcileEvent(eventId, { isHostScreenSharing: () => true });
+    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => true });
     expect((await tasksOf(eventId))[0]).toMatchObject({ status: 'recording', applied_layout: 'adaptive' });
 
     fake.handlers.updateLayout = () => ({ status: 200, body: {} });
-    await svc.reconcileEvent(eventId, { isHostScreenSharing: () => true });
+    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => true });
     expect((await tasksOf(eventId))[0].applied_layout).toBe('screen');
     expect(fake.count('updateLayout')).toBe(2);
   });
@@ -615,7 +615,7 @@ describe('composite layout follows the screen share', () => {
     const fake = createFakeAgora();
     configure(fake);
     const eventId = await createEvent();
-    await svc.reconcileEvent(eventId, { isHostScreenSharing: () => true });
+    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => true });
     expect((await tasksOf(eventId))[0].applied_layout).toBe('screen');
 
     await svc.reconcileEvent(eventId);
@@ -627,7 +627,7 @@ describe('composite layout follows the screen share', () => {
     configure(fake);
     const eventId = await createEvent();
 
-    await svc.reconcileEvent(eventId, { isHostScreenSharing: () => true });
+    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => true });
 
     const start = fake.calls.find((c) => c.kind === 'start');
     expect(start.body.clientRequest.recordingConfig.transcodingConfig).toMatchObject({
@@ -677,14 +677,14 @@ describe('screen_share in the authenticated event room', () => {
     const ack = await host.joinRoom({ eventId, hostToken });
     expect(ack.ok).toBe(true);
 
-    expect(helpers.isHostScreenSharing(eventId)).toBe(false);
+    expect(helpers.isStageScreenSharing(eventId)).toBe(false);
     host.send('screen_share', { active: true });
 
-    expect(helpers.isHostScreenSharing(eventId)).toBe(true);
-    expect(trigger).toHaveBeenCalledWith(eventId, { isHostScreenSharing: expect.any(Function) });
-    const reader = trigger.mock.calls[0][1].isHostScreenSharing;
+    expect(helpers.isStageScreenSharing(eventId)).toBe(true);
+    expect(trigger).toHaveBeenCalledWith(eventId, { isStageScreenSharing: expect.any(Function) });
+    const reader = trigger.mock.calls[0][1].isStageScreenSharing;
     expect(reader(eventId)).toBe(true);
-    expect(helpers.isHostScreenSharing('no-such-event')).toBe(false);
+    expect(helpers.isStageScreenSharing('no-such-event')).toBe(false);
   });
 });
 

@@ -378,9 +378,6 @@ export default function AgoraLiveRoom({
   isCoHost = false,
   isAdmin = false,
   eventEnded = false,
-  // agora-event-recording: the event is recorded and live → «Grabando» in
-  // every presentation of the room (top bar, landscape chrome, host console).
-  recording = false,
 }) {
   const isMeeting = interactionMode === 'meeting'
   // The admin interviewing the host (agora-broadcast-cohost). Broadcast only:
@@ -466,8 +463,9 @@ export default function AgoraLiveRoom({
     }
   }, [isHost, isMeeting, hostEchoCancellation, coHostMode])
 
-  // Host of a broadcast only: the screen goes on a second client (uid 2) so the
-  // camera stays on air. Meeting keeps swapping camera and screen.
+  // Host or co-presenter of a broadcast: the screen goes on a second client
+  // under uid 2 — the stage screen, one for both of them — so the camera stays
+  // on air. Meeting keeps swapping camera and screen.
   const getScreenToken = useCallback(() => eventsAPI.getScreenToken(eventId), [eventId])
   const broadcastPublisher = !isMeeting && (isHost || coHostMode)
 
@@ -482,20 +480,13 @@ export default function AgoraLiveRoom({
     onKicked,
     cameraEncoderConfig,
     micTrackConfig,
-    screenShareMode: isHost && !isMeeting ? 'separate-client' : 'swap',
+    screenShareMode: broadcastPublisher ? 'separate-client' : 'swap',
     getScreenToken,
     screenEncoderConfig: AGORA_SCREEN_ENCODER_BROADCAST,
     // Dual stream for the cameras the stage may draw small in its corner
     lowStreamParameter: broadcastPublisher ? AGORA_LOW_STREAM_PARAMETER : undefined,
   })
 
-
-  // Controles de host: UNA SOLA instancia, por encima del conmutador de modo.
-  // Montarla dentro de cada presentación reiniciaría el procesador de fondos
-  // virtuales y la enumeración de dispositivos en cada cambio de vista. El
-  // co-presentador consume la misma instancia con una presentación restringida
-  // (CoHostControls); sin `videoQuality` habilitada no tiene selector.
-  const hostControls = useHostMediaControls({ enabled: isHost || coHostMode, room, eventId, cameraEncoderConfig, videoQuality })
 
   // Incoming moderation (targeted at this client by the server)
   const roomRef = useRef(room)
@@ -535,6 +526,27 @@ export default function AgoraLiveRoom({
   )
   const amSpeaker = isHost || !!selfPresence?.speaker
 
+  // The stage screen (uid 2) held by the OTHER presenter, from presence. A
+  // broadcast has one: whoever asks while the other shares is told why before
+  // the browser picker opens (the server answers 409 in any case).
+  const screenShareHeldBy = useMemo(() => {
+    if (isMeeting) return null
+    const holder = socket.presence.find((p) => (
+      p.screenSharing && (p.isHost || p.coHost) && p.identity !== socket.selfIdentity
+    ))
+    if (!holder) return null
+    return holder.isHost ? 'host' : 'cohost'
+  }, [isMeeting, socket.presence, socket.selfIdentity])
+
+  // Controles de host: UNA SOLA instancia, por encima del conmutador de modo.
+  // Montarla dentro de cada presentación reiniciaría el procesador de fondos
+  // virtuales y la enumeración de dispositivos en cada cambio de vista. El
+  // co-presentador consume la misma instancia con una presentación restringida
+  // (CoHostControls); sin `videoQuality` habilitada no tiene selector.
+  const hostControls = useHostMediaControls({
+    enabled: isHost || coHostMode, room, eventId, cameraEncoderConfig, videoQuality, screenShareHeldBy,
+  })
+
   // Staff cannot be moderated (the server answers 400): the chat menu is not
   // offered on their messages. `staff` covers the admin in a meeting, where they
   // are not a co-presenter.
@@ -558,19 +570,22 @@ export default function AgoraLiveRoom({
     }
   }, [isMeeting, isHost, socket.joined, selfPresence])
 
-  // Keep the presence screen-sharing flag in sync (host only; lets meeting
-  // grids feature the shared screen, and puts the screen in the big window of
-  // a cloud recording — agora-event-recording). Re-declared on EVERY (re)join
+  // Keep the presence screen-sharing flag in sync (host, and the broadcast
+  // co-presenter, who shares the same stage screen; lets meeting grids feature
+  // the shared screen, tells the other presenter the screen is taken, and puts
+  // the screen in the big window of a cloud recording — agora-event-recording).
+  // Re-declared on EVERY (re)join
   // (`joinVersion`), not only when the share toggles: presence lives in the
   // api's memory, so an api restart forgets it, and without this a resumed
   // recording would stay in the adaptive layout for the rest of a share
   // already in progress. `joined` would not do: an auto-reconnect goes from
   // true to true. Emitting before the join would be dropped by the server.
   const setScreenSharing = socket.setScreenSharing
+  const announcesScreen = isHost || coHostMode
   useEffect(() => {
-    if (!isHost || !socket.joined) return
+    if (!announcesScreen || !socket.joined) return
     setScreenSharing(room.screenEnabled)
-  }, [isHost, socket.joined, socket.joinVersion, room.screenEnabled, setScreenSharing])
+  }, [announcesScreen, socket.joined, socket.joinVersion, room.screenEnabled, setScreenSharing])
 
   // agoraUid → RTC remote user / presence name lookups
   const remoteByUid = useMemo(() => {
@@ -731,7 +746,7 @@ export default function AgoraLiveRoom({
     <LiveRoomShell compact={compact} landscape={landscape} panelOpen={panelOpen}>
       {room.autoplayBlocked && <AudioActivationOverlay onActivate={room.resumeAudio} />}
 
-      {compact && !landscape && <LiveRoomTopBar connectedCount={socket.presence.length} recording={recording} />}
+      {compact && !landscape && <LiveRoomTopBar connectedCount={socket.presence.length} />}
 
       {room.joinError && (
         <div className={compact ? 'absolute inset-x-0 top-0 z-30 bg-red-50 px-4 py-3' : 'mb-4 rounded-md bg-red-50 p-4'}>
@@ -750,7 +765,6 @@ export default function AgoraLiveRoom({
         >
           {isMeeting ? (
             <MeetingArea
-              recording={recording}
               hostControls={hostControls}
               room={room}
               socket={socket}
@@ -773,7 +787,6 @@ export default function AgoraLiveRoom({
             />
           ) : (
             <BroadcastArea
-              recording={recording}
               hostControls={hostControls}
               allowMobileHostConsole={allowMobileHostConsole}
               room={room}
@@ -866,7 +879,6 @@ function BroadcastArea({
   room, socket, selfPresence, remoteByUid, nameByUid,
   isHost, isCoHost, amSpeaker, eventId, localUid, eventEnded,
   whiteboardElement, whiteboard, hostControls, allowMobileHostConsole, layout,
-  recording = false,
 }) {
   const hostRemote = remoteByUid.get(AGORA_HOST_UID)
   const { compact, landscape, panelOpen, togglePanel } = layout
@@ -924,8 +936,11 @@ function BroadcastArea({
   const hostCameraTrack = isHost
     ? (room.camEnabled ? room.camTrackRef.current : null)
     : (hostRemote?.videoTrack || null)
-  const hostScreenTrack = isHost
-    ? (room.screenEnabled ? room.screenTrackRef.current : null)
+  // The stage screen (uid 2): this page's own local track while it shares
+  // (host or co-presenter — never downloaded back), otherwise whatever uid 2
+  // is publishing, whoever of the two shares it.
+  const stageScreenTrack = room.screenEnabled
+    ? room.screenTrackRef.current
     : (remoteByUid.get(AGORA_HOST_SCREEN_UID)?.videoTrack || null)
 
   // Co-presenters in join order. The stage shows the first one publishing
@@ -971,8 +986,8 @@ function BroadcastArea({
   }
   const stageContent = whiteboardElement
     ? { kind: 'whiteboard', element: whiteboardElement }
-    : (hostScreenTrack && !inOverlay ? { kind: 'screen', track: hostScreenTrack } : null)
-  const hasStageContent = !!whiteboardElement || !!hostScreenTrack
+    : (stageScreenTrack && !inOverlay ? { kind: 'screen', track: stageScreenTrack } : null)
+  const hasStageContent = !!whiteboardElement || !!stageScreenTrack
 
   // Theater entry points as before: over the whiteboard for everyone, over any
   // video or content for everyone but the host
@@ -1146,7 +1161,6 @@ function BroadcastArea({
           <LandscapeStageChrome
             visible={chrome.visible}
             connectedCount={socket.presence.length}
-            recording={recording}
             bottomLeft={!isHost && !isCoHost && !panelOpen ? (
               <button
                 type="button"
@@ -1307,7 +1321,6 @@ function BroadcastArea({
             connectedCount={socket.presence.length}
             videoElement={overlayVideo}
             modeSwitcher={modeSwitcher}
-            recording={recording}
           />
         ) : (
           <HostPreviewMode videoElement={overlayVideo} modeSwitcher={modeSwitcher} />
@@ -1725,7 +1738,7 @@ function AgoraParticipantGrid({
 // ---------------------------------------------------------------------------
 // Meeting mode — Meet-style grid of large tiles, self-serve controls for all
 // ---------------------------------------------------------------------------
-function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard, hostControls, layout, recording = false }) {
+function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId, localUid, eventEnded, whiteboardElement, whiteboard, hostControls, layout }) {
   const { compact, landscape, panelOpen, togglePanel } = layout
   const stageCell = roomCell('stage', layout)
   const rowsCell = roomCell('rows', layout)
@@ -1893,7 +1906,6 @@ function MeetingArea({ room, socket, selfPresence, remoteByUid, isHost, eventId,
             <LandscapeStageChrome
               visible={chrome.visible}
               connectedCount={socket.presence.length}
-              recording={recording}
               topRight={<StageChromeGroup visible={chrome.visible} panelOpen={panelOpen} onTogglePanel={togglePanel} />}
             />
           )}

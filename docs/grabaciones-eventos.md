@@ -21,12 +21,21 @@ vídeo por nuestros servidores.
 
 | Tipo de evento | Qué se graba | Qué queda en el bucket |
 |---|---|---|
-| **Stream** (`broadcast`) | Un único vídeo con **todo lo que se publica en escena** (cámara del host, pantalla compartida, co-presentador, promovidos con cámara) y **el audio de todos** mezclado | MP4 (1920×1080, audio 48 kHz mono 128 kbps) + copia HLS. Un evento largo puede dar varios MP4 |
+| **Stream** (`broadcast`) | Un único vídeo con **todo lo que se publica en escena** (cámara del host, pantalla compartida, co-presentador, promovidos con cámara) y **el audio de todos** mezclado, incluido el de la pantalla si se compartió con sonido | MP4 (1920×1080, audio 48 kHz mono 128 kbps) + copia HLS. Un evento largo puede dar varios MP4 |
 | **Reunión** (`meeting`) | **Una pista de audio y otra de vídeo por participante**, incluidos los que entran tarde | Por participante: índice MPD + segmentos WebM (vídeo) e índice M3U8 + segmentos TS (audio). **No hay MP4**: ver §10 |
 
-Mientras el host comparte pantalla en un stream, la grabación pasa a un diseño
-con la pantalla en la ventana grande y las cámaras en columna; al dejar de
-compartir vuelve al reparto normal.
+Mientras el host o el co-presentador comparten pantalla en un stream, la
+grabación pasa a un diseño con la pantalla en la ventana grande y las cámaras
+en columna; al dejar de compartir vuelve al reparto normal. Hay una sola
+pantalla en escena: mientras la comparte uno, el otro no puede.
+
+**Pantalla con sonido.** Para que el vídeo o la música que se proyecta suene en
+el directo y en la grabación, quien comparte debe marcar la casilla de audio
+del selector de Chrome: «Compartir audio de la pestaña» (lo más fiable) o
+«Compartir audio del sistema» con «Toda la pantalla». En Windows están las dos;
+en macOS, la de pestaña siempre y la del sistema solo con macOS 14.2 o
+posterior y Chrome 141 o posterior; Safari no comparte audio. Si el equipo del
+host no puede, lo comparte el admin co-presentador desde el suyo.
 
 **No se graban** la pizarra ni el chat (decisión de producto).
 
@@ -344,14 +353,17 @@ AGORA_RECORDING_S3_SECRET_KEY=...
 1. Crear o editar el evento en `/admin/espacios`, con proveedor **Agora** y
    formato **en directo** (stream o reunión).
 2. Marcar **«Grabar el evento (audio y vídeo)»**. No se puede cambiar con el
-   evento en curso: la edición de eventos activos está bloqueada, y así el aviso
-   que reciben los asistentes al entrar no puede quedar desmentido.
+   evento en curso: la edición de eventos activos está bloqueada.
 3. Iniciar el evento como siempre. La grabación arranca sola.
 
-Los asistentes ven un aviso antes de entrar (en la ficha y en el modal de
-acceso) y la insignia **«Grabando»** durante el evento. La insignia indica que el
-evento está configurado para grabarse, **no** que la grabación esté funcionando
-en ese momento: si falla, quien se entera es el admin, por email (§12).
+**Los asistentes y el host no ven nada que indique que el evento se graba**, por
+decisión de negocio: ni en la ficha, ni en el modal de registro, ni en la sala,
+ni en la consola del host. Las respuestas públicas de la api tampoco llevan el
+dato. La grabación se comunica sólo en la **política de privacidad** (apartado
+«Grabación de eventos en directo») y en las **normas de los eventos**, que el
+asistente acepta en la casilla del registro. Si una grabación falla, quien se
+entera es el admin, por email (§12), y en la sección «Grabaciones» de la ficha
+de admin.
 
 ---
 
@@ -474,8 +486,9 @@ el lienzo. Si no fuera así, se baja a 1280×720 cambiando `MIX_CANVAS` en
 
 ## 14. Puntos ciegos conocidos
 
-- **La insignia «Grabando» no es el estado real.** Refleja la configuración. El
-  fallo real se ve en la alerta y en el panel.
+- **Nadie en la sala sabe si se está grabando**, tampoco el host. Es la decisión
+  de negocio de §8. El estado real sólo se ve en la alerta y en el panel de
+  admin.
 - **Con la api caída al terminar el evento**, nadie da la orden de parar. El
   grabador sale solo 30 min después de quedarse el canal vacío (unos céntimos de
   audio), y como tope absoluto caduca su token. Al volver la api, lo que quede se
@@ -483,14 +496,14 @@ el lienzo. Si no fuera así, se baja a 1280×720 cambiando `MIX_CANVAS` en
 - **Un fallo de la api justo entre el arranque y el registro** deja un grabador
   que el sistema no conoce. Sus ficheros llegan igual a la carpeta de su parte,
   que aparece como «Fallida».
-- **El diseño de la pantalla compartida depende de la presencia del host**, que
-  vive en memoria: tras un reinicio de la api el host la vuelve a declarar al
-  reconectar. Si no pudiera, la pantalla se sigue grabando, solo que más pequeña.
+- **El diseño de la pantalla compartida depende de la presencia de quien
+  comparte** (host o co-presentador), que vive en memoria: tras un reinicio de
+  la api la vuelve a declarar al reconectar. Si no pudiera, la pantalla se sigue grabando, solo que más pequeña.
 - **La geometría exacta de los diseños** (adaptativo y vertical) no está
   documentada por Agora con cifras. Se comprueba con la primera grabación de
   cada tipo en staging.
-- **El cliente no tiene tests automáticos**: formulario, panel, insignia y
-  avisos se verifican a mano.
+- **El cliente no tiene tests automáticos**: el formulario y el panel de admin se
+  verifican a mano. Que las respuestas públicas no lleven el dato sí tiene test.
 
 ---
 
@@ -505,5 +518,7 @@ el lienzo. Si no fuera así, se baja a 1280×720 cambiando `MIX_CANVAS` en
 | Endpoints de admin | `api/controllers/eventRecordingAdminController.js` |
 | Listado, URL firmada y lectura de reglas | `api/services/s3Service.js` |
 | Tabla de tareas | `event_recordings` en `api/config/database.js` |
-| Panel, casilla, insignia, aviso | `client/components/admin/EventRecordingsPanel.js`, `client/components/admin/RecordingCheckbox.js`, `client/components/events/RecordingBadge.js`, `client/components/events/RecordingNotice.js` |
+| Panel y casilla de admin | `client/components/admin/EventRecordingsPanel.js`, `client/components/admin/RecordingCheckbox.js` |
+| Textos legales y casilla del registro | `client/app/legal/politica-de-privacidad/page.js`, `client/app/legal/normas-eventos/page.js`, `client/components/EventAccessModal.js` |
+| Flag fuera de las respuestas públicas | `toPublicEvent` en `api/controllers/eventController.js` |
 | Tests | `api/tests/agoraRecording.test.js`, `api/tests/eventRecordingAdmin.test.js` |

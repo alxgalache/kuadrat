@@ -109,8 +109,8 @@ export default function PrivacyPolicyPage() {
           <section id="grabacion-de-eventos" className="scroll-mt-24">
             <h2 className="text-lg font-semibold text-gray-900">7. Grabación de Eventos en Directo</h2>
             <p className="mt-3">
-              Algunos eventos en directo de 140d se graban. Cuando es así, lo indicamos en la ficha
-              del evento y antes de acceder a él, y durante el evento se muestra el aviso «Grabando».
+              Los eventos en directo de 140d pueden grabarse. Te informamos de ello en esta política,
+              que aceptas al registrarte en un evento; no se muestra un aviso distinto en cada evento.
             </p>
             <ul className="mt-3 list-disc pl-5 space-y-1">
               <li>
@@ -129,8 +129,9 @@ export default function PrivacyPolicyPage() {
                 <strong>Base legal:</strong> para el host y el co-presentador, la relación que les une
                 con 140d para impartir el evento. Para los asistentes que intervienen, su
                 consentimiento, que prestan al pedir la palabra o al activar la cámara o el micrófono
-                tras el aviso previo. Puedes asistir sin ser grabado: basta con no pedir la palabra ni
-                activar la cámara o el micrófono.
+                sabiendo, por esta política que aceptan al registrarse, que el evento puede grabarse.
+                Puedes asistir sin ser grabado: basta con no pedir la palabra ni activar la cámara o el
+                micrófono.
               </li>
               <li>
                 <strong>Encargados del tratamiento:</strong> Agora, que realiza la grabación en su

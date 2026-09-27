@@ -6,7 +6,6 @@ import { XMarkIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { eventsAPI } from '@/lib/api'
 import { getStripePromise, prefetchStripe } from '@/lib/stripe'
-import RecordingNotice from '@/components/events/RecordingNotice'
 
 const PHASE = {
   CHOOSE: 'choose',
@@ -320,6 +319,15 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
             className="font-medium text-gray-900 underline hover:text-gray-700"
           >
             normas y términos para la participación en eventos en directo
+          </a>{' '}
+          y la{' '}
+          <a
+            href="/legal/politica-de-privacidad"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-gray-900 underline hover:text-gray-700"
+          >
+            política de privacidad
           </a>
         </label>
       </div>
@@ -520,11 +528,6 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
             <DialogTitle as="h3" className="text-lg font-semibold text-gray-900 mb-4">
               {titles[phase]}
             </DialogTitle>
-
-            {/* agora-event-recording: the recording notice precedes every way in */}
-            {[PHASE.CHOOSE, PHASE.REGISTER, PHASE.VERIFY_PASSWORD].includes(phase) && (
-              <RecordingNotice event={event} className="mb-4" />
-            )}
 
             {renderContent[phase]?.()}
           </DialogPanel>

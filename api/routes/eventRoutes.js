@@ -92,9 +92,10 @@ router.post('/:id/host-token', authenticate, eventController.getHostToken);
 
 /**
  * POST /api/events/:id/screen-token
- * Agora broadcast events: publisher token for the host's second client, which
- * publishes the shared screen under the reserved uid 2 while the camera stays
- * on air (requires auth, event host only)
+ * Agora broadcast events: publisher token for a presenter's second client,
+ * which publishes the shared screen under the reserved uid 2 while the camera
+ * stays on air (requires auth: the event host or the co-presenter, one at a
+ * time — 409 SCREEN_SHARE_IN_USE while the other one shares)
  */
 router.post('/:id/screen-token', authenticate, validate(screenTokenSchema), eventController.getScreenToken);
 

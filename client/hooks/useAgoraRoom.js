@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import AgoraRTC from 'agora-rtc-sdk-ng'
-import { AGORA_SPEAKING_VOLUME_THRESHOLD, AGORA_HOST_SCREEN_UID } from '@/lib/constants'
+import {
+  AGORA_SPEAKING_VOLUME_THRESHOLD, AGORA_HOST_SCREEN_UID,
+  AGORA_SCREEN_AUDIO_CONFIG, AGORA_SCREEN_CAPTURE_OPTIONS,
+} from '@/lib/constants'
 
 // Only imported from components that are themselves dynamic ssr:false
 // (agora-rtc-sdk-ng touches window at import time).
@@ -24,6 +27,23 @@ async function createCameraTrackWithRetry(deviceId, encoderConfig) {
     await new Promise((resolve) => setTimeout(resolve, 300))
     return AgoraRTC.createCameraVideoTrack(opts)
   }
+}
+
+/**
+ * Screen capture WITH its audio when the person ticks «Compartir audio» in the
+ * browser picker (the object second argument is what makes the SDK request
+ * audio at all — see AGORA_SCREEN_AUDIO_CONFIG). The SDK answers a
+ * `[video, audio]` pair when audio was shared and the bare video track
+ * otherwise; this normalises both shapes.
+ */
+async function createScreenTracks(encoderConfig) {
+  const result = await AgoraRTC.createScreenVideoTrack(
+    { ...AGORA_SCREEN_CAPTURE_OPTIONS, ...(encoderConfig ? { encoderConfig } : {}) },
+    AGORA_SCREEN_AUDIO_CONFIG
+  )
+  return Array.isArray(result)
+    ? { video: result[0], audio: result[1] || null }
+    : { video: result, audio: null }
 }
 
 /**
@@ -57,10 +77,13 @@ async function createCameraTrackWithRetry(deviceId, encoderConfig) {
  *   pista: `ILocalAudioTrack` no expone `setEncoderConfiguration`.
  * @param {'swap'|'separate-client'} [params.screenShareMode='swap'] - Cómo se
  *   comparte pantalla. `swap` (reunión) cambia la cámara por la pantalla en el
- *   mismo cliente. `separate-client` (host de un stream) publica la pantalla
- *   desde un SEGUNDO cliente con el uid reservado 2, sin tocar la cámara: un
- *   cliente solo puede publicar una pista de vídeo
- *   (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS`).
+ *   mismo cliente. `separate-client` (host o co-presentador de un stream)
+ *   publica la pantalla desde un SEGUNDO cliente con el uid reservado 2, sin
+ *   tocar la cámara: un cliente solo puede publicar una pista de vídeo
+ *   (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS`). El uid 2 es «la pantalla de la
+ *   escena», no «la del host»: lo usa quien comparta de los dos, y sólo uno a
+ *   la vez. En los dos modos el audio de la pantalla, si se comparte, va en la
+ *   misma pista publicada que el vídeo (uid 2 en stream, el propio en reunión).
  * @param {Function} [params.getScreenToken] - async () => ({ uid, rtcToken })
  *   del segundo cliente. Obligatorio con `separate-client`.
  * @param {object} [params.screenEncoderConfig] - Perfil de la pista de
@@ -89,6 +112,13 @@ export default function useAgoraRoom({
   const micTrackRef = useRef(null)
   const camTrackRef = useRef(null)
   const screenTrackRef = useRef(null)
+  // Audio of the shared screen, when the person shared it (tab or system audio)
+  const screenAudioTrackRef = useRef(null)
+  // Subscribes the main client to whatever uid 2 is publishing right now. Set
+  // by the join effect; used when this page stops sharing because the OTHER
+  // presenter took uid 2, since their publication arrived while this page was
+  // still skipping uid 2 as its own.
+  const resubscribeStageScreenRef = useRef(null)
   // Second client of `separate-client` screen sharing (uid 2)
   const screenClientRef = useRef(null)
   const screenStartingRef = useRef(false)
@@ -156,10 +186,13 @@ export default function useAgoraRoom({
     }
 
     const handleUserPublished = async (user, mediaType) => {
-      // The host's own screen, published by this page's second client: it is
-      // drawn from the local track and never downloaded back (bandwidth, and
-      // subscribed resolution is what Agora bills)
-      if (screenShareModeRef.current === 'separate-client' && Number(user.uid) === AGORA_HOST_SCREEN_UID) {
+      // This page's OWN screen, published by its second client: it is drawn
+      // from the local track and never downloaded back (bandwidth, subscribed
+      // resolution is what Agora bills, and its audio would echo). Keyed on
+      // this page sharing right now, not on being the host: uid 2 is the
+      // stage screen, and when the co-presenter shares it the host must
+      // receive it like everyone else — and vice versa.
+      if (Number(user.uid) === AGORA_HOST_SCREEN_UID && screenClientRef.current) {
         syncRemotes()
         return
       }
@@ -175,6 +208,14 @@ export default function useAgoraRoom({
         console.warn('Agora subscribe error:', err)
       }
       syncRemotes()
+    }
+
+    resubscribeStageScreenRef.current = () => {
+      if (cancelled) return
+      const user = client.remoteUsers.find((u) => Number(u.uid) === AGORA_HOST_SCREEN_UID)
+      if (!user) return
+      if (user.hasVideo && !user.videoTrack) handleUserPublished(user, 'video')
+      if (user.hasAudio && !user.audioTrack) handleUserPublished(user, 'audio')
     }
 
     AgoraRTC.onAutoplayFailed = () => {
@@ -261,10 +302,11 @@ export default function useAgoraRoom({
     return () => {
       cancelled = true
       joinedRef.current = false
+      resubscribeStageScreenRef.current = null
       AgoraRTC.onAutoplayFailed = () => {}
       client.removeAllListeners()
       const hadCamTrack = !!camTrackRef.current
-      for (const ref of [micTrackRef, camTrackRef, screenTrackRef]) {
+      for (const ref of [micTrackRef, camTrackRef, screenTrackRef, screenAudioTrackRef]) {
         try { ref.current?.close() } catch { /* already closed */ }
         ref.current = null
       }
@@ -363,12 +405,18 @@ export default function useAgoraRoom({
   const stopSeparateScreenShare = useCallback(async () => {
     const screenClient = screenClientRef.current
     const screenTrack = screenTrackRef.current
+    const screenAudioTrack = screenAudioTrackRef.current
     screenClientRef.current = null
     screenTrackRef.current = null
-    if (screenClient && screenTrack) {
-      try { await screenClient.unpublish(screenTrack) } catch { /* not published */ }
+    screenAudioTrackRef.current = null
+    if (screenClient) {
+      const published = [screenTrack, screenAudioTrack].filter(Boolean)
+      if (published.length) {
+        try { await screenClient.unpublish(published) } catch { /* not published */ }
+      }
     }
     try { screenTrack?.close() } catch { /* already closed */ }
+    try { screenAudioTrack?.close() } catch { /* already closed */ }
     if (screenClient) {
       screenClient.removeAllListeners()
       try { await screenClient.leave() } catch { /* never joined */ }
@@ -381,22 +429,33 @@ export default function useAgoraRoom({
     screenStartingRef.current = true
     let screenClient = null
     let screenTrack = null
+    let screenAudioTrack = null
     try {
       // Token first: without it there is no point opening the browser picker
       const data = await getScreenTokenRef.current?.()
       if (!data?.rtcToken) throw new Error('Screen token unavailable')
 
       // Cancelling the picker throws here, before anything joins the channel
-      screenTrack = await AgoraRTC.createScreenVideoTrack(
-        screenEncoderConfig ? { encoderConfig: screenEncoderConfig } : {},
-        'disable'
-      )
+      const tracks = await createScreenTracks(screenEncoderConfig)
+      screenTrack = tracks.video
+      screenAudioTrack = tracks.audio
       screenClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' })
       screenClientRef.current = screenClient
       screenTrackRef.current = screenTrack
+      screenAudioTrackRef.current = screenAudioTrack
 
-      // Browser "Stop sharing" button
+      // Browser "Stop sharing" button (it ends video and audio together)
       screenTrack.on('track-ended', () => { stopSeparateScreenShare() })
+      // Somebody else took uid 2 (the other presenter, in a race the server
+      // guard did not catch): Agora drops the earlier client. Clean up here so
+      // this page stops claiming a screen it no longer publishes, and start
+      // receiving the one that replaced it.
+      screenClient.on('connection-state-change', (curState, prevState, reason) => {
+        if (curState === 'DISCONNECTED' && (reason === 'UID_CONFLICT' || reason === 'UID_BANNED')
+          && screenClientRef.current === screenClient) {
+          stopSeparateScreenShare().finally(() => resubscribeStageScreenRef.current?.())
+        }
+      })
       screenClient.on('token-privilege-will-expire', async () => {
         try {
           const fresh = await getScreenTokenRef.current?.()
@@ -407,8 +466,17 @@ export default function useAgoraRoom({
       })
 
       await screenClient.setClientRole('host')
-      await screenClient.join(appId, channel, data.rtcToken, data.uid ?? AGORA_HOST_SCREEN_UID)
-      await screenClient.publish(screenTrack)
+      try {
+        await screenClient.join(appId, channel, data.rtcToken, data.uid ?? AGORA_HOST_SCREEN_UID)
+      } catch (joinErr) {
+        if (joinErr?.code === 'UID_CONFLICT') {
+          const inUse = new Error('Screen uid in use')
+          inUse.code = 'SCREEN_SHARE_IN_USE'
+          throw inUse
+        }
+        throw joinErr
+      }
+      await screenClient.publish([screenTrack, screenAudioTrack].filter(Boolean))
 
       // Stopped while joining (browser button, unmount): nothing to announce
       if (screenClientRef.current !== screenClient) return
@@ -417,12 +485,15 @@ export default function useAgoraRoom({
       if (screenClientRef.current === screenClient) {
         screenClientRef.current = null
         screenTrackRef.current = null
+        screenAudioTrackRef.current = null
       }
       try { screenTrack?.close() } catch { /* already closed */ }
+      try { screenAudioTrack?.close() } catch { /* already closed */ }
       if (screenClient) {
         screenClient.removeAllListeners()
         try { await screenClient.leave() } catch { /* never joined */ }
       }
+      if (err?.code === 'SCREEN_SHARE_IN_USE') resubscribeStageScreenRef.current?.()
       throw err
     } finally {
       screenStartingRef.current = false
@@ -437,12 +508,15 @@ export default function useAgoraRoom({
     }
     const client = clientRef.current
     const screenTrack = screenTrackRef.current
+    const screenAudioTrack = screenAudioTrackRef.current
     if (!client || !screenTrack) return
     screenTrackRef.current = null
+    screenAudioTrackRef.current = null
     try {
-      await client.unpublish(screenTrack)
+      await client.unpublish([screenTrack, screenAudioTrack].filter(Boolean))
     } catch { /* already unpublished */ }
     try { screenTrack.close() } catch { /* already closed */ }
+    try { screenAudioTrack?.close() } catch { /* already closed */ }
     setScreenEnabled(false)
 
     // Return to the camera if it was active when sharing started
@@ -468,7 +542,7 @@ export default function useAgoraRoom({
       return
     }
 
-    const screenTrack = await AgoraRTC.createScreenVideoTrack({}, 'disable')
+    const { video: screenTrack, audio: screenAudioTrack } = await createScreenTracks(null)
     cameraWasOnRef.current = camEnabled
 
     // Swap: unpublish the camera, publish the screen
@@ -478,7 +552,10 @@ export default function useAgoraRoom({
       setCamEnabled(false)
     }
     screenTrackRef.current = screenTrack
-    await client.publish(screenTrack)
+    screenAudioTrackRef.current = screenAudioTrack
+    // The screen's audio is published next to the microphone: one client may
+    // publish several audio tracks and the SDK mixes them.
+    await client.publish([screenTrack, screenAudioTrack].filter(Boolean))
     setScreenEnabled(true)
 
     // Browser "Stop sharing" button
@@ -504,7 +581,7 @@ export default function useAgoraRoom({
     const client = clientRef.current
     if (!client) return
     const hadCamTrack = !!camTrackRef.current
-    for (const ref of [micTrackRef, camTrackRef, screenTrackRef]) {
+    for (const ref of [micTrackRef, camTrackRef, screenTrackRef, screenAudioTrackRef]) {
       if (ref.current) {
         try { await client.unpublish(ref.current) } catch { /* not published */ }
         try { ref.current.close() } catch { /* already closed */ }

@@ -269,6 +269,21 @@ async function createOrGetStaffAttendee(eventId, { email, fullName }) {
   return { attendee: created.rows[0], accessToken };
 }
 
+/**
+ * The staff row an admin holds in this event, looked up by their account email
+ * (the key createOrGetStaffAttendee writes it under). Lets an endpoint that
+ * authenticates by JWT — not by attendee credentials — reach the admin's
+ * attendee identity. null when the admin never entered the event.
+ */
+async function getStaffAttendeeByEmail(eventId, email) {
+  if (!email) return null;
+  const result = await db.execute({
+    sql: 'SELECT * FROM event_attendees WHERE event_id = ? AND email = ? AND is_staff = 1 LIMIT 1',
+    args: [eventId, email],
+  });
+  return result.rows[0] || null;
+}
+
 async function getAttendeeByAccessToken(eventId, accessToken) {
   const hash = hashAccessToken(accessToken);
   const result = await db.execute({
@@ -641,6 +656,7 @@ module.exports = {
   getEventsByDateRange,
   registerAttendee,
   createOrGetStaffAttendee,
+  getStaffAttendeeByEmail,
   getAttendeeByAccessToken,
   getAttendeeById,
   isBroadcastCohost,

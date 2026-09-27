@@ -4,7 +4,8 @@
  *
  * Covers the token endpoints (publisher role + `coHost` flag, derived from
  * is_staff AND the user's CURRENT admin role), the hardened host JWT branch of
- * renew-token, the host-only screen-token for the second RTC client, and the
+ * renew-token, the screen-token for the second RTC client (host or
+ * co-presenter, one at a time on the stage screen uid), and the
  * refusal to moderate staff — a demote on the co-presenter would create a 24 h
  * Agora kicking rule and leave the interviewer unable to publish.
  *
@@ -215,9 +216,75 @@ describe('POST /api/events/:id/screen-token', () => {
     expect(res.body.rtcToken).toBe('rtc-2-publisher');
   });
 
-  it('refuses an admin who is not the host', async () => {
+  it('gives the co-presenter the same publisher token on the stage screen uid', async () => {
+    await adminAccess(broadcastEventId);
     const res = await screenToken(broadcastEventId, adminToken);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.uid).toBe(agoraService.HOST_SCREEN_UID);
+    expect(res.body.rtcToken).toBe('rtc-2-publisher');
+  });
+
+  it('refuses an admin who never entered the event (no staff row, no co-presenter)', async () => {
+    const freshEventId = await createEvent();
+    const res = await screenToken(freshEventId, adminToken);
     expect(res.statusCode).toBe(403);
+  });
+
+  it('refuses a staff user who is no longer an admin', async () => {
+    // FORMER_ADMIN holds a staff row here and was demoted to seller above
+    const res = await screenToken(broadcastEventId, formerAdminToken);
+    expect(res.statusCode).toBe(403);
+  });
+
+  describe('one stage screen at a time', () => {
+    let sharerSpy;
+    let adminIdentity;
+
+    beforeAll(async () => {
+      const access = await adminAccess(broadcastEventId);
+      adminIdentity = `viewer-${access.body.attendeeId}`;
+    });
+
+    afterEach(() => {
+      sharerSpy?.mockRestore();
+    });
+
+    const shareHeldBy = (identity) => {
+      sharerSpy = jest
+        .spyOn(app.get('eventSocket'), 'getStageScreenSharer')
+        .mockImplementation((eventId) => (eventId === broadcastEventId ? identity : null));
+    };
+
+    it('answers 409 SCREEN_SHARE_IN_USE to the co-presenter while the host shares', async () => {
+      shareHeldBy(`host-${hostId}`);
+      const callsBefore = tokenSpy.mock.calls.length;
+
+      const res = await screenToken(broadcastEventId, adminToken);
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body.title).toBe('SCREEN_SHARE_IN_USE');
+      expect(tokenSpy.mock.calls.length).toBe(callsBefore);
+    });
+
+    it('answers 409 to the host while the co-presenter shares', async () => {
+      shareHeldBy(adminIdentity);
+      const res = await screenToken(broadcastEventId, hostToken);
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body.title).toBe('SCREEN_SHARE_IN_USE');
+    });
+
+    it('still renews the token of whoever holds it (token-privilege-will-expire)', async () => {
+      shareHeldBy(adminIdentity);
+      const coHost = await screenToken(broadcastEventId, adminToken);
+      expect(coHost.statusCode).toBe(200);
+
+      sharerSpy.mockRestore();
+      shareHeldBy(`host-${hostId}`);
+      const host = await screenToken(broadcastEventId, hostToken);
+      expect(host.statusCode).toBe(200);
+    });
   });
 
   it('refuses a seller who is not the host', async () => {

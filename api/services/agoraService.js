@@ -5,12 +5,14 @@ const logger = require('../config/logger');
 const { ApiError } = require('../middleware/errorHandler');
 
 // Reserved RTC uids. 1-100 are never assigned to attendees, whose uids start
-// at 101 (see design D3 of add-agora-streaming-provider). The host owns two:
+// at 101 (see design D3 of add-agora-streaming-provider).
 //  - HOST_UID (1): the host's main client — camera and microphone.
 //  - HOST_SCREEN_UID (2): a second client that publishes only the shared
-//    screen in `broadcast` events. A single AgoraRTCClient cannot publish two
-//    video tracks (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS` in 4.24.6), so
-//    showing the camera over the screen needs a second uid in the channel.
+//    screen (and its audio) in `broadcast` events. A single AgoraRTCClient
+//    cannot publish two video tracks (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS`
+//    in 4.24.6), so showing the camera over the screen needs a second uid in
+//    the channel. It is the STAGE screen: the host or the co-presenter
+//    publishes it, one at a time (agora-event-recording D16). The name stayed.
 //  - RECORDER_UID_BASE (3) … 12: the Agora Cloud Recording service
 //    (agora-event-recording). The recorder joins the channel as an audience
 //    member with uid 3 + attempt, one uid per attempt, so that a recorder left

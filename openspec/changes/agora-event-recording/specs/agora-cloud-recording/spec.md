@@ -28,7 +28,7 @@ El valor SHALL guardarse sea cual sea el proveedor o el formato, y SHALL tener e
 
 Las pantallas `client/app/admin/espacios/nuevo/page.js` y `client/app/admin/espacios/[id]/page.js` SHALL mostrar la casilla «Grabar el evento (audio y vídeo)» sólo cuando el formulario tenga `provider = 'agora'` y `format = 'live'`, en los dos modos de interacción.
 
-Debajo SHALL mostrar un texto de ayuda según el modo: en `broadcast`, que se guarda un único vídeo con todo lo que aparece en escena (cámaras y pantalla compartida) y el audio de todos; en `meeting`, que se guarda una pista de audio y otra de vídeo por cada participante. En los dos, que la grabación se detiene sola a las 3 horas del inicio del evento y que los asistentes verán un aviso.
+Debajo SHALL mostrar un texto de ayuda según el modo: en `broadcast`, que se guarda un único vídeo con todo lo que aparece en escena (cámaras y pantalla compartida) y el audio de todos; en `meeting`, que se guarda una pista de audio y otra de vídeo por cada participante. En los dos, que la grabación se detiene sola a las 3 horas del inicio del evento, que los asistentes no ven ningún aviso (la grabación se comunica en la política de privacidad que aceptan al registrarse) y que las grabaciones se eliminan a los 30 días.
 
 Cuando `GET /api/admin/events/recording/availability` devuelva `recordingAvailable: false`, la casilla SHALL mostrarse deshabilitada con el texto «La grabación no está configurada en este entorno». Los textos SHALL vivir en `EVENT_RECORDING_COPY` de `client/lib/constants.js`.
 
@@ -58,7 +58,7 @@ El modo de grabación NO SHALL elegirse: SHALL derivarse de `interaction_mode`, 
 
 La grabación de un evento `broadcast` SHALL usar el modo `mix` de Agora Cloud Recording con esta configuración:
 - `channelType: 1`, `streamTypes: 2`, `videoStreamType: 0` (flujo alto).
-- `subscribeVideoUids: ['#allstream#']` y `subscribeAudioUids: ['#allstream#']`: todo lo que se publique en el canal —cámara del host, pantalla compartida (uid 2), co-presentador y promovidos— entra en el vídeo, y el audio de todos se mezcla.
+- `subscribeVideoUids: ['#allstream#']` y `subscribeAudioUids: ['#allstream#']`: todo lo que se publique en el canal —cámara del host, pantalla compartida (uid 2, sea del host o del co-presentador) con su audio si se compartió, co-presentador y promovidos— entra en el vídeo, y el audio de todos se mezcla.
 - `audioProfile: 1` (48 kHz, mono, ~128 kbps). El valor por defecto `0` NO SHALL usarse.
 - `transcodingConfig` con lienzo de 1920×1080, 30 fps, 3000 kbps y fondo negro, más el diseño de «Diseño del lienzo según la pantalla compartida».
 - `recordingFileConfig.avFileType: ['hls', 'mp4']`.
@@ -75,21 +75,25 @@ La grabación de un evento `broadcast` SHALL usar el modo `mix` de Agora Cloud R
 - **WHEN** el host da la palabra a un asistente que habla sin cámara
 - **THEN** su voz SHALL quedar en la mezcla de audio
 
+#### Scenario: Pantalla compartida con su audio
+- **WHEN** el host o el co-presentador comparten una pantalla marcando «Compartir audio» en el selector del navegador
+- **THEN** el MP4 SHALL contener esa pantalla y su audio mezclado con el de los presentadores
+
 ### Requirement: Diseño del lienzo según la pantalla compartida
 
 En modo `mix`, el diseño del lienzo SHALL derivarse de una única función pura `mixLayoutFor(screenSharing)`: `{ mixedVideoLayout: 1 }` (adaptativo) sin pantalla compartida, y `{ mixedVideoLayout: 2, maxResolutionUid: '2' }` (vertical con la pantalla en la ventana grande) con ella.
 
-El estado de la pantalla compartida SHALL leerse de la presencia en memoria de `api/socket/eventSocket.js` (`entry.screenSharing` del host, fijado por el mensaje `screen_share`) mediante un lector `isHostScreenSharing(eventId)` expuesto por el objeto que devuelve `eventSocket`. NO SHALL copiarse a otro almacén. Si no hay presencia del host, SHALL tomarse como `false`.
+El estado de la pantalla compartida SHALL leerse de la presencia en memoria de `api/socket/eventSocket.js` (`entry.screenSharing` del host o del co-presentador, que comparten la única pantalla de la escena, fijado por el mensaje `screen_share`) mediante un lector `isStageScreenSharing(eventId)` expuesto por el objeto que devuelve `eventSocket`. NO SHALL copiarse a otro almacén. Si ninguno de los dos tiene presencia, SHALL tomarse como `false`.
 
 El diseño aplicado a cada tarea SHALL guardarse en `event_recordings.applied_layout` (`'adaptive' | 'screen'`). Cuando el deseado difiera del aplicado, el sistema SHALL llamar a `updateLayout` y, sólo si responde con éxito, actualizar la columna. Un fallo de `updateLayout` NO SHALL detener la grabación y SHALL reintentarse en la siguiente reconciliación. El manejador `screen_share` SHALL disparar una reconciliación inmediata del evento.
 
-#### Scenario: El host empieza a compartir pantalla
-- **WHEN** el host de un evento `broadcast` grabado emite `screen_share { active: true }`
+#### Scenario: Un presentador empieza a compartir pantalla
+- **WHEN** el host o el co-presentador de un evento `broadcast` grabado emite `screen_share { active: true }`
 - **THEN** el sistema SHALL llamar a `updateLayout` con el diseño vertical y `maxResolutionUid: '2'`
 - **AND** `applied_layout` SHALL pasar a `'screen'`
 
-#### Scenario: El host deja de compartir
-- **WHEN** el host emite `screen_share { active: false }`
+#### Scenario: El presentador deja de compartir
+- **WHEN** quien compartía emite `screen_share { active: false }`
 - **THEN** el sistema SHALL volver al diseño adaptativo
 
 #### Scenario: Fallo de updateLayout
@@ -98,16 +102,16 @@ El diseño aplicado a cada tarea SHALL guardarse en `event_recordings.applied_la
 - **AND** la siguiente reconciliación SHALL volver a intentarlo
 
 #### Scenario: Grabación reanudada con la pantalla ya compartida
-- **WHEN** arranca una tarea nueva mientras el host comparte pantalla
+- **WHEN** arranca una tarea nueva mientras el host o el co-presentador comparten pantalla
 - **THEN** el `start` SHALL llevar ya el diseño vertical
 
 ### Requirement: Reemisión del estado de pantalla compartida tras la unión
 
-El host SHALL volver a emitir `screen_share` con su estado actual cada vez que se une o se reúne a la sala Socket.IO del evento, no sólo cuando cambia `room.screenEnabled` (`client/components/AgoraLiveRoom.js`). La señal de «me acabo de unir» SHALL ser un contador de uniones confirmadas (`joinVersion` de `client/hooks/useEventRoomSocket.js`), no `joined`, que en una reconexión automática pasa de verdadero a verdadero. Sin ello, un reinicio de la api borra la presencia y el diseño deseado de la grabación queda en adaptativo con la pantalla compartida en curso.
+El host, y en `broadcast` el co-presentador, SHALL volver a emitir `screen_share` con su estado actual cada vez que se une o se reúne a la sala Socket.IO del evento, no sólo cuando cambia `room.screenEnabled` (`client/components/AgoraLiveRoom.js`). La señal de «me acabo de unir» SHALL ser un contador de uniones confirmadas (`joinVersion` de `client/hooks/useEventRoomSocket.js`), no `joined`, que en una reconexión automática pasa de verdadero a verdadero. Sin ello, un reinicio de la api borra la presencia y el diseño deseado de la grabación queda en adaptativo con la pantalla compartida en curso.
 
 #### Scenario: Reinicio de la api con la pantalla compartida
-- **WHEN** la api se reinicia mientras el host comparte pantalla y su socket vuelve a unirse
-- **THEN** la presencia del host SHALL volver a tener `screenSharing = true`
+- **WHEN** la api se reinicia mientras el host o el co-presentador comparten pantalla y su socket vuelve a unirse
+- **THEN** su presencia SHALL volver a tener `screenSharing = true`
 
 ### Requirement: Grabación de un evento meeting
 
@@ -196,7 +200,7 @@ Un índice único parcial sobre `event_id` con `status IN ('starting','recording
 
 ### Requirement: Reconciliador del ciclo de vida
 
-`api/services/agoraRecordingService.js` SHALL exponer `reconcileEvent(eventId, { isHostScreenSharing })`, que lee el estado del evento y de sus tareas y hace converger la realidad con él: arrancar si el evento debe grabarse y no hay tarea viva, parar si hay tarea viva y no debe grabarse, detectar interrupciones y ajustar el diseño. Las llamadas SHALL serializarse por evento dentro del proceso.
+`api/services/agoraRecordingService.js` SHALL exponer `reconcileEvent(eventId, { isStageScreenSharing })`, que lee el estado del evento y de sus tareas y hace converger la realidad con él: arrancar si el evento debe grabarse y no hay tarea viva, parar si hay tarea viva y no debe grabarse, detectar interrupciones y ajustar el diseño. Las llamadas SHALL serializarse por evento dentro del proceso.
 
 `api/scheduler/recordingScheduler.js` SHALL ejecutar `reconcileEvent` cada 30 segundos para cada evento `active` con grabación elegible y para cada evento con una tarea viva, sin solapar pasadas. SHALL arrancarse sólo desde `api/server.js`.
 

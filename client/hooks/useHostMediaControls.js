@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { eventsAPI } from '@/lib/api'
 import useAgoraDevices from '@/hooks/useAgoraDevices'
 import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
-import { AGORA_VIDEO_QUALITIES } from '@/lib/constants'
+import { AGORA_VIDEO_QUALITIES, SCREEN_SHARE_COPY } from '@/lib/constants'
 
 /**
  * Estado y acciones de los controles de host de una sala Agora, en un solo
@@ -29,8 +29,15 @@ import { AGORA_VIDEO_QUALITIES } from '@/lib/constants'
  * @param {string|object} params.cameraEncoderConfig - Perfil 16:9 de la cámara,
  *   reaplicado al cambiar de dispositivo (ver lib/constants.js)
  * @param {object} params.videoQuality - El objeto de `useHostVideoQuality`
+ * @param {'host'|'cohost'|null} [params.screenShareHeldBy=null] - Quién, de los
+ *   OTROS presentadores, está compartiendo pantalla ahora (presencia de la
+ *   sala). En un stream la pantalla de la escena es una sola (uid 2): mientras
+ *   la tiene el otro, pedirla se rechaza aquí con el motivo, antes de abrir el
+ *   selector del navegador. El servidor repite la comprobación (409).
  */
-export default function useHostMediaControls({ enabled, room, eventId, cameraEncoderConfig, videoQuality }) {
+export default function useHostMediaControls({
+  enabled, room, eventId, cameraEncoderConfig, videoQuality, screenShareHeldBy = null,
+}) {
   const [deviceError, setDeviceError] = useState('')
   const [isEnding, setIsEnding] = useState(false)
 
@@ -72,6 +79,10 @@ export default function useHostMediaControls({ enabled, room, eventId, cameraEnc
 
   const toggleScreenShare = useCallback(async () => {
     setDeviceError('')
+    if (!room.screenEnabled && screenShareHeldBy) {
+      setDeviceError(screenShareHeldBy === 'host' ? SCREEN_SHARE_COPY.heldByHost : SCREEN_SHARE_COPY.heldByCoHost)
+      return
+    }
     try {
       if (room.screenEnabled) {
         await room.stopScreenShare()
@@ -80,9 +91,9 @@ export default function useHostMediaControls({ enabled, room, eventId, cameraEnc
       }
     } catch (err) {
       console.warn('Screen share error:', err)
-      setDeviceError(err?.code === 'NOT_JOINED' ? 'Conectando a la sala, espera un momento...' : 'No se pudo compartir pantalla')
+      setDeviceError(screenShareErrorMessage(err))
     }
-  }, [room])
+  }, [room, screenShareHeldBy])
 
   const selectDevice = useCallback((kind) => async (device) => {
     try {
@@ -165,6 +176,15 @@ export default function useHostMediaControls({ enabled, room, eventId, cameraEnc
     screenShareSupported,
     speakerSelectionSupported,
   }
+}
+
+// `SCREEN_SHARE_IN_USE` llega por dos caminos que significan lo mismo: el 409
+// del servidor al pedir el token (código en `title`, como el resto de la api) y
+// el `UID_CONFLICT` de Agora al unirse con el uid 2 (código en `code`).
+function screenShareErrorMessage(err) {
+  if (err?.code === 'NOT_JOINED') return 'Conectando a la sala, espera un momento...'
+  if (err?.code === 'SCREEN_SHARE_IN_USE' || err?.title === 'SCREEN_SHARE_IN_USE') return SCREEN_SHARE_COPY.inUse
+  return SCREEN_SHARE_COPY.failed
 }
 
 // Única definición, consumida por este hook y por `MeetingSelfControls`. Un

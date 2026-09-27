@@ -33,7 +33,7 @@ El modo `web` era el único capaz de capturar la pizarra y la escena compuesta, 
 
 ### D2. Un flag por evento; el modo lo decide `interaction_mode`
 
-`events.recording_enabled INTEGER NOT NULL DEFAULT 0`. `broadcast → mix`, `meeting → individual`. Un criterio, una lectura: no hay selector de modo que pueda contradecir el tipo de evento. Como los otros flags de host, se guarda siempre y **sólo tiene efecto** con `provider='agora'` y `format='live'`; la elegibilidad vive en un predicado por lado (`api/utils/eventRecording.js` y `client/lib/eventRecording.js`), igual que `sellerCapabilities`. Un evento `active` no es editable (`eventAdminController.updateEvent`), así que la decisión de grabar queda fijada antes de que entre nadie: el aviso que se da al acceder no puede quedar desmentido a mitad de evento.
+`events.recording_enabled INTEGER NOT NULL DEFAULT 0`. `broadcast → mix`, `meeting → individual`. Un criterio, una lectura: no hay selector de modo que pueda contradecir el tipo de evento. Como los otros flags de host, se guarda siempre y **sólo tiene efecto** con `provider='agora'` y `format='live'`; la elegibilidad vive en un predicado por lado (`api/utils/eventRecording.js` y `client/lib/eventRecording.js`), igual que `sellerCapabilities`. Un evento `active` no es editable (`eventAdminController.updateEvent`), así que la decisión de grabar queda fijada antes de que entre nadie.
 
 ### D3. `broadcast`: `mix` con todo lo publicado y el audio de todos
 
@@ -65,7 +65,7 @@ Dos estados, una función pura `mixLayoutFor(screenSharing)`:
 | sin pantalla (`adaptive`) | `mixedVideoLayout: 1` | un publicador llena el lienzo; varios se reparten en ventanas iguales |
 | con pantalla (`screen`) | `mixedVideoLayout: 2, maxResolutionUid: '2'` | la pantalla en la ventana grande, las cámaras en columna |
 
-- **La fuente es la presencia**, no un estado nuevo: el host ya emite `screen_share { active }` por socket en los dos modos (`AgoraLiveRoom.js`) y `eventSocket.js` lo guarda en `entry.screenSharing`. Se expone un lector `isHostScreenSharing(eventId)` en el objeto que devuelve `eventSocket` y el servicio lo recibe inyectado; nunca copia el dato.
+- **La fuente es la presencia**, no un estado nuevo: el host ya emite `screen_share { active }` por socket en los dos modos (`AgoraLiveRoom.js`) y `eventSocket.js` lo guarda en `entry.screenSharing`; desde D16 también lo emite el co-presentador de un stream. Se expone un lector `isStageScreenSharing(eventId)` (verdadero si el host o el co-presentador marcan la pantalla) en el objeto que devuelve `eventSocket` y el servicio lo recibe inyectado; nunca copia el dato. El `maxResolutionUid: '2'` no cambia: el uid 2 es la pantalla de la escena, la publique quien la publique.
 - **El diseño aplicado se guarda** en `event_recordings.applied_layout` y el reconciliador (D8) lo compara con el deseado en cada pasada, llamando a `updateLayout` (sólo `mix`) si difieren. Un `updateLayout` fallido no es fatal —la pantalla sigue grabándose, sólo que más pequeña— y se reintenta en la pasada siguiente. El manejador `screen_share` dispara una reconciliación inmediata para que el cambio no espere 30 s.
 - **Reemisión tras la (re)unión.** La presencia vive en memoria y se pierde si la api se reinicia; el efecto del host sólo emite al cambiar `room.screenEnabled`. `useEventRoomSocket` expone `joinVersion`, que sube en cada unión confirmada, y el efecto lo añade a sus dependencias para que el host vuelva a declarar su estado tras cada unión. `joined` no sirve: una reconexión automática de Socket.IO pasa de verdadero a verdadero sin pasar por falso, y el efecto no se volvería a ejecutar. Sin esto, una grabación reanudada tras un reinicio usaría el diseño adaptativo con la pantalla compartida en curso.
 - *Descartados*: replicar `BroadcastStage` con `mixedVideoLayout: 3` (diseño a medida con coordenadas por uid: dejaría un hueco negro para la pantalla el 95 % del evento y obligaría a mantener una segunda copia de la lógica de escena, el error que `zoneResolver` documenta); vertical fijo desde el inicio (comportamiento no documentado cuando `maxResolutionUid` no publica).
@@ -107,7 +107,7 @@ A es más simple, no depende de la duración del evento ni de la ventana de subi
 
 ### D8. Un reconciliador es la autoridad del ciclo de vida
 
-`api/scheduler/recordingScheduler.js` (node-cron, cada 30 s, arrancado sólo desde `api/server.js`, sin solapar pasadas) llama a `agoraRecordingService.reconcileEvent(eventId, { isHostScreenSharing })` para cada evento candidato: los `active` con grabación elegible y los que tengan una tarea viva. `reconcileEvent` lee el estado de la base de datos y converge:
+`api/scheduler/recordingScheduler.js` (node-cron, cada 30 s, arrancado sólo desde `api/server.js`, sin solapar pasadas) llama a `agoraRecordingService.reconcileEvent(eventId, { isStageScreenSharing })` para cada evento candidato: los `active` con grabación elegible y los que tengan una tarea viva. `reconcileEvent` lee el estado de la base de datos y converge:
 
 ```
 tarea viva 'starting' con > 120 s  → 'failed' (arranque colgado; sin sid no se puede parar)
@@ -148,14 +148,16 @@ sin tarea viva y el evento graba   → start, salvo tope de intentos, enfriamien
 - Las pistas de una reunión no se descargan por la web: son miles de ficheros que sólo sirven juntos. El panel muestra el comando exacto de AWS CLI para la sesión completa y para cada participante (`--exclude "*" --include "*__uid_s_<uid>__*"`), construido en el cliente a partir del bucket y el prefijo.
 - Nada pasa por el contenedor `api`: ni streaming de ficheros ni ZIPs.
 
-### D12. Información a los participantes
+### D12. Información a los participantes: sólo en los textos legales
 
-- Insignia «Grabando» (componente único `RecordingBadge`) en la cabecera de escritorio, la barra superior compacta, el cromo horizontal y la consola del host, mientras el evento está `active` y es grabable según el predicado del cliente.
-- **Refleja la configuración, no el estado de la tarea.** Un estado en vivo exigiría una señal nueva hasta cada navegador, y el fallo que evita la insignia de configuración es el seguro: informar de más nunca vulnera la privacidad de nadie. Quien necesita saber que una grabación ha fallado es el admin, y lo sabe por la alerta.
-- Aviso previo en la ficha del evento y en `EventAccessModal`, con texto distinto por modo: en `broadcast` sólo se graba a quien interviene; en `meeting`, a todo el que tenga cámara o micrófono activos. Los dos dicen que la grabación se conserva 30 días y enlazan a la política de privacidad.
-- Textos en `EVENT_RECORDING_COPY` (`client/lib/constants.js`).
-- **Política de privacidad**: apartado propio «Grabación de eventos en directo» con qué se graba en cada modo (imagen y voz de quienes intervienen), finalidad (consulta y reutilización del contenido del evento), base legal, encargados (Agora procesa la grabación en su región europea y Amazon Web Services la almacena en la UE), conservación de **30 días naturales** con eliminación automática, y cómo pedir la supresión anticipada. Base legal: para el host y el co-presentador, la relación que les une con la galería para impartir el evento; para los asistentes que intervienen, su consentimiento, que prestan al activar la cámara o el micrófono tras el aviso. Es un consentimiento libre porque se puede asistir sin ser grabado: en `broadcast` sólo se graba a quien recibe la palabra, y en `meeting`, a quien activa cámara o micrófono. Se actualiza la fecha de «Última actualización».
-- **Normas de los eventos**: los eventos marcados se graban, se avisa antes de entrar y durante el evento, y la grabación se conserva 30 días.
+**Decisión de negocio (tras la verificación en preproducción): la interfaz no dice en ningún sitio que un evento se graba.** La primera versión mostraba una insignia «Grabando» en todas las presentaciones de la sala y un aviso previo en la ficha y en el modal de acceso; se retiraron. La información vive sólo en la política de privacidad y en las normas de los eventos, y el registro las acepta a las dos en una misma casilla.
+
+- **Sin insignia y sin aviso** en la ficha del evento, el modal de acceso, la sala (escritorio, barra compacta, cromo horizontal) ni la consola del host. Los componentes `RecordingBadge` y `RecordingNotice` se borraron, y con ellos la prop `recording` que atravesaba la sala.
+- **El flag tampoco viaja en las respuestas públicas.** `GET /api/events` y `GET /api/events/:slug` lo quitan con `toPublicEvent` (`eventController.js`): de nada serviría no pintarlo si cualquiera puede leerlo en la pestaña Red. Las rutas de admin lo conservan. El cliente sólo lo lee en las pantallas de admin.
+- **Casilla del registro**: «Acepto las normas y términos para la participación en eventos en directo y la política de privacidad», con un enlace a cada documento.
+- **Política de privacidad**: apartado propio «Grabación de eventos en directo» (ancla `#grabacion-de-eventos`). Dice que los eventos pueden grabarse y que se informa ahí, sin un aviso distinto por evento. Recoge qué se graba en cada modo (imagen y voz de quienes intervienen), la finalidad (consulta y reutilización), la base legal, los encargados (Agora procesa la grabación en su región europea y Amazon Web Services la almacena en la UE), la conservación de **30 días naturales** con eliminación automática y cómo pedir la supresión anticipada. Base legal: para el host y el co-presentador, la relación que les une con la galería para impartir el evento; para los asistentes que intervienen, su consentimiento, que prestan al pedir la palabra o activar la cámara o el micrófono sabiendo, por la política aceptada al registrarse, que el evento puede grabarse. Se puede asistir sin ser grabado.
+- **Normas de los eventos**: resumen (los eventos pueden grabarse, a quién se graba en cada modo, 30 días) y enlace al apartado de la política para el resto.
+- **Riesgo aceptado por decisión de negocio:** sin aviso por evento, quien interviene no sabe si ese evento concreto se graba. El texto legal lo dice tal cual («pueden grabarse») en vez de prometer un aviso que no existe. Conviene que lo revise quien lleve lo jurídico, junto con el matiz de que dar la palabra en un stream activa el micrófono del asistente automáticamente.
 - La supresión anticipada es practicable gracias a la forma de grabar: en `meeting` basta con borrar las pistas del uid de quien la pide; en `broadcast` la mezcla es un único fichero, así que se borra la grabación entera o se edita fuera. El procedimiento manual está en `docs/grabaciones-eventos.md`.
 
 ### D13. Configuración y aislamiento
@@ -172,21 +174,47 @@ sin tarea viva y el evento graba   → start, salvo tope de intentos, enfriamien
 - **S3 aplica la regla de forma asíncrona**, contando desde la creación de cada objeto y redondeando a la medianoche UTC siguiente: el borrado real puede llegar uno o dos días después del día 30. La política de privacidad habla de eliminación automática transcurridos 30 días naturales, que es cierto.
 - **Consecuencia de producto**: reutilizar una grabación exige descargarla antes de que caduque. El panel lo dice con la fecha de cada tarea.
 
+### D15. La pantalla se comparte con su audio
+
+Al preparar las pruebas apareció un fallo anterior a este cambio (desde c933796): en Chrome para Windows el selector de pantalla no ofrecía «Compartir audio» en ninguna de sus tres pestañas, mientras una página de prueba sí lo hacía. La causa está en nuestro código, no en el navegador: las dos rutas de `useAgoraRoom` llamaban a `AgoraRTC.createScreenVideoTrack(config, 'disable')`. Con `'disable'` el SDK llama a `getDisplayMedia({ audio: undefined })` —comprobado en el bundle instalado 4.24.6: `screenAudio: supportShareAudio && withAudio !== 'disable' ? config || true : undefined`— y sin petición de audio Chrome no pinta la casilla. Como grabar «todo lo posible» incluye el sonido de lo que se proyecta, y la grabación `mix` recoge cualquier audio publicado, se corrige aquí.
+
+- **Segundo argumento = objeto de configuración** (`AGORA_SCREEN_AUDIO_CONFIG` en `client/lib/constants.js`). Un objeto hace que el SDK pida audio en modo `'auto'`: la pista de audio existe sólo si la persona marca la casilla, y la llamada devuelve `[vídeo, audio]` o sólo el vídeo. El helper `createScreenTracks` normaliza las dos formas y las dos rutas (segundo cliente en stream, intercambio en reunión) publican y cierran las dos pistas juntas.
+- **`AEC`/`AGC`/`ANS` desactivados**: es audio de programa (vídeo, música), no una voz; el procesado de llamadas lo recortaría y lo bombearía.
+- **`restrictOwnAudio: true`** (Chrome 141+; el resto lo ignora): excluye del audio del sistema el que reproduce la propia página. Sin él, quien comparte la pantalla entera con audio del sistema devolvería al canal las voces de los demás participantes que suenan en su sala: eco para todos. Con «Pestaña» no hace falta (se captura otra pestaña), con «Toda la pantalla» es imprescindible.
+- **Pistas de captura** `systemAudio: 'include'` y `windowAudio: 'system'` (`AGORA_SCREEN_CAPTURE_OPTIONS`, dentro de la configuración de vídeo, que el SDK pasa a `getDisplayMedia`): piden a Chrome que ofrezca también el audio del sistema en «Toda la pantalla» y en «Ventana».
+- **Qué ofrece cada plataforma**: Windows, audio de pestaña y del sistema; macOS, audio de pestaña siempre y del sistema con Chrome 141+ en macOS 14.2+; Safari nunca; Linux fuera de alcance por decisión (depende de la pila de audio del sistema).
+- **Eco del host**: si comparte el co-presentador (D16), el host oye ese audio como un asistente; con su micrófono sin cancelación de eco (por defecto), debe llevar auricular o marcar «El host escuchará a los invitados por altavoz», el mismo procedimiento que ya exige una entrevista remota.
+- *Descartado*: `withAudio = 'enable'`. Hace obligatorio el audio y, sin él, la llamada falla; `'auto'` deja compartir sin audio como antes.
+
+### D16. El co-presentador también comparte pantalla, en la misma pantalla de la escena
+
+Petición de negocio ligada a D15: si el navegador del host no puede compartir audio (Safari, o un Mac antiguo), el admin que co-presenta pone en escena la pantalla con sonido desde su equipo.
+
+- **El uid 2 pasa a ser «la pantalla de la escena», no «la del host».** El co-presentador comparte exactamente como el host: segundo cliente en el uid 2 con token de `POST /api/events/:id/screen-token`. Así no cambia nada aguas abajo: `BroadcastStage` ya pinta el uid 2 como contenido, las suscripciones en flujo bajo ya lo tratan aparte y el diseño `mix` ya pone el uid 2 en la ventana grande (D4). Se conserva el nombre `HOST_SCREEN_UID` para no tocar esos consumidores; su documentación dice lo que es.
+- *Descartado*: un uid 3 para la pantalla del co-presentador. Obligaría a una segunda fuente de contenido en la escena, a una regla de prioridad entre dos pantallas, a un segundo `maxResolutionUid` en la grabación y a otro uid reservado (el 3 es del grabador).
+- **Una pantalla a la vez, en tres capas.** Cliente: la presencia dice quién la tiene (`screenSharing` de la entrada del host o del co-presentador) y el toggle del otro se rechaza con el motivo antes de abrir el selector. Servidor: `screen-token` responde 409 `SCREEN_SHARE_IN_USE` si la presencia la atribuye al otro (`getStageScreenSharer`), y sigue renovando a quien la tiene. Agora: si aun así dos clientes se unen con el uid 2, desconecta al anterior con `UID_CONFLICT`; ese cliente limpia su compartición y se suscribe a la pantalla que lo sustituye, porque mientras compartía estaba ignorando las publicaciones del uid 2.
+- **La regla de suscripción cambia de «soy el host» a «esta página publica el uid 2 ahora».** El host ya no puede saltarse siempre el uid 2: cuando comparte el co-presentador tiene que verlo. Quien comparte sigue sin descargar su propia pantalla (ancho de banda, facturación por resolución suscrita y, ahora, eco de su audio).
+- **Autorización**: la del resto de gates del co-presentador, `isBroadcastCohost` sobre su asistente de staff (buscado por el email del JWT), que vuelve a comprobar que el rol actual sea `admin`. Un admin que no entró en el evento, o uno degradado, recibe 403.
+- **Presencia**: `screen_share` se acepta del host y del co-presentador; la reemisión tras cada unión (D4) aplica a los dos.
+- **Coste**: ninguno nuevo. Es la misma pantalla que ya presupuesta «Interviews in Agora broadcast events» (pantalla + dos flujos bajos en la banda Full HD).
+
 ## Risks / Trade-offs
 
 - [La tarifa del `mix` podría depender del lienzo de salida y no de los flujos grabados] → la documentación dice lo segundo; se comprueba en la primera factura con eventos grabados. Si fuera lo primero, bajar el lienzo a 1280×720 es un cambio de una constante.
 - [La geometría real de los diseños adaptativo y vertical no está documentada con cifras] → verificación visual en preproducción de cada estado (host solo, host + co-presentador, host + pantalla, los tres) antes de producción.
 - [El grabador con token `subscriber` bajo Co-host authentication, o la política de sólo `PutObject`, podrían no bastar a Agora] → primera verificación en preproducción; la corrección sería el permiso mínimo adicional que Agora declare, nunca abrir el bucket.
 - [Un fallo del proceso entre `start` y persistir `sid` deja un grabador sin localizar] → ventana de milisegundos; sus ficheros llegan igualmente al prefijo de la tarea (fijado antes del `start`), y el grabador sale solo por `maxIdleTime` o por la caducidad del token.
-- [La insignia puede decir «Grabando» con la tarea caída] → decisión deliberada (D12); el admin recibe la alerta.
 - [La presencia se pierde al reiniciar la api] → reemisión de `screen_share` tras la unión (D4); en el peor caso la pantalla se graba en el diseño adaptativo hasta el siguiente cambio.
 - [El techo cuenta desde la primera tarea, que arranca cuando el admin inicia el evento] → aceptado; está en el texto de ayuda de la casilla.
 - [Listar una reunión larga son muchas páginas de `ListObjectsV2`] → pantalla de uso esporádico; si molesta, se guarda un resumen por tarea tras la subida.
-- [La casilla puede marcarse en un evento LiveKit o de vídeo] → se guarda y se ignora, como los flags de host; el predicado impide tanto la grabación como la insignia.
+- [La casilla puede marcarse en un evento LiveKit o de vídeo] → se guarda y se ignora, como los flags de host; el predicado impide la grabación.
 - [Los eventos LiveKit no se graban] → fuera de alcance por decisión.
 - [Alguien olvida crear la regla de ciclo de vida del bucket, y las grabaciones se conservan más de 30 días en contra de la política de privacidad] → comprobación al arrancar en producción con aviso por los tres canales (D14); en preproducción, paso de la lista de verificación.
 - [Un admin necesita una grabación después de 30 días] → no es recuperable, por decisión; el panel muestra la fecha límite de cada una.
 - [El texto legal es una propuesta técnica, no un dictamen] → conviene que lo revise quien lleve lo jurídico antes de publicarlo.
+- [El audio de la pantalla depende del navegador y del sistema] → verificación manual en Chrome para Windows y macOS (D15); en Safari y Linux la pantalla sigue compartiéndose sin audio, como antes, y el co-presentador es la alternativa (D16).
+- [Carrera entre host y co-presentador pidiendo la pantalla a la vez] → el 409 cubre casi todo; en la ventana restante Agora deja la pantalla del último en unirse y el otro cliente se limpia solo (D16). Nunca quedan dos pantallas en escena.
+- [`restrictOwnAudio` sólo existe desde Chrome 141] → en versiones anteriores, compartir la pantalla entera con audio del sistema devolvería al canal las voces de la sala; la alternativa es compartir la pestaña con su audio.
 
 ## Migration Plan
 

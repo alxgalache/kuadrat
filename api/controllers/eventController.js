@@ -63,6 +63,16 @@ function assertNotStaffTarget(attendee) {
   }
 }
 
+// Whether an event is recorded (agora-event-recording) is never shown to
+// attendees or hosts: the disclosure is the privacy policy they accept when
+// registering, so the public payloads do not carry the flag at all. Admin
+// endpoints keep it.
+function toPublicEvent(event) {
+  if (!event) return event;
+  const { recording_enabled: _recordingEnabled, ...publicFields } = event;
+  return publicFields;
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/events?from=YYYY-MM-DD&to=YYYY-MM-DD
 // ---------------------------------------------------------------------------
@@ -73,7 +83,7 @@ const getEvents = async (req, res, next) => {
       throw new ApiError(400, 'Los parámetros "from" y "to" son obligatorios', 'Solicitud inválida');
     }
     const events = await eventService.getEventsByDateRange(from, to);
-    res.status(200).json({ success: true, events });
+    res.status(200).json({ success: true, events: events.map(toPublicEvent) });
   } catch (error) {
     next(error);
   }
@@ -93,7 +103,7 @@ const getEventBySlug = async (req, res, next) => {
     const attendeeCount = await eventService.getAttendeeCount(event.id);
     res.status(200).json({
       success: true,
-      event,
+      event: toPublicEvent(event),
       attendeeCount,
       serverNow: new Date().toISOString(),
     });
@@ -491,12 +501,18 @@ const getHostToken = async (req, res, next) => {
 
 // ---------------------------------------------------------------------------
 // POST /api/events/:id/screen-token
-// Agora broadcast events: publisher token for the host's SECOND client, which
-// joins under the reserved HOST_SCREEN_UID and publishes only the shared
-// screen. A single AgoraRTCClient cannot publish two video tracks, so this is
-// what keeps the host's camera on air while they share their screen. Called
-// when sharing starts and again on that client's token-privilege-will-expire.
+// Agora broadcast events: publisher token for a presenter's SECOND client,
+// which joins under the reserved HOST_SCREEN_UID and publishes only the shared
+// screen (and its audio). A single AgoraRTCClient cannot publish two video
+// tracks, so this is what keeps the camera on air while sharing. Called when
+// sharing starts and again on that client's token-privilege-will-expire.
 // Meeting events keep swapping camera and screen on one client.
+//
+// uid 2 is the STAGE screen, not the host's: the host and the co-presenter
+// (isBroadcastCohost, the same predicate as every other co-presenter gate)
+// may both ask for it, one at a time. While the other one holds it (socket
+// presence) the answer is 409 SCREEN_SHARE_IN_USE — Agora would otherwise hand
+// uid 2 to the newcomer and silently drop the screen already on air.
 // ---------------------------------------------------------------------------
 const getScreenToken = async (req, res, next) => {
   try {
@@ -515,8 +531,27 @@ const getScreenToken = async (req, res, next) => {
       throw new ApiError(400, 'El evento no está activo', 'Evento no activo');
     }
 
-    if (!req.user || req.user.id !== event.host_user_id) {
-      throw new ApiError(403, 'Solo el host puede compartir pantalla', 'Acceso denegado');
+    if (!req.user) {
+      throw new ApiError(403, 'Solo el host o el co-presentador pueden compartir pantalla', 'Acceso denegado');
+    }
+
+    let presenceIdentity = null;
+    if (req.user.id === event.host_user_id) {
+      presenceIdentity = `host-${req.user.id}`;
+    } else {
+      const staffAttendee = await eventService.getStaffAttendeeByEmail(event.id, req.user.email);
+      if (!staffAttendee || !(await eventService.isBroadcastCohost(event, staffAttendee))) {
+        throw new ApiError(403, 'Solo el host o el co-presentador pueden compartir pantalla', 'Acceso denegado');
+      }
+      presenceIdentity = `viewer-${staffAttendee.id}`;
+    }
+
+    const eventSocket = req.app.get('eventSocket');
+    const sharer = eventSocket && typeof eventSocket.getStageScreenSharer === 'function'
+      ? eventSocket.getStageScreenSharer(event.id)
+      : null;
+    if (sharer && sharer !== presenceIdentity) {
+      throw new ApiError(409, 'Otra persona está compartiendo pantalla', 'SCREEN_SHARE_IN_USE');
     }
 
     const rtcToken = agoraService.generateRtcToken({
