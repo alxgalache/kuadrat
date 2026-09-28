@@ -164,20 +164,53 @@ const baseTokens = (preheader) => ({
 // ---------------------------------------------------------------------------
 // Broadcast send + audit
 // ---------------------------------------------------------------------------
-async function sendBroadcast({ name, topicId, subject, html }) {
+
+// Resend rejects a broadcast whose `name` is longer than 70 characters (422
+// "Field `name` has a maximum of 70 items."). The limit is in neither their
+// docs nor their OpenAPI spec: it surfaced on 27/09/2026, when an event with a
+// 49-character title could not be announced to the production newsletter.
+// It counts characters, not bytes — a 69-character name carrying a 3-byte em
+// dash (71 bytes) was accepted. `name` is internal (Resend dashboard only), so
+// clipping it costs recipients nothing. `subject` has no such limit: a
+// 353-character draft was accepted and stored whole.
+const BROADCAST_NAME_MAX = 70;
+
+// Stays within BROADCAST_NAME_MAX UTF-16 units without ever splitting a
+// surrogate pair, so it holds whether Resend counts code units or code points.
+const clipBroadcastName = (name) => {
+  const s = String(name);
+  if (s.length <= BROADCAST_NAME_MAX) return s;
+  let out = '';
+  for (const ch of s) {
+    if (out.length + ch.length > BROADCAST_NAME_MAX - 1) break;
+    out += ch;
+  }
+  return `${out.trimEnd()}…`;
+};
+
+// Eight characters of the entity UUID are enough to find it; the full id is
+// already stored beside resend_broadcast_id in marketing_sends. The full UUID
+// alone left 24 characters for the title.
+const shortId = (id) => String(id).slice(0, 8);
+
+// Every broadcast goes through here, so no builder — present or future — can
+// hand Resend a name over its limit.
+const broadcastPayload = ({ name, topicId, subject, html }) => ({
+  name: clipBroadcastName(name),
+  segmentId: config.marketing.newsletterSegmentId,
+  topicId: topicId || undefined,
+  from: formatSender(),
+  subject,
+  html,
+  send: true,
+});
+
+async function sendBroadcast(built) {
   if (!marketingActive()) {
-    logger.info({ name, subject }, 'Marketing disabled (circuit breaker / missing key) — broadcast skipped');
+    logger.info({ name: built.name, subject: built.subject }, 'Marketing disabled (circuit breaker / missing key) — broadcast skipped');
     return { skipped: true };
   }
-  const { data, error } = await getClient().broadcasts.create({
-    name,
-    segmentId: config.marketing.newsletterSegmentId,
-    topicId: topicId || undefined,
-    from: formatSender(),
-    subject,
-    html,
-    send: true,
-  });
+  const { data, error } = await getClient().broadcasts.create(broadcastPayload(built));
   if (error) throw new Error(error.message || 'Resend broadcast failed');
   return { skipped: false, broadcastId: data.id };
 }
@@ -236,7 +269,7 @@ async function buildAuction(auctionId) {
     subject: `Nueva subasta: ${auction.name}`,
     html: renderTemplate('auction-announcement', tokens),
     topicId: config.marketing.topicAuctionsDraws,
-    name: `Subasta ${auction.id} — ${auction.name}`,
+    name: `Subasta ${shortId(auction.id)} — ${auction.name}`,
   };
 }
 
@@ -257,7 +290,7 @@ async function buildDraw(drawId) {
     subject: `Nuevo sorteo: ${draw.name}`,
     html: renderTemplate('draw-announcement', tokens),
     topicId: config.marketing.topicAuctionsDraws,
-    name: `Sorteo ${draw.id} — ${draw.name}`,
+    name: `Sorteo ${shortId(draw.id)} — ${draw.name}`,
   };
 }
 
@@ -281,7 +314,7 @@ async function buildEvent(eventId) {
     subject: `Nuevo evento en directo: ${event.title}`,
     html: renderTemplate('event-announcement', tokens),
     topicId: config.marketing.topicLiveEvents,
-    name: `Evento ${event.id} — ${event.title}`,
+    name: `Evento ${shortId(event.id)} — ${event.title}`,
   };
 }
 
@@ -458,4 +491,7 @@ module.exports = {
   announceDrawIfEligible,
   announceEventIfEligible,
   upsertSubscriber,
+  BROADCAST_NAME_MAX,
+  clipBroadcastName,
+  broadcastPayload,
 };
