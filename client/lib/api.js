@@ -1632,10 +1632,12 @@ export const auctionsAPI = {
     });
   },
 
-  confirmPayment: async (auctionId, auctionBuyerId, setupIntentId, customerId) => {
+  // The Stripe customer is read from the SetupIntent on the server; the client
+  // no longer sends one (enforce-verification-gates).
+  confirmPayment: async (auctionId, auctionBuyerId, setupIntentId) => {
     return apiRequest(`/auctions/${auctionId}/confirm-payment`, {
       method: 'POST',
-      body: JSON.stringify({ auctionBuyerId, setupIntentId, customerId }),
+      body: JSON.stringify({ auctionBuyerId, setupIntentId }),
     });
   },
 
@@ -1707,10 +1709,12 @@ export const drawsAPI = {
     });
   },
 
-  confirmPayment: async (drawId, drawBuyerId, setupIntentId, customerId) => {
+  // The Stripe customer is read from the SetupIntent on the server; the client
+  // no longer sends one (enforce-verification-gates).
+  confirmPayment: async (drawId, drawBuyerId, setupIntentId) => {
     return apiRequest(`/draws/${drawId}/confirm-payment`, {
       method: 'POST',
-      body: JSON.stringify({ drawBuyerId, setupIntentId, customerId }),
+      body: JSON.stringify({ drawBuyerId, setupIntentId }),
     });
   },
 
@@ -1890,6 +1894,19 @@ export const eventsAPI = {
     return apiRequest(`/events/${eventId}/verify-password`, {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+      // A wrong password answers 401. Without this, the global handler would
+      // read it as an expired login: sign the user out and send them home.
+      skipAuthHandling: true,
+    });
+  },
+
+  // Does the attendee session stored in this browser still give access?
+  // 200 { access: 'granted' } or 403 with a SESSION_* code in `title` — see
+  // SESSION_REJECTION_MESSAGES. Never 401.
+  checkSession: async (eventId, attendeeId, accessToken) => {
+    return apiRequest(`/events/${eventId}/session`, {
+      method: 'POST',
+      body: JSON.stringify({ attendeeId, accessToken }),
     });
   },
 

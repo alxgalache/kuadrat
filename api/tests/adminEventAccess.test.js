@@ -15,6 +15,7 @@ const { randomUUID } = require('crypto');
 const { app } = require('./helpers/app');
 const { db } = require('../config/database');
 const eventService = require('../services/eventService');
+const { createVerifiedAttendee } = require('./helpers/eventAttendees');
 const { generateEventAttendeeInvoice } = require('../services/invoiceService');
 
 const stamp = Date.now();
@@ -154,7 +155,7 @@ describe('payment gate exemption', () => {
   });
 
   it('still refuses an ordinary unpaid attendee', async () => {
-    const { attendee, accessToken } = await eventService.registerAttendee(paidEventId, {
+    const { attendee, accessToken } = await createVerifiedAttendee(paidEventId, {
       first_name: 'Bea',
       last_name: 'Compradora',
       email: BUYER_EMAIL,
@@ -216,7 +217,7 @@ describe('staff attendees stay out of counts, credit, payouts and invoices', () 
 
     // Two paying attendees plus the admin.
     for (const name of ['uno', 'dos']) {
-      const { attendee } = await eventService.registerAttendee(countEventId, {
+      const { attendee } = await createVerifiedAttendee(countEventId, {
         first_name: name,
         last_name: 'Pagador',
         email: `pagador-${name}-${stamp}@test.com`,

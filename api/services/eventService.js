@@ -1,7 +1,8 @@
 const { db } = require('../config/database');
-const { randomUUID, createHash, randomBytes } = require('crypto');
+const { randomUUID, randomBytes } = require('crypto');
 const slugify = require('slugify');
 const logger = require('../config/logger');
+const emailOtp = require('../utils/emailOtp');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -11,29 +12,11 @@ function generateUUID() {
   return randomUUID();
 }
 
-function generateAccessToken() {
-  return randomBytes(32).toString('hex');
-}
+const generateAccessToken = emailOtp.generateOpaqueToken;
+const hashAccessToken = emailOtp.sha256;
 
-function hashAccessToken(token) {
-  return createHash('sha256').update(token).digest('hex');
-}
-
-/**
- * Generate a 6-char alphanumeric event password (excludes ambiguous chars: 0OI1L).
- */
-function generateEventPassword() {
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  let password = '';
-  for (let i = 0; i < 6; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
-
-function generateOTPCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
+/** 6-char event password (excludes ambiguous chars: 0OI1L). */
+const generateEventPassword = emailOtp.generateAccessPassword;
 
 function generateSlug(title) {
   return slugify(title, { lower: true, strict: true }) + '-' + randomBytes(4).toString('hex');
@@ -186,33 +169,47 @@ async function getEventsByDateRange(from, to) {
 // Attendees
 // ---------------------------------------------------------------------------
 
-async function registerAttendee(eventId, { first_name, last_name, email }) {
-  // Check if already registered
-  const existing = await db.execute({
-    sql: 'SELECT * FROM event_attendees WHERE event_id = ? AND email = ?',
-    args: [eventId, email],
+/**
+ * The attendee row for this email in this event, or null. The email is
+ * normalised here too, so no caller can look up a spelling that was never
+ * stored.
+ */
+async function getAttendeeByEmail(eventId, email) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM event_attendees WHERE event_id = ? AND email = ? LIMIT 1',
+    args: [eventId, emailOtp.normalizeEmail(email)],
   });
+  return result.rows[0] || null;
+}
 
-  if (existing.rows.length > 0) {
-    return { attendee: existing.rows[0], isExisting: true };
+/**
+ * Create — or find — the attendee row for this email. Issues NO credential.
+ *
+ * It used to mint the access token right here, before the OTP step, and hand
+ * it back in the response: the client stored it, and any holder of it could
+ * enter a free event without ever proving the email (enforce-verification-
+ * gates). A new row now starts with access_token_hash NULL, and the token is
+ * born in verifyEmailCode, in the same statement that sets email_verified.
+ * An existing row is returned untouched, whatever its state.
+ *
+ * @returns {Promise<{ attendee: object, isExisting: boolean }>}
+ */
+async function registerAttendee(eventId, { first_name, last_name, email }) {
+  const normalizedEmail = emailOtp.normalizeEmail(email);
+
+  const existing = await getAttendeeByEmail(eventId, normalizedEmail);
+  if (existing) {
+    return { attendee: existing, isExisting: true };
   }
 
   const id = generateUUID();
-  const accessToken = generateAccessToken();
-  const accessTokenHash = hashAccessToken(accessToken);
-
   await db.execute({
-    sql: `INSERT INTO event_attendees (id, event_id, first_name, last_name, email, access_token_hash)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [id, eventId, first_name, last_name, email, accessTokenHash],
+    sql: `INSERT INTO event_attendees (id, event_id, first_name, last_name, email)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [id, eventId, first_name, last_name, normalizedEmail],
   });
 
-  const attendee = await db.execute({
-    sql: 'SELECT * FROM event_attendees WHERE id = ?',
-    args: [id],
-  });
-
-  return { attendee: attendee.rows[0], accessToken, isExisting: false };
+  return { attendee: await getAttendeeById(id), isExisting: false };
 }
 
 /**
@@ -284,13 +281,64 @@ async function getStaffAttendeeByEmail(eventId, email) {
   return result.rows[0] || null;
 }
 
+/**
+ * The ONLY lookup of an attendee by access token, and therefore the gate
+ * every attendee-credential entry point goes through: /token, /renew-token,
+ * the whiteboard token and upload, /video-token, report-spam, /session and
+ * the authenticated Socket.IO room.
+ *
+ * A row counts as a credential only once its email is verified, or when it is
+ * staff (the admin, whose JWT already proved the identity). Filtering here
+ * rather than in each caller is deliberate: seven places that must agree is
+ * how the Socket.IO room once ended up with its own divergent copy of
+ * requiresPayment. api/tests/eventRegistrationVerification.test.js fails if
+ * access_token_hash appears in SQL anywhere but this module.
+ */
 async function getAttendeeByAccessToken(eventId, accessToken) {
+  if (!accessToken) return null;
   const hash = hashAccessToken(accessToken);
   const result = await db.execute({
-    sql: 'SELECT * FROM event_attendees WHERE event_id = ? AND access_token_hash = ?',
+    sql: `SELECT * FROM event_attendees
+          WHERE event_id = ? AND access_token_hash = ?
+            AND (email_verified = 1 OR is_staff = 1)`,
     args: [eventId, hash],
   });
   return result.rows[0] || null;
+}
+
+/**
+ * Does this stored { attendeeId, accessToken } pair give access to the event?
+ * Backs POST /api/events/:id/session, which the event page asks before it
+ * claims «Ya tienes acceso».
+ *
+ * The happy path is the same filtered lookup every gate uses. Only when that
+ * fails does a second read run, to tell the attendee WHY — a replaced token
+ * and an unverified registration need different advice. Same shape as the
+ * password-reset expiry check: the extra query costs nothing on success.
+ *
+ * @returns {Promise<{ attendee: object } | { reason: string }>} reason is one of
+ *   SESSION_INVALID | SESSION_REPLACED | SESSION_UNVERIFIED | SESSION_BANNED |
+ *   SESSION_PAYMENT_REQUIRED
+ */
+async function resolveAttendeeSession(event, { attendeeId, accessToken, clientIp }) {
+  const attendee = await getAttendeeByAccessToken(event.id, accessToken);
+
+  if (!attendee || attendee.id !== attendeeId) {
+    const row = await getAttendeeById(attendeeId);
+    if (!row || row.event_id !== event.id) return { reason: 'SESSION_INVALID' };
+    const tokenMatchesRow = Boolean(row.access_token_hash)
+      && emailOtp.safeEqual(row.access_token_hash, hashAccessToken(accessToken));
+    if (tokenMatchesRow && Number(row.email_verified) !== 1 && Number(row.is_staff) !== 1) {
+      return { reason: 'SESSION_UNVERIFIED' };
+    }
+    return { reason: 'SESSION_REPLACED' };
+  }
+
+  if (await isEmailBanned(event.id, attendee.email)) return { reason: 'SESSION_BANNED' };
+  if (clientIp && await isIpBanned(event.id, clientIp)) return { reason: 'SESSION_BANNED' };
+  if (requiresPayment(event, attendee)) return { reason: 'SESSION_PAYMENT_REQUIRED' };
+
+  return { attendee };
 }
 
 async function getAttendeeById(id) {
@@ -365,6 +413,15 @@ async function updateAttendeePayment(attendeeId, {
   return getAttendeeById(attendeeId);
 }
 
+/** The attendee a PaymentIntent was already recorded against, or null. */
+async function getAttendeeByPaymentIntent(paymentIntentId) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM event_attendees WHERE stripe_payment_intent_id = ? LIMIT 1',
+    args: [paymentIntentId],
+  });
+  return result.rows[0] || null;
+}
+
 async function updateAttendeeStatus(attendeeId, status) {
   await db.execute({
     sql: 'UPDATE event_attendees SET status = ? WHERE id = ?',
@@ -381,14 +438,25 @@ async function listAttendees(eventId) {
   return result.rows;
 }
 
+/**
+ * SQL for "this attendee holds a seat": verified, not staff, not cancelled.
+ * The public "N asistentes" figure, the max_attendees check in /register and
+ * the atomic capacity guard in verifyEmailCode all count exactly this, so the
+ * three cannot disagree about whether the event is full.
+ *
+ * Unverified rows hold no seat: /register has no proof behind it, and
+ * counting them let anyone fill an event with invented emails. Staff (the
+ * admin sitting in) must not inflate it either. listAttendees deliberately
+ * does NOT filter — the admin panel shows every row, labelling the
+ * unverified ones.
+ */
+const SEAT_HOLDER_CONDITION = `email_verified = 1 AND is_staff = 0
+            AND status IN ('registered', 'paid', 'joined')`;
+
 async function getAttendeeCount(eventId) {
-  // The public "N asistentes" figure — staff (the admin sitting in) must not
-  // inflate it. listAttendees above deliberately does NOT filter: the admin
-  // panel should show who was actually in the room.
   const result = await db.execute({
     sql: `SELECT COUNT(*) as count FROM event_attendees
-          WHERE event_id = ? AND status IN ('registered', 'paid', 'joined')
-            AND is_staff = 0`,
+          WHERE event_id = ? AND ${SEAT_HOLDER_CONDITION}`,
     args: [eventId],
   });
   return result.rows[0].count;
@@ -559,54 +627,121 @@ async function isAttendeeChatBanned(attendeeId) {
 // Email Verification (OTP)
 // ---------------------------------------------------------------------------
 
+/**
+ * Send-side half of the email proof. The cooldown and the write are one
+ * guarded UPDATE, so two sends racing inside the window cannot both go out.
+ * A send resets the attempt counter: the cap is per code, not per attendee.
+ *
+ * @returns {Promise<null | { tooSoon: true, attendee } | { code, attendee }>}
+ *   null when the attendee does not belong to this event.
+ */
 async function sendVerificationCode(eventId, attendeeId) {
   const attendee = await getAttendeeById(attendeeId);
   if (!attendee || attendee.event_id !== eventId) return null;
 
-  const code = generateOTPCode();
-  const codeHash = createHash('sha256').update(code).digest('hex');
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const code = emailOtp.generateOtpCode();
+  const expiresAt = new Date(Date.now() + emailOtp.OTP_TTL_MS).toISOString();
 
-  await db.execute({
-    sql: `UPDATE event_attendees SET verification_code_hash = ?, verification_code_expires_at = ? WHERE id = ?`,
-    args: [codeHash, expiresAt, attendeeId],
+  // verification_sent_at is written as CURRENT_TIMESTAMP and compared in SQL:
+  // same zone-less UTC shape on both sides.
+  const update = await db.execute({
+    sql: `UPDATE event_attendees
+          SET verification_code_hash = ?, verification_code_expires_at = ?,
+              verification_attempts = 0, verification_sent_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND (verification_sent_at IS NULL
+                 OR datetime(verification_sent_at) <= datetime('now', ?))`,
+    args: [emailOtp.sha256(code), expiresAt, attendeeId, `-${emailOtp.OTP_RESEND_COOLDOWN_SECONDS} seconds`],
   });
 
+  if (update.rowsAffected === 0) return { tooSoon: true, attendee };
   return { code, attendee };
 }
 
+/**
+ * Verify the code — the proof of email ownership — and, in the same
+ * statement, turn the row into a credential: email_verified = 1 and a fresh
+ * access token. This is the only place an attendee token is born (the admin's
+ * staff row aside, whose JWT is its proof).
+ *
+ * The UPDATE also carries the capacity guard (design D4). Turso runs each
+ * statement atomically and SQLite serialises writes, so two attendees racing
+ * for the last seat cannot both win. A row that is already verified keeps its
+ * seat and is exempt: re-verifying from a new device is how an attendee
+ * recovers access.
+ *
+ * @returns {Promise<
+ *   { valid: true, attendee: object, accessToken: string } |
+ *   { valid: false, reason: string, error: string }
+ * >} reason: ATTENDEE_NOT_FOUND | OTP_NOT_PENDING | OTP_EXPIRED |
+ *    OTP_TOO_MANY_ATTEMPTS | OTP_INVALID | EVENT_FULL
+ */
 async function verifyEmailCode(eventId, attendeeId, code) {
   const attendee = await getAttendeeById(attendeeId);
   if (!attendee || attendee.event_id !== eventId) {
-    return { valid: false, error: 'Asistente no encontrado' };
+    return { valid: false, reason: 'ATTENDEE_NOT_FOUND', error: 'Asistente no encontrado' };
   }
 
   if (!attendee.verification_code_hash || !attendee.verification_code_expires_at) {
-    return { valid: false, error: 'No se encontró una verificación pendiente' };
+    return { valid: false, reason: 'OTP_NOT_PENDING', error: 'No se encontró una verificación pendiente' };
   }
 
   if (new Date(attendee.verification_code_expires_at) < new Date()) {
-    return { valid: false, error: 'El código ha expirado. Solicita uno nuevo' };
+    return { valid: false, reason: 'OTP_EXPIRED', error: 'El código ha expirado. Solicita uno nuevo' };
   }
 
-  const codeHash = createHash('sha256').update(code).digest('hex');
-  if (codeHash !== attendee.verification_code_hash) {
-    return { valid: false, error: 'Código de verificación incorrecto' };
+  if (Number(attendee.verification_attempts) >= emailOtp.EVENT_OTP_MAX_ATTEMPTS) {
+    return { valid: false, reason: 'OTP_TOO_MANY_ATTEMPTS', error: 'Demasiados intentos. Solicita un nuevo código' };
   }
 
-  await db.execute({
-    sql: `UPDATE event_attendees SET email_verified = 1, verification_code_hash = NULL, verification_code_expires_at = NULL WHERE id = ?`,
-    args: [attendeeId],
+  const codeHash = emailOtp.sha256(String(code ?? ''));
+  if (!emailOtp.safeEqual(codeHash, attendee.verification_code_hash)) {
+    // Bound to the current code: a guess that lands after a resend must not
+    // count against the new code.
+    await db.execute({
+      sql: `UPDATE event_attendees SET verification_attempts = verification_attempts + 1
+            WHERE id = ? AND verification_code_hash = ?`,
+      args: [attendeeId, attendee.verification_code_hash],
+    });
+    return { valid: false, reason: 'OTP_INVALID', error: 'Código de verificación incorrecto' };
+  }
+
+  const accessToken = generateAccessToken();
+  const update = await db.execute({
+    sql: `UPDATE event_attendees
+          SET email_verified = 1, access_token_hash = ?,
+              verification_code_hash = NULL, verification_code_expires_at = NULL,
+              verification_attempts = 0
+          WHERE id = ? AND event_id = ? AND verification_code_hash = ?
+            AND (
+              email_verified = 1
+              OR (SELECT COALESCE(max_attendees, 0) FROM events WHERE id = ?) <= 0
+              OR (SELECT COUNT(*) FROM event_attendees
+                   WHERE event_id = ? AND ${SEAT_HOLDER_CONDITION})
+                 < (SELECT max_attendees FROM events WHERE id = ?)
+            )`,
+    args: [hashAccessToken(accessToken), attendeeId, eventId, codeHash, eventId, eventId, eventId],
   });
 
-  return { valid: true };
+  if (update.rowsAffected === 0) {
+    // Either the event filled up (the code is still there, untouched) or a
+    // concurrent request consumed the code first.
+    const fresh = await getAttendeeById(attendeeId);
+    if (fresh?.verification_code_hash === codeHash) {
+      return { valid: false, reason: 'EVENT_FULL', error: 'Aforo completo' };
+    }
+    return { valid: false, reason: 'OTP_NOT_PENDING', error: 'No se encontró una verificación pendiente' };
+  }
+
+  return { valid: true, attendee: await getAttendeeById(attendeeId), accessToken };
 }
 
 // ---------------------------------------------------------------------------
 // Password Access
 // ---------------------------------------------------------------------------
 
-async function verifyAttendeePassword(eventId, email, password) {
+async function verifyAttendeePassword(eventId, rawEmail, password) {
+  const email = emailOtp.normalizeEmail(rawEmail);
   const result = await db.execute({
     sql: 'SELECT * FROM event_attendees WHERE event_id = ? AND email = ? AND access_password = ?',
     args: [eventId, email, password],
@@ -639,9 +774,15 @@ async function verifyAttendeePassword(eventId, email, password) {
   return { found: true, attendee, accessToken };
 }
 
+/**
+ * Store the attendee's access password. Deliberately does NOT touch
+ * email_verified any more: it used to set it as a side effect, which let a
+ * paid confirmation mark an email as verified that nobody had verified.
+ * Only verifyEmailCode (and the admin's staff row) write that flag.
+ */
 async function setAttendeePassword(attendeeId, password) {
   await db.execute({
-    sql: 'UPDATE event_attendees SET access_password = ?, email_verified = 1 WHERE id = ?',
+    sql: 'UPDATE event_attendees SET access_password = ? WHERE id = ?',
     args: [password, attendeeId],
   });
 }
@@ -655,13 +796,16 @@ module.exports = {
   listEvents,
   getEventsByDateRange,
   registerAttendee,
+  getAttendeeByEmail,
   createOrGetStaffAttendee,
   getStaffAttendeeByEmail,
   getAttendeeByAccessToken,
+  resolveAttendeeSession,
   getAttendeeById,
   isBroadcastCohost,
   requiresPayment,
   updateAttendeePayment,
+  getAttendeeByPaymentIntent,
   updateAttendeeStatus,
   listAttendees,
   getAttendeeCount,

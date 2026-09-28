@@ -6,7 +6,11 @@ const { authenticate } = require('../middleware/authorization');
 const { validate } = require('../middleware/validate');
 const { cacheControl } = require('../middleware/cache');
 const { sensitiveLimiter } = require('../middleware/rateLimiter');
-const { sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema, renewTokenSchema, screenTokenSchema, whiteboardTokenSchema, whiteboardImageSchema } = require('../validators/eventSchemas');
+const {
+  registerAttendeeSchema, createPaymentSchema, confirmPaymentSchema, getViewerTokenSchema, checkSessionSchema,
+  sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema, renewTokenSchema, screenTokenSchema,
+  whiteboardTokenSchema, whiteboardImageSchema,
+} = require('../validators/eventSchemas');
 
 // Multer configuration for whiteboard image uploads (PNG, JPG, WEBP) up to
 // 10MB (memory storage) — same limits as product images
@@ -54,21 +58,23 @@ router.get('/:slug', eventController.getEventBySlug);
 
 /**
  * POST /api/events/:id/register
- * Register an attendee (name + email)
+ * Register an attendee (name + email). Issues no credential: the access token
+ * is born in verify-email (enforce-verification-gates). Rate limited because
+ * it is unauthenticated and every call can create a row.
  */
-router.post('/:id/register', eventController.registerAttendee);
+router.post('/:id/register', sensitiveLimiter, validate(registerAttendeeSchema), eventController.registerAttendee);
 
 /**
  * POST /api/events/:id/pay
  * Create a Stripe PaymentIntent for a paid event
  */
-router.post('/:id/pay', eventController.createPayment);
+router.post('/:id/pay', validate(createPaymentSchema), eventController.createPayment);
 
 /**
  * POST /api/events/:id/confirm-payment
  * Confirm payment after Stripe
  */
-router.post('/:id/confirm-payment', eventController.confirmPayment);
+router.post('/:id/confirm-payment', validate(confirmPaymentSchema), eventController.confirmPayment);
 
 /**
  * POST /api/events/:id/admin-access
@@ -82,7 +88,7 @@ router.post('/:id/admin-access', authenticate, eventController.getAdminAccess);
  * POST /api/events/:id/token
  * Get LiveKit viewer token for an attendee
  */
-router.post('/:id/token', eventController.getViewerToken);
+router.post('/:id/token', validate(getViewerTokenSchema), eventController.getViewerToken);
 
 /**
  * POST /api/events/:id/host-token
@@ -163,6 +169,14 @@ router.post('/:id/send-verification', sensitiveLimiter, validate(sendVerificatio
  * Verify OTP code for email verification
  */
 router.post('/:id/verify-email', sensitiveLimiter, validate(verifyEmailSchema), eventController.verifyEmail);
+
+/**
+ * POST /api/events/:id/session
+ * Validate the attendee session stored in the browser. 200 { access:
+ * 'granted' } or 403 with a SESSION_* code in `title` — never 401, which the
+ * client's global handler treats as an expired login.
+ */
+router.post('/:id/session', validate(checkSessionSchema), eventController.checkSession);
 
 /**
  * POST /api/events/:id/verify-password

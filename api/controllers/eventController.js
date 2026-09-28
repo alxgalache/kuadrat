@@ -13,6 +13,7 @@ const whiteboardService = require('../services/whiteboardService');
 const s3Service = require('../services/s3Service');
 const stripeService = require('../services/stripeService');
 const { sendEventVerificationEmail, sendEventConfirmationEmail } = require('../services/emailService');
+const { normalizeEmail } = require('../utils/emailOtp');
 
 function getClientIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
@@ -119,7 +120,8 @@ const getEventBySlug = async (req, res, next) => {
 const registerAttendee = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { first_name, last_name, email } = req.body;
+    const { first_name, last_name } = req.body;
+    const email = normalizeEmail(req.body.email);
 
     if (!first_name || !last_name || !email) {
       throw new ApiError(400, 'Nombre, apellido y email son obligatorios', 'Datos incompletos');
@@ -134,35 +136,35 @@ const registerAttendee = async (req, res, next) => {
       throw new ApiError(400, 'El evento ya no acepta registros', 'Evento cerrado');
     }
 
-    // Check max attendees
-    if (event.max_attendees) {
+    // Early capacity check, to tell a newcomer before they wait for a code.
+    // The authoritative one is the atomic guard in verifyEmailCode. A verified
+    // attendee already holds a seat: re-registering from another device must
+    // not read as "Aforo completo".
+    const existing = await eventService.getAttendeeByEmail(id, email);
+    const holdsSeat = existing && Number(existing.email_verified) === 1;
+    if (event.max_attendees && !holdsSeat) {
       const count = await eventService.getAttendeeCount(id);
       if (count >= event.max_attendees) {
-        throw new ApiError(400, 'El evento ha alcanzado el límite de asistentes', 'Aforo completo');
+        throw new ApiError(409, 'El evento ha alcanzado el límite de asistentes', 'EVENT_FULL');
       }
     }
 
-    const { attendee, accessToken, isExisting } = await eventService.registerAttendee(id, {
+    const { attendee, isExisting } = await eventService.registerAttendee(id, {
       first_name, last_name, email,
     });
 
-    // Store the client IP for ban enforcement
-    const clientIp = getClientIp(req);
-    await eventService.updateAttendeeIp(attendee.id, clientIp);
+    // IP for ban enforcement — only on a row this request created. Rewriting
+    // it on an existing row would let anyone who knows an attendee's email
+    // swap in their own IP; verify-email refreshes it once there is proof.
+    if (!isExisting) {
+      await eventService.updateAttendeeIp(attendee.id, getClientIp(req));
+    }
 
-    res.status(isExisting ? 200 : 201).json({
-      success: true,
-      attendee: {
-        id: attendee.id,
-        first_name: attendee.first_name,
-        last_name: attendee.last_name,
-        email: attendee.email,
-        status: attendee.status,
-      },
-      // Only return the raw accessToken on first registration
-      accessToken: isExisting ? undefined : accessToken,
-      isExisting,
-    });
+    // No credential, no status and no email in the response, and the same
+    // shape and status code whether the email was new or not: the only thing
+    // the next step needs is the id to send the code to (enforce-verification-
+    // gates). The access token is issued by verify-email.
+    res.status(200).json({ success: true, attendeeId: attendee.id });
   } catch (error) {
     next(error);
   }
@@ -193,6 +195,10 @@ const createPayment = async (req, res, next) => {
     const attendee = await eventService.getAttendeeById(attendeeId);
     if (!attendee || attendee.event_id !== id) {
       throw new ApiError(404, 'Asistente no encontrado', 'Asistente no encontrado');
+    }
+
+    if (Number(attendee.email_verified) !== 1) {
+      throw new ApiError(403, 'Verifica tu email antes de pagar', 'EMAIL_NOT_VERIFIED');
     }
 
     if (['paid', 'joined'].includes(attendee.status)) {
@@ -253,31 +259,81 @@ const confirmPayment = async (req, res, next) => {
       throw new ApiError(404, 'Asistente no encontrado', 'Asistente no encontrado');
     }
 
-    // Verify the payment intent
-    const pi = await stripeService.retrievePaymentIntent(paymentIntentId);
-    if (pi.status !== 'succeeded') {
-      throw new ApiError(400, 'El pago no se ha completado', 'Pago no completado');
+    if (Number(attendee.email_verified) !== 1) {
+      throw new ApiError(403, 'Verifica tu email antes de pagar', 'EMAIL_NOT_VERIFIED');
     }
 
     const event = await eventService.getEventById(id);
+    if (!event || event.access_type !== 'paid' || !event.price) {
+      throw new ApiError(400, 'Este evento es gratuito', 'No requiere pago');
+    }
 
-    await eventService.updateAttendeePayment(attendeeId, {
-      stripe_payment_intent_id: paymentIntentId,
-      stripe_customer_id: pi.customer,
-      amount_paid: event.price,
-      currency: event.currency,
-    });
+    // A retry after a network cut: same PaymentIntent, already recorded.
+    // Answer with the password already issued — no new one, no second email.
+    if (['paid', 'joined'].includes(attendee.status)) {
+      if (attendee.stripe_payment_intent_id === paymentIntentId) {
+        return res.status(200).json({ success: true, accessPassword: attendee.access_password });
+      }
+      throw new ApiError(409, 'Ya has pagado este evento', 'ALREADY_PAID');
+    }
+
+    const pi = await stripeService.retrievePaymentIntent(paymentIntentId);
+    if (pi.status !== 'succeeded') {
+      throw new ApiError(400, 'El pago no se ha completado', 'PAYMENT_NOT_SUCCEEDED');
+    }
+
+    // Bind the PaymentIntent to what it unlocks. Checking only `succeeded`
+    // let ANY paid intent on the account — another event's, a shop order's —
+    // mark any attendee as paid, and eventCreditScheduler then credited the
+    // host with event.price for money that never came in. /pay writes this
+    // metadata; the amount and currency must be the event's own.
+    const metadata = pi.metadata || {};
+    const expectedAmount = Math.round(Number(event.price) * 100);
+    const expectedCurrency = String(event.currency || 'EUR').toLowerCase();
+    if (
+      metadata.type !== 'event'
+      || metadata.event_id !== id
+      || metadata.attendee_id !== attendeeId
+      || pi.amount !== expectedAmount
+      || String(pi.currency || '').toLowerCase() !== expectedCurrency
+    ) {
+      logger.warn({ eventId: id, attendeeId, paymentIntentId }, 'Event payment confirmation rejected: PaymentIntent does not match');
+      throw new ApiError(400, 'El pago no corresponde a este evento', 'PAYMENT_MISMATCH');
+    }
+
+    const usedBy = await eventService.getAttendeeByPaymentIntent(paymentIntentId);
+    if (usedBy && usedBy.id !== attendeeId) {
+      throw new ApiError(409, 'Este pago ya está registrado', 'PAYMENT_ALREADY_USED');
+    }
+
+    try {
+      await eventService.updateAttendeePayment(attendeeId, {
+        stripe_payment_intent_id: paymentIntentId,
+        stripe_customer_id: pi.customer,
+        // What was actually charged, not the price on the event row
+        amount_paid: (pi.amount_received ?? pi.amount) / 100,
+        currency: event.currency,
+      });
+    } catch (err) {
+      // idx_event_attendees_stripe_pi: a concurrent confirmation won the race
+      if (/UNIQUE constraint failed/i.test(err?.message || '')) {
+        throw new ApiError(409, 'Este pago ya está registrado', 'PAYMENT_ALREADY_USED');
+      }
+      throw err;
+    }
 
     // Generate password and send confirmation email for paid events
-    const password = eventService.generateEventPassword();
-    await eventService.setAttendeePassword(attendeeId, password);
+    const password = attendee.access_password || eventService.generateEventPassword();
+    if (!attendee.access_password) {
+      await eventService.setAttendeePassword(attendeeId, password);
+    }
 
     sendEventConfirmationEmail({
       email: attendee.email,
       firstName: attendee.first_name,
       eventTitle: event.title,
       accessPassword: password,
-      amountPaid: event.price,
+      amountPaid: (pi.amount_received ?? pi.amount) / 100,
     }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
 
     res.status(200).json({ success: true, accessPassword: password });
@@ -1423,6 +1479,13 @@ const sendVerification = async (req, res, next) => {
       throw new ApiError(404, 'Asistente no encontrado', 'Asistente no encontrado');
     }
 
+    // A 400 and not a 429: the client turns every 429 into the global "too
+    // many requests" banner, which would be false here. The previous code is
+    // still valid, so the modal simply moves on to the code step.
+    if (result.tooSoon) {
+      throw new ApiError(400, 'Ya te enviamos un código hace unos segundos. Revisa tu correo.', 'OTP_RESEND_TOO_SOON');
+    }
+
     await sendEventVerificationEmail({ email: result.attendee.email, code: result.code });
 
     res.status(200).json({ success: true });
@@ -1435,34 +1498,107 @@ const sendVerification = async (req, res, next) => {
 // POST /api/events/:id/verify-email
 // Verify OTP code
 // ---------------------------------------------------------------------------
+const OTP_FAILURE_STATUS = {
+  ATTENDEE_NOT_FOUND: 404,
+  EVENT_FULL: 409,
+};
+
 const verifyEmail = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { attendeeId, code } = req.body;
 
+    const event = await eventService.getEventById(id);
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
     const result = await eventService.verifyEmailCode(id, attendeeId, code);
     if (!result.valid) {
-      throw new ApiError(400, result.error, 'Verificación fallida');
+      throw new ApiError(OTP_FAILURE_STATUS[result.reason] || 400, result.error, result.reason);
     }
 
-    // For free events, generate password and send confirmation email now
+    // The code proved the mailbox: this is the first moment the attendee has
+    // a credential, and the moment their IP is worth recording.
+    const { attendee, accessToken } = result;
+    await eventService.updateAttendeeIp(attendee.id, getClientIp(req));
+
+    const paymentRequired = requiresPayment(event, attendee);
+    if (paymentRequired) {
+      // The token travels now but the client keeps it in memory until the
+      // payment is confirmed; the password is issued by confirm-payment.
+      return res.status(200).json({
+        success: true, attendeeId: attendee.id, accessToken, paymentRequired: true,
+      });
+    }
+
+    // Reuse the password a returning attendee already has: generating a new
+    // one would silently kill the one in their earlier confirmation email.
+    const password = attendee.access_password || eventService.generateEventPassword();
+    if (!attendee.access_password) {
+      await eventService.setAttendeePassword(attendee.id, password);
+    }
+
+    sendEventConfirmationEmail({
+      email: attendee.email,
+      firstName: attendee.first_name,
+      eventTitle: event.title,
+      accessPassword: password,
+      ...(event.access_type === 'paid' && attendee.amount_paid ? { amountPaid: attendee.amount_paid } : {}),
+    }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
+
+    res.status(200).json({
+      success: true,
+      attendeeId: attendee.id,
+      accessToken,
+      paymentRequired: false,
+      accessPassword: password,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/events/:id/session
+// Does the { attendeeId, accessToken } pair stored in this browser still give
+// access? The event page asks before it claims «Ya tienes acceso»: trusting
+// the mere presence of localStorage left attendees whose token had been
+// replaced, banned or never verified with no way back to «Acceder».
+//
+// POST so the credential stays out of the URL that pino-http logs. Never 401:
+// the client's global 401 handler would sign a logged-in user out and send
+// them to the home page. Read-only — unlike /token it does not mark 'joined'.
+// ---------------------------------------------------------------------------
+const SESSION_REJECTION_MESSAGES = {
+  SESSION_INVALID: 'Esta sesión no corresponde a este evento',
+  SESSION_REPLACED: 'Tu acceso se abrió en otro dispositivo o navegador',
+  SESSION_UNVERIFIED: 'No llegaste a verificar tu email',
+  SESSION_BANNED: 'Has sido expulsado de este evento',
+  SESSION_PAYMENT_REQUIRED: 'El pago no se completó',
+};
+
+const checkSession = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attendeeId, accessToken } = req.body;
+
     const event = await eventService.getEventById(id);
-    if (event && event.access_type !== 'paid') {
-      const attendee = await eventService.getAttendeeById(attendeeId);
-      const password = eventService.generateEventPassword();
-      await eventService.setAttendeePassword(attendeeId, password);
-
-      sendEventConfirmationEmail({
-        email: attendee.email,
-        firstName: attendee.first_name,
-        eventTitle: event.title,
-        accessPassword: password,
-      }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
-
-      return res.status(200).json({ success: true, accessPassword: password });
+    if (!event) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
     }
 
-    res.status(200).json({ success: true });
+    const result = await eventService.resolveAttendeeSession(event, {
+      attendeeId,
+      accessToken,
+      clientIp: getClientIp(req),
+    });
+
+    if (result.reason) {
+      throw new ApiError(403, SESSION_REJECTION_MESSAGES[result.reason], result.reason);
+    }
+
+    res.status(200).json({ success: true, access: 'granted' });
   } catch (error) {
     next(error);
   }
@@ -1528,6 +1664,7 @@ module.exports = {
   sendVerification,
   verifyEmail,
   verifyPassword,
+  checkSession,
   // Agora moderation helpers (reused by eventAdminController)
   promoteAgoraParticipant,
   demoteAgoraParticipant,

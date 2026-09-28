@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { eventsAPI } from '@/lib/api'
+import { getStoredSession } from '@/lib/eventSession'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import DeviceDropdown from '@/components/events/DeviceDropdown'
 import VideoEffectsMenu from '@/components/events/VideoEffectsMenu'
@@ -403,10 +404,7 @@ export default function AgoraLiveRoom({
 
   // Attendee session (socket join credentials + token renewal)
   const attendeeSession = useMemo(() => {
-    try {
-      const raw = localStorage.getItem(`event_attendee_${eventId}`)
-      return raw ? JSON.parse(raw) : null
-    } catch { return null }
+    return getStoredSession(eventId)
   }, [eventId])
 
   const renewToken = useCallback(async () => {

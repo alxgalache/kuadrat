@@ -1,6 +1,8 @@
 const { db } = require('../config/database');
 const { randomUUID } = require('crypto');
 const { validateSpanishTaxId } = require('../utils/spanishTaxId');
+const emailOtp = require('../utils/emailOtp');
+const { createBuyerEmailVerification } = require('./buyerEmailVerification');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -10,17 +12,8 @@ function generateUUID() {
   return randomUUID();
 }
 
-/**
- * Generate a 6-char alphanumeric bid password (excludes ambiguous chars: 0OI1L).
- */
-function generateBidPassword() {
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  let password = '';
-  for (let i = 0; i < 6; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
+/** 6-char bid password (excludes ambiguous chars: 0OI1L). */
+const generateBidPassword = emailOtp.generateAccessPassword;
 
 // ---------------------------------------------------------------------------
 // Auction CRUD
@@ -413,10 +406,15 @@ async function createOrGetAuctionBuyer(auctionId, {
   invoicingAddress1, invoicingAddress2, invoicingPostalCode,
   invoicingCity, invoicingProvince, invoicingCountry,
 }) {
-  // Check if buyer with same email already exists for this auction
+  // Check if buyer with same email already exists for this auction. Callers
+  // have already proven ownership of this email with a verificationToken
+  // (auctionController.registerBuyer): returning an existing buyer hands back
+  // their bid password. LOWER() on the column because BidModal never
+  // normalised, so rows written before this change may carry capitals.
+  const normalizedEmail = emailOtp.normalizeEmail(email);
   const existing = await db.execute({
-    sql: 'SELECT * FROM auction_buyers WHERE email = ? AND auction_id = ?',
-    args: [email, auctionId],
+    sql: 'SELECT * FROM auction_buyers WHERE LOWER(email) = ? AND auction_id = ?',
+    args: [normalizedEmail, auctionId],
   });
 
   if (existing.rows.length > 0) {
@@ -435,7 +433,7 @@ async function createOrGetAuctionBuyer(auctionId, {
             invoicing_city, invoicing_province, invoicing_country
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
-      id, auctionId, firstName, lastName, email, dni || null, bidPassword,
+      id, auctionId, firstName, lastName, normalizedEmail, dni || null, bidPassword,
       deliveryAddress1 || null, deliveryAddress2 || null, deliveryPostalCode || null,
       deliveryCity || null, deliveryProvince || null, deliveryCountry || null,
       invoicingAddress1 || null, invoicingAddress2 || null, invoicingPostalCode || null,
@@ -449,8 +447,8 @@ async function createOrGetAuctionBuyer(auctionId, {
 
 async function verifyBidPassword(email, auctionId, password) {
   const result = await db.execute({
-    sql: 'SELECT * FROM auction_buyers WHERE email = ? AND auction_id = ? AND bid_password = ?',
-    args: [email, auctionId, password],
+    sql: 'SELECT * FROM auction_buyers WHERE LOWER(email) = ? AND auction_id = ? AND bid_password = ?',
+    args: [emailOtp.normalizeEmail(email), auctionId, password],
   });
   return result.rows.length > 0 ? result.rows[0] : null;
 }
@@ -951,9 +949,17 @@ async function validatePostalCodeForProduct(auctionId, productId, productType, p
 // Payment Data
 // ---------------------------------------------------------------------------
 
+/**
+ * The buyer's usable authorisation: a row with a real payment method, the
+ * most recent if there are several. A row without one came from a SetupIntent
+ * that was never completed (confirm-payment used to accept those) and must
+ * not let anybody bid with no card behind the bid.
+ */
 async function getBuyerPaymentData(auctionBuyerId) {
   const result = await db.execute({
-    sql: 'SELECT * FROM auction_authorised_payment_data WHERE auction_buyer_id = ?',
+    sql: `SELECT * FROM auction_authorised_payment_data
+          WHERE auction_buyer_id = ? AND stripe_payment_method_id IS NOT NULL
+          ORDER BY created_at DESC LIMIT 1`,
     args: [auctionBuyerId],
   });
   return result.rows.length > 0 ? result.rows[0] : null;
@@ -1084,8 +1090,8 @@ function validateDNI(dni) {
 
 async function checkEmailUniqueness(auctionId, email) {
   const result = await db.execute({
-    sql: 'SELECT 1 FROM auction_buyers WHERE email = ? AND auction_id = ? LIMIT 1',
-    args: [email.toLowerCase().trim(), auctionId],
+    sql: 'SELECT 1 FROM auction_buyers WHERE LOWER(email) = ? AND auction_id = ? LIMIT 1',
+    args: [emailOtp.normalizeEmail(email), auctionId],
   });
   return result.rows.length === 0;
 }
@@ -1102,7 +1108,8 @@ async function hasBuyerCompletedRegistration(auctionId, email, dni) {
   const result = await db.execute({
     sql: `SELECT 1 FROM auction_buyers ab
           INNER JOIN auction_authorised_payment_data apd ON apd.auction_buyer_id = ab.id
-          WHERE ab.auction_id = ? AND (ab.email = ? OR ab.dni = ?)
+          WHERE ab.auction_id = ? AND (LOWER(ab.email) = ? OR ab.dni = ?)
+            AND apd.stripe_payment_method_id IS NOT NULL
           LIMIT 1`,
     args: [auctionId, email.toLowerCase().trim(), dni.toUpperCase().trim()],
   });
@@ -1113,66 +1120,17 @@ async function hasBuyerCompletedRegistration(auctionId, email, dni) {
 // Email OTP Verification
 // ---------------------------------------------------------------------------
 
-function generateOTPCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
+// Shared with draws (api/services/buyerEmailVerification.js): the auction
+// flavour keeps its specified cap of 5 failed attempts.
+const auctionEmailVerification = createBuyerEmailVerification({
+  table: 'auction_email_verifications',
+  scopeColumn: 'auction_id',
+  maxAttempts: 5,
+});
 
-async function createEmailVerification(email, auctionId, ipAddress = null) {
-  await db.execute({
-    sql: 'DELETE FROM auction_email_verifications WHERE email = ? AND auction_id = ?',
-    args: [email, auctionId],
-  });
-
-  const id = generateUUID();
-  const code = generateOTPCode();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
-  await db.execute({
-    sql: `INSERT INTO auction_email_verifications (id, email, auction_id, code, expires_at, ip_address)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [id, email, auctionId, code, expiresAt, ipAddress || null],
-  });
-
-  return code;
-}
-
-async function verifyEmailCode(email, auctionId, code) {
-  const result = await db.execute({
-    sql: `SELECT * FROM auction_email_verifications
-          WHERE email = ? AND auction_id = ? AND verified = 0
-          ORDER BY created_at DESC LIMIT 1`,
-    args: [email, auctionId],
-  });
-
-  if (result.rows.length === 0) {
-    return { valid: false, error: 'No se encontró una verificación pendiente' };
-  }
-
-  const verification = result.rows[0];
-
-  if (new Date(verification.expires_at) < new Date()) {
-    return { valid: false, error: 'El código ha expirado. Solicita uno nuevo' };
-  }
-
-  if (verification.attempts >= 5) {
-    return { valid: false, error: 'Demasiados intentos. Solicita un nuevo código' };
-  }
-
-  if (verification.code !== code) {
-    await db.execute({
-      sql: 'UPDATE auction_email_verifications SET attempts = attempts + 1 WHERE id = ?',
-      args: [verification.id],
-    });
-    return { valid: false, error: 'Código incorrecto' };
-  }
-
-  await db.execute({
-    sql: 'UPDATE auction_email_verifications SET verified = 1 WHERE id = ?',
-    args: [verification.id],
-  });
-
-  return { valid: true };
-}
+const createEmailVerification = auctionEmailVerification.createEmailVerification;
+const verifyEmailCode = auctionEmailVerification.verifyEmailCode;
+const resolveVerificationToken = auctionEmailVerification.resolveVerificationToken;
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -1217,4 +1175,5 @@ module.exports = {
   hasBuyerCompletedRegistration,
   createEmailVerification,
   verifyEmailCode,
+  resolveVerificationToken,
 };

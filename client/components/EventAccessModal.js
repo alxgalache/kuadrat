@@ -6,6 +6,8 @@ import { XMarkIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { eventsAPI } from '@/lib/api'
 import { getStripePromise, prefetchStripe } from '@/lib/stripe'
+import { storeSession } from '@/lib/eventSession'
+import { ACCESS_VERIFICATION_ERRORS } from '@/lib/constants'
 
 const PHASE = {
   CHOOSE: 'choose',
@@ -20,7 +22,17 @@ const PHASE = {
  * Modal for registering to access an event.
  * Flow: CHOOSE -> REGISTER -> VERIFY_EMAIL -> PAYMENT (paid) -> SUCCESS
  *   or: CHOOSE -> VERIFY_PASSWORD -> direct access
+ *
+ * The session is written to localStorage ONLY once access is actually granted
+ * — after verify-email for a free event, after confirm-payment for a paid one,
+ * after verify-password. /register issues no credential: the access token is
+ * born in verify-email (enforce-verification-gates). Storing anything earlier
+ * is what made a reload during VERIFY_EMAIL read as «Ya tienes acceso».
  */
+
+/** es-ES text for an API error, by the machine code the API puts in `title`. */
+const errorText = (err, fallback) =>
+  ACCESS_VERIFICATION_ERRORS[err?.title] || err?.message || fallback
 export default function EventAccessModal({ isOpen, onClose, event, onAccessGranted }) {
   const [phase, setPhase] = useState(PHASE.CHOOSE)
   const [firstName, setFirstName] = useState('')
@@ -38,6 +50,9 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
   // Email verification OTP
   const [otpCode, setOtpCode] = useState('')
   const [showResend, setShowResend] = useState(false)
+  // Informational line on the code step (not an error: e.g. a code was
+  // already sent a few seconds ago and is still valid)
+  const [otpNotice, setOtpNotice] = useState('')
   const resendTimerRef = useRef(null)
 
   // Password verification (returning attendees)
@@ -70,6 +85,7 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
       setSavedPassword(null)
       setOtpCode('')
       setShowResend(false)
+      setOtpNotice('')
       setVerifyEmail('')
       setVerifyPasswordValue('')
     }
@@ -99,41 +115,38 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         email: email.trim().toLowerCase(),
       })
 
-      setAttendeeId(data.attendee.id)
+      // Nothing is stored here: the response carries no credential. A new
+      // email and one already registered follow the same path — the code
+      // step — which is also how a returning attendee recovers access.
+      setAttendeeId(data.attendeeId)
+      setAccessToken(null)
 
-      if (data.accessToken) {
-        setAccessToken(data.accessToken)
-      }
-
-      const nameInfo = { firstName: firstName.trim(), lastName: lastName.trim() }
-
-      // For returning attendees who already completed registration. Both
-      // `paid` and `joined` mean the attendee already paid — `joined` is the
-      // terminal state after they entered the LiveKit room.
-      if (data.isExisting && ['paid', 'joined'].includes(data.attendee.status)) {
-        storeSession(event.id, { attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken, ...nameInfo })
-        onAccessGranted?.({ attendeeId: data.attendee.id, accessToken: getStoredSession(event.id)?.accessToken })
-        setPhase(PHASE.SUCCESS)
-        setLoading(false)
-        return
-      }
-
-      // Store session with accessToken (if new)
-      if (data.accessToken) {
-        storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken, ...nameInfo })
-      }
-
-      // Send verification code
-      await eventsAPI.sendVerification(event.id, data.attendee.id)
-      setShowResend(false)
-      resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
+      await sendCode(data.attendeeId)
       setPhase(PHASE.VERIFY_EMAIL)
     } catch (err) {
-      setError(err.message || 'Error al registrar')
+      setError(errorText(err, 'Error al registrar'))
     } finally {
       setLoading(false)
     }
   }
+
+  // Send (or resend) the code. Inside the server's 30 s cooldown the previous
+  // code is still valid — the typical case is a reload during VERIFY_EMAIL
+  // followed by registering again — so that is a notice, not a failure.
+  const sendCode = async (targetAttendeeId) => {
+    try {
+      await eventsAPI.sendVerification(event.id, targetAttendeeId)
+      setOtpNotice('')
+    } catch (err) {
+      if (err?.title !== 'OTP_RESEND_TOO_SOON') throw err
+      setOtpNotice(ACCESS_VERIFICATION_ERRORS.OTP_RESEND_TOO_SOON)
+    }
+    setShowResend(false)
+    if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
+    resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
+  }
+
+  const nameInfo = () => ({ firstName: firstName.trim(), lastName: lastName.trim() })
 
   const handleVerifyOtp = async () => {
     setError('')
@@ -141,22 +154,23 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
     try {
       const data = await eventsAPI.verifyEmail(event.id, attendeeId, otpCode)
 
-      if (isPaid) {
-        // Proceed to payment
+      if (data.paymentRequired) {
+        // Keep the token in memory only: storing it now would claim access
+        // before the payment. It is written once confirm-payment succeeds.
+        setAccessToken(data.accessToken)
         const payData = await eventsAPI.pay(event.id, attendeeId)
         setClientSecret(payData.clientSecret)
         setPhase(PHASE.PAYMENT)
       } else {
-        // Free event — password comes back from verify-email response
+        storeSession(event.id, { attendeeId, accessToken: data.accessToken, ...nameInfo() })
         if (data.accessPassword) {
           setSavedPassword(data.accessPassword)
         }
-        const session = getStoredSession(event.id)
-        onAccessGranted?.({ attendeeId, accessToken: session?.accessToken || accessToken })
+        onAccessGranted?.({ attendeeId, accessToken: data.accessToken })
         setPhase(PHASE.SUCCESS)
       }
     } catch (err) {
-      setError(err.message || 'Error al verificar código')
+      setError(errorText(err, 'Error al verificar código'))
     } finally {
       setLoading(false)
     }
@@ -168,10 +182,9 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
     setOtpCode('')
     setLoading(true)
     try {
-      await eventsAPI.sendVerification(event.id, attendeeId)
-      resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
+      await sendCode(attendeeId)
     } catch (err) {
-      setError(err.message || 'Error al reenviar código')
+      setError(errorText(err, 'Error al reenviar código'))
     } finally {
       setLoading(false)
     }
@@ -181,8 +194,8 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
     if (paymentPassword) {
       setSavedPassword(paymentPassword)
     }
-    const session = getStoredSession(event.id)
-    onAccessGranted?.({ attendeeId: session?.attendeeId || attendeeId, accessToken: session?.accessToken || accessToken })
+    storeSession(event.id, { attendeeId, accessToken, ...nameInfo() })
+    onAccessGranted?.({ attendeeId, accessToken })
     setPhase(PHASE.SUCCESS)
   }
 
@@ -197,8 +210,12 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
 
     try {
       const data = await eventsAPI.verifyPassword(event.id, verifyEmail.trim().toLowerCase(), verifyPasswordValue.trim())
-      const nameInfo = { firstName: data.attendee.first_name, lastName: data.attendee.last_name }
-      storeSession(event.id, { attendeeId: data.attendee.id, accessToken: data.accessToken, ...nameInfo })
+      storeSession(event.id, {
+        attendeeId: data.attendee.id,
+        accessToken: data.accessToken,
+        firstName: data.attendee.first_name,
+        lastName: data.attendee.last_name,
+      })
       onAccessGranted?.({ attendeeId: data.attendee.id, accessToken: data.accessToken })
       handleClose()
     } catch (err) {
@@ -219,6 +236,7 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
     setSavedPassword(null)
     setOtpCode('')
     setShowResend(false)
+    setOtpNotice('')
     setVerifyEmail('')
     setVerifyPasswordValue('')
     if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
@@ -352,6 +370,7 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
           Hemos enviado un código de verificación a <strong>{email}</strong>. Introdúcelo a continuación.
         </p>
       </div>
+      {otpNotice && <p className="text-sm text-gray-600">{otpNotice}</p>}
       <div>
         <label className="block text-sm font-medium text-gray-900">Código de verificación</label>
         <input
@@ -588,26 +607,4 @@ function StripeEventPayment({ eventId, attendeeId, onSuccess, onError }) {
       </button>
     </form>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function getStoredSession(eventId) {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(`event_attendee_${eventId}`)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
-
-function storeSession(eventId, session) {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(`event_attendee_${eventId}`, JSON.stringify(session))
-  } catch {
-    // Silently ignore
-  }
 }

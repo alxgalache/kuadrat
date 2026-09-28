@@ -8,6 +8,7 @@ import { auctionsAPI } from '@/lib/api'
 import { getStripePromise, prefetchStripe } from '@/lib/stripe'
 import { useNotification } from '@/contexts/NotificationContext'
 import { validateSpanishTaxId as validateDNI } from '@/lib/spanishTaxId'
+import { ACCESS_VERIFICATION_ERRORS } from '@/lib/constants'
 
 // ---------------------------------------------------------------------------
 // Flow phases
@@ -58,6 +59,12 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
   const [otpCode, setOtpCode] = useState('')
   const [otpVerified, setOtpVerified] = useState(false)
   const [showResend, setShowResend] = useState(false)
+  // Informational line on the code step (a code sent seconds ago is still valid)
+  const [otpNotice, setOtpNotice] = useState('')
+  // Proof of email ownership returned by verify-email. register-buyer refuses
+  // to run without it: without that check, typing an existing bidder's email
+  // returned their id and bid password (enforce-verification-gates).
+  const [verificationToken, setVerificationToken] = useState(null)
   const resendTimerRef = useRef(null)
 
   // DNI validation state
@@ -69,7 +76,6 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
 
   // Stripe
   const [clientSecret, setClientSecret] = useState(null)
-  const [stripeCustomerId, setStripeCustomerId] = useState(null)
 
   // Saved bid password shown on success
   const [savedBidPassword, setSavedBidPassword] = useState('')
@@ -118,7 +124,6 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       setInvoicingAddress({ address_1: '', address_2: '', postal_code: '', city: '', province: '', country: 'ES' })
       setCopyDelivery(false)
       setClientSecret(null)
-      setStripeCustomerId(null)
       setSavedBidPassword('')
       setVerifyEmail('')
       setVerifyPassword('')
@@ -130,6 +135,8 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       setOtpCode('')
       setOtpVerified(false)
       setShowResend(false)
+      setOtpNotice('')
+      setVerificationToken(null)
       setDniError('')
       if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
     }
@@ -186,7 +193,9 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
       setBuyerSession(session)
       storeSession(auction.id, session)
 
-      if (buyer.hasPaymentMethod) {
+      // The API puts the flag on the response, not on the buyer: reading it off
+      // `buyer` sent every returning bidder through the card form again.
+      if (data.hasPaymentMethod) {
         setPhase(PHASE.CONFIRM)
       } else {
         // Need to set up payment first
@@ -203,7 +212,6 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
   const initStripePayment = async (auctionBuyerId) => {
     const paymentData = await auctionsAPI.setupPayment(auction.id, auctionBuyerId)
     setClientSecret(paymentData.clientSecret)
-    setStripeCustomerId(paymentData.customerId)
   }
 
   const handleRegisterAndSetupPayment = async () => {
@@ -229,16 +237,17 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
         invoicingCity: effectiveInvoicing.city,
         invoicingProvince: effectiveInvoicing.province,
         invoicingCountry: effectiveInvoicing.country,
-        stripeCustomerId,
+        verificationToken,
       }
       const data = await auctionsAPI.registerBuyer(auction.id, buyerData)
       const buyer = data.buyer
-      const session = { auctionBuyerId: buyer.id, bidPassword: buyer.bidPassword, auctionId: auction.id }
+      const session = { auctionBuyerId: buyer.id, bidPassword: buyer.bid_password, auctionId: auction.id }
       setBuyerSession(session)
       storeSession(auction.id, session)
-      setSavedBidPassword(buyer.bidPassword)
+      setSavedBidPassword(buyer.bid_password)
       setPhase(PHASE.CONFIRM)
     } catch (err) {
+      if (handleVerificationExpired(err)) return
       setError(err.message || 'Error al registrar el pujador.')
     } finally {
       setLoading(false)
@@ -260,9 +269,17 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     setError('')
     setLoading(true)
     try {
-      await auctionsAPI.sendVerification(auction.id, personalInfo.email, personalInfo.dni.toUpperCase().trim())
+      try {
+        await auctionsAPI.sendVerification(auction.id, personalInfo.email, personalInfo.dni.toUpperCase().trim())
+        setOtpNotice('')
+      } catch (err) {
+        // Inside the server's 30 s cooldown the previous code is still valid
+        if (err?.title !== 'OTP_RESEND_TOO_SOON') throw err
+        setOtpNotice(ACCESS_VERIFICATION_ERRORS.OTP_RESEND_TOO_SOON)
+      }
       setOtpSent(true)
       setShowResend(false)
+      if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
       resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
     } catch (err) {
       setError(err.message || 'Error al enviar verificación')
@@ -276,7 +293,8 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     setError('')
     setLoading(true)
     try {
-      await auctionsAPI.verifyEmail(auction.id, personalInfo.email, otpCode)
+      const data = await auctionsAPI.verifyEmail(auction.id, personalInfo.email, otpCode)
+      setVerificationToken(data.verificationToken)
       setOtpVerified(true)
       setPhase(PHASE.DELIVERY)
     } catch (err) {
@@ -284,6 +302,20 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
     } finally {
       setLoading(false)
     }
+  }
+
+  // register-buyer answered VERIFICATION_REQUIRED: the proof is older than 60
+  // minutes or was replaced by a new code. Back to the code step, keeping
+  // everything typed so far. Returns true when it handled the error.
+  const handleVerificationExpired = (err) => {
+    if (err?.title !== 'VERIFICATION_REQUIRED') return false
+    setVerificationToken(null)
+    setOtpVerified(false)
+    setOtpSent(false)
+    setOtpCode('')
+    setPhase(PHASE.PERSONAL)
+    setError(ACCESS_VERIFICATION_ERRORS.VERIFICATION_REQUIRED)
+    return true
   }
 
   // ------ Resend OTP ------
@@ -562,6 +594,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
               Hemos enviado un código de verificación a <strong>{personalInfo.email}</strong>. Introdúcelo a continuación.
             </p>
           </div>
+          {otpNotice && <p className="text-sm text-gray-600">{otpNotice}</p>}
           <div>
             <label className="block text-sm font-medium text-gray-900">Código de verificación</label>
             <input
@@ -758,21 +791,25 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
               invoicingCity: effectiveInvoicing.city,
               invoicingProvince: effectiveInvoicing.province,
               invoicingCountry: effectiveInvoicing.country,
+              verificationToken,
             }
             const data = await auctionsAPI.registerBuyer(auction.id, buyerData)
             const buyer = data.buyer
+            // The API answers in snake_case: reading `bidPassword` left the
+            // password the success screen tells the bidder to save empty.
             const session = {
               auctionBuyerId: buyer.id,
-              bidPassword: buyer.bidPassword,
+              bidPassword: buyer.bid_password,
               auctionId: auction.id,
             }
             setBuyerSession(session)
-            setSavedBidPassword(buyer.bidPassword)
+            setSavedBidPassword(buyer.bid_password)
 
             // Now setup Stripe payment
             await initStripePayment(buyer.id)
             setPhase(PHASE.PAYMENT)
           } catch (err) {
+            if (handleVerificationExpired(err)) return
             setError(err.message || 'Error al configurar el pago.')
           } finally {
             setLoading(false)
@@ -804,7 +841,6 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
           <StripePaymentStep
             auctionId={auction.id}
             auctionBuyerId={buyerSession?.auctionBuyerId}
-            stripeCustomerId={stripeCustomerId}
             onSuccess={() => {
               // Payment confirmed, save session and go to confirm
               storeSession(auction.id, buyerSession)
@@ -975,7 +1011,7 @@ export default function BidModal({ isOpen, onClose, auction, product, livePriceD
 // ---------------------------------------------------------------------------
 // Stripe Payment sub-component (must be rendered inside <Elements>)
 // ---------------------------------------------------------------------------
-function StripePaymentStep({ auctionId, auctionBuyerId, stripeCustomerId, onSuccess, onError }) {
+function StripePaymentStep({ auctionId, auctionBuyerId, onSuccess, onError }) {
   const stripe = useStripe()
   const elements = useElements()
   const [loading, setLoading] = useState(false)
@@ -1000,7 +1036,7 @@ function StripePaymentStep({ auctionId, auctionBuyerId, stripeCustomerId, onSucc
 
       if (setupIntent && setupIntent.status === 'succeeded') {
         // Confirm on our backend
-        await auctionsAPI.confirmPayment(auctionId, auctionBuyerId, setupIntent.id, stripeCustomerId)
+        await auctionsAPI.confirmPayment(auctionId, auctionBuyerId, setupIntent.id)
         onSuccess()
       } else {
         onError('La verificacion no se pudo completar. Intentalo de nuevo.')

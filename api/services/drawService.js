@@ -2,6 +2,8 @@ const { db } = require('../config/database');
 const { randomUUID } = require('crypto');
 const logger = require('../config/logger');
 const { validateSpanishTaxId } = require('../utils/spanishTaxId');
+const { createBuyerEmailVerification } = require('./buyerEmailVerification');
+const { normalizeEmail } = require('../utils/emailOtp');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -226,9 +228,13 @@ async function createOrGetDrawBuyer(drawId, {
   invoicingAddress1, invoicingAddress2, invoicingPostalCode,
   invoicingCity, invoicingProvince, invoicingCountry,
 }) {
+  // Callers have already proven ownership of this email with a
+  // verificationToken (drawController.registerBuyer). LOWER() on the column:
+  // rows written before emails were normalised may carry capitals.
+  const normalizedEmail = normalizeEmail(email);
   const existing = await db.execute({
-    sql: 'SELECT * FROM draw_buyers WHERE email = ? AND draw_id = ?',
-    args: [email, drawId],
+    sql: 'SELECT * FROM draw_buyers WHERE LOWER(email) = ? AND draw_id = ?',
+    args: [normalizedEmail, drawId],
   });
 
   if (existing.rows.length > 0) {
@@ -246,7 +252,7 @@ async function createOrGetDrawBuyer(drawId, {
             invoicing_city, invoicing_province, invoicing_country
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
-      id, drawId, firstName, lastName, email, '', dni, ipAddress || null,
+      id, drawId, firstName, lastName, normalizedEmail, '', dni, ipAddress || null,
       deliveryAddress1 || null, deliveryAddress2 || null, deliveryPostalCode || null,
       deliveryCity || null, deliveryProvince || null, deliveryCountry || null,
       invoicingAddress1 || null, invoicingAddress2 || null, invoicingPostalCode || null,
@@ -290,7 +296,7 @@ async function hasBuyerCompletedParticipation(drawId, email, dni) {
   const result = await db.execute({
     sql: `SELECT 1 FROM draw_buyers db
           INNER JOIN draw_participations dp ON dp.draw_buyer_id = db.id AND dp.draw_id = db.draw_id
-          WHERE db.draw_id = ? AND (db.email = ? OR db.dni = ?)
+          WHERE db.draw_id = ? AND (LOWER(db.email) = ? OR db.dni = ?)
           LIMIT 1`,
     args: [drawId, email.toLowerCase().trim(), dni.toUpperCase().trim()],
   });
@@ -308,9 +314,11 @@ async function enterDraw(drawId, drawBuyerId) {
     throw new Error('El sorteo no está activo');
   }
 
-  // Check buyer exists
+  // Check buyer exists — and belongs to THIS draw. Without the second half,
+  // a buyer verified and authorised in draw A could be entered into draw B,
+  // skipping B's OTP, DNI and card-fingerprint checks.
   const buyer = await getDrawBuyer(drawBuyerId);
-  if (!buyer) {
+  if (!buyer || buyer.draw_id !== drawId) {
     throw new Error('Participante no encontrado');
   }
 
@@ -511,9 +519,17 @@ async function getParticipationBillingData(participationId) {
 // Payment Data
 // ---------------------------------------------------------------------------
 
+/**
+ * The buyer's usable authorisation: a row with a real payment method, the
+ * most recent if there are several. A row without one came from a SetupIntent
+ * that was never completed (confirm-payment used to accept those) and must
+ * not let anybody enter a draw with no card behind the entry.
+ */
 async function getBuyerPaymentData(drawBuyerId) {
   const result = await db.execute({
-    sql: 'SELECT * FROM draw_authorised_payment_data WHERE draw_buyer_id = ?',
+    sql: `SELECT * FROM draw_authorised_payment_data
+          WHERE draw_buyer_id = ? AND stripe_payment_method_id IS NOT NULL
+          ORDER BY created_at DESC LIMIT 1`,
     args: [drawBuyerId],
   });
   return result.rows.length > 0 ? result.rows[0] : null;
@@ -564,8 +580,8 @@ async function checkDniUniqueness(drawId, dni) {
 
 async function checkEmailUniqueness(drawId, email) {
   const result = await db.execute({
-    sql: 'SELECT 1 FROM draw_buyers WHERE email = ? AND draw_id = ? LIMIT 1',
-    args: [email.toLowerCase().trim(), drawId],
+    sql: 'SELECT 1 FROM draw_buyers WHERE LOWER(email) = ? AND draw_id = ? LIMIT 1',
+    args: [normalizeEmail(email), drawId],
   });
   return result.rows.length === 0;
 }
@@ -574,67 +590,17 @@ async function checkEmailUniqueness(drawId, email) {
 // Email OTP Verification
 // ---------------------------------------------------------------------------
 
-function generateOTPCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
+// Shared with auctions (api/services/buyerEmailVerification.js): the draw
+// flavour keeps its specified cap of 3 failed attempts.
+const drawEmailVerification = createBuyerEmailVerification({
+  table: 'draw_email_verifications',
+  scopeColumn: 'draw_id',
+  maxAttempts: 3,
+});
 
-async function createEmailVerification(email, drawId, ipAddress = null) {
-  // Invalidate previous codes for same email + draw
-  await db.execute({
-    sql: 'DELETE FROM draw_email_verifications WHERE email = ? AND draw_id = ?',
-    args: [email, drawId],
-  });
-
-  const id = generateUUID();
-  const code = generateOTPCode();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
-  await db.execute({
-    sql: `INSERT INTO draw_email_verifications (id, email, draw_id, code, expires_at, ip_address)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [id, email, drawId, code, expiresAt, ipAddress || null],
-  });
-
-  return code;
-}
-
-async function verifyEmailCode(email, drawId, code) {
-  const result = await db.execute({
-    sql: `SELECT * FROM draw_email_verifications
-          WHERE email = ? AND draw_id = ? AND verified = 0
-          ORDER BY created_at DESC LIMIT 1`,
-    args: [email, drawId],
-  });
-
-  if (result.rows.length === 0) {
-    return { valid: false, error: 'No se encontró una verificación pendiente' };
-  }
-
-  const verification = result.rows[0];
-
-  if (new Date(verification.expires_at) < new Date()) {
-    return { valid: false, error: 'El código ha expirado. Solicita uno nuevo' };
-  }
-
-  if (verification.attempts >= 3) {
-    return { valid: false, error: 'Demasiados intentos. Solicita un nuevo código' };
-  }
-
-  if (verification.code !== code) {
-    await db.execute({
-      sql: 'UPDATE draw_email_verifications SET attempts = attempts + 1 WHERE id = ?',
-      args: [verification.id],
-    });
-    return { valid: false, error: 'Código incorrecto' };
-  }
-
-  await db.execute({
-    sql: 'UPDATE draw_email_verifications SET verified = 1 WHERE id = ?',
-    args: [verification.id],
-  });
-
-  return { valid: true };
-}
+const createEmailVerification = drawEmailVerification.createEmailVerification;
+const verifyEmailCode = drawEmailVerification.verifyEmailCode;
+const resolveVerificationToken = drawEmailVerification.resolveVerificationToken;
 
 // ---------------------------------------------------------------------------
 // Stripe Fingerprint Deduplication
@@ -760,6 +726,7 @@ module.exports = {
   checkEmailUniqueness,
   createEmailVerification,
   verifyEmailCode,
+  resolveVerificationToken,
   checkFingerprintUniqueness,
   validatePostalCodeForDraw,
 };

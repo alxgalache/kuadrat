@@ -6,24 +6,34 @@ const { z } = require('zod');
  * Controller checks: firstName, lastName, email are required.
  * Delivery/invoicing address fields are optional.
  */
+const optionalText = () => z.string().nullish();
+
 const registerBuyerSchema = z.object({
   body: z.object({
     firstName: z.string().min(1, 'Nombre es obligatorio'),
     lastName: z.string().min(1, 'Apellido es obligatorio'),
-    email: z.string().min(1, 'Email es obligatorio'),
+    email: z.string().trim().min(1, 'Email es obligatorio').email('Email inválido'),
     dni: z.string().min(1, 'DNI/NIE es obligatorio'),
-    deliveryAddress1: z.string().optional(),
-    deliveryAddress2: z.string().optional(),
-    deliveryPostalCode: z.string().optional(),
-    deliveryCity: z.string().optional(),
-    deliveryProvince: z.string().optional(),
-    deliveryCountry: z.string().optional(),
-    invoicingAddress1: z.string().optional(),
-    invoicingAddress2: z.string().optional(),
-    invoicingPostalCode: z.string().optional(),
-    invoicingCity: z.string().optional(),
-    invoicingProvince: z.string().optional(),
-    invoicingCountry: z.string().optional(),
+    // Returned by verify-email. Optional HERE on purpose: the controller
+    // rejects a missing, expired or foreign token with 403
+    // VERIFICATION_REQUIRED, which BidModal knows how to handle — a generic
+    // validation 400 would not send the buyer back to the code step.
+    verificationToken: z.string().optional(),
+    // nullish, not optional: these schemas existed unapplied until
+    // enforce-verification-gates, and a null from the client must not start
+    // rejecting registrations that worked the day before.
+    deliveryAddress1: optionalText(),
+    deliveryAddress2: optionalText(),
+    deliveryPostalCode: optionalText(),
+    deliveryCity: optionalText(),
+    deliveryProvince: optionalText(),
+    deliveryCountry: optionalText(),
+    invoicingAddress1: optionalText(),
+    invoicingAddress2: optionalText(),
+    invoicingPostalCode: optionalText(),
+    invoicingCity: optionalText(),
+    invoicingProvince: optionalText(),
+    invoicingCountry: optionalText(),
   }).strip(),
 });
 
@@ -75,7 +85,9 @@ const confirmPaymentSchema = z.object({
   body: z.object({
     auctionBuyerId: z.union([z.number(), z.string()]).refine(v => !!v, 'El ID del comprador es obligatorio'),
     setupIntentId: z.string().min(1, 'setupIntentId es obligatorio'),
-    customerId: z.string().optional(),
+    // Ignored by the controller (the customer comes from the SetupIntent);
+    // still accepted so an older client keeps working.
+    customerId: z.string().nullish(),
   }).strip(),
 });
 

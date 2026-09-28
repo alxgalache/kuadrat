@@ -7,8 +7,13 @@ const registerBuyerSchema = z.object({
   body: z.object({
     firstName: z.string().min(1, 'Nombre es obligatorio'),
     lastName: z.string().min(1, 'Apellido es obligatorio'),
-    email: z.string().min(1, 'Email es obligatorio'),
+    email: z.string().trim().min(1, 'Email es obligatorio').email('Email inválido'),
     dni: z.string().min(1, 'DNI es obligatorio'),
+    // Returned by verify-email. Optional HERE on purpose: the controller
+    // rejects a missing, expired or foreign token with 403
+    // VERIFICATION_REQUIRED, which the modal knows how to handle — a generic
+    // validation 400 would not tell it to send the buyer back to the code.
+    verificationToken: z.string().optional(),
     deliveryAddress1: z.string().optional(),
     deliveryAddress2: z.string().optional(),
     deliveryPostalCode: z.string().optional(),

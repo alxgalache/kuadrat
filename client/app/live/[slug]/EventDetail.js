@@ -23,7 +23,8 @@ import useCompactRoomLayout from '@/hooks/useCompactRoomLayout'
 import useAutoHideChrome from '@/hooks/useAutoHideChrome'
 import useChatAutoScroll from '@/hooks/useChatAutoScroll'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
-import { LIVE_ROOM_COPY } from '@/lib/constants'
+import { LIVE_ROOM_COPY, SESSION_REJECTION_MESSAGES } from '@/lib/constants'
+import { getStoredSession, storeSession, clearStoredSession } from '@/lib/eventSession'
 
 // Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
@@ -108,6 +109,12 @@ export default function EventDetail({
 
   const [modalOpen, setModalOpen] = useState(false)
   const [hasAccess, setHasAccess] = useState(false)
+  // A session stored in this browser is only a claim until the server
+  // confirms it (POST /session): while it is being checked the access section
+  // shows neither «Ya tienes acceso» nor «Acceder».
+  const [checkingSession, setCheckingSession] = useState(false)
+  // Why a stored session was dropped, shown above «Acceder»
+  const [sessionNotice, setSessionNotice] = useState('')
   const [livekitToken, setLivekitToken] = useState(null)
   const [livekitUrl, setLivekitUrl] = useState(null)
   // Agora credentials: { appId, channel, uid, rtcToken, interactionMode }
@@ -161,6 +168,36 @@ export default function EventDetail({
   // Real-time event status and chat via Socket.IO
   const { eventStarted, eventEnded, chatMessages, sendChatMessage } = useEventSocket(event?.id)
 
+  // Ask the server whether the stored session still gives access
+  // (enforce-verification-gates). A definitive rejection — the token was
+  // replaced from another device, the attendee was banned or never verified —
+  // drops the session and says why, so «Acceder» is reachable again. A
+  // transient failure (network, 5xx) keeps the old optimistic behaviour
+  // rather than locking out a legitimate attendee on a bad connection.
+  const validateStoredSession = useCallback(async () => {
+    if (!event?.id) return
+    const session = getStoredSession(event.id)
+    if (!session?.attendeeId || !session?.accessToken) return
+
+    setCheckingSession(true)
+    try {
+      await eventsAPI.checkSession(event.id, session.attendeeId, session.accessToken)
+      setSessionNotice('')
+      setHasAccess(true)
+    } catch (err) {
+      const reason = SESSION_REJECTION_MESSAGES[err?.title]
+      if (reason) {
+        clearStoredSession(event.id)
+        setSessionNotice(reason)
+        setHasAccess(false)
+      } else {
+        setHasAccess(true)
+      }
+    } finally {
+      setCheckingSession(false)
+    }
+  }, [event?.id])
+
   const connectAsViewer = useCallback(async () => {
     if (!event?.id) return
     const session = getStoredSession(event.id)
@@ -176,8 +213,12 @@ export default function EventDetail({
       }
     } catch (err) {
       console.error('Error getting viewer token:', err)
+      // A 403 means the credential itself was refused: find out why and,
+      // if the session is dead, drop it instead of leaving a button that
+      // silently does nothing.
+      if (err?.status === 403) validateStoredSession()
     }
-  }, [event?.id])
+  }, [event?.id, validateStoredSession])
 
   const connectAsHost = useCallback(async () => {
     if (!event?.id) return
@@ -233,16 +274,16 @@ export default function EventDetail({
     }
   }, [eventEnded, isHost, livekitToken, agoraCreds, loadEvent])
 
-  // Check for stored session
+  // Validate the stored session once per event — its presence alone used to
+  // be taken as access, which is how an unverified registration read as «Ya
+  // tienes acceso» after a reload.
+  useEffect(() => {
+    validateStoredSession()
+  }, [validateStoredSession])
+
+  // Check if current user is the host
   useEffect(() => {
     if (!event) return
-
-    const session = getStoredSession(event.id)
-    if (session?.attendeeId && session?.accessToken) {
-      setHasAccess(true)
-    }
-
-    // Check if current user is the host
     if (user && user.id === event.host_user_id) {
       setIsHost(true)
     }
@@ -262,6 +303,7 @@ export default function EventDetail({
   }, [event?.status, event?.format, hasAccess, isHost, livekitToken, agoraCreds, connectAsHost, connectAsViewer])
 
   const handleAccessGranted = ({ attendeeId, accessToken }) => {
+    setSessionNotice('')
     setHasAccess(true)
     setModalOpen(false)
     // If event is active and live format, connect to LiveKit immediately
@@ -290,6 +332,7 @@ export default function EventDetail({
         lastName: data.attendee?.last_name || '',
       })
 
+      setSessionNotice('')
       setHasAccess(true)
 
       if (event.status === 'active' && event.format !== 'video') {
@@ -302,6 +345,17 @@ export default function EventDetail({
     }
   }, [event?.id, event?.status, event?.format, adminJoining, connectAsViewer])
 
+  // Escape hatch under «Ya tienes acceso»: on a shared device, or for any
+  // reason the session check could not foresee, drop the stored session and
+  // start over from the modal's first step.
+  const handleSwitchIdentity = useCallback(() => {
+    if (!event?.id) return
+    clearStoredSession(event.id)
+    setSessionNotice('')
+    setHasAccess(false)
+    setModalOpen(true)
+  }, [event?.id])
+
   const handleKicked = useCallback(() => {
     setKicked(true)
     setLivekitToken(null)
@@ -309,7 +363,7 @@ export default function EventDetail({
     setAgoraCreds(null)
     // Clear stored session so banned user can't reconnect
     if (event?.id) {
-      try { localStorage.removeItem(`event_attendee_${event.id}`) } catch {}
+      clearStoredSession(event.id)
     }
     // Redirect to home after a short delay
     setTimeout(() => {
@@ -699,7 +753,9 @@ export default function EventDetail({
             {/* Access section */}
             {!['finished', 'cancelled'].includes(event.status) && (
               <div className="mt-8">
-                {hasAccess ? (
+                {checkingSession && !hasAccess ? (
+                  <p className="text-sm text-gray-500">Comprobando tu acceso…</p>
+                ) : hasAccess ? (
                   <div>
                     <div className="flex items-center gap-x-2 mb-2">
                       <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100">
@@ -721,6 +777,15 @@ export default function EventDetail({
                         className="mt-3 flex w-full items-center justify-center rounded-md bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900"
                       >
                         Conectar al directo
+                      </button>
+                    )}
+                    {!isHost && !isAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleSwitchIdentity}
+                        className="mt-3 text-sm text-gray-500 underline hover:text-gray-900"
+                      >
+                        ¿No eres tú? Acceder con otros datos
                       </button>
                     )}
                   </div>
@@ -751,13 +816,18 @@ export default function EventDetail({
                     )}
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => setModalOpen(true)}
-                    className="flex w-full items-center justify-center rounded-md bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900"
-                  >
-                    Acceder
-                  </button>
+                  <div>
+                    {sessionNotice && (
+                      <p className="mb-3 text-sm text-gray-600">{sessionNotice}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setModalOpen(true)}
+                      className="flex w-full items-center justify-center rounded-md bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900"
+                    >
+                      Acceder
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -852,28 +922,4 @@ function VideoChatPanel({ chatMessages, sendChatMessage, eventId, compact = fals
       </div>
     </div>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function getStoredSession(eventId) {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(`event_attendee_${eventId}`)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
-
-// Mirrors storeSession in EventAccessModal — same key, same shape, so an admin
-// session is indistinguishable from a registered attendee's downstream.
-function storeSession(eventId, session) {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(`event_attendee_${eventId}`, JSON.stringify(session))
-  } catch {
-    // Silently ignore
-  }
 }

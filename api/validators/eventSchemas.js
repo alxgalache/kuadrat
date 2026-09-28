@@ -7,9 +7,12 @@ const { z } = require('zod');
  */
 const registerAttendeeSchema = z.object({
   body: z.object({
-    first_name: z.string().min(1, 'Nombre es obligatorio'),
-    last_name: z.string().min(1, 'Apellido es obligatorio'),
-    email: z.string().min(1, 'Email es obligatorio'),
+    first_name: z.string().trim().min(1, 'Nombre es obligatorio').max(120, 'Nombre demasiado largo'),
+    last_name: z.string().trim().min(1, 'Apellido es obligatorio').max(120, 'Apellido demasiado largo'),
+    email: z.string().trim().toLowerCase()
+      .min(1, 'Email es obligatorio')
+      .max(200, 'Email demasiado largo')
+      .email('Email inválido'),
   }).strip(),
 });
 
@@ -297,6 +300,19 @@ const verifyEmailSchema = z.object({
 });
 
 /**
+ * POST /api/events/:id/session
+ *
+ * The stored attendee session the event page validates before it claims
+ * «Ya tienes acceso» (enforce-verification-gates).
+ */
+const checkSessionSchema = z.object({
+  body: z.object({
+    attendeeId: z.string().min(1, 'attendeeId es obligatorio'),
+    accessToken: z.string().min(1, 'accessToken es obligatorio'),
+  }).strip(),
+});
+
+/**
  * POST /api/events/:id/verify-password
  */
 const verifyPasswordSchema = z.object({
@@ -373,6 +389,7 @@ module.exports = {
   sendVerificationSchema,
   verifyEmailSchema,
   verifyPasswordSchema,
+  checkSessionSchema,
   markEventFinishedSchema,
   excludeEventCreditSchema,
   eventRecordingsSchema,

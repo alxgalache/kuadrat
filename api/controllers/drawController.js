@@ -3,6 +3,7 @@ const logger = require('../config/logger');
 const drawService = require('../services/drawService');
 const stripeService = require('../services/stripeService');
 const { sendDrawEntryConfirmationEmail, sendDrawVerificationEmail } = require('../services/emailService');
+const { normalizeEmail } = require('../utils/emailOtp');
 
 // ---------------------------------------------------------------------------
 // GET /api/draws?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -62,10 +63,18 @@ const registerBuyer = async (req, res, next) => {
       throw new ApiError(400, 'Este sorteo no está activo', 'Sorteo no activo');
     }
 
+    // The email must be proven by the token verify-email handed back, for THIS
+    // draw and THIS email. Without it, an existing buyer's email returned that
+    // buyer's record to anyone who typed it (enforce-verification-gates).
+    const verifiedEmail = await drawService.resolveVerificationToken(id, req.body.verificationToken);
+    if (!verifiedEmail || verifiedEmail !== normalizeEmail(email)) {
+      throw new ApiError(403, 'Verifica tu email antes de continuar', 'VERIFICATION_REQUIRED');
+    }
+
     const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
 
     const buyer = await drawService.createOrGetDrawBuyer(id, {
-      firstName, lastName, email, dni, ipAddress,
+      firstName, lastName, email: verifiedEmail, dni, ipAddress,
       deliveryAddress1, deliveryAddress2, deliveryPostalCode,
       deliveryCity, deliveryProvince, deliveryCountry,
       invoicingAddress1, invoicingAddress2, invoicingPostalCode,
@@ -99,7 +108,7 @@ const setupPayment = async (req, res, next) => {
     }
 
     const buyer = await drawService.getDrawBuyer(drawBuyerId);
-    if (!buyer) {
+    if (!buyer || buyer.draw_id !== id) {
       throw new ApiError(404, 'Participante no encontrado', 'Participante no encontrado');
     }
 
@@ -162,9 +171,14 @@ const sendVerification = async (req, res, next) => {
     // Capture IP address
     const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
 
-    // Generate and send OTP
-    const code = await drawService.createEmailVerification(email, id, ipAddress);
-    await sendDrawVerificationEmail({ email, code });
+    // Generate and send OTP. Inside the resend cooldown the previous code is
+    // still valid: 400 rather than 429, which the client shows as the global
+    // rate-limit banner.
+    const result = await drawService.createEmailVerification(email, id, ipAddress);
+    if (result.tooSoon) {
+      throw new ApiError(400, 'Ya te enviamos un código hace unos segundos. Revisa tu correo.', 'OTP_RESEND_TOO_SOON');
+    }
+    await sendDrawVerificationEmail({ email: normalizeEmail(email), code: result.code });
 
     res.status(200).json({ success: true });
   } catch (error) {
@@ -189,7 +203,8 @@ const verifyEmail = async (req, res, next) => {
       throw new ApiError(400, result.error, 'Verificación fallida');
     }
 
-    res.status(200).json({ success: true });
+    // The only proof register-buyer accepts. Only its hash is stored.
+    res.status(200).json({ success: true, verificationToken: result.verificationToken });
   } catch (error) {
     next(error);
   }
@@ -201,32 +216,47 @@ const verifyEmail = async (req, res, next) => {
 const confirmPayment = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { drawBuyerId, setupIntentId, customerId } = req.body;
+    const { drawBuyerId, setupIntentId } = req.body;
 
     if (!drawBuyerId || !setupIntentId) {
       throw new ApiError(400, 'Datos de pago incompletos', 'Datos incompletos');
     }
 
     const buyer = await drawService.getDrawBuyer(drawBuyerId);
-    if (!buyer) {
+    if (!buyer || buyer.draw_id !== id) {
       throw new ApiError(404, 'Participante no encontrado', 'Participante no encontrado');
     }
 
+    // Bind the SetupIntent to this buyer and this draw, and require a real
+    // card behind it. Accepting any SetupIntent id let a buyer skip the card
+    // form entirely and still enter (enforce-verification-gates). The customer
+    // comes from the SetupIntent, never from the request body.
     const setupIntent = await stripeService.retrieveSetupIntent(setupIntentId);
-    const paymentMethodId = setupIntent.payment_method;
+    const paymentMethodId = typeof setupIntent.payment_method === 'string'
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id;
+    if (setupIntent.status !== 'succeeded' || !paymentMethodId) {
+      throw new ApiError(400, 'La autorización de pago no se ha completado', 'SETUP_NOT_SUCCEEDED');
+    }
+    const metadata = setupIntent.metadata || {};
+    if (metadata.draw_buyer_id !== drawBuyerId || metadata.draw_id !== id) {
+      logger.warn({ drawId: id, drawBuyerId, setupIntentId }, 'Draw payment confirmation rejected: SetupIntent does not match');
+      throw new ApiError(400, 'La autorización de pago no corresponde a esta inscripción', 'SETUP_MISMATCH');
+    }
+    const customerId = typeof setupIntent.customer === 'string'
+      ? setupIntent.customer
+      : setupIntent.customer?.id || null;
 
     let pmName = null;
     let pmLastFour = null;
     let fingerprint = null;
-    if (paymentMethodId) {
-      try {
-        const pm = await stripeService.retrievePaymentMethod(paymentMethodId);
-        pmName = pm.billing_details?.name || null;
-        pmLastFour = pm.card?.last4 || null;
-        fingerprint = pm.card?.fingerprint || null;
-      } catch {
-        // Non-critical
-      }
+    try {
+      const pm = await stripeService.retrievePaymentMethod(paymentMethodId);
+      pmName = pm.billing_details?.name || null;
+      pmLastFour = pm.card?.last4 || null;
+      fingerprint = pm.card?.fingerprint || null;
+    } catch {
+      // Non-critical
     }
 
     // Check card fingerprint uniqueness for this draw
@@ -243,8 +273,8 @@ const confirmPayment = async (req, res, next) => {
       name: pmName,
       lastFour: pmLastFour,
       stripeSetupIntentId: setupIntentId,
-      stripePaymentMethodId: paymentMethodId || null,
-      stripeCustomerId: customerId || null,
+      stripePaymentMethodId: paymentMethodId,
+      stripeCustomerId: customerId,
       stripeFingerprint: fingerprint,
     });
 
@@ -264,6 +294,14 @@ const enterDraw = async (req, res, next) => {
 
     if (!drawBuyerId) {
       throw new ApiError(400, 'El ID del participante es obligatorio', 'Datos incompletos');
+    }
+
+    // A buyer of another draw is a 404 here, like in setup-payment and
+    // confirm-payment. enterDraw repeats the check, but its errors surface
+    // as 400s through the catch below.
+    const owner = await drawService.getDrawBuyer(drawBuyerId);
+    if (!owner || owner.draw_id !== id) {
+      throw new ApiError(404, 'Participante no encontrado', 'Participante no encontrado');
     }
 
     const participation = await drawService.enterDraw(id, drawBuyerId);

@@ -881,6 +881,33 @@ export const PASSWORD_RESET_ERRORS = {
 export const PASSWORD_RESET_GENERIC_ERROR =
   'No se ha podido validar el enlace. Inténtalo de nuevo en unos minutos.';
 
+// ─── Acceso a eventos, sorteos y subastas (enforce-verification-gates) ────
+// Rechazos de POST /api/events/:id/session. La ficha del evento pregunta al
+// servidor antes de decir «Ya tienes acceso»; si la sesión guardada ya no vale,
+// la borra y muestra este motivo encima de «Acceder». Mismo patrón que
+// SHIPPING_VERIFICATION_ERRORS: el código viaja en `title` y aquí vive el texto.
+export const SESSION_REJECTION_MESSAGES = {
+  SESSION_INVALID:
+    'Tu acceso guardado no corresponde a este evento. Vuelve a acceder.',
+  SESSION_REPLACED:
+    'Tu acceso se abrió en otro dispositivo o navegador. Vuelve a entrar con la contraseña que recibiste por email.',
+  SESSION_UNVERIFIED:
+    'No llegaste a verificar tu email. Vuelve a registrarte para recibir un código nuevo.',
+  SESSION_BANNED:
+    'Has sido expulsado de este evento.',
+  SESSION_PAYMENT_REQUIRED:
+    'El pago no se completó. Vuelve a registrarte para completarlo.',
+};
+
+// Códigos de error del registro y la verificación por email, compartidos por
+// el modal de eventos, el de sorteos y el de subastas.
+export const ACCESS_VERIFICATION_ERRORS = {
+  EVENT_FULL: 'Aforo completo',
+  OTP_RESEND_TOO_SOON: 'Ya te enviamos un código hace unos segundos. Revisa tu correo.',
+  OTP_TOO_MANY_ATTEMPTS: 'Demasiados intentos. Solicita un nuevo código.',
+  VERIFICATION_REQUIRED: 'Tu verificación ha caducado. Vuelve a verificar tu email para continuar.',
+};
+
 // ─── Identificador fiscal del comprador en el carrito ─────────────────────
 // El algoritmo vive en `client/lib/spanishTaxId.js` (y su gemelo del backend);
 // aquí solo la copia es-ES, igual que SHIPPING_VERIFICATION_ERRORS.

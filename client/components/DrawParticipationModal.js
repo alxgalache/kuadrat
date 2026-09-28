@@ -10,6 +10,7 @@ import { getStripePromise, prefetchStripe } from '@/lib/stripe'
 import usePostalCodeValidation from '@/hooks/usePostalCodeValidation'
 import { useNotification } from '@/contexts/NotificationContext'
 import { validateSpanishTaxId as validateDNI } from '@/lib/spanishTaxId'
+import { ACCESS_VERIFICATION_ERRORS } from '@/lib/constants'
 
 // ---------------------------------------------------------------------------
 // Flow phases (CHOOSE and VERIFY removed)
@@ -97,6 +98,11 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
   const [otpCode, setOtpCode] = useState('')
   const [otpVerified, setOtpVerified] = useState(false)
   const [showResend, setShowResend] = useState(false)
+  // Informational line on the code step (a code sent seconds ago is still valid)
+  const [otpNotice, setOtpNotice] = useState('')
+  // Proof of email ownership returned by verify-email. register-buyer refuses
+  // to run without it (enforce-verification-gates). Memory only.
+  const [verificationToken, setVerificationToken] = useState(null)
   const resendTimerRef = useRef(null)
 
   // DNI validation state
@@ -104,7 +110,6 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
 
   // Stripe
   const [clientSecret, setClientSecret] = useState(null)
-  const [stripeCustomerId, setStripeCustomerId] = useState(null)
 
   // Track completed entry to prevent reset on draw prop changes
   const entryCompleteRef = useRef(false)
@@ -152,6 +157,8 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
       setOtpCode('')
       setOtpVerified(false)
       setShowResend(false)
+      setOtpNotice('')
+      setVerificationToken(null)
       setClientSecret(null)
       setDniError('')
     }
@@ -189,10 +196,18 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
     setError('')
     setLoading(true)
     try {
-      await drawsAPI.sendVerification(draw.id, personalInfo.email, personalInfo.dni.toUpperCase().trim())
+      try {
+        await drawsAPI.sendVerification(draw.id, personalInfo.email, personalInfo.dni.toUpperCase().trim())
+        setOtpNotice('')
+      } catch (err) {
+        // Inside the server's 30 s cooldown the previous code is still valid
+        if (err?.title !== 'OTP_RESEND_TOO_SOON') throw err
+        setOtpNotice(ACCESS_VERIFICATION_ERRORS.OTP_RESEND_TOO_SOON)
+      }
       setOtpSent(true)
       setShowResend(false)
       // Show resend button after 30 seconds
+      if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
       resendTimerRef.current = setTimeout(() => setShowResend(true), 30000)
     } catch (err) {
       setError(err.message || 'Error al enviar verificación')
@@ -206,7 +221,8 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
     setError('')
     setLoading(true)
     try {
-      await drawsAPI.verifyEmail(draw.id, personalInfo.email, otpCode)
+      const data = await drawsAPI.verifyEmail(draw.id, personalInfo.email, otpCode)
+      setVerificationToken(data.verificationToken)
       setOtpVerified(true)
       setPhase(PHASE.DELIVERY)
     } catch (err) {
@@ -246,6 +262,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
         invoicingCity: invoicingAddress.city,
         invoicingProvince: invoicingAddress.province,
         invoicingCountry: invoicingAddress.country,
+        verificationToken,
       })
 
       const session = { drawBuyerId: data.buyer.id }
@@ -254,6 +271,17 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
       await setupStripePayment(data.buyer.id)
       setPhase(PHASE.PAYMENT)
     } catch (err) {
+      if (err?.title === 'VERIFICATION_REQUIRED') {
+        // The proof is older than 60 minutes (or was replaced by a new code):
+        // back to the code step. Everything typed so far is kept.
+        setVerificationToken(null)
+        setOtpVerified(false)
+        setOtpSent(false)
+        setOtpCode('')
+        setPhase(PHASE.PERSONAL)
+        setError(ACCESS_VERIFICATION_ERRORS.VERIFICATION_REQUIRED)
+        return
+      }
       setError(err.message || 'Error al registrar participante')
     } finally {
       setLoading(false)
@@ -263,14 +291,13 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
   const setupStripePayment = async (buyerId) => {
     const data = await drawsAPI.setupPayment(draw.id, buyerId)
     setClientSecret(data.clientSecret)
-    setStripeCustomerId(data.customerId)
   }
 
   const handlePaymentSuccess = async (setupIntentId) => {
     setError('')
     setLoading(true)
     try {
-      await drawsAPI.confirmPayment(draw.id, buyerSession.drawBuyerId, setupIntentId, stripeCustomerId)
+      await drawsAPI.confirmPayment(draw.id, buyerSession.drawBuyerId, setupIntentId)
       setPhase(PHASE.CONFIRM)
     } catch (err) {
       setError(err.message || 'Error al confirmar pago')
@@ -406,6 +433,7 @@ export default function DrawParticipationModal({ isOpen, onClose, draw, drawEnde
                     Hemos enviado un código de verificación a <strong>{personalInfo.email}</strong>. Introdúcelo a continuación.
                   </p>
                 </div>
+                {otpNotice && <p className="text-sm text-gray-600">{otpNotice}</p>}
                 <div>
                   <label className="block text-sm font-medium text-gray-900">Código de verificación</label>
                   <input

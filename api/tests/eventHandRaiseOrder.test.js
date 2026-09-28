@@ -14,6 +14,7 @@ const bcrypt = require('bcrypt');
 const { randomUUID } = require('crypto');
 const { db } = require('../config/database');
 const eventService = require('../services/eventService');
+const { createVerifiedAttendee } = require('./helpers/eventAttendees');
 const setupEventSocket = require('../socket/eventSocket');
 
 const stamp = Date.now();
@@ -73,7 +74,7 @@ beforeAll(async () => {
 });
 
 async function viewerSession(label) {
-  const { attendee, accessToken } = await eventService.registerAttendee(eventId, {
+  const { attendee, accessToken } = await createVerifiedAttendee(eventId, {
     first_name: 'Vera',
     last_name: label,
     email: `hand-viewer-${label}-${stamp}@test.com`,

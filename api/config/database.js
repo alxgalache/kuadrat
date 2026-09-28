@@ -534,6 +534,10 @@ async function initializeDatabase() {
         expires_at DATETIME NOT NULL,
         verified INTEGER NOT NULL DEFAULT 0,
         ip_address TEXT,
+        -- SHA-256 of the verificationToken verify-email hands back. It is the
+        -- only proof register-buyer accepts, valid 60 minutes from verified_at
+        token_hash TEXT,
+        verified_at DATETIME,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (auction_id) REFERENCES auctions(id) ON DELETE CASCADE
       )
@@ -687,9 +691,17 @@ async function initializeDatabase() {
         ip_address TEXT,
         chat_banned INTEGER NOT NULL DEFAULT 0,
         access_password TEXT,
+        -- The proof of email ownership, and the ONLY thing that makes this row
+        -- a credential. access_token_hash stays NULL until verify-email sets
+        -- both in one statement, and getAttendeeByAccessToken ignores any row
+        -- where this is 0 unless it is staff (enforce-verification-gates)
         email_verified INTEGER NOT NULL DEFAULT 0,
         verification_code_hash TEXT,
         verification_code_expires_at DATETIME,
+        -- Failed guesses against the current code. Reset on every new send
+        verification_attempts INTEGER NOT NULL DEFAULT 0,
+        -- When the current code was sent, for the server-side resend cooldown
+        verification_sent_at DATETIME,
         agora_uid INTEGER,
         speaker_granted INTEGER NOT NULL DEFAULT 0,
         -- The admin joining an event they did not host. Takes part exactly
@@ -782,6 +794,11 @@ async function initializeDatabase() {
         first_name TEXT NOT NULL,
         last_name TEXT NOT NULL,
         email TEXT NOT NULL,
+        -- Legacy, never read: draws stopped using passwords in af329cd. Kept
+        -- because databases created before that commit carry it as NOT NULL
+        -- with no default, so createOrGetDrawBuyer must keep writing it and
+        -- every schema must therefore have it (enforce-verification-gates)
+        bid_password TEXT NOT NULL DEFAULT '',
         dni TEXT NOT NULL,
         ip_address TEXT,
         delivery_address_1 TEXT,
@@ -842,6 +859,10 @@ async function initializeDatabase() {
         expires_at DATETIME NOT NULL,
         verified INTEGER NOT NULL DEFAULT 0,
         ip_address TEXT,
+        -- SHA-256 of the verificationToken verify-email hands back. It is the
+        -- only proof register-buyer accepts, valid 60 minutes from verified_at
+        token_hash TEXT,
+        verified_at DATETIME,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (draw_id) REFERENCES draws(id) ON DELETE CASCADE
       )
@@ -853,6 +874,9 @@ async function initializeDatabase() {
     };
     await safeAlter('ALTER TABLE draw_buyers ADD COLUMN dni TEXT NOT NULL DEFAULT \'\'');
     await safeAlter('ALTER TABLE draw_buyers ADD COLUMN ip_address TEXT');
+    // Databases created after af329cd lack the legacy column the INSERT still
+    // writes (see the CREATE TABLE): draw registration returned 500 on them.
+    await safeAlter("ALTER TABLE draw_buyers ADD COLUMN bid_password TEXT NOT NULL DEFAULT ''");
     await safeAlter('ALTER TABLE draw_authorised_payment_data ADD COLUMN stripe_fingerprint TEXT');
     await safeAlter('ALTER TABLE draws ADD COLUMN min_participants INTEGER NOT NULL DEFAULT 30');
     await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN ip_address TEXT');
@@ -1047,6 +1071,16 @@ async function initializeDatabase() {
     // The admin attending an event they do not host — excluded from counts,
     // host credit, payouts and invoicing. See the event_attendees CREATE TABLE.
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0');
+
+    // Email verification that actually gates access (enforce-verification-gates).
+    // No backfill: a row that never verified keeps email_verified = 0 and from
+    // now on authenticates nowhere, which is the point of the change.
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN verification_attempts INTEGER NOT NULL DEFAULT 0');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN verification_sent_at DATETIME');
+    await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN token_hash TEXT');
+    await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN verified_at DATETIME');
+    await safeAlter('ALTER TABLE auction_email_verifications ADD COLUMN token_hash TEXT');
+    await safeAlter('ALTER TABLE auction_email_verifications ADD COLUMN verified_at DATETIME');
 
     // Per-seller opt-in to "Recogida en persona" for store ('other') products.
     // DEFAULT 0 deliberately without backfill: the option is switched on one
@@ -1385,6 +1419,12 @@ async function initializeDatabase() {
     // Change #3 — partial indexes for eventCreditScheduler lookups
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_pending_credit ON events(finished_at, host_credited_at) WHERE access_type='paid' AND host_credited_at IS NULL`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendees_credit ON event_attendees(event_id, status, host_credited_at)`);
+    // enforce-verification-gates — one PaymentIntent pays for one attendee.
+    // The check in confirmPayment gives the friendly 409; this index is what
+    // holds when two confirmations race. Deliberately db.execute and not
+    // safeAlter: if duplicates ever existed, startup must fail loudly rather
+    // than run without the guarantee.
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_attendees_stripe_pi ON event_attendees(stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL`);
     // agora-event-recording — at most ONE live task per event, enforced by the
     // database: the lifecycle transitions and the scheduler may try to start
     // the same recording at the same instant, and the losing INSERT must fail

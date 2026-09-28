@@ -3,6 +3,7 @@ const logger = require('../config/logger');
 const auctionService = require('../services/auctionService');
 const stripeService = require('../services/stripeService');
 const { sendBidConfirmationEmail, sendAuctionVerificationEmail } = require('../services/emailService');
+const { normalizeEmail } = require('../utils/emailOtp');
 
 // ---------------------------------------------------------------------------
 // GET /api/auctions?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -82,8 +83,17 @@ const registerBuyer = async (req, res, next) => {
       throw new ApiError(400, 'Esta subasta no está activa', 'Subasta no activa');
     }
 
+    // The email must be proven by the token verify-email handed back, for THIS
+    // auction and THIS email. Without it, typing an existing bidder's email
+    // returned their id and bid password, and /bid only asks for the id: a
+    // bid on somebody else's saved card (enforce-verification-gates).
+    const verifiedEmail = await auctionService.resolveVerificationToken(id, req.body.verificationToken);
+    if (!verifiedEmail || verifiedEmail !== normalizeEmail(email)) {
+      throw new ApiError(403, 'Verifica tu email antes de continuar', 'VERIFICATION_REQUIRED');
+    }
+
     const buyer = await auctionService.createOrGetAuctionBuyer(id, {
-      firstName, lastName, email, dni: dni.toUpperCase().trim(),
+      firstName, lastName, email: verifiedEmail, dni: dni.toUpperCase().trim(),
       deliveryAddress1, deliveryAddress2, deliveryPostalCode,
       deliveryCity, deliveryProvince, deliveryCountry,
       invoicingAddress1, invoicingAddress2, invoicingPostalCode,
@@ -154,7 +164,7 @@ const setupPayment = async (req, res, next) => {
     }
 
     const buyer = await auctionService.getAuctionBuyer(auctionBuyerId);
-    if (!buyer) {
+    if (!buyer || buyer.auction_id !== id) {
       throw new ApiError(404, 'Comprador no encontrado', 'Comprador no encontrado');
     }
 
@@ -186,32 +196,48 @@ const setupPayment = async (req, res, next) => {
 // ---------------------------------------------------------------------------
 const confirmPayment = async (req, res, next) => {
   try {
-    const { auctionBuyerId, setupIntentId, customerId } = req.body;
+    const { id } = req.params;
+    const { auctionBuyerId, setupIntentId } = req.body;
 
     if (!auctionBuyerId || !setupIntentId) {
       throw new ApiError(400, 'Datos de pago incompletos', 'Datos incompletos');
     }
 
     const buyer = await auctionService.getAuctionBuyer(auctionBuyerId);
-    if (!buyer) {
+    if (!buyer || buyer.auction_id !== id) {
       throw new ApiError(404, 'Comprador no encontrado', 'Comprador no encontrado');
     }
 
-    // Retrieve the SetupIntent to get the saved payment method
+    // Bind the SetupIntent to this buyer and this auction, and require a real
+    // card behind it. Accepting any SetupIntent id let a buyer skip the card
+    // form and still bid — arbitrarily high, with nothing to charge when they
+    // won (enforce-verification-gates). The customer comes from the
+    // SetupIntent, never from the request body.
     const setupIntent = await stripeService.retrieveSetupIntent(setupIntentId);
-    const paymentMethodId = setupIntent.payment_method;
+    const paymentMethodId = typeof setupIntent.payment_method === 'string'
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id;
+    if (setupIntent.status !== 'succeeded' || !paymentMethodId) {
+      throw new ApiError(400, 'La autorización de pago no se ha completado', 'SETUP_NOT_SUCCEEDED');
+    }
+    const metadata = setupIntent.metadata || {};
+    if (metadata.auction_buyer_id !== auctionBuyerId || metadata.auction_id !== id) {
+      logger.warn({ auctionId: id, auctionBuyerId, setupIntentId }, 'Auction payment confirmation rejected: SetupIntent does not match');
+      throw new ApiError(400, 'La autorización de pago no corresponde a este comprador', 'SETUP_MISMATCH');
+    }
+    const customerId = typeof setupIntent.customer === 'string'
+      ? setupIntent.customer
+      : setupIntent.customer?.id || null;
 
     // Retrieve payment method details
     let pmName = null;
     let pmLastFour = null;
-    if (paymentMethodId) {
-      try {
-        const pm = await stripeService.retrievePaymentMethod(paymentMethodId);
-        pmName = pm.billing_details?.name || null;
-        pmLastFour = pm.card?.last4 || null;
-      } catch {
-        // Non-critical - we can continue without card details
-      }
+    try {
+      const pm = await stripeService.retrievePaymentMethod(paymentMethodId);
+      pmName = pm.billing_details?.name || null;
+      pmLastFour = pm.card?.last4 || null;
+    } catch {
+      // Non-critical - we can continue without card details
     }
 
     // Save payment data
@@ -219,8 +245,8 @@ const confirmPayment = async (req, res, next) => {
       name: pmName,
       lastFour: pmLastFour,
       stripeSetupIntentId: setupIntentId,
-      stripePaymentMethodId: paymentMethodId || null,
-      stripeCustomerId: customerId || null,
+      stripePaymentMethodId: paymentMethodId,
+      stripeCustomerId: customerId,
     });
 
     res.status(200).json({ success: true });
@@ -431,9 +457,14 @@ const sendVerification = async (req, res, next) => {
     }
 
     const ipAddress = req.ip || req.connection?.remoteAddress || null;
-    const code = await auctionService.createEmailVerification(normalizedEmail, id, ipAddress);
+    const result = await auctionService.createEmailVerification(normalizedEmail, id, ipAddress);
+    // Inside the resend cooldown the previous code is still valid. 400 rather
+    // than 429, which the client shows as the global rate-limit banner.
+    if (result.tooSoon) {
+      throw new ApiError(400, 'Ya te enviamos un código hace unos segundos. Revisa tu correo.', 'OTP_RESEND_TOO_SOON');
+    }
 
-    await sendAuctionVerificationEmail(normalizedEmail, code, auction.name);
+    await sendAuctionVerificationEmail(normalizedEmail, result.code, auction.name);
 
     res.status(200).json({ success: true, message: 'Código de verificación enviado' });
   } catch (error) {
@@ -459,7 +490,12 @@ const verifyEmail = async (req, res, next) => {
       throw new ApiError(400, result.error, result.error);
     }
 
-    res.status(200).json({ success: true, message: 'Email verificado correctamente' });
+    // The only proof register-buyer accepts. Only its hash is stored.
+    res.status(200).json({
+      success: true,
+      message: 'Email verificado correctamente',
+      verificationToken: result.verificationToken,
+    });
   } catch (error) {
     next(error);
   }

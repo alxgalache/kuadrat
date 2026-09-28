@@ -16,6 +16,7 @@ import {
 import '@livekit/components-styles'
 import { Track, RoomEvent, DisconnectReason } from 'livekit-client'
 import { eventsAPI } from '@/lib/api'
+import { getStoredSession } from '@/lib/eventSession'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import DeviceDropdown from '@/components/events/DeviceDropdown'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
@@ -118,10 +119,7 @@ function RoomContent({ isHost, isAdmin, eventId, onKicked }) {
 
   // Read attendee session from localStorage for spam reporting
   const attendeeSession = useMemo(() => {
-    try {
-      const raw = localStorage.getItem(`event_attendee_${eventId}`)
-      return raw ? JSON.parse(raw) : null
-    } catch { return null }
+    return getStoredSession(eventId)
   }, [eventId])
 
   // Detect kick (PARTICIPANT_REMOVED disconnect reason)

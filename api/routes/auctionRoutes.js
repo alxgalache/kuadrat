@@ -4,7 +4,10 @@ const auctionController = require('../controllers/auctionController');
 const { cacheControl } = require('../middleware/cache');
 const { sensitiveLimiter } = require('../middleware/rateLimiter');
 const { validate } = require('../middleware/validate');
-const { sendVerificationSchema, verifyEmailSchema } = require('../validators/auctionSchemas');
+const {
+  sendVerificationSchema, verifyEmailSchema, registerBuyerSchema, verifyBuyerSchema,
+  setupPaymentSchema, confirmPaymentSchema, placeBidSchema,
+} = require('../validators/auctionSchemas');
 
 // All routes are public (no authentication required)
 
@@ -30,31 +33,31 @@ router.get('/:id/products/:productId/:productType/bids', auctionController.getPr
  * POST /api/auctions/:id/register-buyer
  * Register a new buyer or get existing buyer
  */
-router.post('/:id/register-buyer', auctionController.registerBuyer);
+router.post('/:id/register-buyer', validate(registerBuyerSchema), auctionController.registerBuyer);
 
 /**
  * POST /api/auctions/:id/verify-buyer
  * Verify returning buyer with email + bid_password
  */
-router.post('/:id/verify-buyer', auctionController.verifyBuyer);
+router.post('/:id/verify-buyer', sensitiveLimiter, validate(verifyBuyerSchema), auctionController.verifyBuyer);
 
 /**
  * POST /api/auctions/:id/setup-payment
  * Create Stripe PaymentIntent for 1 EUR authorization
  */
-router.post('/:id/setup-payment', auctionController.setupPayment);
+router.post('/:id/setup-payment', validate(setupPaymentSchema), auctionController.setupPayment);
 
 /**
  * POST /api/auctions/:id/confirm-payment
  * Confirm payment and save payment method data
  */
-router.post('/:id/confirm-payment', auctionController.confirmPayment);
+router.post('/:id/confirm-payment', validate(confirmPaymentSchema), auctionController.confirmPayment);
 
 /**
  * POST /api/auctions/:id/bid
  * Place a bid on a product
  */
-router.post('/:id/bid', auctionController.placeBid);
+router.post('/:id/bid', validate(placeBidSchema), auctionController.placeBid);
 
 /**
  * GET /api/auctions/:id/postal-codes/:productId/:productType

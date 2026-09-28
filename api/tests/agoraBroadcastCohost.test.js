@@ -21,6 +21,7 @@ const { randomUUID } = require('crypto');
 const { app } = require('./helpers/app');
 const { db } = require('../config/database');
 const eventService = require('../services/eventService');
+const { createVerifiedAttendee } = require('./helpers/eventAttendees');
 const agoraService = require('../services/agoraService');
 
 const stamp = Date.now();
@@ -148,7 +149,7 @@ describe('co-presenter token (POST /api/events/:id/token)', () => {
   });
 
   it('keeps an ordinary attendee as subscriber', async () => {
-    const { attendee, accessToken } = await eventService.registerAttendee(broadcastEventId, {
+    const { attendee, accessToken } = await createVerifiedAttendee(broadcastEventId, {
       first_name: 'Olga',
       last_name: 'Oyente',
       email: `cohost-viewer${stamp}@test.com`,
@@ -325,7 +326,7 @@ describe('staff are never moderation targets', () => {
     // Assigns the agora uid, so a demote WOULD reach banPublish without the guard
     await viewerToken(broadcastEventId, access.body);
 
-    viewer = await eventService.registerAttendee(broadcastEventId, {
+    viewer = await createVerifiedAttendee(broadcastEventId, {
       first_name: 'Rita',
       last_name: 'Reportera',
       email: `cohost-reporter${stamp}@test.com`,
