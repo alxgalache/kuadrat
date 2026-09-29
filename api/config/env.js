@@ -520,6 +520,74 @@ config.recording = (() => {
   return { ...settings, regionCode, configured: true, enabled: config.nodeEnv !== 'test' };
 })();
 
+// --- Event video over CloudFront signed URLs (change: event-video-cdn-delivery) ---
+// A video URL on this origin under /eventos-video/ is served by a CloudFront
+// behavior that only accepts signed URLs, and the API signs one per attendee
+// and per pass (utils/cloudfrontSigner.js). Activation is by configuration
+// being present, and a PARTIAL configuration fails startup, same criterion as
+// the recording block above: otherwise the admin would save a protected URL
+// and the event would fail in front of its audience.
+//
+// The private key is NOT an AWS credential. It cannot call any AWS API: it can
+// only sign URLs that CloudFront verifies against the public half registered in
+// the `eventos-video` key group. Each environment has its own key pair (the
+// Mac mini's can be revoked without touching production), and signing is
+// local crypto, which is why preproduction — no AWS credentials, no IMDS — can
+// use it. Base64 because Docker Compose's env_file does not carry a multi-line
+// PEM reliably. See docs/eventos-video/05-entornos-y-pruebas.md.
+function resolveEventVideoCdn(env) {
+  const disabled = { enabled: false, origin: null, keyPairId: null, privateKey: null };
+  const url = (env.EVENT_VIDEO_CDN_URL || '').trim();
+  const keyPairId = (env.EVENT_VIDEO_CF_KEY_PAIR_ID || '').trim();
+  const privateKeyB64 = (env.EVENT_VIDEO_CF_PRIVATE_KEY_B64 || '').trim();
+  if (!url && !keyPairId && !privateKeyB64) return disabled;
+
+  const missing = [];
+  if (!url) missing.push('EVENT_VIDEO_CDN_URL');
+  if (!keyPairId) missing.push('EVENT_VIDEO_CF_KEY_PAIR_ID');
+  if (!privateKeyB64) missing.push('EVENT_VIDEO_CF_PRIVATE_KEY_B64');
+  if (missing.length > 0) {
+    throw new Error(
+      `Event video CDN signing is partially configured. Missing: ${missing.join(', ')}. ` +
+        'Set all of them or none of the EVENT_VIDEO_* variables.'
+    );
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`EVENT_VIDEO_CDN_URL is not a valid URL: "${url}"`);
+  }
+  if (parsed.protocol !== 'https:' || parsed.pathname !== '/' || parsed.search || parsed.hash || url.replace(/\/$/, '') !== parsed.origin) {
+    throw new Error(`EVENT_VIDEO_CDN_URL must be an https origin with no path, e.g. https://cdn.140d.art (got "${url}")`);
+  }
+  if (!/^[A-Z0-9]{8,}$/.test(keyPairId)) {
+    throw new Error('EVENT_VIDEO_CF_KEY_PAIR_ID must be the CloudFront public key ID (upper-case letters and digits, e.g. K2JCJMDEHXQW5F)');
+  }
+
+  let privateKey;
+  try {
+    privateKey = require('crypto').createPrivateKey(Buffer.from(privateKeyB64, 'base64').toString('utf8'));
+  } catch {
+    throw new Error('EVENT_VIDEO_CF_PRIVATE_KEY_B64 is not a base64-encoded PEM private key (generate it with `base64 -w0 key.pem`)');
+  }
+  if (privateKey.asymmetricKeyType !== 'rsa') {
+    throw new Error(`EVENT_VIDEO_CF_PRIVATE_KEY_B64 must be an RSA key (got ${privateKey.asymmetricKeyType})`);
+  }
+
+  return { enabled: true, origin: parsed.origin, keyPairId, privateKey };
+}
+
+config.eventVideoCdn = (() => {
+  try {
+    return resolveEventVideoCdn(process.env);
+  } catch (err) {
+    console.error(`[ENV] ${err.message}`);
+    process.exit(1);
+  }
+})();
+
 /**
  * Returns the list of env var names that must be set before a fiscal export
  * can be generated (Change #4: stripe-connect-fiscal-report). Empty array
@@ -539,3 +607,4 @@ function assertBusinessConfigComplete() {
 
 module.exports = config;
 module.exports.assertBusinessConfigComplete = assertBusinessConfigComplete;
+module.exports.resolveEventVideoCdn = resolveEventVideoCdn;

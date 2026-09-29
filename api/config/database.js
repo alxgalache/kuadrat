@@ -621,6 +621,12 @@ async function initializeDatabase() {
         content_type TEXT NOT NULL DEFAULT 'streaming' CHECK(content_type IN ('streaming', 'video')),
         category TEXT NOT NULL CHECK(category IN ('masterclass', 'charla', 'entrevista', 'ama', 'video')),
         video_url TEXT,
+        -- Versión AV1 opcional del mismo vídeo (event-video-cdn-delivery). El
+        -- reproductor la usa solo si el dispositivo decodifica AV1 por hardware
+        -- y cae al MP4 de video_url en cualquier otro caso, así que nunca existe
+        -- sin él. Ni esta columna ni video_url salen en las respuestas públicas
+        -- (toPublicEvent): las fuentes se entregan firmadas por /video-token
+        video_url_av1 TEXT,
         max_attendees INTEGER,
         status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','active','finished','cancelled')),
         livekit_room_name TEXT,
@@ -665,6 +671,12 @@ async function initializeDatabase() {
         -- api/utils/eventRecording.js y en su espejo del cliente. DEFAULT 0 sin
         -- backfill: ningún evento anterior al cambio se graba
         recording_enabled INTEGER NOT NULL DEFAULT 0,
+        -- Evento de prueba (event-video-cdn-delivery). Con 1 no se anuncia
+        -- nunca a la newsletter ni a ningún topic (marketingEmailService
+        -- buildEvent), no aparece en el calendario ni en el sitemap
+        -- (getEventsByDateRange) y su página lleva noindex. Se llega a él solo
+        -- por enlace directo. DEFAULT 0 sin backfill: todo evento anterior es real
+        is_test INTEGER NOT NULL DEFAULT 0,
         agora_channel_name TEXT,
         whiteboard_room_uuid TEXT,
         video_started_at DATETIME,
@@ -989,6 +1001,10 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE events ADD COLUMN host_echo_cancellation INTEGER NOT NULL DEFAULT 0');
     // agora-event-recording — no backfill: no pre-existing event is recorded.
     await safeAlter('ALTER TABLE events ADD COLUMN recording_enabled INTEGER NOT NULL DEFAULT 0');
+    // event-video-cdn-delivery — no backfill: no pre-existing event has an AV1
+    // version, and every pre-existing event is a real one.
+    await safeAlter('ALTER TABLE events ADD COLUMN video_url_av1 TEXT');
+    await safeAlter('ALTER TABLE events ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE events ADD COLUMN agora_channel_name TEXT');
     await safeAlter('ALTER TABLE events ADD COLUMN whiteboard_room_uuid TEXT');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN agora_uid INTEGER');

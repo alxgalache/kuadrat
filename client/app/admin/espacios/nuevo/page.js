@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { MEETING_MAX_ATTENDEES } from '@/lib/constants'
+import { MEETING_MAX_ATTENDEES, EVENT_VIDEO_ERRORS, EVENT_VIDEO_FORM_COPY } from '@/lib/constants'
 import { ArrowLeftIcon } from '@heroicons/react/20/solid'
 import { SELLER_KIND_LABELS } from '@/lib/constants'
 import { sellerKindOf } from '@/lib/sellerCapabilities'
 import { supportsRecording } from '@/lib/eventRecording'
 import RecordingCheckbox from '@/components/admin/RecordingCheckbox'
+import { isProtectedVideoPath } from '@/lib/eventVideoSource'
 
 function NewEventPageContent() {
   const router = useRouter()
@@ -30,6 +31,7 @@ function NewEventPageContent() {
   const [contentType, setContentType] = useState('streaming')
   const [category, setCategory] = useState('charla')
   const [videoUrl, setVideoUrl] = useState('')
+  const [videoUrlAv1, setVideoUrlAv1] = useState('')
   const [videoSource, setVideoSource] = useState('url') // 'url' or 'file'
   const [videoFile, setVideoFile] = useState(null)
   const [maxAttendees, setMaxAttendees] = useState('')
@@ -38,6 +40,7 @@ function NewEventPageContent() {
   const [hostEchoCancellation, setHostEchoCancellation] = useState(false)
   const [recordingEnabled, setRecordingEnabled] = useState(false)
   const [status, setStatus] = useState('draft')
+  const [isTest, setIsTest] = useState(false)
 
   // Un solo predicado con nombre para la combinación que soporta la consola
   // móvil. Repetirlo en línea en el render y en el envío es exactamente lo que
@@ -124,6 +127,9 @@ function NewEventPageContent() {
         content_type: contentType,
         category,
         video_url: (format === 'video' && videoSource === 'url') ? (videoUrl || null) : null,
+        // La versión AV1 solo existe con «URL del vídeo»: con un archivo subido no se envía
+        video_url_av1: (format === 'video' && videoSource === 'url') ? (videoUrlAv1 || null) : null,
+        is_test: isTest,
         max_attendees: maxAttendees ? parseInt(maxAttendees, 10) : null,
         // Solo viaja en la combinación que lo soporta; fuera de ella el campo
         // no se envía y la columna se queda en su defecto 0.
@@ -150,7 +156,7 @@ function NewEventPageContent() {
 
       router.push('/admin/espacios')
     } catch (err) {
-      setError(err.message || 'No se pudo crear el evento')
+      setError(EVENT_VIDEO_ERRORS[err.title] || err.message || 'No se pudo crear el evento')
     } finally {
       setSaving(false)
       setUploading(false)
@@ -245,6 +251,21 @@ function NewEventPageContent() {
                     <option value="draft">Borrador</option>
                     <option value="scheduled">Programado</option>
                   </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isTest}
+                      onChange={(e) => setIsTest(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-black"
+                    />
+                    <span>
+                      {EVENT_VIDEO_FORM_COPY.testLabel}
+                      <span className="block text-xs text-gray-500">{EVENT_VIDEO_FORM_COPY.testHelp}</span>
+                    </span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -500,15 +521,40 @@ function NewEventPageContent() {
                 </fieldset>
 
                 {videoSource === 'url' ? (
-                  <div key="video-url">
-                    <input
-                      type="url"
-                      id="videoUrl"
-                      value={videoUrl}
-                      onChange={(e) => setVideoUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                    />
+                  <div key="video-url" className="space-y-3">
+                    <div>
+                      <label htmlFor="videoUrl" className="block text-sm font-medium text-gray-700">
+                        {EVENT_VIDEO_FORM_COPY.mp4Label}
+                      </label>
+                      <input
+                        type="url"
+                        id="videoUrl"
+                        value={videoUrl}
+                        onChange={(e) => setVideoUrl(e.target.value)}
+                        placeholder="https://cdn.140d.art/eventos-video/…/…_h264.mp4"
+                        className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                      />
+                      {!isProtectedVideoPath(videoUrl) && (
+                        <p className="mt-1 text-xs text-amber-700">{EVENT_VIDEO_FORM_COPY.unprotected}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label htmlFor="videoUrlAv1" className="block text-sm font-medium text-gray-700">
+                        {EVENT_VIDEO_FORM_COPY.av1Label}
+                      </label>
+                      <input
+                        type="url"
+                        id="videoUrlAv1"
+                        value={videoUrlAv1}
+                        onChange={(e) => setVideoUrlAv1(e.target.value)}
+                        placeholder="https://cdn.140d.art/eventos-video/…/…_av1.mp4"
+                        className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">{EVENT_VIDEO_FORM_COPY.av1Help}</p>
+                      {!isProtectedVideoPath(videoUrlAv1) && (
+                        <p className="mt-1 text-xs text-amber-700">{EVENT_VIDEO_FORM_COPY.unprotected}</p>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div key="video-file">

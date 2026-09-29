@@ -23,8 +23,15 @@ import useCompactRoomLayout from '@/hooks/useCompactRoomLayout'
 import useAutoHideChrome from '@/hooks/useAutoHideChrome'
 import useChatAutoScroll from '@/hooks/useChatAutoScroll'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
-import { LIVE_ROOM_COPY, SESSION_REJECTION_MESSAGES } from '@/lib/constants'
+import {
+  LIVE_ROOM_COPY,
+  SESSION_REJECTION_MESSAGES,
+  EVENT_VIDEO_RECOVERY,
+  EVENT_VIDEO_EXPIRY_MARGIN_MS,
+  EVENT_VIDEO_UNAVAILABLE,
+} from '@/lib/constants'
 import { getStoredSession, storeSession, clearStoredSession } from '@/lib/eventSession'
+import { pickVideoSource } from '@/lib/eventVideoSource'
 
 // Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
@@ -124,8 +131,10 @@ export default function EventDetail({
   const [hostAuthor, setHostAuthor] = useState(null)
   const [hostModalOpen, setHostModalOpen] = useState(false)
   const [streamEndedModalOpen, setStreamEndedModalOpen] = useState(false)
-  const [videoToken, setVideoToken] = useState(null)
-  const [videoTokenFilename, setVideoTokenFilename] = useState(null)
+  // Fuente del pase de vídeo (event-video-cdn-delivery):
+  // { url, codec: 'av1'|'h264', fallback: url del MP4 si se sirve el AV1, expiresAt }
+  const [videoSource, setVideoSource] = useState(null)
+  const [videoUnavailable, setVideoUnavailable] = useState(false)
   const [serverTimeOffset, setServerTimeOffset] = useState(0)
   const [adminJoining, setAdminJoining] = useState(false)
   const [adminJoinError, setAdminJoinError] = useState('')
@@ -371,35 +380,85 @@ export default function EventDetail({
     }, 4000)
   }, [event?.id])
 
-  // Fetch signed video token when user has access to a video-format event.
-  // Guarded by a ref so StrictMode double-invocation and cascading state
-  // updates don't refetch — each new vtoken would change the <video> src
-  // and restart the entire load/seek cycle.
+  // Fuentes del pase de vídeo (event-video-cdn-delivery). La ficha pública ya
+  // no trae la URL (solo `has_video`): las fuentes llegan de /video-token,
+  // firmadas por CloudFront, solo con el evento activo y solo a quien tiene
+  // acceso. Un ref evita pedirlas dos veces (StrictMode, estados en cascada):
+  // cada URL nueva cambia el `src` y reinicia la carga y la búsqueda.
   const videoTokenFetchedForRef = useRef(null)
+  const videoSourceRef = useRef(null)
+  videoSourceRef.current = videoSource
+  const videoRecoveryRef = useRef([])
+
+  // Pide las fuentes y devuelve la que toca reproducir. `preferAv1` en falso
+  // salta directamente al MP4 (tras un fallo del AV1).
+  const requestVideoSource = useCallback(async (preferAv1 = true) => {
+    const session = getStoredSession(event.id)
+    const data = await eventsAPI.getVideoToken(
+      event.id,
+      session?.attendeeId || null,
+      session?.accessToken || null
+    )
+    // Modo «Subir archivo» (y API anterior a este cambio): vtoken propio
+    if (data.mode === 'uploaded' || data.vtoken) {
+      return { url: getProtectedEventVideoUrl(event.id, data.filename, data.vtoken), codec: 'h264', fallback: null, expiresAt: null }
+    }
+    const expiresAt = data.expiresAt ? Date.parse(data.expiresAt) : null
+    const picked = preferAv1 ? await pickVideoSource(data.sources) : { url: data.sources.mp4, codec: 'h264' }
+    return {
+      url: picked.url,
+      codec: picked.codec,
+      fallback: picked.codec === 'av1' ? data.sources.mp4 : null,
+      expiresAt,
+    }
+  }, [event?.id])
 
   useEffect(() => {
-    if (!event || event.format !== 'video' || !event.video_url?.startsWith('uploaded:')) return
+    if (!event || event.format !== 'video' || event.status !== 'active' || !event.has_video) return
     if (!hasAccess && !isHost) return
     if (videoTokenFetchedForRef.current === event.id) return
     videoTokenFetchedForRef.current = event.id
-    fetchVideoToken()
-  }, [event?.id, event?.format, event?.video_url, hasAccess, isHost])
+    setVideoUnavailable(false)
+    requestVideoSource()
+      .then(setVideoSource)
+      .catch((err) => {
+        console.error('Error getting video sources:', err)
+        videoTokenFetchedForRef.current = null
+      })
+  }, [event?.id, event?.format, event?.status, event?.has_video, hasAccess, isHost, requestVideoSource])
 
-  const fetchVideoToken = async () => {
-    const session = getStoredSession(event.id)
-    try {
-      const data = await eventsAPI.getVideoToken(
-        event.id,
-        session?.attendeeId || null,
-        session?.accessToken || null
-      )
-      setVideoToken(data.vtoken)
-      setVideoTokenFilename(data.filename)
-    } catch (err) {
-      console.error('Error getting video token:', err)
-      videoTokenFetchedForRef.current = null
+  // El reproductor agotó sus reintentos con la fuente actual. Orden:
+  //   1. firma a punto de caducar o caducada → fuentes nuevas, mismo códec;
+  //   2. el AV1 falla (p. ej. MEDIA_ERR_DECODE) → el MP4, en el mismo instante
+  //      del pase (la posición sale del reloj, no del archivo);
+  //   3. el MP4 falla → fuentes nuevas, como mucho EVENT_VIDEO_RECOVERY.
+  // Solo después se muestra el error.
+  const handleVideoFatalError = useCallback(async ({ code } = {}) => {
+    const current = videoSourceRef.current
+    const now = Date.now()
+    const nearExpiry = current?.expiresAt && now >= current.expiresAt - EVENT_VIDEO_EXPIRY_MARGIN_MS
+    const decodeError = code === 3 // MediaError.MEDIA_ERR_DECODE
+
+    if (!nearExpiry && current?.codec === 'av1' && current.fallback) {
+      setVideoSource({ url: current.fallback, codec: 'h264', fallback: null, expiresAt: current.expiresAt })
+      return
     }
-  }
+
+    const attempts = videoRecoveryRef.current.filter((t) => now - t < EVENT_VIDEO_RECOVERY.windowMs)
+    if (attempts.length >= EVENT_VIDEO_RECOVERY.maxAttempts) {
+      setVideoUnavailable(true)
+      return
+    }
+    videoRecoveryRef.current = [...attempts, now]
+    try {
+      // Tras un fallo de decodificación del AV1 no se vuelve a intentar con él
+      const preferAv1 = current?.codec === 'av1' && !decodeError
+      setVideoSource(await requestVideoSource(preferAv1))
+    } catch (err) {
+      console.error('Error refreshing video sources:', err)
+      setVideoUnavailable(true)
+    }
+  }, [requestVideoSource])
 
   const handleViewHostAuthor = async () => {
     if (!event?.host_slug) return
@@ -414,21 +473,8 @@ export default function EventDetail({
     }
   }
 
-  // Resolve video URL — external URLs used directly; uploaded files need a signed token (fetched async)
-  const resolvedVideoUrl = useMemo(() => {
-    if (!event?.video_url) return null
-    if (event.video_url.startsWith('uploaded:')) return null // handled by video token flow
-    return event.video_url
-  }, [event?.video_url])
-
-  // Protected URL for uploaded videos (requires signed vtoken)
-  const protectedVideoUrl = useMemo(() => {
-    if (!videoToken || !videoTokenFilename || !event?.id) return null
-    return getProtectedEventVideoUrl(event.id, videoTokenFilename, videoToken)
-  }, [videoToken, videoTokenFilename, event?.id])
-
-  // The final video URL to pass to the player
-  const activeVideoUrl = protectedVideoUrl || resolvedVideoUrl
+  // La URL que reproduce el pase: firmada, o la del modo «Subir archivo»
+  const activeVideoUrl = videoSource?.url || null
 
 
   const renderModals = () => (
@@ -516,9 +562,14 @@ export default function EventDetail({
                 style={stageCell.style}
                 onClick={compact && landscape ? videoChrome.toggle : undefined}
               >
-                {activeVideoUrl ? (
+                {videoUnavailable ? (
+                  <div className="flex items-center justify-center px-4 py-16">
+                    <p className={`text-center text-sm ${compact ? 'text-gray-300' : 'text-gray-500'}`}>{EVENT_VIDEO_UNAVAILABLE}</p>
+                  </div>
+                ) : activeVideoUrl ? (
                   <EventVideoPlayer
                     videoUrl={activeVideoUrl}
+                    onFatalError={handleVideoFatalError}
                     videoStartedAt={event.video_started_at}
                     eventTitle={event.title}
                     serverTimeOffset={serverTimeOffset}

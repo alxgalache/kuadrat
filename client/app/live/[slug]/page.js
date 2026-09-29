@@ -57,7 +57,13 @@ export async function generateMetadata({ params }) {
   )
   const canonical = `/live/${event.slug}`
 
+  // Evento de prueba (event-video-cdn-delivery): fuera del calendario y del
+  // sitemap por la API, y aquí fuera de los buscadores. Se llega solo por el
+  // enlace directo de quien prueba.
+  const testRobots = Number(event.is_test) === 1 ? { robots: { index: false, follow: false } } : {}
+
   return {
+    ...testRobots,
     title: event.title,
     description: metaDescription,
     alternates: {
@@ -95,7 +101,10 @@ export default async function EventDetailPage({ params }) {
   // cliente.
   if (!event) notFound()
 
-  const eventSchema = event ? {
+  // Un evento de prueba no declara datos estructurados: no debe aparecer en
+  // ningún resultado enriquecido
+  const isTestEvent = Number(event.is_test) === 1
+  const eventSchema = event && !isTestEvent ? {
     '@context': 'https://schema.org',
     '@type': 'Event',
     name: event.title,
@@ -140,7 +149,7 @@ export default async function EventDetailPage({ params }) {
     inLanguage: 'es',
   } : null
 
-  const breadcrumbSchema = event ? {
+  const breadcrumbSchema = event && !isTestEvent ? {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
     itemListElement: [

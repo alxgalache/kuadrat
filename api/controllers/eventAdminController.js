@@ -3,6 +3,7 @@ const fs = require('fs');
 const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const marketingEmailService = require('../services/marketingEmailService');
+const { validateVideoUrls } = require('../utils/eventVideoSources');
 const agoraRecordingService = require('../services/agoraRecordingService');
 const { promoteAgoraParticipant, demoteAgoraParticipant } = require('./eventController');
 const logger = require('../config/logger');
@@ -36,9 +37,9 @@ const createEvent = async (req, res, next) => {
     const {
       title, description, event_datetime, duration_minutes, host_user_id,
       cover_image_url, access_type, price, currency, format, content_type,
-      category, video_url, max_attendees, status, provider, interaction_mode,
+      category, video_url, video_url_av1, max_attendees, status, provider, interaction_mode,
       allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
-      recording_enabled,
+      recording_enabled, is_test,
     } = req.body;
 
     if (!title || !event_datetime || !host_user_id || !category) {
@@ -70,14 +71,21 @@ const createEvent = async (req, res, next) => {
       });
     }
 
+    // Video sources (event-video-cdn-delivery): code in `title`, like SHIPPING_*
+    const videoError = validateVideoUrls({}, req.body);
+    if (videoError) {
+      return res.status(400).json({ success: false, title: videoError.code, message: videoError.message });
+    }
+
     const event = await eventService.createEvent({
       title, description, event_datetime, duration_minutes, host_user_id,
       cover_image_url, access_type, price, currency, format, content_type,
-      category, video_url, max_attendees, status, provider, interaction_mode,
+      category, video_url, video_url_av1, max_attendees, status, provider, interaction_mode,
       allow_mobile_host_console: toFlag(allow_mobile_host_console),
       allow_host_video_quality: toFlag(allow_host_video_quality),
       host_echo_cancellation: toFlag(host_echo_cancellation),
       recording_enabled: toFlag(recording_enabled),
+      is_test: toFlag(is_test),
     });
 
     // Marketing announcement (non-blocking; never throws; guarded send-once)
@@ -173,12 +181,20 @@ const updateEvent = async (req, res, next) => {
       });
     }
 
+    // Only the video fields that change are validated: an old event with a
+    // legacy URL must stay editable (event-video-cdn-delivery)
+    const videoError = validateVideoUrls(current, req.body);
+    if (videoError) {
+      return res.status(400).json({ success: false, title: videoError.code, message: videoError.message });
+    }
+
     const event = await eventService.updateEvent(req.params.id, {
       ...req.body,
       allow_mobile_host_console: toFlag(req.body.allow_mobile_host_console),
       allow_host_video_quality: toFlag(req.body.allow_host_video_quality),
       host_echo_cancellation: toFlag(req.body.host_echo_cancellation),
       recording_enabled: toFlag(req.body.recording_enabled),
+      is_test: toFlag(req.body.is_test),
     });
 
     // Marketing announcement on transition into 'scheduled' (guarded send-once)

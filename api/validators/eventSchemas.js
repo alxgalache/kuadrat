@@ -101,6 +101,10 @@ const createEventSchema = z.object({
     content_type: z.string().optional(),
     category: z.string().min(1, 'Categoría es obligatoria'),
     video_url: z.string().optional().nullable(),
+    // Versión AV1 opcional (event-video-cdn-delivery). Aquí solo la forma: qué
+    // URL es admisible depende de la configuración de firma del servidor y lo
+    // decide eventAdminController con utils/eventVideoSources.validateVideoUrls.
+    video_url_av1: z.string().optional().nullable(),
     max_attendees: z.union([z.number(), z.string()]).optional().nullable(),
     status: z.string().optional(),
     provider: z.enum(['livekit', 'agora'], { message: 'Proveedor de streaming inválido' }).optional(),
@@ -132,6 +136,13 @@ const createEventSchema = z.object({
       z.literal(0),
       z.literal(1),
     ], { message: 'Valor inválido para la grabación del evento' }).optional(),
+    // Evento de prueba (event-video-cdn-delivery): sin anuncio de marketing y
+    // fuera de los listados públicos. Mismo contrato que los flags de host.
+    is_test: z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ], { message: 'Valor inválido para «Evento de prueba»' }).optional(),
   }).strip().superRefine(validateProviderRules),
 });
 
@@ -183,6 +194,10 @@ const updateEventSchema = z.object({
     content_type: z.string().optional(),
     category: z.string().optional(),
     video_url: z.string().optional().nullable(),
+    // Versión AV1 opcional (event-video-cdn-delivery). Aquí solo la forma: qué
+    // URL es admisible depende de la configuración de firma del servidor y lo
+    // decide eventAdminController con utils/eventVideoSources.validateVideoUrls.
+    video_url_av1: z.string().optional().nullable(),
     max_attendees: z.union([z.number(), z.string()]).optional().nullable(),
     status: z.string().optional(),
     provider: z.enum(['livekit', 'agora'], { message: 'Proveedor de streaming inválido' }).optional(),
@@ -210,6 +225,11 @@ const updateEventSchema = z.object({
       z.literal(0),
       z.literal(1),
     ], { message: 'Valor inválido para la grabación del evento' }).optional(),
+    is_test: z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ], { message: 'Valor inválido para «Evento de prueba»' }).optional(),
   }).strip().superRefine(validateProviderRulesPartial),
 });
 

@@ -14,6 +14,8 @@ const s3Service = require('../services/s3Service');
 const stripeService = require('../services/stripeService');
 const { sendEventVerificationEmail, sendEventConfirmationEmail } = require('../services/emailService');
 const { normalizeEmail } = require('../utils/emailOtp');
+const cloudfrontSigner = require('../utils/cloudfrontSigner');
+const { classifyVideoUrl, videoTokenExpiry } = require('../utils/eventVideoSources');
 
 function getClientIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
@@ -68,10 +70,20 @@ function assertNotStaffTarget(attendee) {
 // attendees or hosts: the disclosure is the privacy policy they accept when
 // registering, so the public payloads do not carry the flag at all. Admin
 // endpoints keep it.
+//
+// Nor do they carry the video URLs (event-video-cdn-delivery): a URL here would
+// let anyone watch or download the video without registering, before, during
+// or after the pass. The client only learns WHETHER there is a video; the
+// sources come from POST /video-token, signed, to whoever has access.
 function toPublicEvent(event) {
   if (!event) return event;
-  const { recording_enabled: _recordingEnabled, ...publicFields } = event;
-  return publicFields;
+  const {
+    recording_enabled: _recordingEnabled,
+    video_url: videoUrl,
+    video_url_av1: _videoUrlAv1,
+    ...publicFields
+  } = event;
+  return { ...publicFields, has_video: Boolean(videoUrl) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1171,7 +1183,14 @@ function verifyVideoToken(token, eventId) {
 
 // ---------------------------------------------------------------------------
 // POST /api/events/:id/video-token
-// Get a short-lived signed token to access the event video
+// The sources of a video event, only to whoever has access and only during
+// the pass (event-video-cdn-delivery). Two shapes:
+//   uploaded → { mode: 'uploaded', vtoken, filename }   (legacy, unchanged)
+//   url      → { mode: 'url', sources: { mp4, av1 }, expiresAt }
+// A protected source (CDN origin, /eventos-video/) is returned as a CloudFront
+// signed URL that dies at the planned end of the pass; an external one as is.
+// A protected source on a server that cannot sign is a 503, never an unsigned
+// URL: CloudFront would answer 403 and the viewer would see a black box.
 // ---------------------------------------------------------------------------
 const getVideoToken = async (req, res, next) => {
   try {
@@ -1183,7 +1202,9 @@ const getVideoToken = async (req, res, next) => {
       throw new ApiError(400, 'No hay vídeo disponible para este evento', 'Error');
     }
 
-    if (!['active', 'finished'].includes(event.status)) {
+    // Only while the pass runs: before it nothing is playable, and after it a
+    // URL would only serve to download the video.
+    if (event.status !== 'active') {
       throw new ApiError(400, 'El evento no está disponible', 'Error');
     }
 
@@ -1217,10 +1238,42 @@ const getVideoToken = async (req, res, next) => {
       throw new ApiError(403, 'No tienes acceso a este vídeo', 'Acceso denegado');
     }
 
-    const vtoken = createVideoToken(id, subject);
-    const filename = event.video_url.replace('uploaded:', '');
+    const mp4Kind = classifyVideoUrl(event.video_url);
+    if (mp4Kind === 'uploaded') {
+      const vtoken = createVideoToken(id, subject);
+      const filename = event.video_url.replace('uploaded:', '');
+      logger.info({ eventId: id, subject, mode: 'uploaded' }, 'Event video sources issued');
+      return res.status(200).json({ success: true, mode: 'uploaded', vtoken, filename });
+    }
 
-    res.status(200).json({ success: true, vtoken, filename });
+    const expiresAt = videoTokenExpiry(event);
+    let signed = false;
+    const resolve = (value, kind) => {
+      if (!value) return null;
+      if (kind === 'protected') {
+        if (!cloudfrontSigner.isConfigured()) {
+          throw new ApiError(503, 'El vídeo no está disponible en este momento', 'EVENT_VIDEO_SIGNING_UNAVAILABLE');
+        }
+        signed = true;
+        return cloudfrontSigner.signUrl(value, { expiresAt });
+      }
+      // external, or a legacy value saved before URLs were validated
+      return value;
+    };
+    const av1Kind = classifyVideoUrl(event.video_url_av1);
+    const sources = {
+      mp4: resolve(event.video_url, mp4Kind),
+      av1: av1Kind === 'protected' || av1Kind === 'external' ? resolve(event.video_url_av1, av1Kind) : null,
+    };
+
+    // Never the URL itself: a signed URL in the logs is a working download link
+    logger.info({ eventId: id, subject, mode: 'url', signed, av1: Boolean(sources.av1) }, 'Event video sources issued');
+    res.status(200).json({
+      success: true,
+      mode: 'url',
+      sources,
+      expiresAt: signed ? new Date(expiresAt).toISOString() : null,
+    });
   } catch (error) {
     next(error);
   }

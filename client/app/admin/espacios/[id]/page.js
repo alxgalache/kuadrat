@@ -5,13 +5,15 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminAPI, triggerDownload } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { MEETING_MAX_ATTENDEES } from '@/lib/constants'
+import { MEETING_MAX_ATTENDEES, EVENT_VIDEO_ERRORS, EVENT_VIDEO_FORM_COPY } from '@/lib/constants'
 import { ArrowLeftIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid'
 import { SELLER_KIND_LABELS } from '@/lib/constants'
 import { sellerKindOf } from '@/lib/sellerCapabilities'
 import { supportsRecording, isEventRecorded } from '@/lib/eventRecording'
 import RecordingCheckbox from '@/components/admin/RecordingCheckbox'
 import EventRecordingsPanel from '@/components/admin/EventRecordingsPanel'
+import ConfirmDialog from '@/components/ConfirmDialog'
+import { isProtectedVideoPath } from '@/lib/eventVideoSource'
 
 // Filas que nunca verificaron el email (enforce-verification-gates). No ocupan
 // plaza ni cuentan en «Registrados (N)», igual que en el contador público de la
@@ -42,6 +44,9 @@ function EventDetailContent({ id }) {
   const [videoSource, setVideoSource] = useState('url')
   const [videoFile, setVideoFile] = useState(null)
   const [uploading, setUploading] = useState(false)
+  // Desmarcar «Evento de prueba» en un evento programado envía el anuncio a los
+  // suscriptores en ese mismo guardado: se confirma antes (event-video-cdn-delivery)
+  const [confirmRealOpen, setConfirmRealOpen] = useState(false)
 
   useEffect(() => {
     loadEvent()
@@ -93,6 +98,7 @@ function EventDetailContent({ id }) {
     content_type: ev.content_type || 'streaming',
     category: ev.category || 'charla',
     video_url: ev.video_url || '',
+    video_url_av1: ev.video_url_av1 || '',
     max_attendees: ev.max_attendees || '',
     // Llega de SQLite como 0 | 1; el checkbox necesita un booleano y así es
     // también como viaja de vuelta en el PUT.
@@ -100,6 +106,7 @@ function EventDetailContent({ id }) {
     allow_host_video_quality: !!ev.allow_host_video_quality,
     host_echo_cancellation: !!ev.host_echo_cancellation,
     recording_enabled: !!ev.recording_enabled,
+    is_test: !!ev.is_test,
     status: ev.status || 'draft',
   })
 
@@ -164,6 +171,8 @@ function EventDetailContent({ id }) {
         provider: form.format === 'live' ? form.provider : 'livekit',
         interaction_mode: form.format === 'live' && form.provider === 'agora' ? form.interaction_mode : 'broadcast',
         video_url: (form.format === 'video' && videoSource === 'url') ? (form.video_url || null) : (form.video_url?.startsWith('uploaded:') ? form.video_url : null),
+        // La versión AV1 solo existe con «URL del vídeo»
+        video_url_av1: (form.format === 'video' && videoSource === 'url') ? (form.video_url_av1 || null) : null,
       }
       // `...form` lo mete siempre; fuera de la combinación soportada el campo
       // no debe viajar, igual que en el formulario de creación.
@@ -182,7 +191,7 @@ function EventDetailContent({ id }) {
       setEditMode(false)
       await loadEvent()
     } catch (err) {
-      setError(err.message || 'No se pudo actualizar el evento')
+      setError(EVENT_VIDEO_ERRORS[err.title] || err.message || 'No se pudo actualizar el evento')
     } finally {
       setSaving(false)
       setUploading(false)
@@ -299,6 +308,17 @@ function EventDetailContent({ id }) {
 
   return (
     <div className="bg-white">
+      <ConfirmDialog
+        open={confirmRealOpen}
+        onClose={() => setConfirmRealOpen(false)}
+        onConfirm={() => {
+          setConfirmRealOpen(false)
+          handleSave()
+        }}
+        title={EVENT_VIDEO_FORM_COPY.confirmRealTitle}
+        message={EVENT_VIDEO_FORM_COPY.confirmRealMessage}
+        confirmText={EVENT_VIDEO_FORM_COPY.confirmRealAction}
+      />
       <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="mb-8">
           <Link
@@ -367,6 +387,18 @@ function EventDetailContent({ id }) {
                     </select>
                   </div>
                 </div>
+                <label className="flex items-start gap-x-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!form.is_test}
+                    onChange={(e) => setForm({ ...form, is_test: e.target.checked })}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-black"
+                  />
+                  <span>
+                    {EVENT_VIDEO_FORM_COPY.testLabel}
+                    <span className="block text-xs text-gray-500">{EVENT_VIDEO_FORM_COPY.testHelp}</span>
+                  </span>
+                </label>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Fecha y hora *</label>
@@ -595,14 +627,34 @@ function EventDetailContent({ id }) {
                     </fieldset>
 
                     {videoSource === 'url' ? (
-                      <div key="edit-video-url">
-                        <input
-                          type="url"
-                          value={form.video_url?.startsWith('uploaded:') ? '' : (form.video_url || '')}
-                          onChange={(e) => setForm({ ...form, video_url: e.target.value })}
-                          placeholder="https://..."
-                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                        />
+                      <div key="edit-video-url" className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">{EVENT_VIDEO_FORM_COPY.mp4Label}</label>
+                          <input
+                            type="url"
+                            value={form.video_url?.startsWith('uploaded:') ? '' : (form.video_url || '')}
+                            onChange={(e) => setForm({ ...form, video_url: e.target.value })}
+                            placeholder="https://cdn.140d.art/eventos-video/…/…_h264.mp4"
+                            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                          />
+                          {!form.video_url?.startsWith('uploaded:') && !isProtectedVideoPath(form.video_url) && (
+                            <p className="mt-1 text-xs text-amber-700">{EVENT_VIDEO_FORM_COPY.unprotected}</p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">{EVENT_VIDEO_FORM_COPY.av1Label}</label>
+                          <input
+                            type="url"
+                            value={form.video_url_av1 || ''}
+                            onChange={(e) => setForm({ ...form, video_url_av1: e.target.value })}
+                            placeholder="https://cdn.140d.art/eventos-video/…/…_av1.mp4"
+                            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">{EVENT_VIDEO_FORM_COPY.av1Help}</p>
+                          {!isProtectedVideoPath(form.video_url_av1) && (
+                            <p className="mt-1 text-xs text-amber-700">{EVENT_VIDEO_FORM_COPY.unprotected}</p>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <div key="edit-video-file">
@@ -658,7 +710,9 @@ function EventDetailContent({ id }) {
                     Cancelar
                   </button>
                   <button
-                    onClick={handleSave}
+                    onClick={() => (event?.is_test && !form.is_test && form.status === 'scheduled'
+                      ? setConfirmRealOpen(true)
+                      : handleSave())}
                     disabled={saving || uploading}
                     className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 disabled:opacity-50"
                   >
@@ -672,6 +726,11 @@ function EventDetailContent({ id }) {
                 <div className="flex items-center gap-x-3">
                   <h1 className="text-2xl font-bold text-gray-900">{event.title}</h1>
                   {getStatusBadge(event.status)}
+                  {!!event.is_test && (
+                    <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+                      {EVENT_VIDEO_FORM_COPY.testBadge}
+                    </span>
+                  )}
                 </div>
 
                 {event.description && (

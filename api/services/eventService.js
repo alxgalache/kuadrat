@@ -29,9 +29,9 @@ function generateSlug(title) {
 async function createEvent({
   title, description, event_datetime, duration_minutes, host_user_id,
   cover_image_url, access_type, price, currency, format, content_type,
-  category, video_url, max_attendees, status, provider, interaction_mode,
+  category, video_url, video_url_av1, max_attendees, status, provider, interaction_mode,
   allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
-  recording_enabled,
+  recording_enabled, is_test,
 }) {
   const id = generateUUID();
   const slug = generateSlug(title);
@@ -39,20 +39,21 @@ async function createEvent({
   await db.execute({
     sql: `INSERT INTO events (id, title, slug, description, event_datetime, duration_minutes,
           host_user_id, cover_image_url, access_type, price, currency, format, content_type,
-          category, video_url, max_attendees, status, provider, interaction_mode,
+          category, video_url, video_url_av1, max_attendees, status, provider, interaction_mode,
           allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
-          recording_enabled)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          recording_enabled, is_test)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id, title, slug, description || null, event_datetime, duration_minutes || 60,
       host_user_id, cover_image_url || null, access_type || 'free',
       price || null, currency || 'EUR', format || 'live', content_type || 'streaming',
-      category, video_url || null, max_attendees || null, status || 'draft',
+      category, video_url || null, video_url_av1 || null, max_attendees || null, status || 'draft',
       provider || 'livekit', interaction_mode || 'broadcast',
       allow_mobile_host_console ? 1 : 0,
       allow_host_video_quality ? 1 : 0,
       host_echo_cancellation ? 1 : 0,
       recording_enabled ? 1 : 0,
+      is_test ? 1 : 0,
     ],
   });
 
@@ -66,9 +67,9 @@ async function updateEvent(id, fields) {
   const allowedFields = [
     'title', 'description', 'event_datetime', 'duration_minutes', 'host_user_id',
     'cover_image_url', 'access_type', 'price', 'currency', 'format', 'content_type',
-    'category', 'video_url', 'max_attendees', 'status', 'provider', 'interaction_mode',
+    'category', 'video_url', 'video_url_av1', 'max_attendees', 'status', 'provider', 'interaction_mode',
     'allow_mobile_host_console', 'allow_host_video_quality', 'host_echo_cancellation',
-    'recording_enabled',
+    'recording_enabled', 'is_test',
   ];
 
   const setClauses = [];
@@ -152,12 +153,16 @@ async function listEvents(filters = {}) {
   return result.rows;
 }
 
+// The public calendar: feeds /live and the sitemap, its only two consumers.
+// Test events never appear here (event-video-cdn-delivery); getEventBySlug
+// deliberately does NOT filter them, so the tester's direct link works.
 async function getEventsByDateRange(from, to) {
   const result = await db.execute({
     sql: `SELECT e.*, u.full_name as host_name, u.slug as host_slug
           FROM events e
           LEFT JOIN users u ON e.host_user_id = u.id
           WHERE e.status IN ('scheduled', 'active', 'finished')
+          AND e.is_test = 0
           AND DATE(e.event_datetime) >= ? AND DATE(e.event_datetime) <= ?
           ORDER BY e.event_datetime ASC`,
     args: [from, to],

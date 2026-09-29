@@ -297,6 +297,13 @@ async function buildDraw(drawId) {
 async function buildEvent(eventId) {
   const event = await eventService.getEventById(eventId);
   if (!event || event.status !== 'scheduled') return null;
+  // A test event is never announced (event-video-cdn-delivery). This builder is
+  // the only one for events and both admin hooks (create and update) go
+  // through it, so this single line covers every path to the newsletter.
+  if (Number(event.is_test) === 1) {
+    logger.debug({ eventId }, 'Test event — announcement skipped');
+    return null;
+  }
   const imageUrl = absoluteUrl(event.cover_image_url);
   const description = event.description ? stripHtml(event.description) : '';
   const tokens = {
@@ -490,6 +497,7 @@ module.exports = {
   announceAuctionIfEligible,
   announceDrawIfEligible,
   announceEventIfEligible,
+  buildEvent,
   upsertSubscriber,
   BROADCAST_NAME_MAX,
   clipBroadcastName,

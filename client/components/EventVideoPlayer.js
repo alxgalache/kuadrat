@@ -26,8 +26,20 @@ const DEFAULT_FRAME = 'relative bg-black rounded-lg overflow-hidden aspect-video
  * player CAN pause and seek, and drift correction skips paused videos — so on
  * `webkitendfullscreen` the video is re-synced to server time and resumed.
  *
+ * Hardening (event-video-cdn-delivery): no context menu («Guardar vídeo
+ * como»), no download button, no picture-in-picture — the PiP window has its own
+ * pause button and drift correction skips paused videos, so it was also a hole
+ * in the pass — and no remote playback.
+ *
+ * Source failures: when the retries are exhausted, or on a decode error
+ * (retrying an undecodable file is pointless), `onFatalError({ code })` hands
+ * the decision to the parent (AV1 → MP4, or fresh signed URLs) and the player
+ * waits for a new `videoUrl`, which resets it. Without the prop it shows the
+ * error as before.
+ *
  * @param {object} [props.frame] - Compact room 16:9 frame ({ className, style })
  * @param {Function} [props.onPlayingChange] - (playing) → wake lock of the viewer
+ * @param {Function} [props.onFatalError] - ({ code }) → parent picks another source
  */
 export default function EventVideoPlayer({
   videoUrl,
@@ -36,6 +48,7 @@ export default function EventVideoPlayer({
   serverTimeOffset = 0,
   frame = null,
   onPlayingChange,
+  onFatalError,
 }) {
   const videoRef = useRef(null)
   const containerRef = useRef(null)
@@ -47,7 +60,11 @@ export default function EventVideoPlayer({
   const [videoError, setVideoError] = useState(false)
   const [videoEnded, setVideoEnded] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
+  // The parent was told the source failed and is fetching another one
+  const [awaitingSource, setAwaitingSource] = useState(false)
   const MAX_RETRIES = 3
+  const onFatalErrorRef = useRef(onFatalError)
+  onFatalErrorRef.current = onFatalError
 
   const chrome = useAutoHideChrome()
 
@@ -79,6 +96,7 @@ export default function EventVideoPlayer({
     setVideoError(false)
     setVideoEnded(false)
     setRetryCount(0)
+    setAwaitingSource(false)
     if (videoRef.current && safeVideoUrl) {
       videoRef.current.load()
     }
@@ -206,9 +224,20 @@ export default function EventVideoPlayer({
   }, [playing])
   useEffect(() => () => onPlayingChangeRef.current?.(false), [])
 
+  // This source cannot be played: let the parent choose another one if it can
+  const escalate = useCallback((code) => {
+    if (onFatalErrorRef.current) {
+      setSeekReady(false)
+      setAwaitingSource(true)
+      onFatalErrorRef.current({ code })
+    } else {
+      setVideoError(true)
+    }
+  }, [])
+
   // Timeout covers both "metadata never loads" and "seek never completes"
   useEffect(() => {
-    if (seekReady || videoError || videoEnded) return
+    if (seekReady || videoError || videoEnded || awaitingSource) return
 
     const timeout = setTimeout(() => {
       if (!videoRef.current) return
@@ -219,12 +248,12 @@ export default function EventVideoPlayer({
         setSeekReady(false)
         videoRef.current.load()
       } else {
-        setVideoError(true)
+        escalate(null)
       }
     }, 15000)
 
     return () => clearTimeout(timeout)
-  }, [seekReady, videoError, videoEnded, retryCount, safeVideoUrl])
+  }, [seekReady, videoError, videoEnded, awaitingSource, retryCount, safeVideoUrl, escalate])
 
   const handleLoadedMetadata = useCallback(() => {
     setVideoReady(true)
@@ -235,6 +264,13 @@ export default function EventVideoPlayer({
   }, [])
 
   const handleError = useCallback(() => {
+    if (awaitingSource) return
+    const code = videoRef.current?.error?.code ?? null
+    // MEDIA_ERR_DECODE: the same file will not decode on a retry
+    if (code === 3) {
+      escalate(code)
+      return
+    }
     if (retryCount < MAX_RETRIES && videoRef.current) {
       console.warn(`[VideoPlayer] Load error, retrying (${retryCount + 1}/${MAX_RETRIES})`)
       setRetryCount((prev) => prev + 1)
@@ -244,9 +280,9 @@ export default function EventVideoPlayer({
         if (videoRef.current) videoRef.current.load()
       }, 1000 * (retryCount + 1))
     } else {
-      setVideoError(true)
+      escalate(code)
     }
-  }, [retryCount])
+  }, [retryCount, awaitingSource, escalate])
 
   const toggleMute = useCallback(() => {
     const video = videoRef.current
@@ -339,6 +375,7 @@ export default function EventVideoPlayer({
       className={`${frameClassName} group`}
       style={frameStyle}
       onClick={chrome.toggle}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <video
         ref={videoRef}
@@ -346,6 +383,9 @@ export default function EventVideoPlayer({
         muted={muted}
         playsInline
         preload="metadata"
+        controlsList="nodownload noremoteplayback noplaybackrate"
+        disablePictureInPicture
+        disableRemotePlayback
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleVideoEnded}
         onError={handleError}

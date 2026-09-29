@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
+import { EVENT_VIDEO_FORM_COPY } from '@/lib/constants'
 import { PlusIcon, EyeIcon, PlayIcon, StopIcon, XMarkIcon } from '@heroicons/react/20/solid'
 
 function EventsPageContent() {
@@ -212,7 +213,14 @@ function EventsPageContent() {
                           {event.host_name || '-'}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm">
-                          {getStatusBadge(event.status)}
+                          <div className="flex items-center gap-x-2">
+                            {getStatusBadge(event.status)}
+                            {!!event.is_test && (
+                              <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+                                {EVENT_VIDEO_FORM_COPY.testBadge}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
                           <div className="flex items-center justify-end gap-x-3">

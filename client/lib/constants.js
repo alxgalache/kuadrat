@@ -1075,3 +1075,68 @@ export const EVENT_RECORDING_COPY = {
       'En este entorno la aplicación no puede leer el almacenamiento. Consulta los ficheros en la consola de S3:',
   },
 };
+
+// ---------------------------------------------------------------------------
+// Vídeo pregrabado por CloudFront (event-video-cdn-delivery)
+// ---------------------------------------------------------------------------
+
+// El AV1 por el que se pregunta al navegador: perfil Main, nivel 4.0 (08), tier
+// Main, 10 bits. Es exactamente lo que produce scripts/video/optimizar-video.mjs
+// para un 1080p a 25-30 fps, y el script comprueba ese nivel en cada archivo.
+// Si alguna vez se sube un AV1 de otro perfil (4K, 60 fps), la pregunta seguiría
+// siendo por este y la respuesta podría no valer para aquel.
+export const EVENT_VIDEO_AV1_CONTENT_TYPE = 'video/mp4; codecs="av01.0.08M.10"';
+
+// Parámetros de la pregunta a mediaCapabilities.decodingInfo. Lo que decide es
+// `powerEfficient` (decodificación por hardware): con AV1 por software un
+// dispositivo modesto da tirones, y en el pase cada tirón es un salto adelante.
+export const EVENT_VIDEO_PROBE = { width: 1920, height: 1080, bitrate: 2000000, framerate: 25 };
+
+// Sin respuesta en este tiempo se usa el MP4: un navegador lento en contestar
+// no puede dejar la escena en negro.
+export const EVENT_VIDEO_PROBE_TIMEOUT_MS = 1500;
+
+// Recuperación ante una fuente que falla a mitad del pase (firma caducada,
+// cambio de red): como mucho estos tokens nuevos en esta ventana. Más allá, el
+// problema no se arregla pidiendo otra URL y se muestra el error.
+export const EVENT_VIDEO_RECOVERY = { maxAttempts: 3, windowMs: 10 * 60 * 1000 };
+
+// Margen antes de `expiresAt` en el que un fallo se trata como firma caducada
+// (se pide un token nuevo) y no como un fallo del códec (se pasa al MP4).
+export const EVENT_VIDEO_EXPIRY_MARGIN_MS = 60 * 1000;
+
+// La carpeta del CDN que CloudFront solo sirve con URL firmada. El formulario
+// avisa si la URL del vídeo no está dentro. La autoridad es la API, que además
+// rechaza guardar una URL del CDN fuera de ella.
+export const EVENT_VIDEO_CDN_PREFIX = '/eventos-video/';
+
+// Códigos que la API envía en `title` al guardar un evento o al pedir el vídeo,
+// igual que SHIPPING_VERIFICATION_ERRORS: el código viaja y aquí vive el texto.
+export const EVENT_VIDEO_ERRORS = {
+  EVENT_VIDEO_URL_INVALID: 'La URL del vídeo no es válida: tiene que ser una dirección https.',
+  EVENT_VIDEO_URL_UNPROTECTED:
+    'Ese vídeo no estaría protegido. Súbelo a la carpeta eventos-video/ del CDN y usa esa URL.',
+  EVENT_VIDEO_SIGNING_UNAVAILABLE:
+    'Este servidor no tiene configurada la firma de URLs del CDN (variables EVENT_VIDEO_*), así que no puede servir vídeos de eventos-video/.',
+  EVENT_VIDEO_AV1_REQUIRES_MP4:
+    'La versión AV1 necesita también la URL del MP4, que es la que se usa como alternativa.',
+};
+
+export const EVENT_VIDEO_FORM_COPY = {
+  mp4Label: 'URL del vídeo (MP4 H.264)',
+  av1Label: 'URL de la versión AV1 (opcional)',
+  av1Help:
+    'Se sirve a los dispositivos que decodifican AV1 por hardware; el resto recibe el MP4. El informe del script de optimización dice si compensa.',
+  unprotected:
+    'Este vídeo no estará protegido: solo lo están los de la carpeta eventos-video/ del CDN.',
+  testLabel: 'Evento de prueba',
+  testHelp:
+    'No se anuncia a los suscriptores de la newsletter ni aparece en la web pública (calendario, /live, sitemap). Solo se accede con el enlace directo.',
+  testBadge: 'Prueba',
+  confirmRealTitle: '¿Convertir en evento real?',
+  confirmRealMessage:
+    'El evento está programado: al guardarlo sin la marca de prueba se enviará el anuncio a los suscriptores del topic de eventos y aparecerá en la web pública.',
+  confirmRealAction: 'Guardar y anunciar',
+};
+
+export const EVENT_VIDEO_UNAVAILABLE = 'No se pudo reproducir el vídeo. Recarga la página para intentarlo de nuevo.';
