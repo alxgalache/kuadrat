@@ -1,21 +1,24 @@
 ## MODIFIED Requirements
 
 ### Requirement: Draw buyer registration
-The system SHALL allow users to register as draw participants via `POST /api/draws/:id/register-buyer`. Registration SHALL accept firstName, lastName, email, dni, and optional delivery/invoicing address fields. The system SHALL NOT generate or store a `bid_password`. If a buyer with the same email already exists for the same draw, the existing buyer record SHALL be returned instead of creating a duplicate. The client IP address SHALL be stored in the `ip_address` column.
+The system SHALL allow users to register as draw participants via `POST /api/draws/:id/register-buyer`. Registration SHALL require a `verificationToken` returned by `POST /api/draws/:id/verify-email` for the same draw, not older than 60 minutes. The email in the body SHALL be normalised and SHALL equal the email that token was issued for. Registration SHALL accept firstName, lastName, email, dni, and optional delivery/invoicing address fields. The system SHALL NOT generate or store a `bid_password`. If a buyer with the same email already exists for the same draw, the existing buyer record SHALL be returned instead of creating a duplicate. That is only possible after the token has proven ownership of that email. The client IP address SHALL be stored in the `ip_address` column.
 
 #### Scenario: New buyer registration
-- **WHEN** a user submits registration data for a draw they haven't registered for
+- **WHEN** a user submits registration data with a valid `verificationToken` for a draw they haven't registered for
 - **THEN** a new `draw_buyers` record SHALL be created with the provided DNI and IP address, and the response SHALL include the `drawBuyerId` (no password in response)
 
 #### Scenario: Duplicate email registration
-- **WHEN** a user submits registration with an email that already has a `draw_buyers` record for the same draw
+- **WHEN** a user submits registration with a valid `verificationToken` and an email that already has a `draw_buyers` record for the same draw
 - **THEN** the existing buyer record SHALL be returned without creating a duplicate
+
+#### Scenario: Registration without verification
+- **WHEN** `register-buyer` is called without a `verificationToken`, or with one that is unknown, expired, issued for another draw or issued for another email
+- **THEN** the system SHALL answer 403 with title `VERIFICATION_REQUIRED` and message «Verifica tu email antes de continuar»
+- **AND** no `draw_buyers` record SHALL be created or returned
 
 #### Scenario: Registration for non-active draw
 - **WHEN** a user attempts to register for a draw with status other than 'active'
 - **THEN** the system SHALL return a 400 error indicating the draw is not accepting participants
-
----
 
 ### Requirement: Draw participation modal
 The frontend SHALL display a multi-step participation modal (`DrawParticipationModal`) when the user clicks "Inscribirse en el sorteo" on the draw detail page. The modal SHALL open directly into the TERMS phase with the following flow: TERMS (accept conditions) → PERSONAL (name, email, DNI + email OTP verification) → DELIVERY (delivery address) → INVOICING (invoice address) → PAYMENT (Stripe Elements) → CONFIRM (review and confirm) → SUCCESS (auto-close). The CHOOSE and VERIFY phases SHALL NOT exist.
@@ -78,16 +81,14 @@ The system SHALL send a confirmation email to the participant after successful d
 ## MODIFIED Requirements
 
 ### Requirement: Confirm payment stores stripe_customer_id
-The draw payment confirmation flow SHALL pass and store the `stripe_customer_id` in `draw_authorised_payment_data` when confirming a SetupIntent.
+The draw payment confirmation flow SHALL store the Stripe customer of the confirmed SetupIntent in `draw_authorised_payment_data.stripe_customer_id`. The value SHALL be taken from the SetupIntent, never from the request body, and only after the SetupIntent passes the checks in `payment-confirmation-binding`.
 
-#### Scenario: Frontend sends customerId during payment confirmation
+#### Scenario: Frontend confirms the SetupIntent
 - **WHEN** a participant confirms payment in `DrawParticipationModal.js`
-- **THEN** the `handlePaymentSuccess` function calls `drawsAPI.confirmPayment(drawId, drawBuyerId, setupIntentId, stripeCustomerId)` including the `stripeCustomerId` obtained from the `setupStripePayment` step
+- **THEN** `handlePaymentSuccess` calls `drawsAPI.confirmPayment(drawId, drawBuyerId, setupIntentId)`, which sends `{ drawBuyerId, setupIntentId }` to `POST /api/draws/:id/confirm-payment`
 
-#### Scenario: API client includes customerId in request body
-- **WHEN** `drawsAPI.confirmPayment` is called with four parameters
-- **THEN** the API client sends `{ setupIntentId, customerId }` in the request body to `POST /api/draws/:drawId/buyers/:buyerId/confirm-payment`
+#### Scenario: Backend stores the SetupIntent's customer
+- **WHEN** the backend confirms a succeeded SetupIntent bound to that buyer and draw
+- **THEN** `draw_authorised_payment_data.stripe_customer_id` SHALL hold `setupIntent.customer`
+- **AND** a `customerId` field in the body, if present, SHALL be ignored
 
-#### Scenario: Backend stores customerId in payment data
-- **WHEN** the backend receives `customerId` in the confirm payment request body
-- **THEN** the value is stored in `draw_authorised_payment_data.stripe_customer_id` for the corresponding draw buyer

@@ -39,7 +39,7 @@ The system SHALL enforce that each DNI can only be used once per draw. The `draw
 ---
 
 ### Requirement: Email OTP verification
-The system SHALL verify participant email addresses by sending a 6-digit numeric OTP code via email. The OTP flow SHALL be triggered by `POST /api/draws/:id/send-verification` (which also validates DNI) and confirmed by `POST /api/draws/:id/verify-email`.
+The system SHALL verify participant email addresses by sending a 6-digit numeric OTP code via email. The OTP flow SHALL be triggered by `POST /api/draws/:id/send-verification` (which also validates DNI) and confirmed by `POST /api/draws/:id/verify-email`. Emails SHALL be normalised (trimmed, lower-cased) on the server in both endpoints. The code SHALL be generated with a CSPRNG and compared in constant time. A successful verification SHALL return a `verificationToken`: 32 random bytes, of which only the SHA-256 is stored, in `draw_email_verifications.token_hash`, alongside `verified_at`. That token is the only proof `register-buyer` accepts, and it is valid for 60 minutes from `verified_at`.
 
 #### Scenario: OTP sent successfully
 - **WHEN** `POST /api/draws/:id/send-verification` is called with a valid, unique DNI and email
@@ -51,7 +51,7 @@ The system SHALL verify participant email addresses by sending a 6-digit numeric
 
 #### Scenario: OTP verified successfully
 - **WHEN** `POST /api/draws/:id/verify-email` is called with the correct code within the expiry window
-- **THEN** the system SHALL mark the verification as complete and return success
+- **THEN** the system SHALL mark the verification as complete, store the token hash and `verified_at`, and return `{ success: true, verificationToken }`
 
 #### Scenario: OTP expired
 - **WHEN** `POST /api/draws/:id/verify-email` is called with a code that has expired (older than 10 minutes)
@@ -66,10 +66,12 @@ The system SHALL verify participant email addresses by sending a 6-digit numeric
 - **THEN** the system SHALL increment the attempts counter and return a 400 error with message "Código incorrecto"
 
 #### Scenario: Resend OTP
-- **WHEN** `POST /api/draws/:id/send-verification` is called again for the same email and draw
-- **THEN** the system SHALL invalidate any previous OTP for that email+draw combination and generate a new one
+- **WHEN** `POST /api/draws/:id/send-verification` is called again for the same email and draw, at least 30 seconds after the previous send
+- **THEN** the system SHALL invalidate any previous OTP and verification token for that email+draw combination and generate a new code
 
----
+#### Scenario: Resend within the cooldown
+- **WHEN** `POST /api/draws/:id/send-verification` is called again for the same email and draw less than 30 seconds after the previous send
+- **THEN** the system SHALL answer 400 `OTP_RESEND_TOO_SOON` and send nothing
 
 ### Requirement: Email uniqueness per draw
 The system SHALL enforce that each email address can only be used once per draw. When `POST /api/draws/:id/send-verification` is called, the server SHALL check for an existing `draw_buyers` record with the same email for the same draw before proceeding. A UNIQUE index SHALL exist on `(email, draw_id)` in the `draw_buyers` table for database-level enforcement.

@@ -105,7 +105,7 @@
 ## 8. Operación (manual, la hace el operador: no es tarea de implementación)
 
 - [x] 8.1 Configurar AWS según `docs/eventos-video/03-configurar-aws.md`: claves, *key group*, función, *behavior* y verificación del 403.
-- [ ] 8.2 Poner las variables en `api/.env.staging` (Mac mini) y en `api/.env` de producción (`05-entornos-y-pruebas.md`).
-- [ ] 8.3 Probar en preproducción con la lista de comprobación de `05`.
-- [ ] 8.4 Desplegar producción con `./deploy/deploy.sh` y hacer el ensayo con un evento marcado como prueba.
-- [ ] 8.5 Codificar el vídeo definitivo (`01` y `02`), subirlo a `eventos-video/` y crear el evento real.
+- [x] 8.2 Poner las variables en `api/.env.staging` (Mac mini) y en `api/.env` de producción (`05-entornos-y-pruebas.md`).
+- [x] 8.3 Probar en preproducción con la lista de comprobación de `05`.
+- [x] 8.4 Desplegar producción con `./deploy/deploy.sh` y hacer el ensayo con un evento marcado como prueba.
+- [x] 8.5 Codificar el vídeo definitivo (`01` y `02`), subirlo a `eventos-video/` y crear el evento real.

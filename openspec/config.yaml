@@ -9,9 +9,10 @@ context: |
   - Frontend: Next.js 16, React 19, JavaScript (NO TypeScript), TailwindCSS, App Router
   - Auth: Passport.js (passport-local + passport-jwt), JWT tokens
   - Payments: Stripe (primary), Revolut (legacy)
-  - Real-time: Socket.IO (auctions + event notifications)
-  - Streaming: LiveKit (live events, guest access)
-  - Email: Nodemailer with SMTP
+  - Real-time: Socket.IO (auctions, draws, and the authenticated per-event room of live events)
+  - Streaming: LiveKit or Agora, chosen per event (`events.provider`); Agora adds broadcast/meeting modes and cloud recording
+  - Email: Resend (default) or SMTP through Nodemailer, chosen by `EMAIL_PROVIDER`
+  - Shipping: Sendcloud for store products; per-artwork zones written by the admin shipping calculator for art
   - Logging: Pino (JSON in prod, pretty in dev)
   - Validation: Zod schemas
   - Monitoring: Sentry (client + server)
@@ -37,16 +38,16 @@ context: |
   - `api/middleware/` — errorHandler, authorization, adminAuth, validate, cache, timeout
   - `api/utils/response.js` — sendSuccess(), sendPaginated(), sendCreated()
   - `api/utils/transaction.js` — createBatch() for atomic multi-table operations
-  - `api/socket/` — Socket.IO handlers (auctions, events)
-  - `api/scheduler/auctionScheduler.js` — cron (every 30s) for auction lifecycle
+  - `api/socket/` — Socket.IO handlers (auctions, draws, events)
+  - `api/scheduler/` — cron jobs, started from `api/server.js` only (tests import `api/app.js`, never `server.js`)
 
   ### Frontend Key Structure
-  - `client/app/` — Next.js App Router pages (admin/, galeria/, subastas/, espacios/, orders/, seller/)
+  - `client/app/` — Next.js App Router pages (galeria/, tienda/, eventos/, live/, admin/, seller/, orders/)
   - `client/components/` — shared UI components
-  - `client/contexts/` — CartContext, AuthContext, NotificationContext, BannerNotificationContext
-  - `client/hooks/` — useDebounce, usePostalCodeValidation, useAuctionSocket, useEventSocket
+  - `client/contexts/` — AuthContext, CartContext, CookieConsentContext, NotificationContext, BannerNotificationContext
+  - `client/hooks/` — shared hooks (sockets, Agora room and devices, gallery, image loading, postal validation…)
   - `client/lib/api.js` — centralized API client (request deduplication, global 401/429 handling)
-  - `client/lib/constants.js` — app-wide magic number constants
+  - `client/lib/constants.js` — app-wide constants and all es-ES copy
 
   ## Backend Patterns (MUST follow)
   - Logging: `const logger = require('../config/logger')` — no console.log in production code
@@ -65,9 +66,15 @@ context: |
 
   ## Database Rules
   - Schema changes: update CREATE TABLE in `api/config/database.js` directly
-  - Never add ALTER TABLE blocks — the file must stay idempotent
+  - Existing databases (production) gain a new column through an idempotent `safeAlter('ALTER TABLE … ADD COLUMN …')` in `initializeDatabase()`, never a separate migration script
+  - CHECK constraints live only in CREATE TABLE (SQLite does not apply one added by ALTER TABLE to existing rows): validate the value with Zod too
   - Polymorphic postal refs: `ref_type` ('postal_code' | 'province' | 'country'),
     `postal_code_id` (set only for postal_code), `ref_value` (province name or country code)
+
+  ## Where the project's rationale lives
+  - `CLAUDE.md` (always loaded): stack, testing isolation rules, schema rules, cross-cutting invariants and an index of every area
+  - `.claude/rules/<area>/<topic>.md`: the non-obvious "why" of each area (traps, incidents, deliberate decisions), loaded when its files are read. Read the rule of every area a change touches before proposing it
+  - Testing: the backend Jest suite in `api/tests/` runs against a local SQLite file, never preproduction; `client/` has no test runner
 
 rules:
   proposal:
@@ -87,3 +94,4 @@ rules:
     - Order tasks so backend (schema → validators → controller → route) precedes frontend
     - Reference the exact file path for each task
     - Flag tasks that touch shared infrastructure (auth middleware, CartContext, DB schema) as high-risk
+    - End with a task that records the change's non-obvious rationale in the matching `.claude/rules/<area>/<topic>.md` (a new rule needs `paths:` and a line in the CLAUDE.md index), never as a new section of CLAUDE.md, and runs `node scripts/check-claude-rules.mjs`

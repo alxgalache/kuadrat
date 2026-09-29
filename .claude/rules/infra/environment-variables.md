@@ -1,0 +1,29 @@
+---
+paths:
+  - "api/config/env.js"
+  - "**/.env.example"
+  - "api/.env.test"
+  - "client/lib/env.js"
+  - "docker-compose*.yml"
+  - "{api,client}/Dockerfile*"
+---
+
+## Environment Variables
+
+All environment variables are validated at startup via `api/config/env.js`. See `api/.env.example` for full documentation. Key groups:
+* **Application:** PORT, NODE_ENV, LOG_LEVEL, CLIENT_URL
+* **Frontend environment identity:** NEXT_PUBLIC_APP_ENV (`preprod` | `production`) — build-time `NEXT_PUBLIC_*` var that distinguishes preprod from prod on the client. Required because Next.js forces `NODE_ENV=production` during `next build` and inlines it, so `NODE_ENV` cannot separate the two. Read via `client/lib/env.js` (`IS_PROD`); reserved for prod-only concerns (currently no consumer — its original one, Plausible Analytics, was removed). Unset defaults to `production` (fail-safe).
+* **Storefront buy/quote toggles:** NEXT_PUBLIC_PAYMENT_ENABLED and NEXT_PUBLIC_ART_BUY_AVAILABLE — build-time `NEXT_PUBLIC_*` vars read via `client/lib/constants.js` (`PAYMENT_ENABLED`, `ART_BUY_AVAILABLE`). Parsed `!== 'false'` (fail-safe: unset = enabled; only the literal `'false'` disables). `PAYMENT_ENABLED` gates the "Añadir a la cesta" button on both art (`galeria/p/[id]`) and other (`tienda/p/[id]`) detail pages. `ART_BUY_AVAILABLE` applies only to art. Art truth table: both `false` → no button; both `true` → "Añadir a la cesta"; otherwise → "Solicitar cotización" (opens `ArtProductQuoteModal`, posts to `/api/inquiries/quote`). When the quote button shows, the inquiry CTA ("haz click aquí") is hidden.
+* **Database:** TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
+* **Auth:** JWT_SECRET, JWT_EXPIRES_IN
+* **Email:** SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM, BUSINESS_EMAIL (optional; falls back to EMAIL_FROM — used by the art product inquiry form as the commercial inbox)
+* **Payments:** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, PAYMENT_PROVIDER
+* **LiveKit:** LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+* **Agora:** AGORA_APP_ID, AGORA_APP_CERTIFICATE (RTC tokens), AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET (moderation REST). All server-side — the App ID reaches the client in the token endpoint response (no `NEXT_PUBLIC_*`, no Docker build-args). The Agora console project MUST have **Co-host authentication** enabled or subscriber tokens could publish. Optional whiteboard phase: AGORA_WHITEBOARD_APP_IDENTIFIER, AGORA_WHITEBOARD_AK, AGORA_WHITEBOARD_SK, AGORA_WHITEBOARD_REGION (default `eu`) — empty hides the host's whiteboard toggle. The whiteboard SDK (`white-web-sdk`) loads its modules from `blob:` URLs, so the `client/next.config.js` CSP MUST allow `blob:` in `script-src` and `connect-src` (plus the existing `worker-src`); `*.netless.link` is in `font-src` and `*.agoralab.co` in `connect-src` to silence its network noise. The console warning `Cannot find module 'agora-foundation/lib/logger'` / "fallback to Argus" is **benign and expected**: `white-web-sdk@2.16.56` peer-depends on `agora-foundation@3.11.1`, unpublished on npm (only `3.11.0` exists) — do NOT force a version; the SDK falls back to its Argus logger.
+* **Agora Cloud Recording:** AGORA_RECORDING_S3_BUCKET, AGORA_RECORDING_S3_REGION (default `eu-west-1`; only the EU regions in `api/utils/agoraStorageRegions.js`, never `eu-south-2`), AGORA_RECORDING_S3_ACCESS_KEY, AGORA_RECORDING_S3_SECRET_KEY. Optional: all empty disables recording; **partially set fails startup**, and so does setting them without the four `AGORA_*` credentials. The key belongs to a put-only IAM user and is handed to Agora, never used by the app. Server-side only, no `NEXT_PUBLIC_*`. See `docs/grabaciones-eventos.md`.
+* **Event video over CloudFront:** EVENT_VIDEO_CDN_URL (the distribution origin, https, no path), EVENT_VIDEO_CF_KEY_PAIR_ID (the CloudFront public key ID of THIS environment), EVENT_VIDEO_CF_PRIVATE_KEY_B64 (its RSA private key, `base64 -w0`). All three or none: none disables signing; **partially set, a malformed origin or a non-RSA key fails startup**. Not an AWS credential (it can only sign URLs of the `eventos-video` key group). One key pair per environment. Server-side only, no `NEXT_PUBLIC_*`. See `docs/eventos-video/05-entornos-y-pruebas.md`.
+* **Sendcloud:** SENDCLOUD_API_KEY, SENDCLOUD_API_SECRET (both serve OAuth2 *and* Basic), SENDCLOUD_AUTH_MODE (`auto` | `oauth2` | `basic`, default `auto`, invalid value fails startup), SENDCLOUD_WEBHOOK_SECRET, SENDCLOUD_ENABLED_ART (**must stay `false`** — art checkout reads the zones the calculator writes), SENDCLOUD_ENABLED_OTHERS, SENDCLOUD_AUTO_CONFIRM_DAYS, SENDCLOUD_MAX_ANNOUNCEMENT_RETRIES. All server-side and delivered through `env_file: ./api/.env`; no compose `build.args` and no `NEXT_PUBLIC_*` counterpart except the two `NEXT_PUBLIC_SENDCLOUD_ENABLED_*` flags the navbar reads.
+* **NTAG 424 DNA (CoA):** NTAG424_SYSTEM_ID, NTAG424_K_PICC, NTAG424_MASTER_KEY, IP_HASH_SALT — critical secrets validated via `requiredHex()`. Custody documented in `scripts/nfc-personalization/README.md §7`.
+* **Captcha (Cloudflare Turnstile):** TURNSTILE_SECRET (api, optional — when empty the inquiry endpoint refuses with 503 CAPTCHA_UNAVAILABLE), NEXT_PUBLIC_TURNSTILE_SITE_KEY (client, optional — when empty the inquiry CTA on the art product page is hidden). Used by the art product inquiry form. Test keys ("always passes") are documented in `.env.example`.
+* **Sentry:** SENTRY_TRACES_SAMPLE_RATE, SENTRY_PROFILES_SAMPLE_RATE, SENTRY_ENABLE_DEV (api); NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, NEXT_PUBLIC_SENTRY_ENABLE_DEV (client). See `.claude/rules/infra/sentry.md`.
+* **Rate Limiting:** GENERAL_RATE_LIMIT_*, AUTH_RATE_LIMIT_*, COA_VERIFY_RATE_LIMIT_*, INQUIRY_RATE_LIMIT_*, etc. Note: `*_WINDOW_SECONDS` is multiplied by 60 in the limiter — values are effectively in MINUTES (legacy naming).

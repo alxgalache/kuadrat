@@ -48,14 +48,14 @@ api/uploads/**/*
 docker-volumes/
 data/
 
-# Claude
-.claude/
+# Claude — local settings, generated skills and commands stay out of git.
+# .claude/rules/ is project knowledge split out of CLAUDE.md and IS versioned;
+# scripts/check-claude-rules.mjs fails if this exception is ever lost.
+.claude/*
+!.claude/rules/
 
 # Gemini
 .gemini/
-
-# Github Copilot
-.github/
 
 # NFC personalization subproject (scripts/nfc-personalization/)
 # Already covered by global .env and node_modules/ rules above, listed

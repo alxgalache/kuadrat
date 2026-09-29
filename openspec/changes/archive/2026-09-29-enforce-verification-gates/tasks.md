@@ -171,12 +171,12 @@
 
 ## 10. Verificación manual y despliegue
 
-- [ ] 10.1 Matriz manual en Chrome Android, Firefox escritorio y Safari iOS, con un email nuevo en cada prueba:
+- [x] 10.1 Matriz manual en Chrome Android, Firefox escritorio y Safari iOS, con un email nuevo en cada prueba:
   - recargar en el paso del código muestra «Acceder»;
   - el registro completo muestra «Ya tienes acceso» tras recargar;
   - «Acceder con contraseña» en un segundo navegador hace que el primero muestre el mensaje `SESSION_REPLACED` y «Acceder»;
   - una contraseña incorrecta no expulsa a la portada;
   - el panel de admin muestra «Sin verificar».
-- [ ] 10.2 Sorteo y subasta de preproducción: flujo completo con el token de verificación. `register-buyer` sin token rechazado desde `curl`.
-- [ ] 10.3 Antes de desplegar, ejecutar contra producción la consulta de duplicados de `stripe_payment_intent_id` (debe devolver cero filas) y la de asistentes sin verificar en eventos futuros (para avisarles si se decide).
-- [ ] 10.4 Desplegar API y cliente juntos con `./deploy/deploy.sh`. En producción, comprobar que `/register` no devuelve `accessToken` y que recargar en el paso del código muestra «Acceder».
+- [x] 10.2 Sorteo y subasta de preproducción: flujo completo con el token de verificación. `register-buyer` sin token rechazado desde `curl`.
+- [x] 10.3 Antes de desplegar, ejecutar contra producción la consulta de duplicados de `stripe_payment_intent_id` (debe devolver cero filas) y la de asistentes sin verificar en eventos futuros (para avisarles si se decide).
+- [x] 10.4 Desplegar API y cliente juntos con `./deploy/deploy.sh`. En producción, comprobar que `/register` no devuelve `accessToken` y que recargar en el paso del código muestra «Acceder».

@@ -123,11 +123,10 @@ export default function AuctionCalendar({ selectedDate, onSelectDate, onMonthCha
   const handlePrevMonth = () => cambiarMes(-1)
   const handleNextMonth = () => cambiarMes(1)
 
+  // Mes y a\u00F1o se componen aparte: con `year: 'numeric'` es-ES devuelve
+  // \u00ABseptiembre de 2026\u00BB, y aqu\u00ED se quiere \u00ABSeptiembre 2026\u00BB.
   const monthLabel = listo
-    ? new Date(viewYear, viewMonth, 1).toLocaleDateString('es-ES', {
-        month: 'long',
-        year: 'numeric',
-      })
+    ? `${new Date(viewYear, viewMonth, 1).toLocaleDateString('es-ES', { month: 'long' })} ${viewYear}`
     : '\u00A0'
 
   return (

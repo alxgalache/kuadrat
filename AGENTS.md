@@ -5,7 +5,7 @@ Local development points at the **preproduction** Turso database and at the real
 * Run the backend suite with `npm test` from `api/` (or `docker compose exec api npm test`). It uses a local SQLite file (`api/.env.test` → `file:./.tmp/test.db`), recreated and deleted on every run.
 * `api/config/database.js` aborts the process if `NODE_ENV=test` and the database URL is not `file:`. If you hit that error, fix the environment — never work around the guard.
 * Email is inert under test: `sendMail()` records to an in-memory outbox instead of calling Resend or SMTP. Assert with `emailService.__getOutbox()`.
-* Import `api/app.js` (via `tests/helpers/app.js`) in tests, never `api/server.js` — the latter opens a port and starts the five production schedulers.
+* Import `api/app.js` (via `tests/helpers/app.js`) in tests, never `api/server.js` — the latter opens a port and starts every production scheduler.
 * `api/.env.test` is versioned and holds dummy values only. Never put a real credential in it.
 
 Full rationale in `CLAUDE.md` § Testing.
@@ -19,7 +19,7 @@ Daily dump of the production Turso database to S3 at 04:00 `Europe/Madrid`. Guid
 * The backup **never deletes anything**. Retention is an S3 lifecycle rule (`daily/` expires at 15 days, `monthly/` never), and the IAM policy grants only `s3:PutObject`. Do not add delete calls or delete permissions.
 * Production only. Off by default, forced off under `NODE_ENV=test`, started from `server.js` alone. `.env.test` sets `DB_BACKUP_ENABLED=true` on purpose — never remove it to "fix" a test.
 
-Full rationale in `CLAUDE.md` § Database Backups.
+Full rationale in `.claude/rules/infra/db-backups.md`.
 
 ## LiveKit Documentation
 

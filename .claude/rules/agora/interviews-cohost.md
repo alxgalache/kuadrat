@@ -1,0 +1,39 @@
+---
+paths:
+  - "api/services/{eventService,agoraService}.js"
+  - "api/socket/eventSocket.js"
+  - "api/controllers/eventController.js"
+  - "api/routes/eventRoutes.js"
+  - "client/components/AgoraLiveRoom.js"
+  - "client/components/events/{BroadcastStage,CoHostControls}.js"
+  - "client/hooks/{useAgoraRoom,useHostMediaControls,useEventRoomSocket}.js"
+  - "api/tests/{agoraBroadcastCohost,eventSocketCohost,eventChatAdminModeration}.test.js"
+---
+
+## Interviews in Agora broadcast events (co-presenter and stage)
+
+The admin can interview the host on camera in any `provider='agora'` + `interaction_mode='broadcast'` event, with no flag and no new column. See `openspec/changes/archive/2026-09-12-agora-interview-cohost`.
+
+* **Co-presenter = `is_staff = 1` AND the user's CURRENT `role = 'admin'`, in `broadcast` only.** One predicate, `eventService.isBroadcastCohost`, consumed by `getViewerToken`, `renewToken` and `join_event_room`. The role is re-checked on every call because the staff session lives in `localStorage` and does not expire with the role. The co-presenter gets a `publisher` token on their own attendee uid (never 1 or 2) plus `coHost: true`, and **only** microphone, camera, **screen share**, speakers and the layout switch: `CoHostControls`, a presentation of the same single `useHostMediaControls` instance. Whiteboard, effects, quality and ending the stream stay with the host — two operators produce incompatible states. Screen share is the exception because it cannot collide (next bullet), and it exists so the interviewer can put a screen **with its audio** on stage when the host's browser cannot share audio.
+* **One Agora client publishes ONE video track** (`CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS` in 4.24.6). That is why the old screen share *swapped* the camera out, and why the broadcast screen now goes on a **second `AgoraRTCClient` under the reserved uid 2** (`HOST_SCREEN_UID`), with a token from `POST /api/events/:id/screen-token`. The camera never leaves the main client. `meeting` keeps the one-client swap (`screenShareMode: 'swap'` in `useAgoraRoom`).
+  * **uid 2 is the STAGE screen, not the host's.** The host and the co-presenter both share through it, one at a time; the name `HOST_SCREEN_UID` was kept so `BroadcastStage`, the low-stream logic and the recording's `maxResolutionUid: '2'` needed no change. A uid 3 for the co-presenter was rejected: two content sources, a priority rule between them, a second big window in the recording — and 3 is the recorder's.
+  * **Exclusivity in three layers.** Presence (`screenSharing` on the host or co-presenter entry → `screenShareHeldBy` → the toggle refuses with the reason before the browser picker opens); the server (`screen-token` answers **409 `SCREEN_SHARE_IN_USE`** while `eventSocket.getStageScreenSharer` names the other presenter, and keeps renewing whoever holds it); and Agora itself, which on a second join with uid 2 drops the earlier client with `UID_CONFLICT` — that client cleans up and **re-subscribes** to the screen that replaced it, since it had been skipping uid 2 as its own.
+  * **A page skips uid 2 only while it publishes uid 2 itself** (`screenClientRef.current`), never "because it is the host": when the co-presenter shares, the host must see it. Downloading one's own screen would be billed and, now that it carries audio, would echo.
+  * The token accepts the host by JWT or the co-presenter by `isBroadcastCohost` over their staff row (`getStaffAttendeeByEmail(event, req.user.email)`); an admin who never entered the event, or a demoted one, gets 403. `screen_share` is accepted from both and ignored from anyone else.
+* **The stage is composed in each browser** (`client/components/events/BroadcastStage.js`) and is identical for every role:
+  * 1 camera → 100 %, uncropped.
+  * 2 cameras → `split` (host left, co-presenter right, each cropped to its half) or `pip` (host at 100 %, co-presenter bottom-right).
+  * Whiteboard or screen on stage → content at 100 %, cameras in the bottom-right corner, **always side by side** there whatever layout was chosen. The chosen layout is not touched and comes back when the content ends.
+
+  The layout lives in memory in `eventSocket.js`: `stage_layout`, accepted from the co-presenter only, delivered in the join ACK, dropped on `event_ended` — the same lifecycle as the whiteboard toggle. The whiteboard stays the stage's **first child** so it never moves in the React tree (moving it rejoins the fastboard room). Over the whiteboard, the corner box sits above fastboard's zoom/page controls (`.fastboard-bottom-right`).
+* **Staff are never moderation targets.** `resolveAgoraAttendee` (host and admin promote/demote), `banFromChat` and `reportSpam` answer 400 before any write. Presence exposes `staff` (not only `coHost`), so no client offers the chat menu over the admin in a meeting either.
+* **The admin bans from the chat like the host** (`event-chat-admin-moderation`), co-presenter or not, in Agora and LiveKit rooms. `banFromChat` always authorised `req.user.role === 'admin'` — read from the `users` row passport loads, so it is the CURRENT role — and the gap was only the client menu (`canModerate = isHost || isAdmin`, with `isAdmin` from `useAuth` in `EventDetail`). Every effective ban logs `{ eventId, identity, actorUserId, actorRole }`. Covered by `api/tests/eventChatAdminModeration.test.js`. A demote creates a 24 h kicking rule, so one click on the interviewer's tile would have silenced them for the day. The socket also exempts the co-presenter from the spam auto-ban, which bans email **and IP** — for an in-person interview, the studio's.
+* **Only the event host is host.** The admin branches of `renewToken` (a `HOST_UID` token) and `join_event_room` (an `isHost` entry on uid 1) are gone: a second host presence corrupts the stage and unlocks host-only socket signals.
+* **Billing is by the SUM of pixels each viewer receives**, and HD ends exactly at 1280 × 720, so any second video crosses it. Two 720p cameras = Full HD, 2.25× — **accepted by decision**. To keep screen share and whiteboard in the band they already had:
+  * cameras publish in dual stream with a **480 × 270** low stream (`AGORA_LOW_STREAM_PARAMETER`) — the SDK's default low stream is 160 × 120, 4:3, the same trap as the camera's `480p_1`;
+  * viewers request the low stream **only** for cameras drawn in the corner (`stageStreamTypes` → `room.setRemoteStreamTypes`);
+  * the broadcast screen is capped at **1792 × 1008** (`AGORA_SCREEN_ENCODER_BROADCAST`). Without `encoderConfig` the SDK uses `1080p_2` = 1920 × 1080 @ 30, which alone fills Full HD to the last pixel. Screen + two low streams = 2,065,536 px ≤ 2,073,600.
+
+  **A host who picks 1080p during a two-camera interview crosses into 2K.** Safari 17.2 cannot switch to the low stream, so those viewers pay the high one.
+* **Audio procedure for interviews, which no code can enforce.** The host emits without echo cancellation by default (see «Agora Host Audio», `.claude/rules/agora/host-audio.md`), so in a remote interview the host wears an earpiece, or the event ticks «El host escuchará a los invitados por altavoz». The co-presenter's microphone keeps the browser 3A, because they hear the host through speakers. In the same room there must be one audio chain: the admin keeps their microphone off, or both wear headphones. A screen shared **with audio** by the co-presenter reaches the host like any remote audio: same rule, earpiece or the checkbox, or it returns through the host's microphone.
+* **Known blind spot:** the stage, the co-presenter controls and the second screen client have no automated test — `client/` still has no test runner. The API half is covered by `api/tests/agoraBroadcastCohost.test.js` and `api/tests/eventSocketCohost.test.js`, which drives the socket through a recording fake `io` with no `socket.io-client` dependency.

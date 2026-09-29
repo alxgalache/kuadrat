@@ -1007,7 +1007,7 @@ export default function EventDetail({
                       onClick={() => setModalOpen(true)}
                       className="flex w-full items-center justify-center rounded-md bg-black px-8 py-3 text-base font-medium text-white hover:bg-gray-900"
                     >
-                      Acceder
+                      {event.status === 'active' ? 'Acceder' : 'Registrarse'}
                     </button>
                   </div>
                 )}

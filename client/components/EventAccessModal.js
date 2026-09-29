@@ -509,7 +509,7 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
   )
 
   const titles = {
-    [PHASE.CHOOSE]: 'Acceder al evento',
+    [PHASE.CHOOSE]: event?.status === 'active' ? 'Acceder al evento' : 'Registro en el evento',
     [PHASE.REGISTER]: 'Registro',
     [PHASE.VERIFY_EMAIL]: 'Verificar email',
     [PHASE.VERIFY_PASSWORD]: 'Acceder con contraseña',
