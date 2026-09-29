@@ -627,6 +627,11 @@ async function initializeDatabase() {
         -- sin él. Ni esta columna ni video_url salen en las respuestas públicas
         -- (toPublicEvent): las fuentes se entregan firmadas por /video-token
         video_url_av1 TEXT,
+        -- Duración real del MP4 de video_url, medida por la API en su caja mvhd
+        -- (live-event-access-hardening). Fija el fin del pase y, cinco minutos
+        -- después, el cierre del chat y del evento. NULL si no se pudo medir, y
+        -- entonces manda duration_minutes. Ver api/utils/videoPass.js
+        video_duration_seconds REAL,
         max_attendees INTEGER,
         status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','active','finished','cancelled')),
         livekit_room_name TEXT,
@@ -1005,6 +1010,8 @@ async function initializeDatabase() {
     // version, and every pre-existing event is a real one.
     await safeAlter('ALTER TABLE events ADD COLUMN video_url_av1 TEXT');
     await safeAlter('ALTER TABLE events ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0');
+    // live-event-access-hardening — no backfill: measured on the next save or start.
+    await safeAlter('ALTER TABLE events ADD COLUMN video_duration_seconds REAL');
     await safeAlter('ALTER TABLE events ADD COLUMN agora_channel_name TEXT');
     await safeAlter('ALTER TABLE events ADD COLUMN whiteboard_room_uuid TEXT');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN agora_uid INTEGER');

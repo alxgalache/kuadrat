@@ -16,6 +16,7 @@ const { sendEventVerificationEmail, sendEventConfirmationEmail } = require('../s
 const { normalizeEmail } = require('../utils/emailOtp');
 const cloudfrontSigner = require('../utils/cloudfrontSigner');
 const { classifyVideoUrl, videoTokenExpiry } = require('../utils/eventVideoSources');
+const { passEndsAt, chatClosesAt, isPassClosed } = require('../utils/videoPass');
 
 function getClientIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
@@ -83,7 +84,17 @@ function toPublicEvent(event) {
     video_url_av1: _videoUrlAv1,
     ...publicFields
   } = event;
-  return { ...publicFields, has_video: Boolean(videoUrl) };
+  // The closing timetable of a running video pass (live-event-access-hardening):
+  // every participant counts down to the same instant (utils/videoPass.js).
+  const running = event.format === 'video' && event.status === 'active';
+  const endsAt = running ? passEndsAt(event) : null;
+  const closesAt = running ? chatClosesAt(event) : null;
+  return {
+    ...publicFields,
+    has_video: Boolean(videoUrl),
+    video_ends_at: endsAt === null ? null : new Date(endsAt).toISOString(),
+    chat_closes_at: closesAt === null ? null : new Date(closesAt).toISOString(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1206,6 +1217,11 @@ const getVideoToken = async (req, res, next) => {
     // URL would only serve to download the video.
     if (event.status !== 'active') {
       throw new ApiError(400, 'El evento no está disponible', 'Error');
+    }
+    // Past the chat closing the event is over, even in the seconds before the
+    // closing scheduler marks it finished (live-event-access-hardening)
+    if (isPassClosed(event)) {
+      throw new ApiError(400, 'El evento ha finalizado', 'EVENT_PASS_CLOSED');
     }
 
     let subject = null;

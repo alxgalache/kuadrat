@@ -200,6 +200,34 @@ curl -s https://api.pre.140d.art/api/events/<slug> | jq '.event | {has_video, vi
       (`curl -sI "https://cdn.140d.art/eventos-video/…mp4"`) → **403**.
 - [ ] Tras «Finalizar» el evento, la página ya no ofrece el vídeo.
 
+**Visitante sin registro** (desde un navegador donde no te has registrado en
+este evento, por ejemplo una ventana privada):
+
+- [ ] Con el pase en curso, la página muestra la ficha con «Acceder», **no** la
+      sala ni el chat.
+- [ ] Si ese navegador tiene guardada una sesión de usuario antigua (o del
+      host), se ve un momento «Comprobando acceso…» y después la ficha con
+      «Acceder».
+
+**Chat** (con dos asistentes registrados):
+
+- [ ] Cada mensaje sale con el nombre y apellidos del registro, nunca
+      «Anónimo».
+
+**Cierre del pase** (usa un vídeo corto, como el `prueba.mp4` de 10 s de la
+guía 03, para no esperar):
+
+- [ ] Al acabar el vídeo aparece en el chat el aviso «El vídeo ha terminado» con
+      la cuenta atrás.
+- [ ] Al llegar a 0:00, todos ven el modal «Evento finalizado»; «Aceptar» recarga
+      y el evento aparece finalizado.
+- [ ] Quien intente entrar después ya no ve la sala.
+
+**Contraseña de preproducción:**
+
+- [ ] Cambia `TEST_ACCESS_PASSWORD` (API) y recrea el contenedor: un navegador
+      que ya había entrado vuelve a pedir la contraseña.
+
 **Evento de prueba** (también se puede probar aquí; en preproducción el
 marketing va a un segmento de pruebas):
 
@@ -256,7 +284,10 @@ Para el evento real, **crea uno nuevo sin la marca**. No conviertas el de prueba
 - [ ] Vídeos definitivos subidos a `eventos-video/<evento>/` (guía 03, paso 8).
 - [ ] Evento real creado **sin** «Evento de prueba», con las dos URLs y
       **duración = duración del vídeo + unos 10 minutos** (con este vídeo,
-      `45`).
+      `45`). Al guardarlo, la API mide la duración real del MP4 y es la que
+      manda. La duración del formulario solo se usa si esa medición falla (por
+      ejemplo, si el vídeo aún no estaba subido; entonces se reintenta al pulsar
+      «Iniciar»).
 - [ ] Al guardarlo como «Programado» sale el anuncio a los suscriptores (esto sí
       se quiere).
 
@@ -266,9 +297,13 @@ Para el evento real, **crea uno nuevo sin la marca**. No conviertas el de prueba
       el instante de la pulsación, no a la hora que figura en el evento.
 - [ ] Abre el evento como asistente en otro dispositivo para vigilarlo.
 
-**Al terminar:**
+**Al terminar (automático):**
 
-- [ ] Pulsa **«Finalizar»**.
+- Cuando acaba el vídeo, el chat sigue abierto **5 minutos**, con un aviso y una
+  cuenta atrás visibles para todos.
+- Al llegar a cero, cada participante ve el modal «Evento finalizado», y el
+  servidor finaliza el evento solo (en 15 s como mucho). **No hace falta pulsar
+  «Finalizar»**, aunque se puede hacer antes si se quiere cortar.
 - [ ] Si el vídeo no se va a reutilizar, bórralo de S3 más adelante.
 
 ## 7 · Problemas frecuentes

@@ -6,6 +6,8 @@ import dynamic from 'next/dynamic'
 import { eventsAPI, authorsAPI, getProtectedEventVideoUrl } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import useEventSocket from '@/hooks/useEventSocket'
+import useEventRoomSocket from '@/hooks/useEventRoomSocket'
+import { InformationCircleIcon } from '@heroicons/react/20/solid'
 import EventCountdown from '@/components/EventCountdown'
 import EventAccessModal from '@/components/EventAccessModal'
 import AuthorModal from '@/components/LazyAuthorModal'
@@ -29,6 +31,8 @@ import {
   EVENT_VIDEO_RECOVERY,
   EVENT_VIDEO_EXPIRY_MARGIN_MS,
   EVENT_VIDEO_UNAVAILABLE,
+  EVENT_PASS_COPY,
+  VIDEO_ROOM_DEFINITIVE_DENIALS,
 } from '@/lib/constants'
 import { getStoredSession, storeSession, clearStoredSession } from '@/lib/eventSession'
 import { pickVideoSource } from '@/lib/eventVideoSource'
@@ -127,6 +131,17 @@ export default function EventDetail({
   // Agora credentials: { appId, channel, uid, rtcToken, interactionMode }
   const [agoraCreds, setAgoraCreds] = useState(null)
   const [isHost, setIsHost] = useState(false)
+  // The server refused the host path: the `user` kept in localStorage is stale
+  // (expired JWT, a session left over from another person). From then on this
+  // browser is treated as a visitor (live-event-access-hardening).
+  const [hostRejected, setHostRejected] = useState(false)
+  // Pass of a video event: the player reported the end, the room was closed
+  // (countdown over or event finished), and why the final modal opened
+  const [videoFinished, setVideoFinished] = useState(false)
+  const [videoRoomClosed, setVideoRoomClosed] = useState(false)
+  const [videoRoomError, setVideoRoomError] = useState(false)
+  const [endedMessage, setEndedMessage] = useState(null)
+  const [clockNow, setClockNow] = useState(null)
   const [kicked, setKicked] = useState(false)
   const [hostAuthor, setHostAuthor] = useState(null)
   const [hostModalOpen, setHostModalOpen] = useState(false)
@@ -175,7 +190,7 @@ export default function EventDetail({
     !(event && user.id === event.host_user_id)
 
   // Real-time event status and chat via Socket.IO
-  const { eventStarted, eventEnded, chatMessages, sendChatMessage } = useEventSocket(event?.id)
+  const { eventStarted, eventEnded } = useEventSocket(event?.id)
 
   // Ask the server whether the stored session still gives access
   // (enforce-verification-gates). A definitive rejection — the token was
@@ -194,10 +209,15 @@ export default function EventDetail({
       setSessionNotice('')
       setHasAccess(true)
     } catch (err) {
+      // Only a network failure, a 5xx or a 429 is transient. Any other refusal
+      // from the server — a 404, a 400 — used to open the room as well
+      // (live-event-access-hardening); now it drops the session.
       const reason = SESSION_REJECTION_MESSAGES[err?.title]
-      if (reason) {
+      const status = err?.status
+      const transient = !status || status >= 500 || status === 429
+      if (reason || !transient) {
         clearStoredSession(event.id)
-        setSessionNotice(reason)
+        setSessionNotice(reason || SESSION_REJECTION_MESSAGES.SESSION_INVALID)
         setHasAccess(false)
       } else {
         setHasAccess(true)
@@ -267,6 +287,87 @@ export default function EventDetail({
     loadEvent()
   }, [loadEvent])
 
+  // ── Video pass room (live-event-access-hardening) ──────────────────────────
+  // The room of a video pass is shown ONLY once the authenticated Socket.IO
+  // room accepts us: that join re-validates the attendee credential (verified,
+  // nothing owed, not banned) or the host JWT on the server. Browser state
+  // alone — a stored session, the `user` object — used to be enough to open it,
+  // chat included, to someone never registered for this event.
+  const effectiveIsHost = isHost && !hostRejected
+  const isVideoPass = event?.format === 'video'
+  const joinAsHost = effectiveIsHost && !hasAccess
+  const videoRoomWanted = !!event && isVideoPass && event.status === 'active' && (hasAccess || effectiveIsHost)
+  const videoSession = useMemo(
+    () => (event?.id && hasAccess ? getStoredSession(event.id) : null),
+    [event?.id, hasAccess]
+  )
+  const joinAsHostRef = useRef(joinAsHost)
+  joinAsHostRef.current = joinAsHost
+
+  // Close the pass for this participant: the room disconnects and the same
+  // «Evento finalizado» modal as a finished live event opens
+  const closeVideoPass = useCallback(() => {
+    setVideoRoomClosed(true)
+    setEndedMessage(EVENT_PASS_COPY.endedMessage)
+    setStreamEndedModalOpen(true)
+  }, [])
+
+  const handleVideoRoomDenied = useCallback(({ reason } = {}) => {
+    if (VIDEO_ROOM_DEFINITIVE_DENIALS.includes(reason)) {
+      if (joinAsHostRef.current) {
+        setHostRejected(true)
+        return
+      }
+      if (event?.id) clearStoredSession(event.id)
+      setSessionNotice(reason === 'Credenciales inválidas' ? SESSION_REJECTION_MESSAGES.SESSION_INVALID : reason)
+      setHasAccess(false)
+      return
+    }
+    if (reason === 'El evento ha finalizado') {
+      closeVideoPass()
+      return
+    }
+    if (reason === 'El evento no está activo') {
+      loadEvent()
+      return
+    }
+    setVideoRoomError(true)
+  }, [event?.id, closeVideoPass, loadEvent])
+
+  const videoRoom = useEventRoomSocket({
+    eventId: event?.id,
+    isHost: joinAsHost,
+    attendeeId: videoSession?.attendeeId || null,
+    accessToken: videoSession?.accessToken || null,
+    enabled: videoRoomWanted && !videoRoomClosed,
+    onJoinDenied: handleVideoRoomDenied,
+  })
+
+  // Closing timetable, the same instants for every participant (the server
+  // computes them from the measured video duration: api/utils/videoPass.js)
+  const passEndsAtMs = event?.video_ends_at ? Date.parse(event.video_ends_at) : null
+  const chatClosesAtMs = event?.chat_closes_at ? Date.parse(event.chat_closes_at) : null
+
+  useEffect(() => {
+    if (!videoRoom.joined || chatClosesAtMs === null || videoRoomClosed) return
+    const tick = () => setClockNow(Date.now() + serverTimeOffset)
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [videoRoom.joined, chatClosesAtMs, videoRoomClosed, serverTimeOffset])
+
+  // Countdown over: close for this participant now; the server finishes the
+  // event within 15 s and meanwhile already refuses the room and the video
+  useEffect(() => {
+    if (videoRoomClosed || !videoRoom.joined || chatClosesAtMs === null || clockNow === null) return
+    if (clockNow >= chatClosesAtMs) closeVideoPass()
+  }, [clockNow, chatClosesAtMs, videoRoomClosed, videoRoom.joined, closeVideoPass])
+
+  const passOver = videoFinished || (passEndsAtMs !== null && clockNow !== null && clockNow >= passEndsAtMs)
+  const closingSecondsLeft = passOver && !videoRoomClosed && chatClosesAtMs !== null && clockNow !== null
+    ? Math.max(0, Math.ceil((chatClosesAtMs - clockNow) / 1000))
+    : null
+
   // When server broadcasts event_started, re-fetch to trigger auto-connect flow
   useEffect(() => {
     if (eventStarted) {
@@ -276,12 +377,19 @@ export default function EventDetail({
 
   // When server broadcasts event_ended, show modal if viewer
   useEffect(() => {
-    if (eventEnded && !isHost && (livekitToken || agoraCreds)) {
+    if (!eventEnded) return
+    // Video pass: everyone in the room gets the same modal, the host included
+    // (the scheduler or the admin finished it, not them)
+    if (isVideoPass && (videoRoom.joined || videoRoomClosed)) {
+      if (!videoRoomClosed) closeVideoPass()
+      return
+    }
+    if (!isHost && (livekitToken || agoraCreds)) {
       setStreamEndedModalOpen(true)
-    } else if (eventEnded) {
+    } else {
       loadEvent()
     }
-  }, [eventEnded, isHost, livekitToken, agoraCreds, loadEvent])
+  }, [eventEnded, isHost, livekitToken, agoraCreds, loadEvent, isVideoPass, videoRoom.joined, videoRoomClosed, closeVideoPass])
 
   // Validate the stored session once per event — its presence alone used to
   // be taken as access, which is how an unverified registration read as «Ya
@@ -415,7 +523,8 @@ export default function EventDetail({
 
   useEffect(() => {
     if (!event || event.format !== 'video' || event.status !== 'active' || !event.has_video) return
-    if (!hasAccess && !isHost) return
+    // Only after the server accepted us into the room
+    if (!videoRoom.joined) return
     if (videoTokenFetchedForRef.current === event.id) return
     videoTokenFetchedForRef.current = event.id
     setVideoUnavailable(false)
@@ -425,7 +534,7 @@ export default function EventDetail({
         console.error('Error getting video sources:', err)
         videoTokenFetchedForRef.current = null
       })
-  }, [event?.id, event?.format, event?.status, event?.has_video, hasAccess, isHost, requestVideoSource])
+  }, [event?.id, event?.format, event?.status, event?.has_video, videoRoom.joined, requestVideoSource])
 
   // El reproductor agotó sus reintentos con la fuente actual. Orden:
   //   1. firma a punto de caducar o caducada → fuentes nuevas, mismo códec;
@@ -497,7 +606,7 @@ export default function EventDetail({
           window.location.reload()
         }}
         title="Evento finalizado"
-        message="El anfitrión ha finalizado el stream de este evento."
+        message={endedMessage || 'El anfitrión ha finalizado el stream de este evento.'}
         confirmText="Aceptar"
         cancelText={null}
         type="warning"
@@ -528,8 +637,26 @@ export default function EventDetail({
     )
   }
 
+  // Active video event, access claimed by this browser but not yet confirmed by
+  // the server: nothing of the room is shown until the join is accepted
+  if (videoRoomWanted && !videoRoom.joined && !videoRoomClosed) {
+    return (
+      <div className="bg-white min-h-[60vh] flex items-center justify-center px-4">
+        {videoRoomError ? (
+          <p className="text-center text-sm text-gray-500">{EVENT_PASS_COPY.checkFailed}</p>
+        ) : (
+          <div className="flex items-center">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 mr-3" />
+            <p className="text-sm text-gray-500">{EVENT_PASS_COPY.checkingAccess}</p>
+          </div>
+        )}
+        {renderModals()}
+      </div>
+    )
+  }
+
   // Active video event — synchronized video player + chat
-  if (event.status === 'active' && event.format === 'video' && (hasAccess || isHost)) {
+  if (videoRoomWanted && (videoRoom.joined || videoRoomClosed)) {
     const videoLayout = { compact, landscape, panelOpen: videoPanelOpen }
     const stageCell = roomCell('stage', videoLayout)
     const chatCell = roomCell('chat', videoLayout)
@@ -575,6 +702,7 @@ export default function EventDetail({
                     serverTimeOffset={serverTimeOffset}
                     frame={stageFrame(videoLayout)}
                     onPlayingChange={setVideoPlaying}
+                    onEnded={() => setVideoFinished(true)}
                   />
                 ) : (
                   <div className="flex items-center justify-center py-16">
@@ -599,9 +727,12 @@ export default function EventDetail({
 
               {/* Chat sidebar */}
               <VideoChatPanel
-                chatMessages={chatMessages}
-                sendChatMessage={sendChatMessage}
-                eventId={event.id}
+                chatMessages={videoRoom.chatMessages}
+                sendChatMessage={videoRoom.sendChatMessage}
+                selfIdentity={videoRoom.selfIdentity}
+                banned={videoRoom.selfChatBanned}
+                closed={videoRoomClosed}
+                closingSecondsLeft={closingSecondsLeft}
                 compact={compact}
                 cell={chatCell}
               />
@@ -910,34 +1041,34 @@ export default function EventDetail({
 }
 
 // ---------------------------------------------------------------------------
-// Chat panel for video events (uses Socket.IO instead of LiveKit)
+// Chat panel for video events: the authenticated Socket.IO room
+// (live-event-access-hardening). The server sets each sender's name from their
+// registration — no more «Anónimo» — and enforces chat bans and anti-spam.
 // ---------------------------------------------------------------------------
-function VideoChatPanel({ chatMessages, sendChatMessage, eventId, compact = false, cell = null }) {
-  // This chat carries no identities: the next message after sending is taken
-  // as one's own echo, so the list follows it even if the user was reading up
-  const justSentRef = useRef(false)
+const formatClock = (totalSeconds) => {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = String(totalSeconds % 60).padStart(2, '0')
+  return `${minutes}:${seconds}`
+}
 
-  // Get sender name from stored session
-  const senderName = useMemo(() => {
-    const session = getStoredSession(eventId)
-    if (session?.firstName && session?.lastName) {
-      return `${session.firstName} ${session.lastName}`
-    }
-    return 'Anónimo'
-  }, [eventId])
-
-  const isOwn = useCallback(() => {
-    if (!justSentRef.current) return false
-    justSentRef.current = false
-    return true
-  }, [])
+function VideoChatPanel({
+  chatMessages,
+  sendChatMessage,
+  selfIdentity,
+  banned = false,
+  closed = false,
+  closingSecondsLeft = null,
+  compact = false,
+  cell = null,
+}) {
+  // Every message carries the sender's identity, so one's own is exact
+  const isOwn = useCallback((msg) => !!selfIdentity && msg?.identity === selfIdentity, [selfIdentity])
 
   // Scrolls ONLY the list — `scrollIntoView` used to scroll the page too
   const { containerRef, onScroll, hasNew, scrollToBottom } = useChatAutoScroll({ messages: chatMessages, isOwn })
 
   const handleSend = (text) => {
-    justSentRef.current = true
-    sendChatMessage(senderName, text)
+    sendChatMessage(text)
   }
 
   return (
@@ -951,6 +1082,18 @@ function VideoChatPanel({ chatMessages, sendChatMessage, eventId, compact = fals
         </div>
       )}
       <div className="flex flex-col flex-1 min-h-0">
+        {closingSecondsLeft !== null && (
+          <div className="m-3 mb-0 rounded-md bg-blue-50 p-3" role="status">
+            <div className="flex">
+              <InformationCircleIcon className="h-5 w-5 flex-shrink-0 text-blue-400" aria-hidden="true" />
+              <div className="ml-3 text-sm text-blue-700">
+                <p className="font-medium text-blue-800">{EVENT_PASS_COPY.closingTitle}</p>
+                <p className="mt-1">{EVENT_PASS_COPY.closingMessage}</p>
+                <p className="mt-1 font-medium tabular-nums">{EVENT_PASS_COPY.closingCountdown(formatClock(closingSecondsLeft))}</p>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div
             ref={containerRef}
@@ -962,14 +1105,18 @@ function VideoChatPanel({ chatMessages, sendChatMessage, eventId, compact = fals
             )}
             {chatMessages.map((msg, i) => (
               <div key={i} className="text-sm">
-                <span className="font-medium text-gray-900">{msg.sender}</span>
+                <span className="font-medium text-gray-900">{msg.name}</span>
                 <span className="text-gray-600 ml-1 break-words">{msg.message}</span>
               </div>
             ))}
           </div>
           <NewMessagesButton visible={hasNew} onClick={scrollToBottom} />
         </div>
-        <ChatComposer onSend={handleSend} compact={compact} />
+        {closed ? (
+          <p className="border-t border-gray-200 px-4 py-3 text-sm text-gray-500">{EVENT_PASS_COPY.chatClosed}</p>
+        ) : (
+          <ChatComposer onSend={handleSend} compact={compact} banned={banned} />
+        )}
       </div>
     </div>
   )

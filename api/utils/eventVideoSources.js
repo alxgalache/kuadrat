@@ -23,6 +23,7 @@
  */
 
 const signer = require('./cloudfrontSigner');
+const { passEndsAt, passDurationMs } = require('./videoPass');
 
 const EVENT_VIDEO_CDN_PREFIX = '/eventos-video/';
 const UPLOADED_PREFIX = 'uploaded:';
@@ -131,23 +132,16 @@ function validateVideoUrls(current, incoming) {
   return null;
 }
 
-function parseStart(value) {
-  if (!value) return null;
-  const s = String(value);
-  const iso = /[TZ]|[+-]\d\d:?\d\d$/.test(s) ? s : `${s.replace(' ', 'T')}Z`;
-  const ms = Date.parse(iso);
-  return Number.isNaN(ms) ? null : ms;
-}
-
 /**
  * When a signed URL issued now must expire:
- * min(now + 6 h, max(now + 15 min, video_started_at + duration_minutes + 30 min)).
+ * min(now + 6 h, max(now + 15 min, pass end + 30 min)), where the pass end is
+ * the video's measured duration after «Iniciar» (or duration_minutes if it
+ * could not be measured — see utils/videoPass.js).
  * @returns {number} epoch milliseconds
  */
 function videoTokenExpiry(event, now = Date.now()) {
-  const start = parseStart(event.video_started_at) ?? now;
-  const durationMs = (Number(event.duration_minutes) || 60) * 60 * 1000;
-  const plannedEnd = start + durationMs + PASS_MARGIN_MS;
+  const end = passEndsAt(event) ?? now + passDurationMs(event);
+  const plannedEnd = end + PASS_MARGIN_MS;
   return Math.min(now + MAX_TTL_MS, Math.max(now + MIN_TTL_MS, plannedEnd));
 }
 

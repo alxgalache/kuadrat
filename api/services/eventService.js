@@ -99,6 +99,24 @@ async function updateEvent(id, fields) {
   return getEventById(id);
 }
 
+// Written only by videoDurationService (live-event-access-hardening): no admin
+// request can set it, which is why it is not in updateEvent's allowedFields.
+async function setVideoDuration(id, seconds) {
+  await db.execute({
+    sql: 'UPDATE events SET video_duration_seconds = ? WHERE id = ?',
+    args: [seconds, id],
+  });
+}
+
+// The video passes the closing scheduler watches
+async function listActiveVideoEvents() {
+  const result = await db.execute({
+    sql: "SELECT * FROM events WHERE status = 'active' AND format = 'video' AND video_started_at IS NOT NULL",
+    args: [],
+  });
+  return result.rows;
+}
+
 async function deleteEvent(id) {
   const current = await getEventById(id);
   if (!current) return false;
@@ -800,6 +818,8 @@ module.exports = {
   getEventBySlug,
   listEvents,
   getEventsByDateRange,
+  setVideoDuration,
+  listActiveVideoEvents,
   registerAttendee,
   getAttendeeByEmail,
   createOrGetStaffAttendee,

@@ -40,6 +40,8 @@ const DEFAULT_FRAME = 'relative bg-black rounded-lg overflow-hidden aspect-video
  * @param {object} [props.frame] - Compact room 16:9 frame ({ className, style })
  * @param {Function} [props.onPlayingChange] - (playing) → wake lock of the viewer
  * @param {Function} [props.onFatalError] - ({ code }) → parent picks another source
+ * @param {Function} [props.onEnded] - The video reached its end (the parent opens
+ *   the chat closing countdown — live-event-access-hardening)
  */
 export default function EventVideoPlayer({
   videoUrl,
@@ -49,6 +51,7 @@ export default function EventVideoPlayer({
   frame = null,
   onPlayingChange,
   onFatalError,
+  onEnded,
 }) {
   const videoRef = useRef(null)
   const containerRef = useRef(null)
@@ -223,6 +226,12 @@ export default function EventVideoPlayer({
     onPlayingChangeRef.current?.(playing)
   }, [playing])
   useEffect(() => () => onPlayingChangeRef.current?.(false), [])
+
+  const onEndedRef = useRef(onEnded)
+  onEndedRef.current = onEnded
+  useEffect(() => {
+    if (videoEnded) onEndedRef.current?.()
+  }, [videoEnded])
 
   // This source cannot be played: let the parent choose another one if it can
   const escalate = useCallback((code) => {

@@ -1140,3 +1140,27 @@ export const EVENT_VIDEO_FORM_COPY = {
 };
 
 export const EVENT_VIDEO_UNAVAILABLE = 'No se pudo reproducir el vídeo. Recarga la página para intentarlo de nuevo.';
+
+// ---------------------------------------------------------------------------
+// Sala y cierre del pase de vídeo (live-event-access-hardening)
+// ---------------------------------------------------------------------------
+
+// Motivos con los que la sala autenticada rechaza la entrada y que significan
+// que la credencial guardada no sirve: se borra la sesión (o se descarta el
+// `user` caducado del host) y se vuelve a «Acceder». Son los textos literales
+// de eventSocket.authenticateJoin.
+export const VIDEO_ROOM_DEFINITIVE_DENIALS = [
+  'Credenciales inválidas',
+  'Se requiere pago para acceder',
+  'Has sido expulsado de este evento',
+];
+
+export const EVENT_PASS_COPY = {
+  checkingAccess: 'Comprobando acceso…',
+  checkFailed: 'No se ha podido comprobar el acceso. Recarga la página para intentarlo de nuevo.',
+  closingTitle: 'El vídeo ha terminado',
+  closingMessage: 'El chat sigue abierto unos minutos más para que podáis comentarlo, antes de que el evento se cierre por completo.',
+  closingCountdown: (clock) => `El evento se cerrará en ${clock}`,
+  endedMessage: 'El evento ha finalizado. Gracias por acompañarnos.',
+  chatClosed: 'El chat está cerrado',
+};

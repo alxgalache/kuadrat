@@ -3,46 +3,37 @@
 import { useEffect, useState } from 'react'
 import { testAccessAPI } from '@/lib/api'
 
-const SESSION_KEY = 'test_access_granted'
-// Reuse the same rough one-month lifetime as the cookie banner
-const ACCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000
+// Token issued by POST /test-access/verify. It carries a fingerprint of the
+// password in force, and POST /test-access/check validates it on every full
+// page load: changing TEST_ACCESS_PASSWORD revokes every browser at once
+// (live-event-access-hardening). The previous key held a bare 'true' for 30
+// days that no password change could revoke; it is deleted on sight.
+const TOKEN_KEY = 'test_access_token'
+const LEGACY_KEY = 'test_access_granted'
 
-function loadAccessFlag() {
+function readToken() {
   if (typeof window === 'undefined') return null
-
   try {
-    const raw = window.localStorage.getItem(SESSION_KEY)
-    if (!raw) return null
-
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return null
-
-    const { value, expiresAt } = parsed
-
-    if (typeof expiresAt === 'number' && Date.now() > expiresAt) {
-      window.localStorage.removeItem(SESSION_KEY)
-      return null
-    }
-
-    return value || null
-  } catch (e) {
-    // Treat any storage or parsing issues as if there is no stored flag
+    window.localStorage.removeItem(LEGACY_KEY)
+    return window.localStorage.getItem(TOKEN_KEY)
+  } catch {
     return null
   }
 }
 
-function saveAccessFlag(value) {
-  if (typeof window === 'undefined') return
-
+function saveToken(token) {
   try {
-    const payload = {
-      value,
-      expiresAt: Date.now() + ACCESS_TTL_MS,
-    }
+    window.localStorage.setItem(TOKEN_KEY, token)
+  } catch {
+    // Storage blocked: the password will simply be asked again next time
+  }
+}
 
-    window.localStorage.setItem(SESSION_KEY, JSON.stringify(payload))
-  } catch (e) {
-    // Ignore storage errors; user will simply be asked again later
+function clearToken() {
+  try {
+    window.localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // Nothing to clear
   }
 }
 
@@ -76,21 +67,29 @@ export default function TestAccessGate({ gateEnabled, children }) {
       return
     }
 
-    if (typeof window === 'undefined') {
+    const token = readToken()
+    if (!token) {
       setChecking(false)
       return
     }
 
-    try {
-      const stored = loadAccessFlag()
-      if (stored === 'true') {
-        setAuthorized(true)
-      }
-    } catch (e) {
-      // Ignore storage errors and fall back to asking for password
+    // The server decides: a token from a previous password, tampered with or
+    // expired is refused and forgotten. A network failure also asks for the
+    // password — failing closed is the point of this gate.
+    let cancelled = false
+    testAccessAPI.check(token)
+      .then(() => {
+        if (!cancelled) setAuthorized(true)
+      })
+      .catch(() => {
+        clearToken()
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false)
+      })
+    return () => {
+      cancelled = true
     }
-
-    setChecking(false)
   }, [gateEnabled])
 
   const handleSubmit = async (e) => {
@@ -107,10 +106,9 @@ export default function TestAccessGate({ gateEnabled, children }) {
       }
 
       const res = await testAccessAPI.verify(trimmed)
-      if (res && res.success) {
-        // Persist access flag for approximately one month so it survives
-        // browser closes, but will eventually expire.
-        saveAccessFlag('true')
+      if (res && res.success && res.token) {
+        // Valid for ~30 days AND only while the password stays the same
+        saveToken(res.token)
         setAuthorized(true)
       } else {
         setError('Contraseña incorrecta.')
@@ -128,7 +126,7 @@ export default function TestAccessGate({ gateEnabled, children }) {
     }
   }
 
-  // While checking sessionStorage, avoid flashing the form
+  // While the stored token is being checked, avoid flashing the form or the site
   if (checking) {
     return null
   }

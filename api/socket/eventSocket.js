@@ -15,6 +15,7 @@ const config = require('../config/env');
 const logger = require('../config/logger');
 const eventService = require('../services/eventService');
 const agoraRecordingService = require('../services/agoraRecordingService');
+const { isPassClosed } = require('../utils/videoPass');
 
 // Server-side spam thresholds. Keep in sync with SPAM_MAX_MESSAGES /
 // SPAM_WINDOW_MS in client/lib/constants.js (same values the LiveKit client
@@ -148,10 +149,17 @@ module.exports = function setupEventSocket(io) {
 
     const event = await eventService.getEventById(eventId);
     if (!event) return { ok: false, reason: 'Evento no encontrado' };
-    if (event.provider !== 'agora' || event.format === 'video') {
+    // Agora live events and pre-recorded video passes. The video pass joined
+    // this room in live-event-access-hardening: its chat used to travel over
+    // the PUBLIC room, unauthenticated, to anyone with the page open, and the
+    // page rendered the room from browser state alone. The join ACK is now
+    // what the page waits for before showing the room.
+    const isVideoPass = event.format === 'video';
+    if (!isVideoPass && event.provider !== 'agora') {
       return { ok: false, reason: 'Este evento no usa sala en tiempo real' };
     }
     if (event.status !== 'active') return { ok: false, reason: 'El evento no está activo' };
+    if (isVideoPass && isPassClosed(event)) return { ok: false, reason: 'El evento ha finalizado' };
 
     // Host path: verified JWT of the event's host. An admin who is not the
     // host used to get an isHost entry on uid 1 here; the broadcast stage finds
@@ -211,7 +219,7 @@ module.exports = function setupEventSocket(io) {
     // The co-presenter publishes from the moment they join, so presence
     // reports them as a speaker without persisting speaker_granted — that
     // column is the host's promotion state, not the admin's.
-    const coHost = await eventService.isBroadcastCohost(event, attendee);
+    const coHost = isVideoPass ? false : await eventService.isBroadcastCohost(event, attendee);
 
     return {
       ok: true,
@@ -267,15 +275,10 @@ module.exports = function setupEventSocket(io) {
       socket.leave(`event-${eventId}`);
     });
 
-    // Chat message for video events (LiveKit events use LiveKit's built-in chat)
-    socket.on("chat_message", ({ eventId, sender, message }) => {
-      if (!eventId || !message) return;
-      io.to(`event-${eventId}`).emit("chat_message", {
-        sender: sender || 'Anónimo',
-        message,
-        timestamp: new Date().toISOString(),
-      });
-    });
+    // There is deliberately NO public `chat_message` handler any more
+    // (live-event-access-hardening): it broadcast whatever name and text any
+    // socket sent to everyone with the page open, registered or not. Video
+    // passes chat through the authenticated room below, like Agora events.
 
     // ── Authenticated event room (Agora live events) ────────
     socket.on('join_event_room', async (payload, ack) => {

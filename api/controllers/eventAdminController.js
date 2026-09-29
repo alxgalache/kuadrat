@@ -4,6 +4,7 @@ const eventService = require('../services/eventService');
 const livekitService = require('../services/livekitService');
 const marketingEmailService = require('../services/marketingEmailService');
 const { validateVideoUrls } = require('../utils/eventVideoSources');
+const videoDurationService = require('../services/videoDurationService');
 const agoraRecordingService = require('../services/agoraRecordingService');
 const { promoteAgoraParticipant, demoteAgoraParticipant } = require('./eventController');
 const logger = require('../config/logger');
@@ -91,11 +92,19 @@ const createEvent = async (req, res, next) => {
     // Marketing announcement (non-blocking; never throws; guarded send-once)
     marketingEmailService.announceEventIfEligible(event.id);
 
+    // Real video duration, which times the end of the pass and the chat
+    // closing (live-event-access-hardening). Best effort and bounded.
+    let created = event;
+    if (event.format === 'video' && event.video_url) {
+      await videoDurationService.refreshVideoDurationSafely(event.id);
+      created = await eventService.getEventById(event.id);
+    }
+
     res.status(201).json({
       success: true,
       title: 'Evento creado',
       message: 'El evento se ha creado correctamente',
-      event,
+      event: created,
     });
   } catch (error) {
     next(error);
@@ -200,11 +209,19 @@ const updateEvent = async (req, res, next) => {
     // Marketing announcement on transition into 'scheduled' (guarded send-once)
     marketingEmailService.announceEventIfEligible(req.params.id);
 
+    // A new MP4 means a new duration (live-event-access-hardening)
+    let updated = event;
+    const videoChanged = req.body.video_url !== undefined && (req.body.video_url || null) !== (current.video_url || null);
+    if (event?.format === 'video' && videoChanged) {
+      await videoDurationService.refreshVideoDurationSafely(req.params.id);
+      updated = await eventService.getEventById(req.params.id);
+    }
+
     res.status(200).json({
       success: true,
       title: 'Evento actualizado',
       message: 'El evento se ha actualizado correctamente',
-      event,
+      event: updated,
     });
   } catch (error) {
     next(error);
@@ -261,6 +278,11 @@ const startEvent = async (req, res, next) => {
     let event;
 
     if (current.format === 'video') {
+      // The duration times the chat closing: measure it now if it is still
+      // missing (the video may have been uploaded after the event was saved)
+      if (current.video_url && !current.video_duration_seconds) {
+        await videoDurationService.refreshVideoDurationSafely(req.params.id);
+      }
       // Video format: store the start timestamp, no LiveKit room needed
       event = await eventService.startEvent(req.params.id, {
         videoStartedAt: new Date().toISOString(),
@@ -596,6 +618,7 @@ const uploadVideo = async (req, res, next) => {
 
     const videoUrl = `uploaded:${req.file.filename}`;
     await eventService.updateEvent(req.params.id, { video_url: videoUrl });
+    await videoDurationService.refreshVideoDurationSafely(req.params.id);
 
     res.status(200).json({
       success: true,

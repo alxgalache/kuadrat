@@ -26,6 +26,7 @@ const startShipmentRetryScheduler = require('./scheduler/shipmentRetryScheduler'
 const startEventCreditScheduler = require('./scheduler/eventCreditScheduler');
 const startBackupScheduler = require('./scheduler/backupScheduler');
 const startRecordingScheduler = require('./scheduler/recordingScheduler');
+const startVideoPassScheduler = require('./scheduler/videoPassScheduler');
 
 // Initialize database and start server
 async function startServer() {
@@ -75,6 +76,10 @@ async function startServer() {
       // Start the Agora Cloud Recording reconciler (change: agora-event-recording).
       // No-op unless AGORA_RECORDING_S3_* are configured.
       startRecordingScheduler(app);
+
+      // Finish video passes five minutes after the video ends
+      // (live-event-access-hardening).
+      startVideoPassScheduler(app);
     });
 
     // Register graceful shutdown

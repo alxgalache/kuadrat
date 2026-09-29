@@ -396,6 +396,15 @@ export const testAccessAPI = {
       skipAuthHandling: true,
     });
   },
+  // Is the stored token still valid for the password in force?
+  // (live-event-access-hardening). A 401 here means "ask again", never "log out".
+  check: async (token) => {
+    return apiRequest('/test-access/check', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+      skipAuthHandling: true,
+    });
+  },
 };
 
 // Products API (legacy - keep for backward compatibility)
