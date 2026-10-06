@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The coverage and shape of the schema.org JSON-LD emitted across the public surfaces. Artworks stop being generic `Product` nodes and become `VisualArtwork` + `Offer`, using columns that already exist on `art` and were going unused (`dimensions`, `type`, `edition_size`, `created_at`); artist pages, which emitted no structured data at all, gain a `Person` plus an `ItemList` of their works; listings and detail routes gain `ItemList` and `BreadcrumbList`.
+The coverage and shape of the schema.org JSON-LD emitted across the public surfaces. Artworks stop being generic `Product` nodes and become `VisualArtwork` + `Offer` (typed `Product` as well while they can be bought, for Google's merchant surfaces), using columns that already exist on `art` and were going unused (`dimensions`, `type`, `edition_size`, `created_at`); artist pages, which emitted no structured data at all, gain a `Person` plus an `ItemList` of their works; listings and detail routes gain `ItemList` and `BreadcrumbList`.
 
 All of it is built by one shared module (`client/lib/schema.js`) rather than by object literals inline in each page, and builders omit a property instead of emitting it empty. Three boundaries are stated as requirements because they are invisible when crossed: `Offer.availability` must reflect real availability (including quote mode, where the site cannot claim immediate purchase), the artist's account email is never published, and `outside_dimensions` / `outside_weight` never appear anywhere — they describe the shipping box, not the artwork.
 
@@ -38,6 +38,18 @@ Builder functions SHALL omit any property whose source value is null, undefined 
 The artwork detail page SHALL emit a JSON-LD node of type `VisualArtwork` describing the piece, carrying `name`, `description`, `image`, `url`, and `creator` as a `Person` bearing the artist's name and their artist-page URL.
 
 The node SHALL include, when the corresponding column is populated: `artMedium` from `art.type`, `width` and `height` as `QuantitativeValue` in centimetres parsed from `art.dimensions`, `dateCreated` from `art.created_at`, and `artEdition` from `art.edition_size` when it is greater than 1.
+
+When the artwork can be bought, the node SHALL be typed `["VisualArtwork", "Product"]`, so that Google reads it as a product: merchant listings, and Merchant Center's automatic item updates, which correct the feed's price and availability from this markup. When the storefront is in quote mode, the node SHALL be typed `VisualArtwork` alone.
+
+#### Scenario: A purchasable artwork is also a Product
+
+- **WHEN** the artwork detail page is rendered with art purchasing enabled
+- **THEN** the artwork node's `@type` SHALL contain both `VisualArtwork` and `Product`
+
+#### Scenario: Quote mode drops the Product type
+
+- **WHEN** the build has art purchasing disabled
+- **THEN** the artwork node's `@type` SHALL be `VisualArtwork` only
 
 #### Scenario: An artwork with full technical data
 

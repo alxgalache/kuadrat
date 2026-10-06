@@ -33,10 +33,16 @@ export const SITE = {
 
   founder: 'Alejandro Galache',
 
+  // Perfiles oficiales, confirmados por el operador (Pinterest y LinkedIn, el
+  // 06/10/2026). Van al `sameAs` de la organización: es lo que Google cruza
+  // para decidir que «140d» es una entidad. Sólo perfiles activos que enlacen
+  // de vuelta a https://140d.art.
   social: [
     'https://www.facebook.com/140dart',
     'https://www.instagram.com/140dart',
     'https://x.com/140dart',
+    'https://www.pinterest.com/140dart/',
+    'https://www.linkedin.com/company/140d',
   ],
 
   // Frase autocontenida: tiene que poder extraerse sola y seguir respondiendo

@@ -104,9 +104,15 @@ export const WEBSITE_ID = `${SITE_URL}/#website`
 export function buildOrganization() {
   return compact({
     '@context': 'https://schema.org',
-    // ArtGallery describe mejor lo que es que un Organization genérico, y
-    // OnlineStore describe lo que hace. El array es válido y evita elegir.
-    '@type': ['OnlineStore', 'ArtGallery'],
+    // Sólo OnlineStore. Hasta octubre de 2026 iba acompañado de ArtGallery,
+    // pero en schema.org ArtGallery desciende de LocalBusiness y de Place:
+    // afirma un local que se visita, y 140d no tiene ni tendrá espacio físico
+    // a medio plazo. Era la misma señal equivocada que llevó a crear un Perfil
+    // de Empresa de Google que la galería no puede tener
+    // (docs/google-presencia/). Google recomienda para un comercio electrónico
+    // el subtipo OnlineStore. Que es una galería de arte lo siguen diciendo
+    // `alternateName`, `description` y `knowsAbout`.
+    '@type': 'OnlineStore',
     '@id': ORGANIZATION_ID,
     name: SITE.name,
     alternateName: SITE.legalName,
@@ -275,9 +281,18 @@ export function buildOffer({ price, url, isSold, purchasable = true }) {
 
 // ── Obra de arte ────────────────────────────────────────────────────────────
 
-// VisualArtwork en lugar de Product: es lo que describe a una obra y lo que
-// permite responder «¿qué obras en acrílico de 60x80 hay?». Los campos salen de
-// columnas que el modelo ya guardaba y que no llegaban a ninguna parte.
+// VisualArtwork describe la obra y permite responder «¿qué obras en acrílico de
+// 60x80 hay?». Los campos salen de columnas que el modelo ya guardaba y que no
+// llegaban a ninguna parte.
+//
+// Cuando la obra se puede comprar, el nodo es además Product. Google sólo lee
+// como producto un `Product`: sin él, la ficha no es apta para las fichas de
+// comerciante, y las actualizaciones automáticas de Merchant Center (que
+// corrigen precio y disponibilidad del feed leyendo esta página) recurren a
+// una extracción menos fiable. Con obras únicas que se venden una vez, esa
+// corrección es la red de seguridad cuando el feed se queda atrás. En modo
+// cotización vuelve a ser sólo VisualArtwork: anunciar como producto algo que
+// no se puede comprar sería falso.
 //
 // `outside_dimensions` y `outside_weight` NO se publican jamás: describen la
 // caja de envío, no la obra. Confundirlas pondría el tamaño del embalaje como
@@ -290,7 +305,7 @@ export function buildVisualArtwork({ product, url, imageUrls, purchasable = true
 
   return compact({
     '@context': 'https://schema.org',
-    '@type': 'VisualArtwork',
+    '@type': purchasable ? ['VisualArtwork', 'Product'] : 'VisualArtwork',
     name: product.name,
     description: stripHtml(product.description),
     image: imageUrls && imageUrls.length > 0 ? imageUrls : undefined,
