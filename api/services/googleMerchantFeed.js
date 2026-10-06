@@ -201,6 +201,7 @@ async function buildItem({ product, productType }) {
       priceCents: toCents(product.price),
       brand: product.seller_full_name || null,
       category: productType === 'art' ? ARTWORK_CATEGORY : null,
+      identifierExists: productType === 'art' ? 'no' : null,
       material: productType === 'art' ? product.type || null : null,
       shippingCents: shipping.cents,
       transit: shipping.transit,
@@ -261,9 +262,13 @@ function renderItem(item) {
     tag('price', formatEur(item.priceCents)),
     tag('condition', 'new'),
     tag('brand', item.brand),
-    // No artwork has a GTIN. A store product that does (a book's ISBN) gets
-    // it from the Merchant Center supplemental source, which overrides this.
-    tag('identifier_exists', 'no'),
+    // An original artwork has no GTIN, and says so. A store product says
+    // nothing: one that has a GTIN (a book's ISBN) gets it, with
+    // `identifier_exists = yes`, from the Merchant Center supplemental source.
+    // Sending `no` here would collide with that, and whether the primary or the
+    // supplemental value wins is a Merchant Center setting, not something this
+    // feed can count on. So the feed leaves the attribute to the supplemental source.
+    tag('identifier_exists', item.identifierExists),
     tag('google_product_category', item.category),
     tag('material', item.material),
     `<g:shipping>${shipping}</g:shipping>`,

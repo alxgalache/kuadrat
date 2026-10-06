@@ -208,12 +208,15 @@ describe('Google Merchant feed', () => {
     expect(field(shipping, 'max_transit_time')).toBe('2')
   })
 
-  test('includes a store product with stock, under /tienda and without a category', () => {
+  test('includes a store product with stock, under /tienda, leaving category and identifiers to the supplemental source', () => {
     const item = items.get(book.slug)
     expect(item).toBeDefined()
     expect(field(item, 'link')).toMatch(new RegExp(`/tienda/p/${book.slug}$`))
     expect(field(item, 'image_link')).toBe(productImageUrl(bookImages[0], 'other'))
     expect(field(item, 'google_product_category')).toBeNull()
+    // `identifier_exists = no` here would contradict the GTIN that the
+    // supplemental source adds for a book.
+    expect(field(item, 'identifier_exists')).toBeNull()
     expect(field(item.match(/<g:shipping>([\s\S]*?)<\/g:shipping>/)[1], 'price')).toBe('4.08 EUR')
   })
 

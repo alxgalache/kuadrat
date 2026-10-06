@@ -38,8 +38,8 @@ URL: **`https://api.140d.art/api/feeds/google-merchant.xml`**. Es un XML RSS 2.0
    - Los `image_link` deben empezar por `https://cdn.140d.art/`.
    - Debe haber tantos `<item>` como obras y productos a la venta. Si falta alguno, el registro de la API dice por qué («Product left out of the Google Merchant feed»).
 3. **Cambiar la fuente en Merchant Center:**
-   1. **Fuentes de datos → Añadir fuente de productos →** la opción de archivo **desde una URL / obtención programada**.
-   2. URL: la del paso 2. Frecuencia: **diaria**. País: **España**. Idioma: **español**. Etiqueta de feed: **ES**, la misma que la fuente actual; si no coincide, Merchant Center los trataría como productos distintos.
+   1. **Fuentes de datos → Añadir fuente de productos → Añadir productos desde un archivo → Introduzca un enlace a su archivo.** **No elijas «API»**: una fuente de tipo «API Merchant» espera que se le envíen productos por programa y nunca descarga la URL. Aunque le pongas la URL como nombre, se queda en blanco para siempre, sin productos y sin opciones de frecuencia. Se intentó así el 06/10/2026.
+   2. URL: la del paso 2. Obtención: **cada 24 horas** (es el valor predeterminado; elige una hora de madrugada y la zona horaria de Madrid). País: **España**. Idioma: **español**. Etiqueta de feed: **ES**, la misma que la fuente actual; si no coincide, Merchant Center los trataría como productos distintos. Métodos de marketing: solo **Fichas gratuitas**. «Fichas locales gratuitas» es para tiendas físicas.
    3. Pulsa **Obtener ahora** o **Actualizar**, y espera a que procese los productos sin errores.
    4. **Elimina la fuente «Google sheets general».** Los productos siguen existiendo, porque la fuente nueva aporta los mismos `id`. Si Merchant Center muestra durante unas horas avisos de productos duplicados entre las dos fuentes, desaparecen al eliminar la hoja.
 4. **Fuente adicional con el ISBN de «El Límite»:**
@@ -50,10 +50,12 @@ URL: **`https://api.140d.art/api/feeds/google-merchant.xml`**. Es un XML RSS 2.0
       | el-limite | 9788409871018 | yes | 784 |
 
       El ISBN 978-84-09-87101-8 se escribe sin guiones. Su dígito de control es correcto.
-   2. **Fuentes de datos → Añadir fuente de productos adicional →** Hojas de cálculo de Google → esa hoja.
-   3. Vincúlala a la fuente principal del paso 3.
+   2. Formatea la celda del `gtin` como texto (**Formato → Número → Texto sin formato**), o escribe el número precedido de un apóstrofo: `'9788409871018`. Si no, Hojas de cálculo lo convierte en `9,78841E+12` y el GTIN deja de ser válido.
+   3. **Activa antes las fuentes complementarias**, que en Merchant Center vienen desactivadas: **Configuración → Complementos → pestaña «Descubrir» → «Gestión avanzada de fuentes de datos» → Activar**. Sin ese paso, «Fuentes de datos» solo ofrece «Añadir fuente de productos», que crea una fuente *principal*. Se reconoce porque al pie dice «Tus productos se mostrarán en España, en Español y en…». Una fuente principal con esa hoja crearía un segundo «el-limite» sin título, precio ni imagen.
+   4. Con el complemento activo: **Fuentes de datos → «Fuentes complementarias» → «Añadir datos de producto complementarios»** → Hojas de cálculo de Google → esa hoja.
+   5. En el paso **«Seleccione la fuente de datos principal»**, marca la fuente de la URL del feed. Eso es lo que vincula las dos fuentes.
 
-   Opcional: añade una columna `title` con «El Límite – Pilar Español · Libro, tapa blanda». Así recuperas el título más descriptivo de la hoja corregida, porque el feed solo pone «El Límite – Pilar Español».
+   La hoja solo aporta atributos que el feed no manda (`gtin`, `identifier_exists`, `google_product_category`). Así funciona igual sea cual sea la prioridad que Merchant Center dé a cada fuente. Cambiar el título, que el feed sí manda, exigiría una regla de atributo en la fuente principal.
 5. A partir de aquí, **no hay mantenimiento manual**. Una obra vendida desaparece en la siguiente descarga diaria. Entre medias, las actualizaciones automáticas de artículos la marcan como agotada al leer su ficha, que ya declara `Product`. Una obra nueva aparece sola, y un envío recotizado se refleja solo.
 
 ## Si hay que tocar algo
