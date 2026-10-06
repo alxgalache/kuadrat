@@ -39,7 +39,7 @@ function buildDocument() {
 
 ## Qué es ${SITE.name}
 
-- **Nombre**: ${SITE.name} (${SITE.legalName})
+- **Nombre**: ${SITE.name} (${SITE.tradeName})
 - **Web**: ${SITE_URL}
 - **Naturaleza**: galería exclusivamente online, sin espacio físico
 - **Origen**: ${SITE.foundingCity}, ${SITE.foundingRegion}, España

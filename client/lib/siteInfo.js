@@ -15,7 +15,22 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://140d.art'
 
 export const SITE = {
   name: '140d',
-  legalName: '140d Galería de Arte',
+  // Nombre comercial. Hasta octubre de 2026 esta clave se llamaba `legalName`,
+  // aunque nunca fue la denominación social: se renombró para que nadie la
+  // publique un día como `legalName` en el JSON-LD.
+  tradeName: '140d Galería de Arte',
+
+  // Identidad jurídica, tal como la publica el aviso legal
+  // (client/app/legal/aviso-legal/page.js). Va al JSON-LD de la organización
+  // para que Google empareje la web con el comercio registrado en Merchant
+  // Center («140d Servicios Digitales SL»). El NIF-IVA es válido porque la
+  // sociedad está dada de alta en el registro de operadores intracomunitarios
+  // (confirmado por el operador el 06/10/2026). El domicilio social NO se
+  // publica aquí: es una vivienda, y declararlo sugeriría un local que no existe.
+  legalEntity: '140D Servicios Digitales S.L.',
+  taxId: 'B88732599',
+  vatId: 'ESB88732599',
+
   url: SITE_URL,
   email: 'info@140d.art',
   locale: 'es-ES',

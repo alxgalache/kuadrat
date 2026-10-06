@@ -71,6 +71,7 @@ const coaRoutes = require('./routes/coaRoutes');
 const inquiriesRoutes = require('./routes/inquiriesRoutes');
 const newsletterRoutes = require('./routes/newsletterRoutes');
 const insightsRoutes = require('./routes/insightsRoutes');
+const feedRoutes = require('./routes/feedRoutes');
 const setupAuctionSocket = require('./socket/auctionSocket');
 const setupEventSocket = require('./socket/eventSocket');
 const setupDrawSocket = require('./socket/drawSocket');
@@ -292,6 +293,7 @@ app.use('/api/coa', coaRoutes);
 app.use('/api/inquiries', inquiriesRoutes);
 app.use('/api/newsletter', newsletterRoutes);
 app.use('/api/insights', insightsRoutes);
+app.use('/api/feeds', feedRoutes);
 
 // 404 handler
 app.use(notFound);

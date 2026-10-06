@@ -79,19 +79,29 @@ El CSV es una **foto del 06/10/2026**. Si desde entonces se ha vendido o publica
    - cambia el coste de «Peso» a un **precio fijo de 70 €**, por encima de cualquier envío real actual (el máximo es 68,36 €), para que nunca se quede corto;
    - deja los plazos de entrega.
 
-## Pendiente de ti
+## Respuestas del 06/10/2026 y qué cambia con ellas
 
-- **¿«El Límite» tiene ISBN?** Si lo tiene, Google exige enviarlo en los libros: rellena `gtin` con el ISBN-13 y pon `identifier_exists = yes`.
-- **Plazos de entrega (opcional).** Un envío indicado en el producto anula los plazos de la cuenta, así que Google dejará de mostrar «4-14 días». Para recuperarlos, el encabezado pasa a ser `shipping(country:price:min_handling_time:max_handling_time:min_transit_time:max_transit_time)`, con valores como `ES:24.85 EUR:1:5:1:3`. Para eso hace falta saber cuántos días tarda cada artista en preparar el envío; el tránsito real en península es de 1 a 3 días.
-- Después de los pasos anteriores, una captura de **Políticas de devoluciones** y otra de **Productos → Requiere atención** para confirmar que todo queda en verde.
+- **«El Límite» tiene ISBN 978-84-09-87101-8.** Google exige enviarlo en los libros, como `gtin` = `9788409871018` con `identifier_exists = yes`.
+  - Con el feed automático (guía 06), va en una fuente adicional de Merchant Center.
+  - Mientras siga la hoja, añade a su fila dos columnas, `gtin` y `identifier_exists`, con esos valores.
+- **Cada artista tarda unos 4 días en preparar un envío.** El feed automático declara una preparación de 3 a 5 días hábiles, más el tránsito real. Así Google vuelve a mostrar un plazo de entrega.
+  - En la hoja, ese plazo exigiría una columna `shipping` con encabezado ampliado por obra. No merece la pena si el feed se activa pronto.
+- **La sociedad está dada de alta en el registro de operadores intracomunitarios.** El NIF-IVA (`ESB88732599`) ya se publica en el JSON-LD de la web (cambio 4, guía 04).
+
+## Seguimiento
+
+A las 24–48 h de cambiar la fuente (o de importar la hoja, si el feed tarda en desplegarse), haz dos capturas:
+
+- **Envíos y devoluciones → Políticas de devoluciones**;
+- **Productos → Requiere atención**.
 
 ## Mantenimiento mientras el feed sea una hoja
 
-- **Obra vendida**: bórrala de la hoja o pon `out_of_stock` el mismo día. Las actualizaciones automáticas de artículos lo corrigen solas al leer la ficha, pero solo con el cambio 1 de la guía 04 desplegado.
+- **Obra vendida**: bórrala de la hoja o pon `out_of_stock` el mismo día. Las actualizaciones automáticas de artículos ya lo corrigen solas al leer la ficha, porque desde el despliegue del 06/10/2026 declara `Product`.
 - **Obra nueva**: añade su fila con el mismo formato.
 - **Envío recotizado en la calculadora**: actualiza su columna `shipping`.
 
-Para que todo esto sea automático, ver la propuesta de feed generado desde la base de datos en la guía 04.
+Todo esto desaparece al activar el feed automático (guía 06).
 
 ## Fuentes
 

@@ -11,7 +11,7 @@ Contexto: 140d es una galería exclusivamente online, así que no le corresponde
 |---|---|
 | Search Console | ✔ Verificado por DNS. Registro TXT `google-site-verification=QgAi9r…` en GoDaddy, comprobado. |
 | Merchant Center | ✔ Cuenta «140d Servicios Digitales SL» con la tienda verificada y reclamada y 42 de 42 productos aprobados, cargados desde una **hoja de cálculo de Google**. La auditoría encontró errores en la hoja, devoluciones y envío incompletos y el Perfil de Empresa vinculado: correcciones en `05-auditoria-merchant-center.md`. |
-| Fichas en la web | 41 obras y 1 producto de tienda, los 42 a la venta. Con el cambio 1 de la guía 04 (aplicado, pendiente de desplegar), las obras a la venta se marcan también como `Product`. |
+| Fichas en la web | 41 obras y 1 producto de tienda, los 42 a la venta. Desde el despliegue del 06/10/2026, las obras a la venta se marcan también como `Product`. |
 | Perfil de marca | Sin comprobar (paso 3). |
 | Perfil de Empresa | Se quita (guía 01), después de desvincularlo de Merchant Center. |
 
@@ -30,11 +30,11 @@ Las correcciones de la auditoría del 06/10/2026 (hoja, devoluciones, envío y d
 
 **El riesgo de mantenimiento: las obras son únicas.** Con una hoja de cálculo, el feed solo cambia cuando alguien la edita. Por eso hay que aplicar tres reglas:
 
-- **Al venderse una obra**, ponla en la hoja como `out_of_stock` o borra su fila ese mismo día. Si Google ve una obra vendida anunciada como disponible, la marca como discrepancia de disponibilidad, y si se repite, puede avisar sobre la cuenta. Con el cambio 1 de la guía 04 desplegado, las actualizaciones automáticas de artículos (activadas por defecto) lo corrigen solas al leer la ficha.
+- **Al venderse una obra**, ponla en la hoja como `out_of_stock` o borra su fila ese mismo día. Si Google ve una obra vendida anunciada como disponible, la marca como discrepancia de disponibilidad, y si se repite, puede avisar sobre la cuenta. Las actualizaciones automáticas de artículos (activadas por defecto) ya lo corrigen solas al leer la ficha, que declara `Product`.
 - **Al publicar una obra nueva**, añade su fila con el formato del CSV corregido. Si no, no aparecerá en Google.
 - **Al recotizar un envío en la calculadora**, actualiza su columna `shipping`.
 
-**La solución definitiva** es generar el feed desde la base de datos (cambio 5 de la guía 04): las tres reglas pasan a cumplirse solas. Se descarta el alta automática desde la web porque no permite fijar el envío de cada obra.
+**La solución definitiva ya está implementada:** el feed generado desde la base de datos (`06-feed-automatico.md`), pendiente de desplegar y activar. Con él, las tres reglas se cumplen solas.
 
 ## Paso 3 · Comprobar el perfil de marca (ahora y cada mes)
 

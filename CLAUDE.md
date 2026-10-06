@@ -173,6 +173,7 @@ El porqué detallado de cada área vive en `.claude/rules/`, una regla por tema,
 ### Catálogo
 
 * [`catalog/limited-editions.md`](.claude/rules/catalog/limited-editions.md) — Ediciones limitadas: `is_sold` solo junto a `editions_sold`, un único punto de consumo por canal de venta y una sola vía de liberación.
+* [`catalog/merchant-feed.md`](.claude/rules/catalog/merchant-feed.md) — Feed de Google Merchant Center desde la base de datos: catálogo visible, envío cotizado por el checkout (el grupo más caro), imágenes del CDN y nunca un Perfil de Empresa.
 
 ### Envíos
 

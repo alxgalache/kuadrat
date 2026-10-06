@@ -26,6 +26,7 @@ const config = require('../config/env');
 const logger = require('../config/logger');
 const { db } = require('../config/database');
 const { escapeForEmail, stripHtml } = require('../utils/htmlEscape');
+const { productImageUrl } = require('../utils/productImageUrl');
 const auctionService = require('./auctionService');
 const drawService = require('./drawService');
 const eventService = require('./eventService');
@@ -79,17 +80,6 @@ const renderTemplate = (name, tokens) =>
 // ---------------------------------------------------------------------------
 // URL + date helpers
 // ---------------------------------------------------------------------------
-const productImageUrl = (basename, productType) => {
-  if (!basename) return null;
-  if (config.cdnBaseUrl) {
-    const prefix = productType === 'art' ? 'art' : 'others';
-    return `${config.cdnBaseUrl}/${prefix}/${encodeURIComponent(basename)}`;
-  }
-  return productType === 'art'
-    ? `${config.siteApiBaseUrl}/api/art/images/${encodeURIComponent(basename)}`
-    : `${config.siteApiBaseUrl}/api/others/images/${encodeURIComponent(basename)}`;
-};
-
 const authorImageUrl = (profileImg) => {
   if (!profileImg) return null;
   if (/^https?:\/\//i.test(profileImg)) return profileImg;

@@ -115,7 +115,10 @@ export function buildOrganization() {
     '@type': 'OnlineStore',
     '@id': ORGANIZATION_ID,
     name: SITE.name,
-    alternateName: SITE.legalName,
+    alternateName: SITE.tradeName,
+    legalName: SITE.legalEntity,
+    taxID: SITE.taxId,
+    vatID: SITE.vatId,
     url: SITE.url,
     logo: absoluteUrl('/brand/140d.png'),
     // Las dos proporciones de la tarjeta del sitio, desde `lib/metadata.js`,
@@ -156,8 +159,9 @@ export function buildOrganization() {
       areaServed: SITE.areaServed,
     },
     // Deliberadamente ausentes: número de artistas u obras (cambia y quedaría
-    // congelado), dirección postal y NIF (no confirmados), rango de precios
-    // («amplio» no es un valor que schema.org pueda expresar sin inventarlo).
+    // congelado), dirección postal (el domicilio social es una vivienda, y
+    // declararla sugeriría un local), rango de precios («amplio» no es un valor
+    // que schema.org pueda expresar sin inventarlo).
   })
 }
 
