@@ -10,31 +10,29 @@ Análisis, decisiones y auditoría del 06/10/2026, a raíz del Perfil de Empresa
 - **Merchant Center es la única fuente** de la política de devoluciones y de envío. No se duplican en el JSON-LD.
 - **El feed de Merchant Center se genera desde la base de datos** (`/api/feeds/google-merchant.xml`), no desde una hoja editada a mano.
 
-## Estado a 06/10/2026
+## Estado a 06/10/2026 (noche)
 
 | Pieza | Estado |
 |---|---|
-| Cambios 1–3 del JSON-LD (obras como `Product`, `OnlineStore`, Pinterest y LinkedIn) | ✔ Desplegados y comprobados en producción |
-| Hoja de Merchant Center corregida e importada; devoluciones y envío completados | ✔ Hecho por ti |
-| Perfil de Empresa desvinculado de Merchant Center y quitado | ✔ Hecho por ti |
-| Cambio 4: denominación social, CIF y NIF-IVA en el JSON-LD | ✔ Implementado, **pendiente de desplegar** |
-| Cambio 5: feed automático | ✔ Implementado y con tests (suite completa en verde), **pendiente de desplegar y activar** |
-| ISBN de «El Límite» | Pendiente: fuente adicional en Merchant Center (guía 06, paso 4) |
-| Seguimiento de Merchant Center (capturas) | Pendiente: a las 24–48 h del cambio de fuente |
+| JSON-LD: obras como `Product`, `OnlineStore`, cinco perfiles en `sameAs`, denominación social, CIF y NIF-IVA | ✔ En producción, comprobado |
+| Perfil de Empresa desvinculado de Merchant Center y quitado | ✔ Hecho |
+| Feed automático (`/api/feeds/google-merchant.xml`), 42 productos | ✔ En producción, comprobado; es la única fuente principal de Merchant Center |
+| Fuente complementaria con el ISBN de «El Límite» | ✔ Creada |
+| Devoluciones y envío de la cuenta completados | ✔ Hecho |
 
-## Plan de acción
+## Pendiente
 
-| # | Acción | Quién | Guía |
-|---|---|---|---|
-| 1 | Revisar y hacer commit de los cambios; desplegar **API y cliente juntos** con `./deploy/deploy.sh` | Tú | 04, 06 |
-| 2 | Abrir el feed en producción y comprobar el enlace del sitio, las imágenes del CDN y el número de productos | Tú | 06 |
-| 3 | En Merchant Center: añadir la fuente por URL (diaria, España, español, etiqueta ES), obtenerla y eliminar la fuente de la hoja | Tú | 06 |
-| 4 | Fuente adicional con el ISBN de «El Límite» (`9788409871018`, `yes`, categoría 784) | Tú | 06 |
-| 5 | Prueba de resultados enriquecidos con una ficha de obra y con la portada | Tú | 04 |
-| 6 | A las 24–48 h del paso 3: capturas de «Políticas de devoluciones» y de «Productos → Requiere atención» | Tú | 05 |
-| 7 | Comprobar si aparece «Gestionar este perfil de marca» y, si aparece, reclamarlo y subir el logotipo. Ahora y cada mes | Tú | 03, 02 |
-| 8 | Bio de los cinco perfiles sociales con enlace a `https://140d.art` | Tú | 03 |
-| 9 | Cada mes, buscar en incógnito `140d`, `140d galería de arte` y `140d.art`, y anotar qué panel sale | Tú | 03 |
+| Cuándo | Acción | Guía |
+|---|---|---|
+| Ahora | Prueba de resultados enriquecidos (https://search.google.com/test/rich-results) con `https://140d.art/galeria/p/fragil-1` y con `https://140d.art/` | 04 |
+| Ahora | Borrar del repositorio los dos CSV de esta carpeta: la fuente de verdad ya es la base de datos | — |
+| Ahora | Bio de Instagram, Facebook, X, Pinterest y LinkedIn con enlace a `https://140d.art` | 03 |
+| 07–08/10/2026 (24–48 h) | Capturas de «Políticas de devoluciones» y de «Productos → Requiere atención». Comprobar que la fuente se descargó sola esa madrugada y que «El Límite» muestra el GTIN | 05, 06 |
+| En 1–2 semanas | Search Console → Mejoras: el informe de productos con las obras como válidas | 04 |
+| En 2–4 semanas | Buscar «140d Galería de Arte» en Google Maps (incógnito): no debe salir ninguna ficha de 140d. Si sale, «Sugerir un cambio → Cerrar o quitar» | 01 |
+| Cada mes | Con la sesión iniciada, buscar `140d` y ver si aparece «Gestionar este perfil de marca»; si aparece, reclamarlo y subir el logotipo | 03, 02 |
+| Cada mes | En incógnito, buscar `140d`, `140d galería de arte` y `140d.art`, y anotar qué panel sale | 03 |
+| Si la tienda pasa a modo cotización | Pausar la fuente del feed en Merchant Center: la API no lo sabe | 06 |
 
 ## Guías
 
