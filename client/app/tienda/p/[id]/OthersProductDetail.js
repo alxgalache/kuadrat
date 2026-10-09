@@ -14,6 +14,7 @@ import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
 import { SENDCLOUD_ENABLED_OTHERS, PAYMENT_ENABLED } from '@/lib/constants'
 import { trackViewContent } from '@/lib/metaPixel'
+import { otherCartItem, DEFAULT_VARIANT_LABEL } from '@/lib/cartItems'
 
 // Variante preseleccionada. Se calcula con una función pura para poder
 // aplicarla en el inicializador de useState: el servidor y el cliente parten
@@ -136,22 +137,7 @@ export default function OthersProductDetail({ params, initialProduct = null }) {
     // When Sendcloud is enabled for others, add to cart without shipping.
     // Shipping will be selected at Step 3 of the checkout drawer.
     if (SENDCLOUD_ENABLED_OTHERS) {
-      addToCart({
-        productId: product.id,
-        productType: 'other',
-        name: product.name,
-        price: product.price,
-        basename: selectedVariant?.images?.[0]?.basename || product.images?.[0]?.basename || product.thumbnail_basename || null,
-        slug: product.slug,
-        sellerId: product.seller_id,
-        sellerName: product.seller_full_name,
-        quantity: quantity,
-        variantId: selectedVariant.id,
-        variantKey: selectedVariant.key || 'Opción estándar',
-        shipping: null,
-        weight: product.weight || null,
-        dimensions: product.dimensions || null,
-      })
+      addToCart(otherCartItem(product, selectedVariant, quantity, null))
       showBanner('Producto añadido')
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
@@ -163,20 +149,7 @@ export default function OthersProductDetail({ params, initialProduct = null }) {
 
     if (existingOthersShipping) {
       // Auto-apply existing shipping from other 'others' products
-      addToCart({
-        productId: product.id,
-        productType: 'other',
-        name: product.name,
-        price: product.price,
-        basename: selectedVariant?.images?.[0]?.basename || product.images?.[0]?.basename || product.thumbnail_basename || null,
-        slug: product.slug,
-        sellerId: product.seller_id,
-        sellerName: product.seller_full_name,
-        quantity: quantity,
-        variantId: selectedVariant.id,
-        variantKey: selectedVariant.key || 'Opción estándar',
-        shipping: existingOthersShipping,
-      })
+      addToCart(otherCartItem(product, selectedVariant, quantity, existingOthersShipping))
 
       // Cuando reutilizamos automáticamente el método de envío de otros productos del mismo proveedor,
       // mostramos un mensaje más explicativo para que el usuario entienda qué ha ocurrido.
@@ -194,20 +167,7 @@ export default function OthersProductDetail({ params, initialProduct = null }) {
     if (!selectedVariant) return
 
     // Add to cart with shipping info
-    addToCart({
-      productId: product.id,
-      productType: 'other',
-      name: product.name,
-      price: product.price,
-      basename: product.basename,
-      slug: product.slug,
-      sellerId: product.seller_id,
-      sellerName: product.seller_full_name,
-      quantity: quantity,
-      variantId: selectedVariant.id,
-      variantKey: selectedVariant.key || 'Opción estándar',
-      shipping,
-    })
+    addToCart(otherCartItem(product, selectedVariant, quantity, shipping))
 
     // Show banner notification
     showBanner('Producto añadido')
@@ -339,7 +299,7 @@ export default function OthersProductDetail({ params, initialProduct = null }) {
                 >
                   {product.variations.map((variant) => (
                     <option key={variant.id} value={variant.id} disabled={variant.stock === 0}>
-                      {variant.key ? variant.key : 'Opción estándar'}
+                      {variant.key || DEFAULT_VARIANT_LABEL}
                     </option>
                   ))}
                 </select>

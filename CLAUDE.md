@@ -153,6 +153,7 @@ Reglas que, si se olvidan, rompen algo en silencio desde cualquier parte del có
 * **Los rechazos llevan un código máquina en `title`** (`SHIPPING_COST_OUTDATED`, `RESET_TOKEN_EXPIRED`…) y sus textos es-ES viven en `client/lib/constants.js`.
 * **Un predicado de dominio vive en un módulo con nombre, nunca copiado en línea.** Tres copias de una misma comparación es lo que dejó el `productCategory === 'others'` de `ProductForm` como código muerto, y lo que `zoneResolver` existe para evitar.
 * **Toda consulta nueva sobre `event_attendees` decide a conciencia qué hace con `is_staff`.** → `.claude/rules/events/admin-access.md`
+* **Los ids del catálogo de Meta son los del píxel** (`art_<id>`, `other_<id>_v<variante>`): `contentId()` de `client/lib/metaPixel.js` y `api/utils/metaContentId.js` cambian juntos o no cambian, porque cambiarlos borra todas las etiquetas de producto de Instagram. → `.claude/rules/catalog/meta-catalog.md`
 * **`access_token_hash` solo aparece en SQL dentro de `api/services/eventService.js`**, y un test lo vigila. → `.claude/rules/events/verification-gates.md`
 * **Ninguna respuesta pública revela `video_url`, `video_url_av1` ni `recording_enabled`** (los quita `toPublicEvent`). → `.claude/rules/events/video-cdn.md`, `.claude/rules/agora/recording.md`
 * **Nada dentro de la sala en directo ni de la consola del host se pinta con un portal a `document.body`** (el `ConfirmDialog` compartido lo hace). → `.claude/rules/agora/host-mobile-console.md`, `.claude/rules/live-room/compact-layout.md`
@@ -174,6 +175,7 @@ El porqué detallado de cada área vive en `.claude/rules/`, una regla por tema,
 
 * [`catalog/limited-editions.md`](.claude/rules/catalog/limited-editions.md) — Ediciones limitadas: `is_sold` solo junto a `editions_sold`, un único punto de consumo por canal de venta y una sola vía de liberación.
 * [`catalog/merchant-feed.md`](.claude/rules/catalog/merchant-feed.md) — Feed de Google Merchant Center desde la base de datos: catálogo visible, envío cotizado por el checkout (el grupo más caro), imágenes del CDN y nunca un Perfil de Empresa.
+* [`catalog/meta-catalog.md`](.claude/rules/catalog/meta-catalog.md) — Tienda de Instagram y Facebook: catálogo compartido con Google, ids del píxel, JPEG cuadrado versionado y la URL de compra `/cesta`.
 
 ### Envíos
 

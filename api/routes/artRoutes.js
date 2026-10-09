@@ -12,6 +12,8 @@ const {
 } = require('../controllers/artController');
 const { authenticate, requireSeller, requireArtistSeller } = require('../middleware/authorization');
 const { cacheControl } = require('../middleware/cache');
+const { getCatalogJpegImage } = require('../controllers/catalogImageController');
+const { CATALOG_JPEG_VERSION } = require('../utils/productImageUrl');
 
 // Multer configuration for image uploads (PNG, JPG, WEBP) up to 10MB (memory storage)
 const upload = multer({
@@ -27,6 +29,9 @@ const upload = multer({
 // Public routes with caching
 router.get('/', cacheControl({ maxAge: 60 }), getAllArtProducts);
 router.get('/images/:basename', cacheControl({ maxAge: 86400 }), getArtProductImage);
+// Square JPEG copy for the Meta catalogue, which rejects WebP. It sets its own
+// immutable Cache-Control, on success only. See services/catalogImageService.js.
+router.get(`/images/jpeg/${CATALOG_JPEG_VERSION}/:file`, getCatalogJpegImage('art'));
 router.get('/author/:slug', cacheControl({ maxAge: 120 }), getArtProductsByAuthorSlug);
 
 // Protected routes - Seller only

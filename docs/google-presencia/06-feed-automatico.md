@@ -36,7 +36,7 @@ URL: **`https://api.140d.art/api/feeds/google-merchant.xml`**. Es un XML RSS 2.0
 2. **Comprobar el feed** abriendo `https://api.140d.art/api/feeds/google-merchant.xml` en el navegador:
    - Al principio debe decir `<link>https://140d.art</link>`. Si dice otra cosa, `CLIENT_URL` de producción no es la del sitio, y los enlaces de los productos estarían mal.
    - Los `image_link` deben empezar por `https://cdn.140d.art/`.
-   - Debe haber tantos `<item>` como obras y productos a la venta. Si falta alguno, el registro de la API dice por qué («Product left out of the Google Merchant feed»).
+   - Debe haber tantos `<item>` como obras y productos a la venta. Si falta alguno, el registro de la API dice por qué («Product left out of the product feeds»).
 3. **Cambiar la fuente en Merchant Center:**
    1. **Fuentes de datos → Añadir fuente de productos → Añadir productos desde un archivo → Introduzca un enlace a su archivo.** **No elijas «API»**: una fuente de tipo «API Merchant» espera que se le envíen productos por programa y nunca descarga la URL. Aunque le pongas la URL como nombre, se queda en blanco para siempre, sin productos y sin opciones de frecuencia. Se intentó así el 06/10/2026.
    2. URL: la del paso 2. Obtención: **cada 24 horas** (es el valor predeterminado; elige una hora de madrugada y la zona horaria de Madrid). País: **España**. Idioma: **español**. Etiqueta de feed: **ES**, la misma que la fuente actual; si no coincide, Merchant Center los trataría como productos distintos. Métodos de marketing: solo **Fichas gratuitas**. «Fichas locales gratuitas» es para tiendas físicas.
@@ -63,8 +63,8 @@ URL: **`https://api.140d.art/api/feeds/google-merchant.xml`**. Es un XML RSS 2.0
 | Quiero cambiar… | Dónde |
 |---|---|
 | Los días de preparación | `HANDLING_DAYS` en `api/services/googleMerchantFeed.js` |
-| La categoría de las obras | `ARTWORK_CATEGORY`, en el mismo fichero |
-| Qué productos entran | `visibilityPredicate` (`api/services/catalogOrdering.js`). Es el de los listados, a propósito |
+| La categoría de las obras | `ARTWORK_CATEGORY`, en `api/services/productFeedCatalogue.js` (la comparten Google y Meta) |
+| Qué productos entran | `visibilityPredicate` (`api/services/catalogOrdering.js`). Es el de los listados, a propósito. La selección, el envío y la caché viven en `api/services/productFeedCatalogue.js`, compartido con el feed de Meta (`docs/tienda_meta/`) |
 | El GTIN, la categoría o el título de un producto concreto | La fuente adicional de Merchant Center, sin código |
 
 Detalles técnicos y por qué cada decisión: `.claude/rules/catalog/merchant-feed.md` y el comentario de cabecera de `api/services/googleMerchantFeed.js`. Tests: `api/tests/googleMerchantFeed.test.js`.

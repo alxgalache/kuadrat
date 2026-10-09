@@ -347,6 +347,10 @@ export function CartProvider({ children }) {
     getSendcloudShipping,
     getSendcloudShippingTotal,
     animationTrigger,
+    // True once the stored cart has been read from localStorage. Whoever
+    // replaces the cart on mount must wait for it: child effects run before
+    // this provider's, so an earlier write would be overwritten by the load.
+    isInitialized,
   }), [
     cart, isInCart, getCartItem, addToCart, removeFromCart,
     updateQuantity, clearCart, getTotalItems, getTotalPrice,
@@ -356,6 +360,7 @@ export function CartProvider({ children }) {
     getSellerArtShipping, shippingSelections, setSendcloudShipping,
     clearShippingSelections, getSendcloudShipping,
     getSendcloudShippingTotal, animationTrigger,
+    isInitialized,
   ])
 
   return (

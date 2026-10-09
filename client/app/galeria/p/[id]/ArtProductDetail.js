@@ -13,8 +13,9 @@ import ShippingSelectionModal from '@/components/ShippingSelectionModal'
 import { SafeProductDescription } from '@/components/SafeHTML'
 import Breadcrumbs from '@/components/Breadcrumbs'
 import ProductImageCarousel from '@/components/ProductImageCarousel'
-import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY, PAYMENT_ENABLED, ART_BUY_AVAILABLE, EDITION_COPY } from '@/lib/constants'
+import { SENDCLOUD_ENABLED_ART, INQUIRY_COPY, EDITION_COPY } from '@/lib/constants'
 import { trackViewContent } from '@/lib/metaPixel'
+import { artCartItem, getArtCta } from '@/lib/cartItems'
 import { formatArtDimensions } from '@/lib/dimensions'
 
 const ArtProductInquiryModal = dynamic(
@@ -28,18 +29,6 @@ const ArtProductQuoteModal = dynamic(
 )
 
 const TURNSTILE_ENABLED = !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
-
-// CTA resolution for the art product detail page based on the storefront
-// toggles. Returns 'none' | 'cart' | 'quote'. "Vendido" is handled separately
-// and always takes precedence over this.
-//   both false  -> none
-//   both true   -> cart ("Añadir a la cesta")
-//   otherwise   -> quote ("Solicitar cotización")
-function getArtCta() {
-  if (!PAYMENT_ENABLED && !ART_BUY_AVAILABLE) return 'none'
-  if (PAYMENT_ENABLED && ART_BUY_AVAILABLE) return 'cart'
-  return 'quote'
-}
 
 // `initialProduct` lo resuelve el componente de servidor (page.js) y llega ya
 // poblado en el primer render.
@@ -160,20 +149,7 @@ export default function ArtProductDetail({ params, initialProduct = null }) {
     // When Sendcloud is enabled for art, add to cart without shipping.
     // Shipping will be selected at Step 3 of the checkout drawer.
     if (SENDCLOUD_ENABLED_ART) {
-      addToCart({
-        productId: product.id,
-        productType: 'art',
-        name: product.name,
-        price: product.price,
-        basename: product.images?.[0]?.basename || product.thumbnail_basename || null,
-        slug: product.slug,
-        sellerId: product.seller_id,
-        sellerName: product.seller_full_name,
-        quantity: 1,
-        shipping: null,
-        weight: product.weight || null,
-        dimensions: product.dimensions || null,
-      })
+      addToCart(artCartItem(product, null))
       showBanner('Producto añadido')
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
@@ -186,18 +162,7 @@ export default function ArtProductDetail({ params, initialProduct = null }) {
     const existingShipping = getSellerArtShipping(product.seller_id)
 
     if (existingShipping) {
-      addToCart({
-        productId: product.id,
-        productType: 'art',
-        name: product.name,
-        price: product.price,
-        basename: product.images?.[0]?.basename || product.thumbnail_basename || null,
-        slug: product.slug,
-        sellerId: product.seller_id,
-        sellerName: product.seller_full_name,
-        quantity: 1,
-        shipping: existingShipping,
-      })
+      addToCart(artCartItem(product, existingShipping))
 
       // Cuando reutilizamos automáticamente el método de envío de otra obra del mismo autor,
       // mostramos un mensaje más explicativo para que el usuario entienda qué ha ocurrido.
@@ -210,18 +175,7 @@ export default function ArtProductDetail({ params, initialProduct = null }) {
 
   const handleShippingSelected = (shipping) => {
     // Add to cart with shipping info
-    addToCart({
-      productId: product.id,
-      productType: 'art',
-      name: product.name,
-      price: product.price,
-      basename: product.images?.[0]?.basename || product.thumbnail_basename || null,
-      slug: product.slug,
-      sellerId: product.seller_id,
-      sellerName: product.seller_full_name,
-      quantity: 1,
-      shipping,
-    })
+    addToCart(artCartItem(product, shipping))
 
     // Show banner notification
     showBanner('Producto añadido')

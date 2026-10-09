@@ -27,4 +27,30 @@ function productImageUrl(basename, productType) {
     : `${config.siteApiBaseUrl}/api/others/images/${encodeURIComponent(basename)}`;
 }
 
-module.exports = { productImageUrl };
+/**
+ * Version segment of the square JPEG copies (`/api/{art,others}/images/jpeg/v1/…`,
+ * services/catalogImageService.js). The routes are mounted with it and the Meta
+ * feed links to it. A copy behind `v1` never changes: a new size, background or
+ * format is published as `v2`, and this constant moves with it.
+ */
+const CATALOG_JPEG_VERSION = 'v1';
+
+/**
+ * Public, absolute URL of the square JPEG copy of a product image, for the
+ * channels that do not accept WebP (the Meta catalogue). Always the API: the
+ * copies are generated there and cached by nginx, never stored in S3.
+ *
+ * The URL ends in `.jpg` (`<uuid>.webp.jpg`): it serves a JPEG, and a
+ * validator that trusts the extension must not read `.webp` there.
+ *
+ * @param {string} basename
+ * @param {'art'|'other'|'other_var'} productType
+ * @returns {string|null} null when there is no basename
+ */
+function catalogJpegUrl(basename, productType) {
+  if (!basename) return null;
+  const prefix = productType === 'art' ? 'art' : 'others';
+  return `${config.siteApiBaseUrl}/api/${prefix}/images/jpeg/${CATALOG_JPEG_VERSION}/${encodeURIComponent(basename)}.jpg`;
+}
+
+module.exports = { productImageUrl, catalogJpegUrl, CATALOG_JPEG_VERSION };

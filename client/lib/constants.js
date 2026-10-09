@@ -1164,3 +1164,32 @@ export const EVENT_PASS_COPY = {
   endedMessage: 'El evento ha finalizado. Gracias por acompañarnos.',
   chatClosed: 'El chat está cerrado',
 };
+
+// URL de compra de Meta (`/cesta`): la página a la que Instagram y Facebook
+// envían a quien compra desde la tienda, con los productos elegidos en
+// `?products=`. Ver client/app/cesta/.
+export const META_CHECKOUT_COPY = {
+  pageTitle: 'Tu cesta',
+  metaTitle: 'Cesta',
+  intro: 'Estos son los productos que has elegido. Revisa la selección y continúa con la compra.',
+  chooseShipping: 'Elegir envío',
+  shippingChosen: (methodName) => `Envío: ${methodName}`,
+  shippingReused: 'Se ha elegido el mismo método de envío que la otra obra de este artista.',
+  shippingNext: 'Envío: se calcula en el siguiente paso',
+  quantity: (quantity) => `Cantidad: ${quantity}`,
+  subtotal: 'Subtotal',
+  subtotalNote: 'Los gastos de envío se calculan en el siguiente paso.',
+  continue: 'Continuar con la compra',
+  pendingShipping: 'Elige el envío de cada obra para continuar.',
+  preparing: 'Preparando tu cesta…',
+  unavailableTitle: 'Ya no está disponible',
+  unavailableIntro: 'Estos productos se han vendido o ya no se pueden comprar desde la web.',
+  viewProduct: 'Ver ficha',
+  unpublished: 'Un producto del enlace ya no está publicado',
+  notBuyableTitle: 'Consulta estos productos en su ficha',
+  notBuyableIntro: 'Ahora mismo no se pueden comprar desde la cesta. En su ficha puedes solicitar información.',
+  emptyTitle: 'No hay productos que añadir',
+  emptyIntro: 'El enlace no contiene ningún producto disponible. Puedes seguir explorando la galería y la tienda.',
+  goGallery: 'Ver la galería',
+  goStore: 'Ver la tienda',
+};

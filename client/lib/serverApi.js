@@ -49,6 +49,32 @@ export async function fetchOthersProduct(idOrSlug) {
   }
 }
 
+// Lecturas SIN caché de datos, para `/cesta` (la URL de compra de Meta): allí
+// se decide si una obra se puede comprar AHORA, y la caché de 300 s de las
+// fichas podría anunciar disponible una obra vendida hace un minuto. Por id
+// numérico, el que viaja en los identificadores del catálogo de Meta.
+export async function fetchArtProductFresh(id) {
+  try {
+    const res = await fetch(`${DATA_API_URL}/art/${encodeURIComponent(id)}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.product || null
+  } catch {
+    return null
+  }
+}
+
+export async function fetchOthersProductFresh(id) {
+  try {
+    const res = await fetch(`${DATA_API_URL}/others/${encodeURIComponent(id)}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.product || null
+  } catch {
+    return null
+  }
+}
+
 // Payload completo de `/events/:slug`: además del evento trae `attendeeCount` y
 // `serverNow`. `fetchEvent` se queda con el evento, que es lo que necesitan los
 // metadatos; quien necesite el resto usa esta.

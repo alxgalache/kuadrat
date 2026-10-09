@@ -13,9 +13,12 @@
  *    'accepted' no se guarda ni se acumula nada: `track()` descarta el evento
  *    en el acto. Bufferizar "por si acaso acepta luego" convertiría el rechazo
  *    en un aplazamiento.
- *  - Los `content_ids` son `art_<id>` / `other_<id>[_v<variantId>]`. Es el
- *    mismo formato que tendría que usar un futuro catálogo de productos en
- *    Meta Commerce; cambiarlo obliga a regenerar el catálogo.
+ *  - Los `content_ids` son `art_<id>` / `other_<id>[_v<variantId>]`, los
+ *    mismos `id` del catálogo de Meta (`GET /api/feeds/meta-catalog.xml`, que
+ *    los genera con `api/utils/metaContentId.js`) y los que vuelven en la URL
+ *    de compra `/cesta?products=…` (`parseContentId`). Cambiarlo obliga a
+ *    rehacer el catálogo y pierde todas las etiquetas de producto de
+ *    Instagram: las dos definiciones cambian juntas o no cambian.
  */
 
 import { META_PIXEL_ID } from './constants';
@@ -253,10 +256,30 @@ export function track(event, params, options) {
   sendToApi(event, params, eventId, options?.orderId);
 }
 
-/** Identificador de producto estable entre eventos (y con un futuro catálogo). */
+/**
+ * Identificador de producto estable entre eventos y con el catálogo de Meta.
+ * Contraparte en la API: `contentId()` de `api/utils/metaContentId.js`.
+ */
 export function contentId(productType, productId, variantId = null) {
   const base = `${productType}_${productId}`;
   return variantId ? `${base}_v${variantId}` : base;
+}
+
+const CONTENT_ID_RE = /^(?:art_(\d+)|other_(\d+)_v(\d+))$/;
+
+/**
+ * Lo contrario de `contentId()` para los identificadores que se pueden
+ * comprar: una obra o una variante de la tienda. `other_<id>` sin variante es
+ * un grupo, no un artículo, y devuelve null como cualquier otro texto.
+ *
+ * @returns {{ productType: 'art', productId: number }
+ *   | { productType: 'other', productId: number, variantId: number } | null}
+ */
+export function parseContentId(id) {
+  const m = typeof id === 'string' ? id.match(CONTENT_ID_RE) : null;
+  if (!m) return null;
+  if (m[1]) return { productType: 'art', productId: Number(m[1]) };
+  return { productType: 'other', productId: Number(m[2]), variantId: Number(m[3]) };
 }
 
 /** Convierte una línea de carrito en un `contents[]` de Meta. */
@@ -282,11 +305,17 @@ export function trackPageView() {
   track('PageView');
 }
 
-/** Ficha de producto (obra o artículo de tienda). */
+/**
+ * Ficha de producto (obra o artículo de tienda).
+ *
+ * En la tienda el visitante aún no ha elegido variante, y `other_<id>` es el
+ * `item_group_id` de sus variantes en el catálogo: por eso se declara como
+ * grupo. Una obra es un artículo único.
+ */
 export function trackViewContent({ productType, productId, name, price, category }) {
   track('ViewContent', {
     content_ids: [contentId(productType, productId)],
-    content_type: 'product',
+    content_type: productType === 'art' ? 'product' : 'product_group',
     content_name: name,
     content_category: category || (productType === 'art' ? 'Obra' : 'Tienda'),
     value: Number(price) || 0,
