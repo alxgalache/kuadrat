@@ -90,7 +90,7 @@
 
 - [x] 6.1 Ejecutar `npm test` en `api/` con la suite completa, incluida `testEnvironmentIsolation.test.js`
 - [x] 6.2 Ejecutar `npm run lint` y `npm run build` en `client/`
-- [ ] 6.3 Tras el despliegue conjunto (`./deploy/deploy.sh`), comprobar en producción lo siguiente:
+- [x] 6.3 (09/10/2026) Tras el despliegue conjunto (`./deploy/deploy.sh`), comprobar en producción lo siguiente:
   - el feed de Google conserva sus `<item>` e `id`;
   - el feed de Meta responde, y uno de sus `image_link` devuelve `image/jpeg` de 1600 × 1600 (con `X-Kuadrat-Cache: HIT` en la segunda petición);
   - `https://140d.art/cesta?products=art_<id>%3A1` lleva hasta el cajón.
@@ -101,7 +101,7 @@
 
 - [x] 7.1 Repasar `docs/tienda_meta/` contra el código final: rutas, URLs, nombres de constantes, el conteo de productos y la tabla «Si hay que tocar algo»
 - [x] 7.2 Actualizar `docs/google-presencia/06-feed-automatico.md` («Si hay que tocar algo») si alguna constante cambió de fichero en el grupo 1, por ejemplo `ARTWORK_CATEGORY`
-- [ ] 7.3 Borrar `api/tests/googleFeedUnchanged.test.js` y `api/tests/fixtures/googleMerchantFeed.before.js` cuando 1.6 y 6.3 estén comprobados, y volver a ejecutar `npm test`
+- [x] 7.3 (09/10/2026) Borrar `api/tests/googleFeedUnchanged.test.js` y `api/tests/fixtures/googleMerchantFeed.before.js` cuando 1.6 y 6.3 estén comprobados, y volver a ejecutar `npm test`
 - [x] 7.4 Registrar el porqué del cambio en `.claude/rules/`:
   - Crear `catalog/meta-catalog.md` con `paths:` a `api/services/{productFeedCatalogue,metaCatalogFeed,catalogImageService}.js`, `api/utils/metaContentId.js`, `client/app/cesta/**`, `client/lib/cartItems.js` y `docs/tienda_meta/**`. Debe recoger:
     - los ids del píxel y por qué no los slugs;

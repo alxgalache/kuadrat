@@ -27,14 +27,14 @@ Cómo poner las obras de 140d en la tienda de Instagram y Facebook, etiquetarlas
 | Combinar el feed horario con la API por lotes | Solo el feed horario. La API por lotes queda como paso futuro. |
 | «Los cuatro artistas» | El número de artistas cambia: no lo uses como dato fijo en ningún texto. |
 
-## Estado a 07/10/2026
+## Estado a 09/10/2026
 
 | Pieza | Estado |
 |---|---|
 | Píxel de Meta y API de conversiones (conjunto de datos `1057434273433077`) | ✔ En producción |
 | TXT `facebook-domain-verification` en GoDaddy | ✔ Existe. Falta comprobar que el dominio figura como verificado en el porfolio (guía 01) |
 | Cuentas: porfolio con control total de la página de Facebook y de Instagram | ✗ Pendiente (guía 01). La página está en otra cuenta personal |
-| Feed de Meta, fotos JPEG y página `/cesta` | ◐ Implementado y con tests (08/10/2026). Pendiente de desplegar (API y cliente juntos) y de comprobar en producción |
+| Feed de Meta, fotos JPEG y página `/cesta` | ✔ En producción, comprobado el 09/10/2026: 42 artículos, 52 fotos JPEG de 1600 × 1600 y `/cesta` sin caché. El feed de Google sigue con los mismos 42 `id` |
 | Catálogo en Commerce Manager | ✗ Pendiente (guía 03), después del despliegue |
 | Tienda y URL de compra | ✗ Pendiente (guía 04) |
 
