@@ -38,6 +38,16 @@ Si se desactivan los pagos (`NEXT_PUBLIC_PAYMENT_ENABLED=false`) o la obra pasa 
 2. Catálogo → Fuentes de datos → `Feed 140d (API)` → **Pausar** la programación, para que el catálogo no cambie mientras tanto.
 3. Al volver a vender, haz lo contrario: reanuda la fuente y muestra la tienda.
 
+## Todos los productos salen «Agotado» en la tienda
+
+Pasó el 09/10/2026, justo después de aprobarse la tienda. En Commerce Manager, cada artículo tenía **cantidad en venta: 0** aunque el feed dijera `in stock`. La tienda de Instagram tiene un carrito propio, y Meta trata como 0 un artículo que no declara cantidad. Desde entonces el feed manda `quantity_to_sell_on_facebook`: 1 en cada obra y el stock real en cada variante.
+
+Si vuelve a pasar:
+
+1. Abre el feed y comprueba que cada `<item>` lleva `<g:quantity_to_sell_on_facebook>` con un número mayor que 0.
+2. En Commerce Manager → Catálogo → Fuentes de datos → `Feed 140d (API)` → **Subir ahora**, para no esperar a la lectura horaria.
+3. Abre un artículo en **Catálogo → Artículos**: su cantidad en venta debe coincidir con la del feed.
+
 ## El feed falla
 
 - Commerce Manager avisa por correo y en **Fuentes de datos** si una lectura falla.

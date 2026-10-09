@@ -121,7 +121,21 @@ describe('Meta catalogue feed', () => {
     expect(item).not.toContain('<g:shipping>')
     expect(field(item, 'identifier_exists')).toBeNull()
     expect(field(item, 'gtin')).toBeNull()
-    expect(field(item, 'quantity_to_sell_on_facebook')).toBeNull()
+  })
+
+  test('declares a quantity on every item, or Meta shows it as sold out', () => {
+    // Without `quantity_to_sell_on_facebook` Meta counts 0 and the shop says
+    // «Agotado» even though availability is `in stock` (09/10/2026).
+    for (const block of items.values()) {
+      expect(Number(field(block, 'quantity_to_sell_on_facebook'))).toBeGreaterThanOrEqual(1)
+    }
+    // An artwork is sold one at a time.
+    expect(field(items.get(`art_${fx.fragil.id}`), 'quantity_to_sell_on_facebook')).toBe('1')
+    // A store variant declares its real stock.
+    const [a4, unnamed] = fx.prints.variantIds
+    expect(field(items.get(`other_${fx.prints.id}_v${a4}`), 'quantity_to_sell_on_facebook')).toBe('3')
+    expect(field(items.get(`other_${fx.prints.id}_v${unnamed}`), 'quantity_to_sell_on_facebook')).toBe('1')
+    expect(field(items.get(`other_${fx.book.id}_v${fx.book.variantIds[0]}`), 'quantity_to_sell_on_facebook')).toBe('5')
   })
 
   test('links the square JPEG copies of the images, in order', () => {

@@ -21,6 +21,13 @@
  * real shipping. The most expensive zone group, which Google needs, would show
  * a peninsular buyer the Canary Islands price for no reason.
  *
+ * `quantity_to_sell_on_facebook` IS required, although nobody pays inside
+ * Meta any more. The shop keeps an in-app cart that hands over to `/cesta`, and
+ * an item without a quantity counts as 0: Instagram showed every artwork as
+ * «Agotado» while the feed said `in stock` (09/10/2026). An artwork declares
+ * 1, the quantity `/cesta` lets a buyer take (a sold one leaves the feed); a
+ * store variant declares its real stock.
+ *
  * Nothing is ever declared `out of stock`: what cannot be bought is not in the
  * feed. Meta removes the product tags of an out-of-stock item anyway, so
  * keeping sold artworks would save no tag and only show them as sold out.
@@ -49,6 +56,10 @@ const FALLBACK_BRAND = '140d'
 // The label the store page shows for a variant without a name.
 const DEFAULT_VARIANT_LABEL = 'Opción estándar'
 
+// An artwork is sold one at a time: `/cesta` and the cart force quantity 1,
+// and a sold artwork (or one whose edition ran out) leaves the feed.
+const ARTWORK_QUANTITY = 1
+
 function baseTitle(entry) {
   return entry.sellerName ? `${entry.name} – ${entry.sellerName}` : entry.name
 }
@@ -69,6 +80,7 @@ function artItem(entry) {
     title,
     description: description.slice(0, DESCRIPTION_MAX),
     entry,
+    quantity: ARTWORK_QUANTITY,
     images: entry.images.slice(0, MAX_IMAGES).map((basename) => catalogJpegUrl(basename, 'art')),
     category: ARTWORK_CATEGORY,
     productType: entry.technique ? `Obra original > ${entry.technique}` : 'Obra original',
@@ -92,6 +104,7 @@ function variantItems(entry) {
       title,
       description: (entry.description || title).slice(0, DESCRIPTION_MAX),
       entry,
+      quantity: variant.stock,
       images,
       category: null,
       productType: 'Tienda',
@@ -108,6 +121,7 @@ function renderItem(item) {
     tag('title', item.title),
     tag('description', item.description),
     tag('availability', 'in stock'),
+    tag('quantity_to_sell_on_facebook', item.quantity),
     tag('condition', 'new'),
     tag('price', formatEur(item.entry.priceCents)),
     tag('link', productLink(item.entry)),

@@ -83,6 +83,7 @@ Cada artículo SHALL llevar:
 - `title`: «Nombre – Artista», o solo el nombre si el producto no tiene artista. Si el producto de la tienda tiene más de una variante con stock, se añade « · » y la etiqueta de la variante (`key`, o «Opción estándar» si es nula). Máximo 200 caracteres.
 - `description`: el texto plano de la descripción, con los bloques HTML separados por espacios. En una obra va precedida de la técnica y las medidas («Óleo sobre lienzo · 60 × 80 cm. »), con las medidas formateadas por `formatDimensions` y omitidas si no se pueden leer. Si no hay descripción, el título. Máximo 9999 caracteres.
 - `availability`: `in stock`.
+- `quantity_to_sell_on_facebook`: `1` en una obra, que se vende de una en una (la cesta y `/cesta` fuerzan cantidad 1, y una obra vendida sale del feed), y el stock real de la variante en la tienda. Es obligatorio aunque el pago se cierre en la web: la tienda conserva un carrito dentro de la app, y Meta trata como `0` un artículo sin cantidad y lo muestra como agotado.
 - `condition`: `new`.
 - `price`: el precio de la base de datos en el formato `1200.00 EUR`.
 - `link`: `CLIENT_URL` más `/galeria/p/<slug>` (obra) o `/tienda/p/<slug>` (tienda), sin parámetros.
@@ -90,11 +91,15 @@ Cada artículo SHALL llevar:
 - `google_product_category`: `500044` en las obras. Nada en la tienda.
 - `product_type`: `Obra original > <técnica>` en las obras (`Obra original` si no hay técnica) y `Tienda` en la tienda.
 
-Los artículos SHALL NOT llevar `shipping`, `identifier_exists`, `gtin` ni `quantity_to_sell_on_facebook`.
+Los artículos SHALL NOT llevar `shipping`, `identifier_exists` ni `gtin`.
 
 #### Scenario: Obra con técnica y medidas
 - **WHEN** el feed incluye la obra «Frágil 1» de «Pilar Español», técnica «Técnica mixta sobre papel», medidas «30x40», precio 350 y descripción `<p>Serie Frágil</p>`
 - **THEN** su artículo lleva `title` «Frágil 1 – Pilar Español», `description` «Técnica mixta sobre papel · 30 × 40 cm. Serie Frágil», `price` «350.00 EUR», `availability` «in stock», `brand` «Pilar Español», `google_product_category` «500044» y `product_type` «Obra original > Técnica mixta sobre papel»
+
+#### Scenario: Cantidad disponible
+- **WHEN** el feed incluye una obra y una variante de la tienda con stock 3
+- **THEN** la obra lleva `<g:quantity_to_sell_on_facebook>1</g:quantity_to_sell_on_facebook>` y la variante `<g:quantity_to_sell_on_facebook>3</g:quantity_to_sell_on_facebook>`, y ninguna aparece como agotada en la tienda de Instagram
 
 #### Scenario: Artista sin nombre
 - **WHEN** el vendedor de un producto no tiene `full_name`

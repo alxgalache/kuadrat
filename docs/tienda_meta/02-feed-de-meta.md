@@ -38,6 +38,7 @@ Si un día falla la cotización del envío de un producto (por ejemplo, Sendclou
 | `description` | Técnica y medidas, y después la descripción de la ficha sin HTML | `Técnica mixta sobre papel · 30 × 40 cm. Serie Frágil…` |
 | `price` | El precio de la web | `350.00 EUR` |
 | `availability` / `condition` | Siempre `in stock` / `new`: lo que no se puede comprar no está | — |
+| `quantity_to_sell_on_facebook` | **1** en cada obra (se vende de una en una) y el stock real en cada variante de la tienda. Sin este campo Meta cuenta 0 y la tienda muestra «Agotado» | `1` |
 | `link` | La ficha en 140d.art | `https://140d.art/galeria/p/fragil-1` |
 | `image_link` y adicionales | Hasta 3 fotos, en su orden, en **JPEG cuadrado de 1600 px** con la obra entera sobre blanco | `https://api.140d.art/api/art/images/jpeg/v1/<foto>.webp.jpg` |
 | `brand` | El artista (o «140d» si falta). Sirve para agrupar por artista | `Pilar Español` |
