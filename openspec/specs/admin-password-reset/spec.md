@@ -1,4 +1,10 @@
-## ADDED Requirements
+# admin-password-reset Specification
+
+## Purpose
+
+Definir el restablecimiento de contraseña iniciado por el admin, individual o masivo para los artistas activados: token, endpoints de validación y consumo, emails y página pública.
+
+## Requirements
 
 ### Requirement: Admin-initiated password reset for a single artist
 

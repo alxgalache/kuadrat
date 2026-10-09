@@ -1,4 +1,10 @@
-## ADDED Requirements
+# shipping-zone-product-filter Specification
+
+## Purpose
+
+Definir las zonas de envío ligadas a un producto concreto: referencia opcional al producto, validación, filtrado para el comprador y su presentación en el formulario y la tabla del admin.
+
+## Requirements
 
 ### Requirement: Shipping zone stores optional product reference
 The `shipping_zones` table SHALL include two nullable columns: `product_id` (INTEGER) and `product_type` (TEXT with CHECK constraint limiting values to 'art' or 'other'). Both columns MUST be NULL when no product is assigned. Both columns MUST be non-NULL when a product is assigned.

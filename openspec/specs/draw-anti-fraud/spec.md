@@ -1,4 +1,10 @@
-## ADDED Requirements
+# draw-anti-fraud Specification
+
+## Purpose
+
+Definir las medidas antifraude de los sorteos: DNI y email únicos por sorteo, verificación del email por código, deduplicación por huella del método de pago y registro de la IP.
+
+## Requirements
 
 ### Requirement: DNI field and format validation
 The system SHALL require a `dni` field when registering as a draw participant. The DNI SHALL be validated using the Spanish NIF algorithm: 8 digits followed by a checksum letter, where the letter equals `"TRWAGMYFPDXBNJZSQVHLCKE"[number % 23]`. NIE format (prefix X, Y, or Z replaced by 0, 1, or 2 before calculation) SHALL also be accepted. Validation SHALL occur both client-side (before form submission) and server-side (in the send-verification endpoint).
@@ -19,8 +25,6 @@ The system SHALL require a `dni` field when registering as a draw participant. T
 - **WHEN** the user types a DNI in the PERSONAL step input field
 - **THEN** the frontend SHALL validate the format and checksum in real-time and show an inline error if invalid
 
----
-
 ### Requirement: DNI uniqueness per draw
 The system SHALL enforce that each DNI can only be used once per draw. The `draw_buyers` table SHALL have a UNIQUE index on `(dni, draw_id)`. When `POST /api/draws/:id/send-verification` is called, the server SHALL check for an existing `draw_buyers` record with the same DNI for the same draw before proceeding.
 
@@ -35,8 +39,6 @@ The system SHALL enforce that each DNI can only be used once per draw. The `draw
 #### Scenario: Race condition handled by database constraint
 - **WHEN** two concurrent requests attempt to register the same DNI for the same draw
 - **THEN** the UNIQUE index on `(dni, draw_id)` SHALL cause one request to fail with a constraint violation, which the service SHALL catch and return as a 409
-
----
 
 ### Requirement: Email OTP verification
 The system SHALL verify participant email addresses by sending a 6-digit numeric OTP code via email. The OTP flow SHALL be triggered by `POST /api/draws/:id/send-verification` (which also validates DNI) and confirmed by `POST /api/draws/:id/verify-email`. Emails SHALL be normalised (trimmed, lower-cased) on the server in both endpoints. The code SHALL be generated with a CSPRNG and compared in constant time. A successful verification SHALL return a `verificationToken`: 32 random bytes, of which only the SHA-256 is stored, in `draw_email_verifications.token_hash`, alongside `verified_at`. That token is the only proof `register-buyer` accepts, and it is valid for 60 minutes from `verified_at`.
@@ -88,8 +90,6 @@ The system SHALL enforce that each email address can only be used once per draw.
 - **WHEN** `POST /api/draws/:id/send-verification` is called
 - **THEN** the system SHALL check both email uniqueness AND DNI uniqueness before sending the verification code
 
----
-
 ### Requirement: Stripe payment method fingerprint deduplication
 The system SHALL prevent the same physical card from being used for multiple entries in the same draw. When `POST /api/draws/:id/confirm-payment` processes a Stripe SetupIntent, the system SHALL retrieve the PaymentMethod, extract `card.fingerprint`, and check for duplicates within the same draw before saving.
 
@@ -108,8 +108,6 @@ The system SHALL prevent the same physical card from being used for multiple ent
 #### Scenario: Fingerprint stored in payment data
 - **WHEN** payment is confirmed and the fingerprint is available
 - **THEN** the system SHALL store the fingerprint in `draw_authorised_payment_data.stripe_fingerprint`
-
----
 
 ### Requirement: IP address logging
 The system SHALL capture and store the client IP address at the earliest interaction point: the `send-verification` endpoint. The IP SHALL be stored in `draw_email_verifications.ip_address` for immediate logging, and subsequently copied to `draw_buyers.ip_address` when the buyer record is created during `register-buyer`. The IP is for admin review purposes only — no automated blocking based on IP.

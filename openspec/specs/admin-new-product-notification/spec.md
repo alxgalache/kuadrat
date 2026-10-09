@@ -1,3 +1,11 @@
+# admin-new-product-notification Specification
+
+## Purpose
+
+Definir el email que recibe el admin cuando un vendedor crea un producto (obra o tienda), con la plantilla estándar y sin bloquear la creación si el envío falla.
+
+## Requirements
+
 ### Requirement: Admin receives email when seller creates a product
 The system SHALL send an email notification to the admin email address (`config.registrationEmail`) whenever a seller successfully creates an art or other product. The email MUST include the seller's name and the product name, and MUST indicate that the product needs validation and approval.
 

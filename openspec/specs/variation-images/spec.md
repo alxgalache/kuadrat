@@ -1,3 +1,11 @@
+# variation-images Specification
+
+## Purpose
+
+Definir las imágenes propias de las variantes de la tienda: subida y validación en el formulario, almacenamiento, presentación en la ficha y en la rejilla, y borrado de ficheros.
+
+## Requirements
+
 ### Requirement: Variation image upload in publish form
 
 The publish form SHALL display a multi-image upload widget for each variation row when the seller enables "Este producto tiene variaciones". Each variation row SHALL contain: name input (`key`), stock input, and a multi-image uploader supporting 1..3 images. The first image slot of every variation is REQUIRED — submission SHALL be blocked while any active variation lacks an image in slot 0.
@@ -178,3 +186,10 @@ The product title SHALL navigate to the product detail page via its own `<Link>`
 - **WHEN** a user tabs through the page
 - **THEN** focus SHALL land on the image-area link first, then each thumbnail button in order, then the title link
 - **AND** pressing Enter on a thumbnail SHALL swap the main image (not navigate)
+
+### Requirement: Variation images not editable after creation
+`VariationEditModal` ("Editar variaciones", opened from the seller products list and from the admin author page) SHALL NOT allow uploading or changing variation images. It SHALL only edit each variation's name and stock, and add or remove variations. Variation images can be changed only from the admin full product edit page (`admin-product-edit`).
+
+#### Scenario: Seller opens variation edit modal
+- **WHEN** the seller opens "Editar variaciones" for a product whose variations have images
+- **THEN** the modal SHALL show the name and stock fields only, with no image upload control

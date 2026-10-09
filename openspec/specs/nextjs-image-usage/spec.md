@@ -1,3 +1,9 @@
+# nextjs-image-usage Specification
+
+## Purpose
+
+Definir el uso del componente `Image` de Next.js en todas las imágenes del cliente: dimensiones explícitas o `fill`, atributo `sizes`, prioridad para el LCP, texto alternativo y optimizador activo en desarrollo.
+
 ## Requirements
 
 ### Requirement: Use Next.js Image component for all images

@@ -1,4 +1,10 @@
-## ADDED Requirements
+# service-point-map-overlay Specification
+
+## Purpose
+
+Definir la capa de mapa para elegir punto de entrega en el checkout: maquetación, tarjetas, selección bidireccional entre mapa y lista, confirmación, cierre y estados de carga y error.
+
+## Requirements
 
 ### Requirement: Service point overlay opens when a service-point option is selected
 

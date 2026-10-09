@@ -1,4 +1,10 @@
-## ADDED Requirements
+# draw-realtime Specification
+
+## Purpose
+
+Definir el tiempo real de los sorteos con Socket.IO: módulo y registro en el servidor, aviso de fin desde el planificador, hook del cliente, cuenta atrás y cierre automático del modal.
+
+## Requirements
 
 ### Requirement: Draw Socket.IO module
 The system SHALL provide a Socket.IO module (`api/socket/drawSocket.js`) that manages real-time communication for draws, using rooms named `draw:<drawId>`.

@@ -1,4 +1,10 @@
-## ADDED Requirements
+# dynamic-shipping-methods Specification
+
+## Purpose
+
+Definir que los métodos de envío que ofrece el formulario de admin vienen de Sendcloud y no de una lista fija, y la retirada de la infraestructura estática de transportistas.
+
+## Requirements
 
 ### Requirement: Admin endpoint returns shipping methods from Sendcloud
 The backend SHALL expose `GET /api/admin/shipping-methods` that calls Sendcloud's `POST /api/v3/shipping-options` with `{from_country_code: "ES", to_country_code: "ES"}` and returns `[{code, name}]` extracted from `response.data`.

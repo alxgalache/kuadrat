@@ -1,4 +1,10 @@
-## ADDED Requirements
+# webhook-enhancements Specification
+
+## Purpose
+
+Mejorar el webhook de Sendcloud: verificación de la firma sobre el cuerpo en bruto, búsqueda por identificador de bulto, gestión de los fallos de anuncio y guardado de la URL de la etiqueta.
+
+## Requirements
 
 ### Requirement: Raw body webhook signature verification
 

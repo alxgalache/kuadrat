@@ -1,4 +1,10 @@
-## ADDED Requirements
+# sendcloud-seller-config Specification
+
+## Purpose
+
+Definir la configuración de Sendcloud por vendedor: tabla, API y pantalla de admin, campo de coempaquetado de la tienda y peso obligatorio con Sendcloud activo.
+
+## Requirements
 
 ### Requirement: Seller Sendcloud configuration database table
 

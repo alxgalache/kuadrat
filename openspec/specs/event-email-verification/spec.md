@@ -1,4 +1,10 @@
-## ADDED Requirements
+# event-email-verification Specification
+
+## Purpose
+
+Definir la verificación del email por código durante el registro en un evento: envío, comprobación y reenvío del código, interfaz en `EventAccessModal` y guardado de la sesión solo con acceso concedido.
+
+## Requirements
 
 ### Requirement: Send email verification code during event registration
 

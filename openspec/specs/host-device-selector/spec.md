@@ -1,4 +1,10 @@
-## ADDED Requirements
+# host-device-selector Specification
+
+## Purpose
+
+Definir la selección de cámara, micrófono y altavoces del anfitrión dentro de la sala del evento: componente, menú desplegable, cambio en caliente de dispositivos, errores e integración con los controles del anfitrión.
+
+## Requirements
 
 ### Requirement: In-app device selection for event host
 
@@ -6,7 +12,10 @@ The system SHALL provide in-app device selection controls for the host of a live
 
 These controls SHALL be rendered exclusively for the host (the `isHost` prop is true in `HostControls`) and SHALL NOT appear for viewers or promoted participants.
 
----
+#### Scenario: Device controls only for the host
+- **WHEN** `HostControls` renders with `isHost` true during a live event
+- **THEN** the host SHALL be able to choose the microphone, camera and audio output from the controls, without reloading the page or interrupting the stream
+- **AND** the controls SHALL NOT be rendered for viewers or promoted participants
 
 ### Requirement: DeviceSelector sub-component
 
@@ -44,8 +53,6 @@ The hook is already available in the installed `@livekit/components-react` v2.9.
 3. **Safe switching:** `setActiveMediaDevice(deviceId)` internally calls `room.switchActiveDevice(kind, deviceId)` while managing React lifecycle (no setState on unmounted components, no memory leaks).
 4. **Automatic cleanup:** On unmount, the hook removes all event listeners and cancels pending operations.
 
----
-
 ### Requirement: Chevron button
 
 Each `DeviceSelector` SHALL render a small button with a downward-pointing chevron icon (SVG triangle or Heroicons `ChevronDownIcon`).
@@ -78,8 +85,6 @@ Each `DeviceSelector` SHALL render a small button with a downward-pointing chevr
   - Padding: `p-1` for click target
   - Cursor: `cursor-pointer`
   - Transition: `transition-transform` with `rotate-180` when dropdown is open
-
----
 
 ### Requirement: Device dropdown menu
 
@@ -139,9 +144,9 @@ When the chevron is clicked, a dropdown menu SHALL appear below the chevron butt
 - **THEN** the dropdown SHALL display a single non-clickable item: "No se encontraron dispositivos"
 - **AND** the text SHALL be styled as `text-sm text-gray-400 italic px-3 py-2`
 
----
-
 ### Requirement: Closing the dropdown
+A device dropdown SHALL close when the host clicks outside it, presses Escape or selects a device, and at most one device dropdown SHALL be open at a time.
+
 
 #### Scenario: Close on click outside
 - **GIVEN** the dropdown is open
@@ -168,9 +173,9 @@ When the chevron is clicked, a dropdown menu SHALL appear below the chevron butt
 
 **Implementation note:** This can be achieved by lifting the "open dropdown kind" state to the `HostControls` parent, passing the open/close state down to each `DeviceSelector`.
 
----
-
 ### Requirement: Audio output selector (Altavoces)
+When the browser supports choosing the audio output, the host controls SHALL include an "Altavoces" device selector, without a toggle, between the "Camara" and "Pantalla" controls. When it does not, the control SHALL NOT be rendered.
+
 
 #### Scenario: Audio output selector rendering
 - **GIVEN** the host controls are rendered
@@ -189,9 +194,9 @@ When the chevron is clicked, a dropdown menu SHALL appear below the chevron butt
 - **AND** `useMediaDeviceSelect({ kind: 'audiooutput' })` returns an empty `devices` array
 - **THEN** the "Altavoces" control SHALL NOT be rendered at all (graceful degradation)
 
----
-
 ### Requirement: Hot-swap device handling
+The device lists SHALL follow devices connected and disconnected during the stream, and SHALL NOT switch the active device on their own.
+
 
 #### Scenario: USB device connected during stream
 - **GIVEN** the host is streaming
@@ -211,9 +216,9 @@ When the chevron is clicked, a dropdown menu SHALL appear below the chevron butt
 - **WHEN** a new device is connected
 - **THEN** the dropdown list SHALL update in real-time to include the new device (the hook re-renders automatically via the `devicechange` event listener)
 
----
-
 ### Requirement: Error handling
+A failed device switch SHALL be caught and reported through the existing `deviceError` state of `HostControls`, closing the dropdown and leaving the previous device active.
+
 
 #### Scenario: Device switch fails
 - **GIVEN** the host selects a device from the dropdown
@@ -222,8 +227,6 @@ When the chevron is clicked, a dropdown menu SHALL appear below the chevron butt
 - **AND** the existing `deviceError` state in `HostControls` SHALL be set with an appropriate message (e.g., "Error al cambiar el dispositivo")
 - **AND** the dropdown SHALL close
 - **AND** the previous device SHALL remain active (no partial state)
-
----
 
 ### Requirement: Integration with existing HostControls layout
 
@@ -275,8 +278,6 @@ The new selectors SHALL be integrated into the existing `HostControls` layout (l
 ```
 
 Note: each container with a `DeviceSelector` MUST have `position: relative` (Tailwind `relative`) so the absolutely-positioned dropdown anchors correctly.
-
----
 
 ## LiveKit API Reference (for implementor)
 

@@ -1,4 +1,10 @@
-## ADDED Requirements
+# seller-profile Specification
+
+## Purpose
+
+Definir el perfil del vendedor: enlace de navegación, página con sus datos, endpoint y cambio de contraseña con su modal, validación y email de aviso.
+
+## Requirements
 
 ### Requirement: Seller profile navigation link
 The Navbar SHALL display a "Perfil" link in the seller dropdown menu, positioned above the "Artículos" link. The link SHALL navigate to `/seller/profile`.

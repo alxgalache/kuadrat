@@ -1,4 +1,10 @@
-## ADDED Requirements
+# admin-product-approval Specification
+
+## Purpose
+
+Definir la aprobación de productos pendientes por el admin, por API y desde la vista previa, y la ocultación del selector de variante cuando un producto de la tienda solo tiene una.
+
+## Requirements
 
 ### Requirement: Admin can approve pending products via API
 The system SHALL provide an admin-only endpoint `PUT /api/admin/products/:id/status` that updates the `status` column of a product in the `art` or `others` table to `"approved"`. The request body MUST include `product_type` (`"art"` or `"others"`) and `status` (`"approved"`). The endpoint MUST verify the product exists and is not soft-deleted (`removed = 0`). The endpoint MUST return a success message upon update.

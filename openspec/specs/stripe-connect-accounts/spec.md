@@ -1,4 +1,10 @@
-## ADDED Requirements
+# stripe-connect-accounts Specification
+
+## Purpose
+
+Definir las cuentas conectadas de Stripe Connect de los vendedores: configuración, esquema, creación y alta con la API V2, estado de la cuenta, webhooks idempotentes y su interfaz.
+
+## Requirements
 
 ### Requirement: Stripe Connect environment configuration
 
@@ -28,8 +34,6 @@ This secret SHALL be **distinct** from the existing `STRIPE_WEBHOOK_SECRET` (whi
 - **THEN** the system SHALL log a warning `[stripe-connect-webhook] STRIPE_CONNECT_WEBHOOK_SECRET is not configured; ignoring event`
 - **AND** SHALL respond `200 OK` without processing the event
 - **AND** SHALL NOT crash or surface the misconfiguration to the caller
-
----
 
 ### Requirement: User table schema additions for Stripe Connect
 
@@ -90,8 +94,6 @@ autofactura_agreement_signed_at DATETIME
 - **WHEN** the system attempts to insert user B with the same `'acct_xyz'`
 - **THEN** the database SHALL reject the insert with a UNIQUE constraint violation
 
----
-
 ### Requirement: stripe_connect_events table for webhook idempotency and audit log
 
 A new table `stripe_connect_events` SHALL be created to persist every Stripe Connect webhook event received, providing both an idempotency guard (so the same event is never processed twice) and a diagnostic audit log.
@@ -148,8 +150,6 @@ CREATE INDEX IF NOT EXISTS idx_stripe_connect_events_type ON stripe_connect_even
 - **AND** `processed_at` SHALL remain NULL
 - **AND** the controller SHALL respond `500 Internal Server Error` so Stripe will retry the event later
 - **AND** the error SHALL be logged via `logger.error`
-
----
 
 ### Requirement: stripeConnectService — connected account creation (V2 API)
 
@@ -217,8 +217,6 @@ The `idempotencyKey` `account_create_user_${userId}_v1` SHALL be passed on every
 - **THEN** Stripe SHALL recognize the same `idempotencyKey` and return the **same** account object
 - **AND** no second account SHALL be created in Stripe
 
----
-
 ### Requirement: stripeConnectService — onboarding link generation (V2 API)
 
 The service SHALL provide `createOnboardingLink({ stripeAccountId })` that generates a hosted account link via the V2 API.
@@ -252,8 +250,6 @@ The function SHALL return `{ url: link.url, expires_at: link.expires_at }`. It S
 - **WHEN** the service is called
 - **THEN** Stripe SHALL throw an error
 - **AND** the service SHALL re-throw as `ApiError(404, 'Stripe connected account not found: <accountId>')`
-
----
 
 ### Requirement: stripeConnectService — account retrieval and status sync
 
@@ -307,8 +303,6 @@ The `requirements_due` array SHALL be the contents of `account.requirements.summ
 - **THEN** the function SHALL return early with `{ status: 'not_started' }`
 - **AND** SHALL NOT make any API call to Stripe
 - **AND** SHALL NOT execute any database update
-
----
 
 ### Requirement: Admin endpoints for managing connected accounts
 
@@ -395,8 +389,6 @@ Forces a sync against Stripe and returns the updated status.
 - **AND** SHALL update the BD with the new status
 - **AND** SHALL respond with the updated state including `stripe_connect_status: 'active'`
 
----
-
 ### Requirement: Seller endpoints for managing own connected account
 
 The system SHALL expose the following HTTP endpoints for the seller themselves, protected by `authenticate` middleware (the seller can only operate on their own account, never another's).
@@ -429,8 +421,6 @@ Returns the seller's current Stripe Connect status from the database. **Does NOT
 **Flow:**
 1. Read `req.user` (already loaded by `authenticate`).
 2. Respond with `{ stripe_connect_status, stripe_transfers_capability_active, stripe_connect_requirements_due, stripe_connect_last_synced_at }`.
-
----
 
 ### Requirement: Connect webhook endpoint with thin event parsing
 
@@ -526,8 +516,6 @@ return res.status(200).json({ received: true });
 - **AND** SHALL leave `processed_at = NULL` (so it can be diagnosed later in `stripe_connect_events`)
 - **AND** SHALL respond `200 OK`
 
----
-
 ### Requirement: Fiscal data validation
 
 When the admin updates a seller's fiscal data via `PUT /api/admin/sellers/:id/fiscal`, the request body SHALL be validated by a Zod schema with the following rules.
@@ -586,8 +574,6 @@ The validation is **format only** — the system does NOT verify the tax_id agai
 - **WHEN** later the admin sends `autofactura_agreement_signed: false`
 - **THEN** the system SHALL set `autofactura_agreement_signed_at = NULL`
 
----
-
 ### Requirement: Seller email — onboarding link
 
 A new email template `sendSellerOnboardingLink({ seller, url })` SHALL be added to `api/services/emailService.js`.
@@ -614,8 +600,6 @@ A new email template `sendSellerOnboardingLink({ seller, url })` SHALL be added 
 - **AND** the rendered HTML SHALL contain the string `'140d Galería de Arte'`
 - **AND** the rendered HTML SHALL NOT contain the string `'Kuadrat'`
 - **AND** the email log SHALL record the delivery
-
----
 
 ### Requirement: Admin UI — Stripe Connect section in author detail
 
@@ -670,8 +654,6 @@ The section SHALL display:
 - **AND** the "Generar enlace" button SHALL be hidden
 - **AND** the "Sincronizar estado" button SHALL be visible
 
----
-
 ### Requirement: Admin UI — Onboarding link modal
 
 A new component `client/components/admin/StripeConnectLinkModal.js` SHALL be created.
@@ -710,8 +692,6 @@ StripeConnectLinkModal({
 - **AND** on success SHALL show toast `"Email enviado a <sellerEmail>"`
 - **AND** on failure SHALL show toast `"Error al enviar el email: <message>"`
 
----
-
 ### Requirement: Admin UI — Fiscal data form
 
 A new component `client/components/admin/SellerFiscalForm.js` SHALL be created and integrated into the author detail page in a section titled "Datos fiscales".
@@ -747,8 +727,6 @@ The form SHALL apply client-side validation matching the backend regex (DNI/NIE/
 - **THEN** the form SHALL display an inline error `"tax_id debe ser un DNI, NIE o CIF español válido"`
 - **AND** SHALL NOT submit to the backend
 
----
-
 ### Requirement: Seller UI — Stripe Connect status banner
 
 A new component `client/components/seller/StripeConnectBanner.js` SHALL be created and rendered at the top of the seller dashboard, before the wallet section.
@@ -781,8 +759,6 @@ All texts in the banner SHALL use **`140d Galería de Arte`** as the brand name.
 - **WHEN** the seller clicks "Continuar onboarding"
 - **THEN** the frontend SHALL call `sellerGenerateStripeConnectLink()`
 - **AND** SHALL redirect the browser to the URL returned
-
----
 
 ### Requirement: Seller routes — return and refresh intermediate pages
 
@@ -829,8 +805,6 @@ A client component that handles the case where an account link has expired.
 - **AND** SHALL redirect to the fresh URL
 - **AND** the artist SHALL be brought back to the Stripe hosted onboarding
 
----
-
 ### Requirement: Frontend constants — public brand name
 
 The constant module `client/lib/constants.js` SHALL export:
@@ -847,8 +821,6 @@ All user-facing strings introduced in this change (banner texts, modal copy, for
 - **WHEN** the banner displays the body text
 - **THEN** the text SHALL be derived from `PUBLIC_BRAND_NAME`
 - **AND** the constant SHALL equal `'140d Galería de Arte'`
-
----
 
 ### Requirement: Manual migration script for existing environments
 

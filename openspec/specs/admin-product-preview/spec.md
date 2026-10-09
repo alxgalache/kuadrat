@@ -1,4 +1,10 @@
-## ADDED Requirements
+# admin-product-preview Specification
+
+## Purpose
+
+Definir la vista previa de admin de un producto tal como lo verá el público, con su endpoint, su enlace en el email de producto nuevo y su botón en la tabla de productos del autor.
+
+## Requirements
 
 ### Requirement: Admin preview API endpoint
 The system SHALL provide a `GET /api/admin/products/:id/preview?type=art|others` endpoint that returns the full product data from the `art` or `others` table regardless of `status`, `visible`, or `is_sold` values. The endpoint MUST be protected by admin authentication. For `others` products, the response MUST include variations from `other_vars`.

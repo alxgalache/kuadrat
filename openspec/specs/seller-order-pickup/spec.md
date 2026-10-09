@@ -1,4 +1,10 @@
-## ADDED Requirements
+# seller-order-pickup Specification
+
+## Purpose
+
+Definir la solicitud de recogida en Sendcloud desde los pedidos del vendedor: validación, transportista, tabla de recogidas, cálculo del peso, botones, modal y paso del artículo a enviado.
+
+## Requirements
 
 ### Requirement: Pickup endpoint creates pickup in Sendcloud
 

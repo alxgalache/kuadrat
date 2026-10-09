@@ -1,4 +1,10 @@
-## ADDED Requirements
+# event-password-access Specification
+
+## Purpose
+
+Definir el reacceso a un evento con contraseña para quien ya se registró: generación de la contraseña, email de confirmación, pasos del modal y endpoint de verificación.
+
+## Requirements
 
 ### Requirement: Choose step in EventAccessModal
 

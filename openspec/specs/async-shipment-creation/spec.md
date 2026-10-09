@@ -1,4 +1,10 @@
-## ADDED Requirements
+# async-shipment-creation Specification
+
+## Purpose
+
+Definir la creación asíncrona de envíos con la API V3 de Sendcloud: identificadores de envío y de bulto en cada artículo, columnas de reintento e idempotencia por `external_reference_id`.
+
+## Requirements
 
 ### Requirement: Asynchronous shipment creation via Sendcloud V3 API
 

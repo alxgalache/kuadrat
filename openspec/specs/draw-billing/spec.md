@@ -1,4 +1,10 @@
-## ADDED Requirements
+# draw-billing Specification
+
+## Purpose
+
+Definir la facturación de las participaciones de un sorteo por el admin: listado, creación del pedido en la tabla del tipo de producto correcto, idempotencia y controles del panel.
+
+## Requirements
 
 ### Requirement: Admin can list draw participations
 The system SHALL provide an endpoint `GET /api/admin/draws/:id/participations` that returns all participations for a given draw, including buyer personal data, delivery/invoicing addresses, and authorized payment data.

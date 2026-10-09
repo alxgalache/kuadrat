@@ -1,3 +1,11 @@
+# seller-net-earnings-preview Specification
+
+## Purpose
+
+Definir la leyenda que muestra al vendedor, mientras publica, lo que cobrará neto o bruto según el régimen fiscal del producto (REBU o general), actualizada en tiempo real.
+
+## Requirements
+
 ### Requirement: Net earnings legend for art products (REBU)
 When a seller is publishing an art product and enters a valid price (>= 10), and the seller's art VAT regime is `art_rebu`, the system SHALL display a legend below the price input showing the seller's net earnings.
 

@@ -1,4 +1,10 @@
-## MODIFIED Requirements
+# draw-participation Specification
+
+## Purpose
+
+Definir la participación en un sorteo: registro del participante, modal de participación, email de confirmación y guardado del cliente de Stripe al confirmar el pago.
+
+## Requirements
 
 ### Requirement: Draw buyer registration
 The system SHALL allow users to register as draw participants via `POST /api/draws/:id/register-buyer`. Registration SHALL require a `verificationToken` returned by `POST /api/draws/:id/verify-email` for the same draw, not older than 60 minutes. The email in the body SHALL be normalised and SHALL equal the email that token was issued for. Registration SHALL accept firstName, lastName, email, dni, and optional delivery/invoicing address fields. The system SHALL NOT generate or store a `bid_password`. If a buyer with the same email already exists for the same draw, the existing buyer record SHALL be returned instead of creating a duplicate. That is only possible after the token has proven ownership of that email. The client IP address SHALL be stored in the `ip_address` column.
@@ -51,7 +57,43 @@ The frontend SHALL display a multi-step participation modal (`DrawParticipationM
 - **WHEN** the modal opens and a previous localStorage session exists for this draw
 - **THEN** the modal SHALL NOT skip to the CONFIRM phase — it SHALL always start from TERMS
 
----
+### Requirement: Stripe payment authorization for draws
+The system SHALL authorize the participant's payment method with a Stripe SetupIntent (a 0 EUR authorization) through `POST /api/draws/:id/setup-payment` and `POST /api/draws/:id/confirm-payment`, the same flow as the auction payment authorization: create the SetupIntent, return its `clientSecret`, collect the card in the frontend, then confirm and save the payment method data. A `drawBuyerId` that does not belong to the draw SHALL be answered with 404.
+
+#### Scenario: Setup payment creates Stripe SetupIntent
+- **WHEN** `POST /api/draws/:id/setup-payment` is called with a `drawBuyerId` of that draw
+- **THEN** the system SHALL create a Stripe SetupIntent and return its `clientSecret`
+
+#### Scenario: Confirm payment saves payment method
+- **WHEN** `POST /api/draws/:id/confirm-payment` is called with the `drawBuyerId` and the `setupIntentId`
+- **THEN** the system SHALL save the payment method data (name, last four digits, Stripe ids) in `draw_authorised_payment_data`
+
+### Requirement: Draw entry (participation)
+The system SHALL let a registered buyer with an authorized payment method enter a draw through `POST /api/draws/:id/enter`, which creates a `draw_participations` row and sends the entry confirmation email without blocking the response. `drawService.enterDraw` SHALL refuse the entry when the draw is not active, the buyer already entered, the draw is full or there is no payment authorization; the controller answers every such refusal with 400 and its message.
+
+#### Scenario: Successful draw entry
+- **WHEN** a registered buyer with an authorized payment method enters an active draw that has not reached `max_participations`
+- **THEN** a `draw_participations` row SHALL be created and the response SHALL be 200 with the participation id and date
+
+#### Scenario: Duplicate entry attempt
+- **WHEN** a buyer who already has a participation in the draw tries to enter again
+- **THEN** the response SHALL be 400 with "Ya estás inscrito en este sorteo"
+
+#### Scenario: Draw at capacity
+- **WHEN** a buyer tries to enter a draw that has reached `max_participations`
+- **THEN** the response SHALL be 400 with "El sorteo ha alcanzado el máximo de participantes"
+
+#### Scenario: Entry without payment authorization
+- **WHEN** a buyer without a saved payment method tries to enter
+- **THEN** the response SHALL be 400 with "Se requiere autorización de pago para participar"
+
+#### Scenario: Entry for non-active draw
+- **WHEN** a buyer tries to enter a draw whose status is not `active`
+- **THEN** the response SHALL be 400 with "El sorteo no está activo"
+
+#### Scenario: Buyer of another draw
+- **WHEN** the `drawBuyerId` belongs to a different draw
+- **THEN** the response SHALL be 404
 
 ### Requirement: Draw entry confirmation email
 The system SHALL send a confirmation email to the participant after successful draw entry. The email SHALL include: the draw name, product name, product image, and the participant's name. The email SHALL NOT include any password or access code. The email template SHALL follow the same HTML structure and Spanish language as existing email templates.
@@ -68,18 +110,6 @@ The system SHALL send a confirmation email to the participant after successful d
 - **WHEN** the confirmation email is generated
 - **THEN** the email body SHALL include the product image URL resolved from the product's basename and type
 
----
-
-## REMOVED Requirements
-
-### Requirement: Returning participant verification
-**Reason:** Draws are one-time entries — there is no use case for a participant to "return" to a draw. The CHOOSE/VERIFY flow and `bid_password` system were inherited from auctions and do not apply.
-**Migration:** Remove `POST /api/draws/:id/verify-buyer` endpoint, remove `verifyBuyer` controller and `verifyDrawBuyerPassword` service function, remove `verifyBuyerSchema` from validators. Frontend removes CHOOSE and VERIFY phases from modal.
-
----
-
-## MODIFIED Requirements
-
 ### Requirement: Confirm payment stores stripe_customer_id
 The draw payment confirmation flow SHALL store the Stripe customer of the confirmed SetupIntent in `draw_authorised_payment_data.stripe_customer_id`. The value SHALL be taken from the SetupIntent, never from the request body, and only after the SetupIntent passes the checks in `payment-confirmation-binding`.
 
@@ -91,4 +121,3 @@ The draw payment confirmation flow SHALL store the Stripe customer of the confir
 - **WHEN** the backend confirms a succeeded SetupIntent bound to that buyer and draw
 - **THEN** `draw_authorised_payment_data.stripe_customer_id` SHALL hold `setupIntent.customer`
 - **AND** a `customerId` field in the body, if present, SHALL be ignored
-

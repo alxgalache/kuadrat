@@ -1,4 +1,10 @@
-## ADDED Requirements
+# orders-dashboard-stats Specification
+
+## Purpose
+
+Definir las tarjetas de estadísticas de la página de pedidos y del monedero del vendedor: recuento de pedidos, total sin comisión, porcentaje de comisión dinámico y saldo real.
+
+## Requirements
 
 ### Requirement: Order count stat card
 The stats section SHALL display a "Número de pedidos" card showing the count of orders for the logged-in seller, filtered by the currently selected date range. This card SHALL replace the former "Disponible para retirar" card.

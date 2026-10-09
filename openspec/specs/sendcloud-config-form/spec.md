@@ -1,4 +1,10 @@
-## ADDED Requirements
+# sendcloud-config-form Specification
+
+## Purpose
+
+Definir el formulario de configuración de Sendcloud: campos alineados con la base de datos, opciones de primera milla, transportistas desde el servidor y número de IVA.
+
+## Requirements
 
 ### Requirement: Form fields match DB schema subset
 The SendcloudConfigSection form SHALL display exactly these fields: `sender_name`, `sender_company_name`, `sender_address_1`, `sender_address_2`, `sender_house_number`, `sender_city`, `sender_postal_code`, `sender_country`, `sender_phone`, `sender_email`, `first_mile`, `preferred_carriers`, `excluded_carriers`, `vat_number`, `self_packs`. Fields previously in the form that are not in this list (`signature`, `fragile_goods`, `insurance_value`, `customs_shipment_type`, `customs_hs_code`) SHALL be removed.

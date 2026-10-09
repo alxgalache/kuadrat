@@ -1,4 +1,10 @@
-## ADDED Requirements
+# draw-detail-page Specification
+
+## Purpose
+
+Definir la página de detalle de un sorteo: ruta, maquetación, información del producto, metadatos, botón de participación y fechas.
+
+## Requirements
 
 ### Requirement: Draw detail page route
 The draw detail page SHALL be accessible at `/eventos/sorteo/[id]` where `[id]` is the draw UUID. The page SHALL use Next.js App Router with server-side metadata generation (SEO title, description, OpenGraph) and a client-side detail component.
@@ -15,8 +21,6 @@ The draw detail page SHALL be accessible at `/eventos/sorteo/[id]` where `[id]` 
 - **WHEN** the draw detail page is requested
 - **THEN** the page SHALL include metadata with the draw name as title, product description, and OpenGraph tags with the product image
 
----
-
 ### Requirement: Draw detail page layout
 The draw detail page SHALL use the same two-column layout as art/others product detail pages: product image on the left, details on the right (stacked on mobile). The layout SHALL use the existing Tailwind grid pattern: `lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8`.
 
@@ -27,8 +31,6 @@ The draw detail page SHALL use the same two-column layout as art/others product 
 #### Scenario: Mobile layout stacks vertically
 - **WHEN** the draw detail page is viewed on a mobile viewport (<1024px)
 - **THEN** the page SHALL display the product image above the draw details in a single column
-
----
 
 ### Requirement: Draw detail product information display
 The draw detail page SHALL display the product's image (using the appropriate image URL helper based on product_type), the product name as the page heading, the seller/author name, and the product description (if available).
@@ -44,8 +46,6 @@ The draw detail page SHALL display the product's image (using the appropriate im
 #### Scenario: Author name is clickable
 - **WHEN** the author/seller name is displayed
 - **THEN** it SHALL be styled as a clickable element consistent with the art/others detail page pattern
-
----
 
 ### Requirement: Draw metadata display
 The draw detail page SHALL display draw-specific metadata above the entry button: the draw price (formatted as EUR), edition information, minimum number of participants, and current number of participants. Edition and minimum participants values SHALL be read from the draw data returned by the API (fields `units` and `min_participants`), not hardcoded. If `units` equals 1, the text SHALL display "Edición única". If `units` is greater than 1, the text SHALL display "Edición de {units} unidades". The minimum participants text SHALL always display "Mínimo {min_participants} participantes".
@@ -66,8 +66,6 @@ The draw detail page SHALL display draw-specific metadata above the entry button
 - **WHEN** the current participation count equals max_participations
 - **THEN** the metadata SHALL indicate the draw is full (e.g., "Participantes: 100/100 - Completo")
 
----
-
 ### Requirement: Draw entry button
 The draw detail page SHALL display an "Inscribirse en el sorteo" button that opens the `DrawParticipationModal`. The button SHALL be disabled when the draw is not active or has reached max_participations.
 
@@ -86,8 +84,6 @@ The draw detail page SHALL display an "Inscribirse en el sorteo" button that ope
 #### Scenario: Button click opens participation modal
 - **WHEN** the user clicks the enabled "Inscribirse en el sorteo" button
 - **THEN** the `DrawParticipationModal` SHALL open with the draw and product data
-
----
 
 ### Requirement: Draw detail page date display
 The draw detail page SHALL display the draw's start and end dates/times, formatted in Spanish locale.

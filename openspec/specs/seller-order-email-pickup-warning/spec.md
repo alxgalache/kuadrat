@@ -1,4 +1,10 @@
-## ADDED Requirements
+# seller-order-email-pickup-warning Specification
+
+## Purpose
+
+Definir el aviso de recogida que incluye el email de pedido nuevo al vendedor y su estilo visual.
+
+## Requirements
 
 ### Requirement: Pickup warning in seller new order email
 

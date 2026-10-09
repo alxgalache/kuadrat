@@ -1,6 +1,10 @@
-# seller-withdrawals (MODIFIED)
+# seller-withdrawals Specification
 
-## MODIFIED Requirements
+## Purpose
+
+Definir las retiradas del vendedor con Stripe Connect: el endpoint del vendedor pasa a ser un aviso, la tabla de retiradas se amplía y solo el flujo de pagos del admin crea retiradas.
+
+## Requirements
 
 ### Requirement: Seller withdrawal endpoint becomes a nudge
 `POST /api/seller/withdrawals` SHALL no longer create a row in `withdrawals` and SHALL no longer modify the seller's balance. Instead, it ONLY sends an email notification to the platform admin announcing that the artist has requested a payout, with a direct link to `/admin/payouts/<sellerId>` in the admin panel. It returns `200 { ok: true }`.
@@ -18,6 +22,17 @@
 - **WHEN** they POST to `/api/seller/withdrawals`
 - **THEN** the API responds 400 with a clear message "Sin saldo disponible"
 - **AND** no email is sent
+
+### Requirement: Withdrawals table
+The system SHALL keep seller payouts in a `withdrawals` table: `id` (INTEGER PRIMARY KEY AUTOINCREMENT), `user_id` (INTEGER NOT NULL, FK → `users(id)`), `amount` (REAL NOT NULL), `iban` (TEXT NOT NULL, the bank account of the legacy manual transfers), `status` (TEXT NOT NULL DEFAULT `pending`, CHECK in `pending`, `processing`, `completed`, `failed`, `reversed`, `cancelled`), `created_at` (DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP), `completed_at` (DATETIME, nullable) and `admin_notes` (TEXT, nullable), with an index on `user_id` (`idx_withdrawals_user`). The Stripe Connect fields are specified in the next requirement.
+
+#### Scenario: Withdrawals table exists after initialization
+- **WHEN** `initializeDatabase()` runs on a fresh database
+- **THEN** the `withdrawals` table SHALL exist with these columns, the status CHECK and the `idx_withdrawals_user` index
+
+#### Scenario: Status outside the allowed set
+- **WHEN** a row is written with a status that is not one of the six allowed values
+- **THEN** the database SHALL reject it
 
 ### Requirement: Withdrawals table extended with Stripe Connect fields
 The `withdrawals` table SHALL be extended (via `safeAlter`) with the following fields, all NULLable for backward compatibility with pre-Stripe-Connect rows:
@@ -38,7 +53,7 @@ The `status` column accepts the new values `processing` and `reversed` at the ap
 - **AND** the admin UI clearly distinguishes legacy rows (no `vat_regime`, no `stripe_transfer_id`) from Stripe Connect rows
 
 ### Requirement: Withdrawals are created exclusively by the admin payouts flow
-After this change, rows in `withdrawals` are created ONLY by `POST /api/admin/payouts/:sellerId/execute`. The seller endpoint no longer inserts rows. The admin flow always populates `vat_regime`, `taxable_base_total`, `vat_amount_total`, `executed_by_admin_id`, and (on success) `stripe_transfer_id` and `executed_at`.
+Rows in `withdrawals` SHALL be created ONLY by `POST /api/admin/payouts/:sellerId/execute`. The seller endpoint SHALL NOT insert rows. The admin flow SHALL always populate `vat_regime`, `taxable_base_total`, `vat_amount_total`, `executed_by_admin_id`, and (on success) `stripe_transfer_id` and `executed_at`.
 
 #### Scenario: All new withdrawals carry full Stripe Connect metadata
 - **GIVEN** a successful payout executed via the admin panel

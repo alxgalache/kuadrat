@@ -1,4 +1,10 @@
-## ADDED Requirements
+# coa-nfc-verification Specification
+
+## Purpose
+
+Definir la verificación pública de certificados de autenticidad con etiquetas NFC NTAG 424 DNA: modelo de datos, claves criptográficas, endpoint de verificación, privacidad de las IP y página `/coa`.
+
+## Requirements
 
 ### Requirement: Modelo de datos para tags NFC y eventos de verificación
 La base de datos SHALL incluir dos tablas nuevas, `nfc_tags` y `verification_events`, definidas idempotentemente en `api/config/database.js` (sin migraciones SQL sueltas, sin `ALTER TABLE`).

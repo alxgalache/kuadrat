@@ -1,4 +1,10 @@
-## ADDED Requirements
+# session-invalidation-on-password-change Specification
+
+## Purpose
+
+Garantizar que cambiar la contraseña invalida las sesiones anteriores: toda escritura de la contraseña marca `password_changed_at` y la estrategia JWT rechaza los tokens anteriores.
+
+## Requirements
 
 ### Requirement: Every password write stamps `password_changed_at`
 

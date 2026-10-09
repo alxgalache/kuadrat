@@ -1,3 +1,11 @@
+# cookie-policy-page Specification
+
+## Purpose
+
+Definir el banner de cookies visible en todo el sitio, la página de Política de Cookies y la divulgación de la analítica web sin cookies.
+
+## Requirements
+
 ### Requirement: Banner de cookies visible globalmente
 
 El sistema SHALL mostrar el banner de consentimiento de cookies en TODAS las páginas de la aplicación mientras el usuario no haya aceptado o rechazado las cookies. El banner SHALL renderizarse desde el layout raíz (`layout.js`) en lugar de una página específica.

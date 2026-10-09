@@ -1,4 +1,10 @@
-## ADDED Requirements
+# seller-bulk-service-points Specification
+
+## Purpose
+
+Definir la consulta global de puntos de entrega del vendedor: botón, elección de transportista y vista de los puntos.
+
+## Requirements
 
 ### Requirement: Global service points lookup button
 

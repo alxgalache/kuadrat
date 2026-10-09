@@ -1,4 +1,10 @@
-## MODIFIED Requirements
+# draw-management Specification
+
+## Purpose
+
+Definir la gestión de sorteos: esquema de datos, índices, validación con Zod, cliente y endpoints de la API, y la marca `for_draw` de los productos al crear, cancelar, borrar o cambiar un sorteo.
+
+## Requirements
 
 ### Requirement: Draw buyers database schema
 The system SHALL store draw participants in a `draw_buyers` table: `id` (TEXT PRIMARY KEY, UUID), `draw_id` (TEXT NOT NULL, FK → draws), `first_name` (TEXT NOT NULL), `last_name` (TEXT NOT NULL), `email` (TEXT NOT NULL), `dni` (TEXT NOT NULL), `ip_address` (TEXT), delivery address fields (address_1, address_2, postal_code, city, province, country, lat, long), invoicing address fields, and `created_at`. The table SHALL NOT include a `bid_password` column. A UNIQUE index SHALL exist on `(dni, draw_id)` to enforce one entry per DNI per draw. A UNIQUE index SHALL also exist on `(email, draw_id)` to enforce one entry per email per draw.
@@ -15,16 +21,12 @@ The system SHALL store draw participants in a `draw_buyers` table: `id` (TEXT PR
 - **WHEN** an INSERT into `draw_buyers` is attempted with an `email` + `draw_id` combination that already exists
 - **THEN** the database SHALL reject the operation with a UNIQUE constraint violation
 
----
-
 ### Requirement: Draw authorised payment data schema
 The system SHALL store Stripe payment authorization data in a `draw_authorised_payment_data` table: `id` (TEXT PRIMARY KEY, UUID), `draw_buyer_id` (TEXT NOT NULL, FK → draw_buyers), `name` (TEXT), `last_four` (TEXT), `stripe_setup_intent_id` (TEXT), `stripe_payment_method_id` (TEXT), `stripe_customer_id` (TEXT), `stripe_fingerprint` (TEXT), `created_at` (DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP).
 
 #### Scenario: Payment data table exists after initialization with fingerprint column
 - **WHEN** `initializeDatabase()` runs
 - **THEN** a `draw_authorised_payment_data` table SHALL exist with all specified columns including `stripe_fingerprint`, and a foreign key to `draw_buyers(id)`
-
----
 
 ### Requirement: Draws table schema
 The `draws` table SHALL include a `min_participants` column: `min_participants INTEGER NOT NULL DEFAULT 30`. This column stores the minimum number of participants required for the draw. The existing `units` column (INTEGER NOT NULL DEFAULT 1) stores the number of edition units.
@@ -36,8 +38,6 @@ The `draws` table SHALL include a `min_participants` column: `min_participants I
 #### Scenario: Existing units column preserved
 - **WHEN** `initializeDatabase()` runs
 - **THEN** the `draws` table SHALL retain the `units` column with INTEGER type, NOT NULL constraint, and DEFAULT 1
-
----
 
 ### Requirement: Draw email verifications table with IP
 The `draw_email_verifications` table SHALL include an `ip_address` column (TEXT, nullable) to store the client IP captured during the send-verification step. Full table schema: `id` (TEXT PRIMARY KEY, UUID), `email` (TEXT NOT NULL), `draw_id` (TEXT NOT NULL, FK → draws), `code` (TEXT NOT NULL), `attempts` (INTEGER NOT NULL DEFAULT 0), `expires_at` (DATETIME NOT NULL), `verified` (INTEGER NOT NULL DEFAULT 0), `ip_address` (TEXT), `created_at` (DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP).
@@ -54,7 +54,62 @@ The `draw_email_verifications` table SHALL include an `ip_address` column (TEXT,
 - **WHEN** `initializeDatabase()` runs
 - **THEN** an index SHALL exist on `draw_email_verifications(email, draw_id)` for efficient lookups
 
----
+### Requirement: Draw participations database schema
+The system SHALL store draw entries in a `draw_participations` table: `id` (TEXT PRIMARY KEY, UUID), `draw_id` (TEXT NOT NULL, FK → `draws(id)` ON DELETE CASCADE), `draw_buyer_id` (TEXT NOT NULL, FK → `draw_buyers(id)`) and `created_at` (DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP). Each row is one participation entry.
+
+#### Scenario: Draw participations table exists after initialization
+- **WHEN** `initializeDatabase()` runs
+- **THEN** a `draw_participations` table SHALL exist with foreign keys to `draws(id)` and `draw_buyers(id)`
+
+#### Scenario: One participation per buyer and draw
+- **WHEN** a buyer who already has a participation in a draw tries to enter it again
+- **THEN** `drawService.enterDraw` SHALL refuse it (`hasParticipation(drawId, drawBuyerId)`), without inserting a second row
+
+### Requirement: Draw service CRUD operations
+`api/services/drawService.js` SHALL provide `createDraw(data)`, `updateDraw(id, fields)`, `deleteDraw(id)`, `getDrawById(id)`, `listDraws(filters)` and `getDrawsByDateRange(from, to)`, following the patterns of `auctionService.js`: UUID primary keys, status checks before updates and deletes, and responses hydrated with product data.
+
+#### Scenario: Create a draw with valid data
+- **WHEN** `createDraw()` is called with name, product, price, units, participation limits and dates
+- **THEN** a draw SHALL be created with a UUID primary key and status `draft` unless another status is given, and the new draw SHALL be returned
+
+#### Scenario: Update a draw that is not draft or scheduled
+- **WHEN** `updateDraw(id, fields)` is called for a draw whose status is not `draft` or `scheduled`
+- **THEN** the service SHALL NOT update it and SHALL return `null`
+
+#### Scenario: Delete a draw that is not draft or cancelled
+- **WHEN** `deleteDraw(id)` is called for a draw whose status is not `draft` or `cancelled`
+- **THEN** the service SHALL NOT delete it and SHALL return `false`
+
+#### Scenario: Get draw by ID returns hydrated data
+- **WHEN** `getDrawById(id)` is called
+- **THEN** the draw SHALL be returned joined with its product data (name, image, seller name), resolved from `art` or `others` by `product_type`
+
+### Requirement: Draw admin API endpoints
+The system SHALL provide the admin draw endpoints under `/api/admin/draws` (`api/routes/admin/drawRoutes.js`), behind the `authenticate` + `adminAuth` that `routes/admin/index.js` applies once. Create and update SHALL be validated with `createDrawSchema` and `updateDrawSchema`. Finishing, listing participations and billing are specified in `draw-lifecycle` and `draw-billing`.
+
+#### Scenario: Create draw via admin API
+- **WHEN** `POST /api/admin/draws` is called with valid draw data
+- **THEN** the draw SHALL be created and the response SHALL be 201 with the new draw
+
+#### Scenario: List and read draws via admin API
+- **WHEN** `GET /api/admin/draws` (optionally filtered) or `GET /api/admin/draws/:id` is called
+- **THEN** the matching draws, or the draw, SHALL be returned with 200
+
+#### Scenario: Update a draw that can no longer be modified
+- **WHEN** `PUT /api/admin/draws/:id` is called for a draw that does not exist or is not `draft` or `scheduled`
+- **THEN** the response SHALL be 404 ("Sorteo no encontrado o no se puede modificar en su estado actual")
+
+#### Scenario: Delete draw via admin API
+- **WHEN** `DELETE /api/admin/draws/:id` is called
+- **THEN** a `draft` or `cancelled` draw SHALL be deleted with 200, and any other SHALL be refused with 400
+
+#### Scenario: Start draw via admin API
+- **WHEN** `POST /api/admin/draws/:id/start` is called
+- **THEN** a `scheduled` draw SHALL become `active` (200), and any other SHALL be refused with 400
+
+#### Scenario: Cancel draw via admin API
+- **WHEN** `POST /api/admin/draws/:id/cancel` is called for a draw that has not finished
+- **THEN** its status SHALL become `cancelled`
 
 ### Requirement: Draw performance indexes
 The system SHALL create performance indexes on: `draw_participations(draw_id)`, `draw_participations(draw_buyer_id)`, `draw_buyers(draw_id)`, `draw_buyers(dni, draw_id)` (UNIQUE), `draw_buyers(email, draw_id)` (UNIQUE), `draws(status)`, and `draw_email_verifications(email, draw_id)`.
@@ -62,8 +117,6 @@ The system SHALL create performance indexes on: `draw_participations(draw_id)`, 
 #### Scenario: All indexes exist after initialization
 - **WHEN** `initializeDatabase()` runs
 - **THEN** all specified indexes SHALL exist (created with `IF NOT EXISTS`), including the new UNIQUE index on `draw_buyers(email, draw_id)`
-
----
 
 ### Requirement: Draw Zod validation schemas
 The system SHALL provide Zod validation schemas in `validators/drawSchemas.js` for all draw API endpoints. The `registerBuyerSchema` SHALL require `dni` in addition to existing fields. New schemas SHALL be provided for `sendVerificationSchema` (email, dni required), `verifyEmailSchema` (email, code required), and `checkDniSchema` (dni required). The `verifyBuyerSchema` SHALL be removed.
@@ -80,8 +133,6 @@ The system SHALL provide Zod validation schemas in `validators/drawSchemas.js` f
 - **WHEN** a request body with `code` that is not a 6-digit string is validated
 - **THEN** the validation SHALL fail indicating the code must be a 6-digit number
 
----
-
 ### Requirement: Draw API client functions
 The frontend API client (`lib/api.js`) SHALL export a `drawsAPI` object that includes functions for the updated public draw endpoints: `getByDateRange(from, to)`, `getById(id)`, `registerBuyer(drawId, buyerData)`, `sendVerification(drawId, email, dni)`, `verifyEmail(drawId, email, code)`, `setupPayment(drawId, drawBuyerId)`, `confirmPayment(drawId, drawBuyerId, setupIntentId)`, `enterDraw(drawId, drawBuyerId)`. The `verifyBuyer` function SHALL be removed.
 
@@ -96,8 +147,6 @@ The frontend API client (`lib/api.js`) SHALL export a `drawsAPI` object that inc
 #### Scenario: drawsAPI does not include verifyBuyer
 - **WHEN** the `drawsAPI` object is inspected
 - **THEN** it SHALL NOT contain a `verifyBuyer` function
-
----
 
 ### Requirement: Draw public API endpoints
 The system SHALL provide public API endpoints for draws mounted under `/api/draws`. The following endpoints SHALL exist: `GET /` (list by date range), `GET /:id` (detail), `POST /:id/register-buyer`, `POST /:id/send-verification`, `POST /:id/verify-email`, `POST /:id/setup-payment`, `POST /:id/confirm-payment`, `POST /:id/enter`, `POST /:id/validate-postal-code`. The `POST /:id/verify-buyer` endpoint SHALL NOT exist.
@@ -118,8 +167,6 @@ The system SHALL provide public API endpoints for draws mounted under `/api/draw
 - **WHEN** `POST /api/draws/:id/verify-buyer` is called
 - **THEN** the system SHALL return 404 (route does not exist)
 
----
-
 ### Requirement: Set for_draw flag on draw creation
 When a draw is created, the system SHALL set `for_draw = 1` on the linked product (in the `art` or `others` table, based on `product_type`).
 
@@ -131,8 +178,6 @@ When a draw is created, the system SHALL set `for_draw = 1` on the linked produc
 - **WHEN** admin creates a draw with `product_type = 'other'` and `product_id = 7`
 - **THEN** the system SHALL execute `UPDATE others SET for_draw = 1 WHERE id = 7`
 
----
-
 ### Requirement: Reset for_draw flag on draw cancellation
 When a draw is cancelled, the system SHALL set `for_draw = 0` on the linked product.
 
@@ -140,16 +185,12 @@ When a draw is cancelled, the system SHALL set `for_draw = 0` on the linked prod
 - **WHEN** admin cancels a draw linked to `product_type = 'art'` and `product_id = 42`
 - **THEN** the system SHALL execute `UPDATE art SET for_draw = 0 WHERE id = 42`
 
----
-
 ### Requirement: Reset for_draw flag on draw deletion
 When a draw is deleted, the system SHALL set `for_draw = 0` on the linked product before deleting the draw record.
 
 #### Scenario: Deleting a draft draw restores the product to listings
 - **WHEN** admin deletes a draw in `draft` status linked to `product_type = 'other'` and `product_id = 7`
 - **THEN** the system SHALL execute `UPDATE others SET for_draw = 0 WHERE id = 7` before deleting the draw
-
----
 
 ### Requirement: Update for_draw flag on draw product change
 When a draw's `product_id` or `product_type` is updated, the system SHALL reset `for_draw = 0` on the previously linked product and set `for_draw = 1` on the newly linked product.

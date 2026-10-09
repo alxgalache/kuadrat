@@ -1,4 +1,10 @@
-## ADDED Requirements
+# seller-orders-redesign Specification
+
+## Purpose
+
+Definir la página de pedidos del vendedor agrupada por pedido: orden por fecha, paginación por pedido, filtros por estado, configuración del vendedor, variantes, estado de recogida e imágenes.
+
+## Requirements
 
 ### Requirement: Orders grouped by order_id in API response
 

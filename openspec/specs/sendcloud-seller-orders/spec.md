@@ -1,4 +1,10 @@
-## ADDED Requirements
+# sendcloud-seller-orders Specification
+
+## Purpose
+
+Definir la página de pedidos del vendedor con Sendcloud, su endpoint, la descarga de etiquetas y la visibilidad condicional de las páginas de envío del admin.
+
+## Requirements
 
 ### Requirement: Seller orders page
 

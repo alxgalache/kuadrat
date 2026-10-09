@@ -1,4 +1,10 @@
-## ADDED Requirements
+# coa-admin-frontend Specification
+
+## Purpose
+
+Definir el panel de admin de certificados de autenticidad NFC: navegación, listado paginado, detalle, cambio de estado auditado, cliente de API, enlace desde la obra y número de ejemplar.
+
+## Requirements
 
 ### Requirement: Entrada de navegación admin para CoA
 El componente `client/components/Navbar.js` SHALL mostrar una entrada **"CoA"** en el menú admin (tanto desplegable de escritorio como menú móvil), enlazando a `/admin/coa`. SHALL aparecer junto a las entradas existentes (autores, pedidos, envíos, subastas, sorteos, espacios, payouts) y SHALL respetar la convención visual de las demás (mismas clases Tailwind, mismo orden en ambos menús).

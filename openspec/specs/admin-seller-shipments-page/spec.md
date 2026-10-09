@@ -1,4 +1,10 @@
-## ADDED Requirements
+# admin-seller-shipments-page Specification
+
+## Purpose
+
+Definir la página de envíos por vendedor del panel de admin: selector de vendedor, pestañas por estado, tarjetas de pedido, paginación y su endpoint.
+
+## Requirements
 
 ### Requirement: Admin seller shipments page
 

@@ -1,6 +1,10 @@
-# seller-wallet (MODIFIED)
+# seller-wallet Specification
 
-## MODIFIED Requirements
+## Purpose
+
+Definir el monedero del vendedor: saldos por régimen de IVA, su presentación en el panel, el abono de los eventos y la migración única de los saldos anteriores.
+
+## Requirements
 
 ### Requirement: Wallet split into two VAT buckets
 The seller wallet SHALL be split into two columns reflecting the fiscal regime of the underlying sale:

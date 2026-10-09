@@ -1,4 +1,10 @@
-## ADDED Requirements
+# admin-alerts-ui Specification
+
+## Purpose
+
+Definir el menú de acciones de la página de pedidos del admin desde el que se disparan a mano las alertas de pedidos estancados (enviados y recibidos sin confirmar).
+
+## Requirements
 
 ### Requirement: Admin orders page kebab menu
 The admin orders page (`/admin/pedidos`) SHALL display a three-dot vertical icon button that opens a dropdown menu with alert actions.

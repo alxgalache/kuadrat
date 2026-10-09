@@ -1,4 +1,10 @@
-## ADDED Requirements
+# draw-postal-code-validation Specification
+
+## Purpose
+
+Definir la validación del código postal de entrega de los participantes en un sorteo: endpoint, esquema Zod, función del cliente de API y comprobación en el modal.
+
+## Requirements
 
 ### Requirement: Draw postal code validation endpoint
 The system SHALL provide a `POST /api/draws/:id/validate-postal-code` endpoint that accepts `{ postalCode, country }` and returns `{ valid: boolean }`. The endpoint SHALL resolve the draw's product and its seller, then check whether the seller has any active shipping zone that covers the given postal code (using the same polymorphic postal ref logic as `shipping_zones_postal_codes`). If the seller has no shipping zones at all, the endpoint SHALL return `{ valid: true }` (no restrictions).
@@ -23,8 +29,6 @@ The system SHALL provide a `POST /api/draws/:id/validate-postal-code` endpoint t
 - **WHEN** `POST /api/draws/:id/validate-postal-code` is called with a non-existent draw ID
 - **THEN** the system SHALL return a 404 error
 
----
-
 ### Requirement: Draw postal code validation in participation modal
 The `DrawParticipationModal` SHALL validate the delivery postal code during the DELIVERY step using the `usePostalCodeValidation` hook. The validation function SHALL call `drawsAPI.validatePostalCode(drawId, postalCode, country)`. The user SHALL NOT be able to proceed to the INVOICING step while the postal code is invalid.
 
@@ -44,16 +48,12 @@ The `DrawParticipationModal` SHALL validate the delivery postal code during the 
 - **WHEN** the user has entered fewer than 4 characters in the postal code field
 - **THEN** the system SHALL NOT trigger validation and the field SHALL show no validation state
 
----
-
 ### Requirement: Draw API client postal code validation function
 The `drawsAPI` object in `lib/api.js` SHALL include a `validatePostalCode(drawId, postalCode, country)` function that makes a POST request to `/api/draws/${drawId}/validate-postal-code` with `{ postalCode, country }` in the body.
 
 #### Scenario: API client function exists
 - **WHEN** `drawsAPI.validatePostalCode(drawId, postalCode, country)` is called
 - **THEN** the function SHALL make a POST request to `/api/draws/${drawId}/validate-postal-code` with `{ postalCode, country }` and return the parsed response
-
----
 
 ### Requirement: Draw postal code validation Zod schema
 The `drawSchemas.js` file SHALL include a `validatePostalCodeSchema` that validates the request body: `postalCode` (required, non-empty string) and `country` (required, 2-character string, default "ES").

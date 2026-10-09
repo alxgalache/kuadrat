@@ -1,4 +1,10 @@
-## ADDED Requirements
+# concurrent-purchase-protection Specification
+
+## Purpose
+
+Impedir vender dos veces la misma obra o más unidades de las que hay: reserva atómica de inventario, liberación si el pago falla, caducidad de las reservas y registro de cambios de inventario.
+
+## Requirements
 
 ### Requirement: Atomic inventory reservation for art items
 

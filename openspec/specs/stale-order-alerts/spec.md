@@ -1,4 +1,10 @@
-## ADDED Requirements
+# stale-order-alerts Specification
+
+## Purpose
+
+Definir las alertas de pedidos estancados (enviados o recibidos sin confirmar): endpoints solo para admin y contenido del email.
+
+## Requirements
 
 ### Requirement: Stale arrived items alert endpoint
 The system SHALL provide an admin endpoint `GET /api/admin/orders/alerts/stale-arrived` that identifies all order items with status "arrived" where `status_modified` is more than 10 days ago, and sends an alert email to the admin.

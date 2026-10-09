@@ -1,4 +1,10 @@
-## ADDED Requirements
+# auction-bid-billing Specification
+
+## Purpose
+
+Definir la facturación de pujas por el admin: ver las pujas, convertir la ganadora en pedido integrado en los pagos al vendedor, persistir la dirección del comprador y cerrar la subasta al vencer.
+
+## Requirements
 
 ### Requirement: Admin can view all bids for an auction
 The system SHALL provide an admin-only endpoint and UI section that lists all bids placed on a given auction, sorted by date descending, with buyer personal data and bid amount displayed per row.

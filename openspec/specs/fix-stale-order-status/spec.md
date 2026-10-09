@@ -1,3 +1,11 @@
+# fix-stale-order-status Specification
+
+## Purpose
+
+Garantizar que, cuando el vendedor cambia el estado de un artículo, la respuesta devuelve el estado global del pedido ya actualizado.
+
+## Requirements
+
 ### Requirement: Seller item status update returns fresh global order status
 The `updateItemStatus` endpoint SHALL return the current global order status in the response after processing item-level status changes that may trigger a cascade update to the order's global status.
 

@@ -1,4 +1,10 @@
-## ADDED Requirements
+# order-status-tracking Specification
+
+## Purpose
+
+Definir la marca de tiempo de la última modificación de estado de cada artículo de un pedido y las transiciones de estado que la actualizan (comprador, vendedor y admin).
+
+## Requirements
 
 ### Requirement: Status modification timestamp column
 The `art_order_items` and `other_order_items` tables SHALL each include a `status_modified` column of type `NUMERIC NOT NULL DEFAULT CURRENT_TIMESTAMP` that records the timestamp of the most recent status change.
@@ -46,8 +52,6 @@ The system SHALL update `status_modified` to the current timestamp when an admin
 #### Scenario: Admin changes all order items status
 - **WHEN** an admin calls `updateOrderStatusAdmin` with any new status
 - **THEN** all items in the order SHALL have their `status_modified` set to `CURRENT_TIMESTAMP`
-
-## MODIFIED Requirements
 
 ### Requirement: Order item status transitions
 

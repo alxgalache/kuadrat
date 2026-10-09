@@ -1,3 +1,11 @@
+# product-images Specification
+
+## Purpose
+
+Definir las imágenes de producto polimórficas: tabla `product_images`, hasta tres por producto o variante, subida múltiple, forma de la respuesta de la API, carrusel en la ficha y formulario de publicación.
+
+## Requirements
+
 ### Requirement: Polymorphic product_images table
 
 The system SHALL store every product image (art products, others products, and other_vars variations) in a single `product_images` table keyed by a polymorphic `(product_type, product_id)` pair. The `basename` columns on `art`, `others`, and `other_vars` SHALL NOT exist.

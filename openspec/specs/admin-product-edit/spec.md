@@ -1,6 +1,10 @@
-# admin-product-edit
+# admin-product-edit Specification
+
+## Purpose
 
 Admin-only full editing of art and others products: entry actions in the admin author products table, an edit form identical to the seller publish form pre-populated from current product data, and backend update endpoints covering fields, images, and variations.
+
+## Requirements
 
 ### Requirement: Admin edit action in the author products table
 

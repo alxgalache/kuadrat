@@ -1,4 +1,10 @@
-## ADDED Requirements
+# shipment-retry-scheduler Specification
+
+## Purpose
+
+Definir el planificador que reintenta la creación de envíos fallidos y el aviso al admin cuando se agotan los reintentos.
+
+## Requirements
 
 ### Requirement: Shipment retry scheduler
 

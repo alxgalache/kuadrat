@@ -1,4 +1,10 @@
-## ADDED Requirements
+# api-input-hardening Specification
+
+## Purpose
+
+Endurecer la API frente a datos manipulados por el cliente: verificación en el servidor del coste de envío y del importe pagado, filtrado estricto de campos, propiedad de los recursos del vendedor, protección de campos de estado y límite de peticiones en los pagos.
+
+## Requirements
 
 ### Requirement: Server-side shipping cost verification
 

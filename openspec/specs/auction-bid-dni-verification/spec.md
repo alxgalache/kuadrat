@@ -1,4 +1,10 @@
-## ADDED Requirements
+# auction-bid-dni-verification Specification
+
+## Purpose
+
+Definir la verificación del pujador por email y DNI antes de pujar: columnas y tablas, endpoints de envío y comprobación del código, validación con Zod y límite de peticiones.
+
+## Requirements
 
 ### Requirement: La tabla auction_buyers incluye columna DNI
 El sistema SHALL incluir una columna `dni TEXT` en la tabla `auction_buyers` de la base de datos. La columna MUST ser nullable para mantener retrocompatibilidad con registros existentes.

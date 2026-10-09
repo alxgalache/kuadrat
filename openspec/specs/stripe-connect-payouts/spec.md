@@ -1,6 +1,10 @@
-# stripe-connect-payouts (ADDED)
+# stripe-connect-payouts Specification
 
-## ADDED Requirements
+## Purpose
+
+Definir los pagos a vendedores con Stripe Connect: cálculo del IVA, artículos de cada retirada, selección por régimen de IVA, endpoints de admin, transferencias, webhooks y confirmación de la irreversibilidad.
+
+## Requirements
 
 ### Requirement: VAT calculator helper
 The system SHALL provide a pure helper `api/utils/vatCalculator.js` exposing `computeRebuVat` and `computeStandardVat`, used by both the confirmation scheduler and the payouts controller to compute `seller_earning`, `taxable_base`, `vat_rate` and `vat_amount` per item from `(price, commission)`.

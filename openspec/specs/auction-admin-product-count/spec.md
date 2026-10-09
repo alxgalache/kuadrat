@@ -1,4 +1,10 @@
-## ADDED Requirements
+# auction-admin-product-count Specification
+
+## Purpose
+
+Definir que el listado admin de subastas incluye y muestra correctamente el número de productos de cada subasta.
+
+## Requirements
 
 ### Requirement: El endpoint admin de listado de subastas incluye conteo de productos
 El sistema SHALL incluir un campo `product_count` de tipo numérico en cada objeto de subasta devuelto por `GET /api/admin/auctions`. Este campo MUST representar la suma total de registros en `auction_arts` y `auction_others` asociados a esa subasta.

@@ -1,4 +1,10 @@
-## ADDED Requirements
+# admin-order-status-change Specification
+
+## Purpose
+
+Definir cómo cambia el admin el estado de un producto o de un pedido completo, con el abono o cargo correspondiente en el saldo del vendedor y todo en una operación atómica.
+
+## Requirements
 
 ### Requirement: Admin can change a single product status to any valid status
 The system SHALL allow an admin user to change the status of a single order item (art or other) to any of the 7 valid statuses: `pending_payment`, `paid`, `sent`, `arrived`, `confirmed`, `cancelled`, `reimbursed` — regardless of the item's current status or the order's current status.

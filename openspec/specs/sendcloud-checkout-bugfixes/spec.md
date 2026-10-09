@@ -1,4 +1,10 @@
-## ADDED Requirements
+# sendcloud-checkout-bugfixes Specification
+
+## Purpose
+
+Corregir el checkout con Sendcloud: productos sin modal de envío heredado, mensaje de envío pendiente en la cesta, limpieza de la selección al cambiar la dirección, lectura de la respuesta y errores parciales.
+
+## Requirements
 
 ### Requirement: Sendcloud-enabled products skip legacy shipping modal
 

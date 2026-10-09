@@ -1,4 +1,10 @@
-## ADDED Requirements
+# nfc-tag-personalization Specification
+
+## Purpose
+
+Definir el subproyecto de personalización de las pegatinas NFC NTAG 424 DNA: entorno aislado, derivación de claves y comandos `personalize`, `lock` e `inspect`, con su documentación.
+
+## Requirements
 
 ### Requirement: Subproyecto Node.js aislado fuera de Docker
 El repositorio SHALL incluir un subproyecto en `scripts/nfc-personalization/` con su propio `package.json`, `node_modules` y `.env`. SHALL NO depender de los workspaces de `api/` ni `client/`. SHALL NO ejecutarse dentro de ningún contenedor Docker.

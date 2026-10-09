@@ -1,4 +1,10 @@
-## ADDED Requirements
+# buyer-order-status-update Specification
+
+## Purpose
+
+Definir cómo marca el comprador sus artículos como recibidos o confirmados, uno a uno o el pedido entero, con la promoción automática del estado del pedido y los emails asociados.
+
+## Requirements
 
 ### Requirement: Buyer can mark a single item as received
 The system SHALL allow the buyer to change a single order item's status from `sent` to `arrived` via the public order page, using the order token for authentication.

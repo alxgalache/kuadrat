@@ -1,4 +1,8 @@
-# event-payouts
+# event-payouts Specification
+
+## Purpose
+
+Definir cómo se pagan al anfitrión los eventos de pago: marca de evento terminado, planificador de abonos con su comisión, exclusiones del admin y su reflejo en el panel de pagos y en el del vendedor.
 
 ## Requirements
 

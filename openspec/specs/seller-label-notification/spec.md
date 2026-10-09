@@ -1,4 +1,10 @@
-## ADDED Requirements
+# seller-label-notification Specification
+
+## Purpose
+
+Definir el email que avisa al vendedor cuando la etiqueta de envío está lista y la descarga de la etiqueta por identificador de bulto.
+
+## Requirements
 
 ### Requirement: Seller email notification when shipping label is ready
 

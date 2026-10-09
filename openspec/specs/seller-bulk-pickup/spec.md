@@ -1,4 +1,10 @@
-## ADDED Requirements
+# seller-bulk-pickup Specification
+
+## Purpose
+
+Definir la solicitud de recogida masiva del vendedor: modal con elección de transportista y de pedidos, formulario de recogida y su endpoint.
+
+## Requirements
 
 ### Requirement: Bulk pickup modal with carrier selection
 
