@@ -10,7 +10,7 @@ paths:
 
 ## Catálogo de Meta: tienda de Instagram y Facebook
 
-`GET /api/feeds/meta-catalog.xml` (`api/services/metaCatalogFeed.js`) alimenta el catálogo de Commerce Manager, del que beben la tienda de Instagram y Facebook, las etiquetas de producto y el sticker de las stories. `https://140d.art/cesta` es la URL de compra. Se implantaron en octubre de 2026 (`openspec/changes/meta-instagram-shop`). La guía de operador, con los pasos en Meta, está en `docs/tienda_meta/`.
+`GET /api/feeds/meta-catalog.xml` (`api/services/metaCatalogFeed.js`) alimenta el catálogo de Commerce Manager, del que beben la tienda de Instagram y Facebook, las etiquetas de producto y el sticker de las stories. `https://140d.art/cesta` es la URL de compra. Se implantaron en octubre de 2026 (`openspec/changes/archive/2026-10-09-meta-instagram-shop`; specs en `openspec/specs/{meta-catalog-feed,catalog-jpeg-images,meta-checkout-url}`). La guía de operador, con los pasos en Meta, está en `docs/tienda_meta/`.
 
 **Un solo catálogo, dos formatos.** `api/services/productFeedCatalogue.js` decide qué se vende, cómo se describe y cuánto cuesta enviarlo, con su caché de 1 h y una única generación en curso. `googleMerchantFeed.js` y `metaCatalogFeed.js` solo lo escriben, cada uno en su formato, y ninguno consulta productos por su cuenta: dos respuestas a «qué se vende» acabarían divergiendo. Un test comparó byte a byte el XML de Google antes y después de separar el módulo.
 

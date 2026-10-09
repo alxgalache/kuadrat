@@ -2,7 +2,7 @@
 
 **Para qué:** el catálogo de Meta se alimenta de un fichero que la API genera desde la base de datos. Cada alta, cada cambio de precio y cada venta llega sola a Instagram. Esta guía explica qué opción se eligió, qué lleva cada obra y cómo comprobarlo.
 
-**Estado:** implementado y con tests (08/10/2026) en `openspec/changes/meta-instagram-shop/`. **Disponible tras desplegar** API y cliente juntos con `./deploy/deploy.sh`.
+**Estado:** en producción desde el 09/10/2026. Cambio archivado en `openspec/changes/archive/2026-10-09-meta-instagram-shop/`, y specs en `openspec/specs/meta-catalog-feed/` y `openspec/specs/catalog-jpeg-images/`.
 
 ## Qué opción se eligió y por qué
 

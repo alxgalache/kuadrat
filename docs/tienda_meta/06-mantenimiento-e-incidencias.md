@@ -59,7 +59,7 @@ Meta compara el precio y la disponibilidad del feed con la ficha. Las dos salen 
 | La página de compra | `client/app/cesta/` y los textos en `META_CHECKOUT_COPY` (`client/lib/constants.js`) |
 | Los identificadores de producto | **No se cambian.** Píxel, feed y URL de compra dependen de ellos, y cambiarlos borra todas las etiquetas |
 
-Detalle técnico y el porqué de cada decisión: `openspec/changes/meta-instagram-shop/design.md` (o su versión archivada) y la regla `.claude/rules/catalog/meta-catalog.md`.
+Detalle técnico y el porqué de cada decisión: `openspec/changes/archive/2026-10-09-meta-instagram-shop/design.md` y la regla `.claude/rules/catalog/meta-catalog.md`.
 
 ## Riesgos que conviene vigilar
 

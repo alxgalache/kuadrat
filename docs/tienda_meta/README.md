@@ -3,7 +3,7 @@
 Cómo poner las obras de 140d en la tienda de Instagram y Facebook, etiquetarlas en publicaciones, reels y stories, y mantenerlo sin trabajo manual. Cada guía se lee por separado.
 
 - **Estudio de partida:** [Instagram Shopping para 140d Kuadrat estudio y guía práctica.md](Instagram%20Shopping%20para%20140d%20Kuadrat%20estudio%20y%20gu%C3%ADa%20pr%C3%A1ctica.md) (07/10/2026). Sigue siendo válido como explicación general. Algunos puntos los corrige el código real (tabla de abajo).
-- **Cambio de código:** `openspec/changes/meta-instagram-shop/` (propuesta, diseño, specs y tareas).
+- **Cambio de código:** `openspec/changes/archive/2026-10-09-meta-instagram-shop/` (propuesta, diseño y tareas), archivado el 09/10/2026. Specs vigentes: `openspec/specs/meta-catalog-feed/`, `openspec/specs/catalog-jpeg-images/` y `openspec/specs/meta-checkout-url/`.
 
 ## Decisiones tomadas
 
