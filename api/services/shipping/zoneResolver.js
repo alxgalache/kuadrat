@@ -28,6 +28,13 @@
  *   method_id    -> which modality the buyer chose        (the column)
  *   postal code  -> which zone group the destination is   (the row)
  *   product_id   -> which artwork's packaging and tariff  (the table)
+ *
+ * It must also stay cheap, because Turso bills every row a query reads. In
+ * October 2026 the delivery-zone query read ~654,000 rows per call, and the
+ * product feeds made ~90 calls per catalogue generation: ~2.9 billion rows in
+ * six days on a 2.5-billion-a-month plan (docs/turso-lecturas/). See
+ * PRODUCT_SCOPE_SQL and resolveDestination for the two shapes that caused it.
+ * `api/tests/zoneResolverReadCost.test.js` keeps them from coming back.
  */
 
 const { db } = require('../../config/database')
@@ -50,6 +57,23 @@ const PRODUCT_TYPES = {
   art: { articleType: 'art', zoneProductType: 'art', table: 'art' },
   other: { articleType: 'others', zoneProductType: 'other', table: 'others' },
 }
+
+/**
+ * Every zone query reads only the zones that can price THIS product: generic
+ * ones and the product's own. `applyProductPriority` discards the rest anyway,
+ * so the result is the same. What changes is the cost. The shipping calculator
+ * writes several zones per artwork, each with up to 47 province refs, and a
+ * query that returned the whole seller's zones paid the destination match for
+ * every one of them. One quote cost as much as the seller's whole catalogue,
+ * and a feed that quotes every product paid that once per product.
+ *
+ * Placeholders: the product id, then the zone vocabulary's product type.
+ */
+const PRODUCT_SCOPE_SQL = '(sz.product_id IS NULL OR (sz.product_id = ? AND sz.product_type = ?))'
+
+// Without a postal code only country-wide zones can be offered: any zone with
+// refs is, by definition, waiting for one.
+const NO_DESTINATION = Object.freeze({ postalCodeIds: [], provinces: [], countries: [] })
 
 /**
  * Accepts either vocabulary and answers in the canonical one, so callers on the
@@ -112,7 +136,9 @@ function applyProductPriority(rows, { productId, zoneProductType }) {
       ) {
         grouped[row.id].specific.push(row)
       }
-      // Zones for other products are silently discarded
+      // Zones for other products are silently discarded. The resolver's own
+      // queries no longer return any (PRODUCT_SCOPE_SQL), but this function is
+      // exported to callers that hold their own rows.
     } else {
       grouped[row.id].generic.push(row)
     }
@@ -169,7 +195,7 @@ async function loadProduct(productId, canonicalType) {
   const { table } = PRODUCT_TYPES[canonicalType]
 
   const result = await db.execute({
-    sql: `SELECT seller_id, weight, dimensions FROM ${table} WHERE id = ? AND visible = 1`,
+    sql: `SELECT id, seller_id, weight, dimensions FROM ${table} WHERE id = ? AND visible = 1`,
     args: [productId],
   })
 
@@ -180,7 +206,78 @@ async function loadProduct(productId, canonicalType) {
   return result.rows[0]
 }
 
-async function loadPickupZones({ articleType, sellerId }) {
+/**
+ * Where a postal code falls, read once per quote.
+ *
+ * The zone query used to ask "is this postal code in one of the zone's
+ * provinces?" through a subquery on `postal_codes`, run for every ref of every
+ * zone. That subquery constrains `postal_code` and `province` alike, and
+ * without planner statistics SQLite picked the province index. It walked every
+ * postal code of each province instead of looking up one: 35,717 rows for one
+ * peninsula zone quoted to the Canaries. Reading the postal code here, through
+ * the only index that starts with it, and giving the zone query plain values
+ * leaves the planner nothing to get wrong.
+ *
+ * The three sets keep the old predicate's meaning exactly:
+ *   postalCodeIds, provinces -> rows of the postal code IN the destination country
+ *   countries                -> every country the postal code exists in; the old
+ *                               `country` branch never filtered by destination
+ *
+ * @returns {Promise<{ postalCodeIds: number[], provinces: string[], countries: string[] }>}
+ */
+async function resolveDestination(country, postalCode) {
+  const result = await db.execute({
+    sql: 'SELECT id, province, country FROM postal_codes WHERE postal_code = ?',
+    args: [postalCode],
+  })
+
+  const distinct = (values) => [...new Set(values.filter((value) => value !== null && value !== undefined))]
+  const inCountry = result.rows.filter((row) => row.country === country)
+
+  return {
+    postalCodeIds: distinct(inCountry.map((row) => Number(row.id))),
+    provinces: distinct(inCountry.map((row) => row.province)),
+    countries: distinct(result.rows.map((row) => row.country)),
+  }
+}
+
+/**
+ * Does zone `sz` serve this destination? It does when it has no postal refs at
+ * all (country-wide), or when one of its refs names the destination's postal
+ * code, province or country.
+ *
+ * This is the predicate's only definition: the draw deliverability check
+ * (`drawService.validatePostalCodeForDraw`) uses it too. A branch whose set is
+ * empty is left out rather than written as `IN ()`.
+ *
+ * @param {{ postalCodeIds: number[], provinces: string[], countries: string[] }} destination
+ *   from resolveDestination
+ * @returns {{ sql: string, args: Array }} a parenthesised condition on the alias `sz`
+ */
+function destinationMatch({ postalCodeIds, provinces, countries }) {
+  const branches = [
+    'NOT EXISTS (SELECT 1 FROM shipping_zones_postal_codes szpc WHERE szpc.shipping_zone_id = sz.id)',
+  ]
+  const args = []
+
+  const refBranch = (refType, column, values) => {
+    if (values.length === 0) return
+    branches.push(
+      `EXISTS (SELECT 1 FROM shipping_zones_postal_codes szpc
+                WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = '${refType}'
+                  AND szpc.${column} IN (${values.map(() => '?').join(', ')}))`
+    )
+    args.push(...values)
+  }
+
+  refBranch('postal_code', 'postal_code_id', postalCodeIds)
+  refBranch('province', 'ref_value', provinces)
+  refBranch('country', 'ref_value', countries)
+
+  return { sql: `(${branches.join('\n         OR ')})`, args }
+}
+
+async function loadPickupZones({ articleType, sellerId, productId, zoneProductType }) {
   const result = await db.execute({
     sql: `
       SELECT DISTINCT
@@ -209,19 +306,22 @@ async function loadPickupZones({ articleType, sellerId }) {
         AND sm.is_active = 1
         AND (sm.article_type = 'all' OR sm.article_type = ?)
         AND sz.seller_id = ?
+        AND ${PRODUCT_SCOPE_SQL}
     `,
-    args: [articleType, sellerId],
+    args: [articleType, sellerId, productId, zoneProductType],
   })
 
   return result.rows
 }
 
 /**
- * A zone matches the destination if it has no postal refs at all (country-wide),
- * or if one of its refs resolves to the buyer's postal code — directly, through
- * its province, or through its country.
+ * Delivery zones of this product (and generic ones) that serve the destination.
+ * Without a postal code the destination is NO_DESTINATION, which leaves only
+ * the country-wide branch of `destinationMatch`.
  */
-async function loadDeliveryZonesForPostalCode({ articleType, sellerId, country, postalCode }) {
+async function loadDeliveryZones({ articleType, sellerId, productId, zoneProductType }, country, destination) {
+  const match = destinationMatch(destination)
+
   const result = await db.execute({
     sql: `
       SELECT DISTINCT
@@ -245,81 +345,10 @@ async function loadDeliveryZonesForPostalCode({ articleType, sellerId, country, 
         AND (sm.article_type = 'all' OR sm.article_type = ?)
         AND sz.seller_id = ?
         AND sz.country = ?
-        AND (
-          -- Zone has no postal refs (applies to entire country)
-          NOT EXISTS (
-            SELECT 1 FROM shipping_zones_postal_codes szpc WHERE szpc.shipping_zone_id = sz.id
-          )
-          OR
-          -- Direct postal_code ref match
-          EXISTS (
-            SELECT 1 FROM shipping_zones_postal_codes szpc
-            JOIN postal_codes pc ON szpc.postal_code_id = pc.id
-            WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'postal_code'
-              AND pc.postal_code = ? AND pc.country = ?
-          )
-          OR
-          -- Province ref match
-          EXISTS (
-            SELECT 1 FROM shipping_zones_postal_codes szpc
-            WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'province'
-              AND EXISTS (
-                SELECT 1 FROM postal_codes pc
-                WHERE pc.postal_code = ? AND pc.country = ? AND pc.province = szpc.ref_value
-              )
-          )
-          OR
-          -- Country ref match
-          EXISTS (
-            SELECT 1 FROM shipping_zones_postal_codes szpc
-            WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'country'
-              AND EXISTS (
-                SELECT 1 FROM postal_codes pc
-                WHERE pc.postal_code = ? AND pc.country = szpc.ref_value
-              )
-          )
-        )
+        AND ${PRODUCT_SCOPE_SQL}
+        AND ${match.sql}
     `,
-    args: [articleType, sellerId, country, postalCode, country, postalCode, country, postalCode],
-  })
-
-  return result.rows
-}
-
-/**
- * Without a postal code only country-wide zones can be offered: any zone with
- * refs is, by definition, waiting for one.
- */
-async function loadDeliveryZonesForCountry({ articleType, sellerId, country }) {
-  const result = await db.execute({
-    sql: `
-      SELECT DISTINCT
-        sm.id,
-        sm.name,
-        sm.description,
-        sm.type,
-        sm.article_type,
-        sm.max_weight,
-        sm.max_dimensions,
-        sm.max_articles,
-        sm.estimated_delivery_days,
-        sz.cost,
-        sz.id as zone_id,
-        sz.product_id as zone_product_id,
-        sz.product_type as zone_product_type
-      FROM shipping_methods sm
-      INNER JOIN shipping_zones sz ON sm.id = sz.shipping_method_id
-      WHERE sm.type = 'delivery'
-        AND sm.is_active = 1
-        AND (sm.article_type = 'all' OR sm.article_type = ?)
-        AND sz.seller_id = ?
-        AND sz.country = ?
-        AND NOT EXISTS (
-          SELECT 1 FROM shipping_zones_postal_codes szpc
-          WHERE szpc.shipping_zone_id = sz.id
-        )
-    `,
-    args: [articleType, sellerId, country],
+    args: [articleType, sellerId, country, productId, zoneProductType, ...match.args],
   })
 
   return result.rows
@@ -345,19 +374,19 @@ async function resolveShippingOptions({ productId, productType, country, postalC
   const { articleType, zoneProductType } = PRODUCT_TYPES[canonicalType]
   const product = await loadProduct(productId, canonicalType)
   const sellerId = product.seller_id
+  const scope = { articleType, sellerId, productId: Number(product.id), zoneProductType }
 
   const prioritize = (rows) => applyProductPriority(rows, { productId, zoneProductType })
   const fits = (row) =>
     checkProductFits(product.weight, product.dimensions, row.max_weight, row.max_dimensions)
 
-  const pickupRows = await loadPickupZones({ articleType, sellerId })
+  const pickupRows = await loadPickupZones(scope)
   const pickup = prioritize(pickupRows).filter(fits).map(toPickupOption)
 
   let delivery = []
   if (country) {
-    const deliveryRows = postalCode
-      ? await loadDeliveryZonesForPostalCode({ articleType, sellerId, country, postalCode })
-      : await loadDeliveryZonesForCountry({ articleType, sellerId, country })
+    const destination = postalCode ? await resolveDestination(country, postalCode) : NO_DESTINATION
+    const deliveryRows = await loadDeliveryZones(scope, country, destination)
 
     delivery = prioritize(deliveryRows).filter(fits).map(toOption)
   }
@@ -371,4 +400,7 @@ module.exports = {
   // Exported for the parity test and for callers that already hold their rows.
   applyProductPriority,
   checkProductFits,
+  // The destination predicate, for the draw deliverability check.
+  resolveDestination,
+  destinationMatch,
 }

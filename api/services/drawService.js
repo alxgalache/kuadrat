@@ -4,6 +4,7 @@ const logger = require('../config/logger');
 const { validateSpanishTaxId } = require('../utils/spanishTaxId');
 const { createBuyerEmailVerification } = require('./buyerEmailVerification');
 const { normalizeEmail } = require('../utils/emailOtp');
+const { resolveDestination, destinationMatch } = require('./shipping/zoneResolver');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -654,42 +655,21 @@ async function validatePostalCodeForDraw(drawId, postalCode, country) {
     return { valid: true }; // No zones configured for this product type — no restrictions
   }
 
-  // Check if postal code matches any zone (zone with no postal refs = country-wide)
+  // Does any of those zones serve the postal code? Which destinations a zone
+  // serves is the resolver's predicate, not a copy of it: the copy that lived
+  // here searched postal codes by province, like the resolver's did before
+  // October 2026. This check answers deliverability, not price, so it keeps its
+  // seller-wide scope and its LIMIT 1.
+  const match = destinationMatch(await resolveDestination(country, postalCode));
   const matchResult = await db.execute({
     sql: `SELECT 1 FROM shipping_zones sz
           INNER JOIN shipping_methods sm ON sz.shipping_method_id = sm.id
           WHERE sm.type = 'delivery' AND sm.is_active = 1
             AND (sm.article_type = 'all' OR sm.article_type = ?)
             AND sz.seller_id = ? AND sz.country = ?
-            AND (
-              NOT EXISTS (
-                SELECT 1 FROM shipping_zones_postal_codes szpc WHERE szpc.shipping_zone_id = sz.id
-              )
-              OR EXISTS (
-                SELECT 1 FROM shipping_zones_postal_codes szpc
-                JOIN postal_codes pc ON szpc.postal_code_id = pc.id
-                WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'postal_code'
-                  AND pc.postal_code = ? AND pc.country = ?
-              )
-              OR EXISTS (
-                SELECT 1 FROM shipping_zones_postal_codes szpc
-                WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'province'
-                  AND EXISTS (
-                    SELECT 1 FROM postal_codes pc
-                    WHERE pc.postal_code = ? AND pc.country = ? AND pc.province = szpc.ref_value
-                  )
-              )
-              OR EXISTS (
-                SELECT 1 FROM shipping_zones_postal_codes szpc
-                WHERE szpc.shipping_zone_id = sz.id AND szpc.ref_type = 'country'
-                  AND EXISTS (
-                    SELECT 1 FROM postal_codes pc
-                    WHERE pc.postal_code = ? AND pc.country = szpc.ref_value
-                  )
-              )
-            )
+            AND ${match.sql}
           LIMIT 1`,
-    args: [articleType, sellerId, country, postalCode, country, postalCode, country, postalCode],
+    args: [articleType, sellerId, country, ...match.args],
   });
 
   return { valid: matchResult.rows.length > 0 };

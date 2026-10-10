@@ -5,7 +5,7 @@ paths:
   - "api/utils/paymentHelpers.js"
   - "api/validators/paymentSchemas.js"
   - "api/services/drawService.js"
-  - "api/tests/shippingCostVerification.test.js"
+  - "api/tests/{shippingCostVerification,zoneResolverReadCost}.test.js"
   - "client/components/ShoppingCartDrawer.js"
 ---
 
@@ -21,5 +21,10 @@ paths:
 * **Rejections carry a machine code in `title`** (`SHIPPING_ADDRESS_REQUIRED` | `SHIPPING_METHOD_UNAVAILABLE` | `SHIPPING_COST_OUTDATED`), same pattern as `CAPTCHA_UNAVAILABLE`; texts live in `SHIPPING_VERIFICATION_ERRORS` in `client/lib/constants.js`. The old single message said "Recarga la página", which fixes nothing — the cart is in `localStorage`. `SHIPPING_COST_OUTDATED` fires whenever an artwork is re-quoted in the calculator while buyers hold it in their carts.
 * **Money is compared in integer cents.** `Math.abs(a - b) > 0.01` does not express "one cent of tolerance": 15,30 and 15,29 are `0.010000000000001563` apart in binary floating point, so the boundary the comparison claims to allow was rejected at random.
 * **Sendcloud-quoted items never enter this path.** They reach payment with `shipping: null` (`setSendcloudShipping` writes to `shippingSelections`, a state parallel to the cart, never to `item.shipping`), and the `if (!item.shipping?.methodId) continue` guard on the first line of `verifyShippingCosts` is what keeps them out.
-* **`drawService.js:694-744` still duplicates the matching predicate**, deliberately: it answers *deliverability* (a boolean), selects no `cost`, and so cannot produce a wrong charge.
 * **That gap is closed.** Sendcloud shipping for `other` products really was never charged (`computeShippingTotal` sums `item.shipping.cost`, which is `null` for them) and simultaneously double-recorded (the selection was copied onto every expanded unit row). See `.claude/rules/shipping/store-shipping.md`.
+* **A quote must stay cheap: Turso bills every row it reads.** From 6 to 10/10/2026 the delivery-zone query read ~654,000 rows per call. The product feeds call it ~90 times per catalogue generation, and Meta fetched hourly: ~2.9 billion rows in six days on a 2.5-billion monthly plan (`docs/turso-lecturas/`). Two shapes did it, and both are now forbidden:
+  * **Returning every zone of the seller and filtering by product in JavaScript.** The calculator writes several zones per artwork, so one quote cost the whole catalogue. `PRODUCT_SCOPE_SQL` scopes the three zone queries in SQL. `applyProductPriority` keeps the priority and its discard branch only as a defence.
+  * **Matching the destination with a subquery on `postal_codes`.** It constrains `postal_code` and `province`, and with two candidate indexes and no `sqlite_stat1` SQLite picked the province one. It walked every postal code of each province: 35,717 rows for one peninsula zone. `resolveDestination` reads the postal code once, and the zone query gets plain values.
+  * `api/tests/zoneResolverReadCost.test.js` fails if any statement's plan uses `idx_postal_codes_province_country`, if the zone query names `postal_codes`, or if a quote returns another product's zones. Its first half pins the semantics of all four match kinds (`postal_code`, `province`, `country`, no refs), which nothing else tested.
+  * `ANALYZE postal_codes` in production fixes the plan too, but only as a stopgap: a fresh, restored or test database has no statistics.
+* **Which destinations a zone serves has one definition: `destinationMatch`.** `drawService.validatePostalCodeForDraw` used to carry a literal copy, kept on purpose because it answers deliverability (a boolean) and selects no cost. The copy had the same plan defect, on a public endpoint the client calls as the buyer types. It now uses the resolver's predicate and keeps only its own scope: seller-wide, no product filter, `LIMIT 1`.
