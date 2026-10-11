@@ -82,8 +82,11 @@ async function updateEvent(id, fields) {
     }
   }
 
-  // Regenerate slug if title changed
-  if (fields.title && fields.title !== current.title) {
+  // Regenerate the slug on a title change only while the event is a draft
+  // (event-confirmation-calendar-links). Once published, /live/<slug> is in
+  // confirmation emails, the event announcement and attendees' calendars: a
+  // new slug would turn every one of those links into a 404.
+  if (fields.title && fields.title !== current.title && current.status === 'draft') {
     setClauses.push('slug = ?');
     args.push(generateSlug(fields.title));
   }

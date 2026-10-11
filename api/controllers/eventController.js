@@ -17,6 +17,7 @@ const { normalizeEmail } = require('../utils/emailOtp');
 const cloudfrontSigner = require('../utils/cloudfrontSigner');
 const { classifyVideoUrl, videoTokenExpiry } = require('../utils/eventVideoSources');
 const { passEndsAt, chatClosesAt, isPassClosed } = require('../utils/videoPass');
+const { buildIcs } = require('../utils/eventCalendar');
 
 function getClientIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
@@ -131,6 +132,32 @@ const getEventBySlug = async (req, res, next) => {
       attendeeCount,
       serverNow: new Date().toISOString(),
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/events/:id/calendar.ics
+// The «Apple» button of the confirmation email (event-confirmation-calendar-
+// links). Public and by id: emails already sent link here forever, so the
+// route must outlive any rollback. Only scheduled/active events — a draft is
+// not exposed by id, and a cancelled or finished one is not worth adding.
+// Generated per request, so a changed time shows up within the cache window.
+// Not JSON, hence res.send instead of the response helpers.
+// ---------------------------------------------------------------------------
+const CALENDAR_ICS_STATUSES = ['scheduled', 'active'];
+
+const getEventCalendarIcs = async (req, res, next) => {
+  try {
+    const event = await eventService.getEventById(req.params.id);
+    const ics = event && CALENDAR_ICS_STATUSES.includes(event.status) ? buildIcs(event) : null;
+    if (!ics) {
+      throw new ApiError(404, 'Evento no encontrado', 'Evento no encontrado');
+    }
+
+    res.set('Content-Disposition', `attachment; filename="${event.slug}.ics"`);
+    res.type('text/calendar; charset=utf-8').status(200).send(ics);
   } catch (error) {
     next(error);
   }
@@ -354,7 +381,7 @@ const confirmPayment = async (req, res, next) => {
     sendEventConfirmationEmail({
       email: attendee.email,
       firstName: attendee.first_name,
-      eventTitle: event.title,
+      event,
       accessPassword: password,
       amountPaid: (pi.amount_received ?? pi.amount) / 100,
     }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
@@ -1611,7 +1638,7 @@ const verifyEmail = async (req, res, next) => {
     sendEventConfirmationEmail({
       email: attendee.email,
       firstName: attendee.first_name,
-      eventTitle: event.title,
+      event,
       accessPassword: password,
       ...(event.access_type === 'paid' && attendee.amount_paid ? { amountPaid: attendee.amount_paid } : {}),
     }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
@@ -1712,6 +1739,7 @@ const verifyPassword = async (req, res, next) => {
 module.exports = {
   getEvents,
   getEventBySlug,
+  getEventCalendarIcs,
   getAdminAccess,
   getVideoToken,
   getEventVideo,

@@ -156,6 +156,7 @@ Reglas que, si se olvidan, rompen algo en silencio desde cualquier parte del có
 * **Los ids del catálogo de Meta son los del píxel** (`art_<id>`, `other_<id>_v<variante>`): `contentId()` de `client/lib/metaPixel.js` y `api/utils/metaContentId.js` cambian juntos o no cambian, porque cambiarlos borra todas las etiquetas de producto de Instagram. → `.claude/rules/catalog/meta-catalog.md`
 * **`access_token_hash` solo aparece en SQL dentro de `api/services/eventService.js`**, y un test lo vigila. → `.claude/rules/events/verification-gates.md`
 * **Ninguna respuesta pública revela `video_url`, `video_url_av1` ni `recording_enabled`** (los quita `toPublicEvent`). → `.claude/rules/events/video-cdn.md`, `.claude/rules/agora/recording.md`
+* **`events.event_datetime` es hora de pared de `Europe/Madrid` sin zona:** se convierte a un instante solo con `api/utils/eventTime.js`, nunca con `new Date()` en el servidor, que corre en UTC. → `.claude/rules/events/confirmation-calendar-links.md`
 * **Nada dentro de la sala en directo ni de la consola del host se pinta con un portal a `document.body`** (el `ConfirmDialog` compartido lo hace). → `.claude/rules/agora/host-mobile-console.md`, `.claude/rules/live-room/compact-layout.md`
 * **Un track de Agora sin `encoderConfig` sale con los valores por defecto del SDK: cámara 4:3 y micrófono con calidad de llamada.** El perfil se elige por rol en `AgoraLiveRoom`. → `.claude/rules/agora/camera-aspect-ratio.md`, `.claude/rules/agora/host-audio.md`
 * **Hidratación:** ningún proveedor de `client/app/layout.js` lee `localStorage` en un inicializador de `useState`, y ninguna página estática decide una fecha o un valor aleatorio durante el render. → `.claude/rules/infra/production-load.md`
@@ -200,6 +201,7 @@ El porqué detallado de cada área vive en `.claude/rules/`, una regla por tema,
 * [`events/admin-access.md`](.claude/rules/events/admin-access.md) — Acceso del admin a los directos: una fila real con `is_staff = 1`, excluida de cinco consultas de dinero y aforo.
 * [`events/video-cdn.md`](.claude/rules/events/video-cdn.md) — Vídeo pregrabado por CloudFront: URLs firmadas que nunca salen en la API pública, AV1 solo con decodificación por hardware y codificación.
 * [`events/video-pass-access.md`](.claude/rules/events/video-pass-access.md) — Sala del pase de vídeo: solo tras entrar en la sala autenticada, chat autenticado, un único horario de cierre y duración medida por la API.
+* [`events/confirmation-calendar-links.md`](.claude/rules/events/confirmation-calendar-links.md) — Email de confirmación de eventos: hora de Madrid a UTC en un módulo, enlaces directos a Google y Outlook (el sistema decide la app), `.ics` por id que no se retira, contraseña fuera del calendario y slug fijo al publicar.
 
 ### Salas en directo
 

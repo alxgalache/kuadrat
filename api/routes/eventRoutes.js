@@ -51,6 +51,13 @@ router.post('/:id/video-token', eventController.getVideoToken);
 router.get('/:id/video/:filename', eventController.getEventVideo);
 
 /**
+ * GET /api/events/:id/calendar.ics
+ * The event as an .ics file (the «Apple» button of the confirmation email).
+ * Five minutes of cache so a changed time shows up quickly.
+ */
+router.get('/:id/calendar.ics', cacheControl({ maxAge: 300, etag: false }), eventController.getEventCalendarIcs);
+
+/**
  * GET /api/events/:slug
  * Get event details by slug
  */
