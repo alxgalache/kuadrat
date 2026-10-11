@@ -12,9 +12,8 @@ The email SHALL contain, in this order:
 - Amount paid, for a paid event.
 - The access password displayed prominently (amber box, large font, matching the auction email style), with instructions to save it.
 - An access section:
-  - an introductory sentence: «Cuando empiece el evento, podrás acceder desde este enlace:»;
-  - a «Ir al evento» button linking to `<CLIENT_URL>/live/<slug>`;
-  - the same URL as visible text;
+  - an introductory sentence: «Cuando empiece el evento, podrás acceder pulsando este botón:»;
+  - a «Ir al evento» button linking to `<CLIENT_URL>/live/<slug>`, with no visible copy of the URL;
   - a line explaining that, from another device or browser, the attendee enters through «Acceder con contraseña» on the event page, with their email and the password above. It names only the modal's button, because the page button that opens the modal reads «Registrarse» before the start and «Acceder» during the event.
 - The calendar button row defined in `event-calendar-links`.
 
@@ -28,7 +27,7 @@ The calendar row and the date line SHALL be omitted when the event's start canno
   - The event's date and time in peninsular Spanish time
   - The access password displayed prominently
   - Instructions to save the password for future access from other devices
-  - The «Ir al evento» button and the visible URL `<CLIENT_URL>/live/<slug>`
+  - The «Ir al evento» button linking to `<CLIENT_URL>/live/<slug>`
   - The instructions to enter from another device through «Acceder con contraseña»
   - The Google Calendar, Outlook and Apple buttons
 

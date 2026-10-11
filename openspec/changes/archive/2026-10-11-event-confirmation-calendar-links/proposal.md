@@ -7,8 +7,7 @@ Hay un segundo fallo que haría inútil cualquier enlace del email: `updateEvent
 ## What Changes
 
 - **El email de confirmación incluye la fecha y la hora** del evento, en hora peninsular española, y el **enlace a la ficha del evento** (`/live/<slug>`):
-  - un botón «Ir al evento»;
-  - la dirección en texto, por si el cliente de correo no muestra el botón;
+  - un botón «Ir al evento», sin la dirección en texto;
   - una línea que explica cómo entrar desde otro dispositivo: «Acceder con contraseña» en la ficha, con el email y la contraseña del mismo mensaje.
 - **Una fila de tres botones para añadir el evento al calendario**: Google Calendar, Outlook y Apple. Cada uno lleva el icono oficial de la aplicación, y la fila va precedida de un texto que explica para qué sirve. Cada botón lleva título, inicio y fin, enlace e instrucciones de acceso:
   - **Google Calendar**: enlace directo `calendar.google.com/calendar/render?action=TEMPLATE`. En Android e iOS, la app de Google Calendar declara esa ruta como suya (`assetlinks.json` y `apple-app-site-association` de `calendar.google.com`). Así, si la app está instalada, el sistema operativo la abre con el formulario relleno, y si no, se abre la web. Debe ser un enlace directo: una redirección intermedia impide que iOS abra la app.

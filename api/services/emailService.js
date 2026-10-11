@@ -2772,15 +2772,14 @@ const EVENT_CALENDAR_ICONS = {
 const hrefAttr = (url) => url.replace(/&/g, '&amp;');
 
 const eventAccessSection = (pageUrl) => `
-              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Cuando empiece el evento, podrás acceder desde este enlace:</p>
-              <table cellpadding="0" cellspacing="0" role="presentation" style="margin: 0 0 12px;">
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Cuando empiece el evento, podrás acceder pulsando este botón:</p>
+              <table cellpadding="0" cellspacing="0" role="presentation" style="margin: 0 0 16px;">
                 <tr>
                   <td align="center" style="background-color: #111827; border-radius: 6px;">
                     <a href="${hrefAttr(pageUrl)}" target="_blank" style="display: inline-block; padding: 12px 24px; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none;">Ir al evento</a>
                   </td>
                 </tr>
               </table>
-              <p style="color: #6b7280; font-size: 13px; line-height: 1.5; margin: 0 0 12px; word-break: break-all;"><a href="${hrefAttr(pageUrl)}" target="_blank" style="color: #374151;">${escapeForEmail(pageUrl)}</a></p>
               <p style="color: #6b7280; font-size: 13px; line-height: 1.5; margin: 0 0 32px;">Si entras desde otro dispositivo o navegador, pulsa «Acceder con contraseña» en la página del evento e introduce tu email y la contraseña de arriba.</p>`;
 
 const eventCalendarButton = ({ href, icon, label }) => `

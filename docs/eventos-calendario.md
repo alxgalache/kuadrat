@@ -1,6 +1,6 @@
 # Email de confirmación de eventos: enlace y calendario
 
-Guía operativa del email «Registro confirmado» de los eventos de `/live`: qué lleva, qué hace cada botón de calendario en cada dispositivo, cómo comprobarlo y qué tocar si algo deja de funcionar. Decisiones y motivos: `openspec/changes/event-confirmation-calendar-links` (en `archive/` una vez archivado).
+Guía operativa del email «Registro confirmado» de los eventos de `/live`: qué lleva, qué hace cada botón de calendario en cada dispositivo, cómo comprobarlo y qué tocar si algo deja de funcionar. Decisiones y motivos: `openspec/changes/archive/2026-10-11-event-confirmation-calendar-links`. Requisitos vigentes: `openspec/specs/event-calendar-links`, `openspec/specs/event-slug-stability` y el email de confirmación en `openspec/specs/event-password-access`.
 
 ---
 
@@ -13,8 +13,7 @@ Por orden:
 3. Importe pagado, si el evento es de pago.
 4. La **contraseña de acceso**, en el recuadro amarillo.
 5. **Acceso al evento:**
-   - el botón «Ir al evento», que lleva a `https://140d.art/live/<slug>`;
-   - la misma dirección en texto;
+   - el botón «Ir al evento», que lleva a `https://140d.art/live/<slug>` (la dirección no se muestra en texto);
    - cómo entrar desde otro dispositivo: «Acceder con contraseña» en la página del evento, con el email y la contraseña.
 6. **Añadir al calendario:** tres botones en una fila (Google Calendar, Outlook y Apple) y una línea que explica que «Apple» descarga un `.ics`.
 
@@ -90,7 +89,7 @@ Para cambiar uno (por ejemplo, si Microsoft termina de sustituir el icono de Out
 
 ## 6. Resultados de la verificación en dispositivos
 
-Rellenar al probar en preproducción (sección 8 de `tasks.md`). Si un resultado contradice la tabla del apartado 2, corregirla.
+Rellenar al probar en preproducción (sección 8 de `tasks.md` del cambio archivado). Si un resultado contradice la tabla del apartado 2, corregirla.
 
 | Prueba | Resultado | Fecha |
 |---|---|---|

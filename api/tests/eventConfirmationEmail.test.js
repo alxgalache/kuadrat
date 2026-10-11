@@ -53,12 +53,14 @@ describe('sendEventConfirmationEmail', () => {
     expect(html).toContain('<strong>martes, 20 de octubre de 2026, 19:00</strong> (hora peninsular española)');
   });
 
-  it('links to the event page with a button and as visible text, and explains other-device access', async () => {
+  it('links to the event page with a button only, and explains other-device access', async () => {
     const { html } = await send();
     const pageUrl = `${config.clientUrl}/live/charla-con-ana-1a2b3c4d`;
-    expect(html).toContain('Cuando empiece el evento, podrás acceder desde este enlace:');
+    expect(html).toContain('Cuando empiece el evento, podrás acceder pulsando este botón:');
     expect(html).toMatch(new RegExp(`<a href="${pageUrl}"[^>]*>Ir al evento</a>`));
-    expect(hrefs(html).filter((h) => h === pageUrl).length).toBeGreaterThanOrEqual(2);
+    expect(hrefs(html).filter((h) => h === pageUrl)).toHaveLength(1);
+    // The URL is not repeated as visible text (escapeForEmail would encode its «/» as &#x2F;).
+    expect(html).not.toContain('live&#x2F;charla-con-ana-1a2b3c4d');
     expect(html).toContain('pulsa «Acceder con contraseña» en la página del evento');
   });
 
@@ -102,7 +104,7 @@ describe('sendEventConfirmationEmail', () => {
     const { html } = await send();
     expect(html).toContain(`>${PASSWORD}</p>`);
     const links = hrefs(html);
-    expect(links.length).toBeGreaterThanOrEqual(5);
+    expect(links.length).toBeGreaterThanOrEqual(4);
     for (const href of links) {
       expect(href).not.toContain(PASSWORD);
     }

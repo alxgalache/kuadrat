@@ -53,9 +53,8 @@
 - [x] 5.1 Cambiar la firma de `sendEventConfirmationEmail` (`api/services/emailService.js`) a `{ email, firstName, event, accessPassword, amountPaid }`, y escapar `firstName` y `event.title` con `escapeForEmail` en el HTML. El asunto, `Registro confirmado - <título>`, sigue en texto plano.
 - [x] 5.2 Añadir la línea de fecha y hora con `formatEventDateTimeEs` y la etiqueta «(hora peninsular española)». Se omite si el inicio es ilegible.
 - [x] 5.3 Añadir la sección de acceso tras el recuadro de la contraseña:
-  - «Cuando empiece el evento, podrás acceder desde este enlace:»;
-  - botón negro «Ir al evento» a `eventPageUrl(event)`;
-  - la URL visible;
+  - «Cuando empiece el evento, podrás acceder pulsando este botón:»;
+  - botón negro «Ir al evento» a `eventPageUrl(event)`, sin repetir la URL en texto;
   - «Si entras desde otro dispositivo o navegador, pulsa «Acceder con contraseña» en la página del evento e introduce tu email y la contraseña de arriba.»
 - [x] 5.4 Añadir la fila de calendario (decisión 8 de `design.md`):
   - texto previo;
@@ -87,19 +86,19 @@
 
 ## 8. Verificación manual en preproducción (sin runner en el cliente, depende del dispositivo)
 
-- [ ] 8.1 Desplegar en preproducción y registrarse en un evento de prueba (`is_test`) con un buzón real. Revisar el email en Gmail web, Gmail en Android, Gmail en iOS, Apple Mail en iPhone y Outlook de escritorio, con imágenes activadas y bloqueadas: la fila no se parte, los iconos se ven nítidos y los nombres se leen.
-- [ ] 8.2 Google Calendar:
+- [x] 8.1 Desplegar en preproducción y registrarse en un evento de prueba (`is_test`) con un buzón real. Revisar el email en Gmail web, Gmail en Android, Gmail en iOS, Apple Mail en iPhone y Outlook de escritorio, con imágenes activadas y bloqueadas: la fila no se parte, los iconos se ven nítidos y los nombres se leen.
+- [x] 8.2 Google Calendar:
   - Android con la app: se abre la app con el formulario relleno;
   - iPhone con la app, desde Apple Mail: se abre la app;
   - escritorio: formulario web relleno a la hora correcta.
-- [ ] 8.3 Outlook: con una cuenta personal, el formulario web sale relleno a la hora correcta, en escritorio y en un móvil.
-- [ ] 8.4 Apple / `.ics`:
+- [x] 8.3 Outlook: con una cuenta personal, el formulario web sale relleno a la hora correcta, en escritorio y en un móvil.
+- [x] 8.4 Apple / `.ics`:
   - iPhone en Safari: hoja «Añadir a Calendario». Si no aparece con `attachment`, probar con `inline` y anotar el resultado en la guía;
   - macOS: abre Calendario;
   - Windows: abre Outlook;
   - Android: anotar qué app lo abre.
-- [ ] 8.5 Comprobar que el aviso de 15 minutos del `.ics` salta en Apple Calendar y que, en los tres calendarios, el enlace de la ubicación y de la descripción lleva a la ficha.
-- [ ] 8.6 Retitular el evento de prueba ya publicado y comprobar que el enlace del email sigue abriendo la ficha.
+- [x] 8.5 Comprobar que el aviso de 15 minutos del `.ics` salta en Apple Calendar y que, en los tres calendarios, el enlace de la ubicación y de la descripción lleva a la ficha.
+- [x] 8.6 Retitular el evento de prueba ya publicado y comprobar que el enlace del email sigue abriendo la ficha.
 
 ## 9. Documentación
 
