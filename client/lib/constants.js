@@ -799,6 +799,13 @@ export const GRID_LOAD_MORE_COPY = {
   reintentar: 'Reintentar',
 };
 
+// Anuncio para lectores de pantalla mientras la rejilla está en esqueleto tras
+// pulsar un artista del filtro. Mismas dos variantes de vocabulario que el pie.
+export const AUTHOR_FILTER_LOADING_COPY = {
+  art: 'Cargando obras...',
+  other: 'Cargando productos...',
+};
+
 // ── Calculadora de envíos de obras (sendcloud-art-shipping-calculator) ──
 
 // Los cuatro territorios de España, en el orden en que se muestran. Baleares va

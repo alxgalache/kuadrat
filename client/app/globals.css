@@ -317,3 +317,58 @@ html[data-live-room] body {
     stroke: #9ca3af;
   }
 }
+
+/* Esqueleto del filtro de autor (ver openspec/changes/archive/2026-10-13-author-filter-skeletons).
+   Lo pintan `AuthorSidebar`, `AuthorMobileFilter` y `ProductGrid` mientras
+   dura la navegación a otro artista, dentro de sus propios contenedores: la
+   clase sólo pone el gris y el brillo, nunca medidas.
+
+   El gris es el `gray-200` del hueco de imagen, para que al llegar el destino
+   con las imágenes todavía en camino el tono no cambie.
+
+   El brillo es un pseudoelemento por pieza que se desplaza con `transform`, y
+   no un `background-position` animado: así no repinta la pieza en cada
+   fotograma. `overflow: hidden` lo recorta a la forma de cada pieza (el círculo
+   del icono, el redondeo del cuadrado), y por ir en cada pieza funciona igual
+   en la fila de chips de móvil aunque esté desplazada en horizontal. Mismo
+   criterio que `.image-loader` para vivir aquí y no en `tailwind.config.js`. */
+@layer components {
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: #e5e7eb;
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgb(255 255 255 / 0) 0%,
+      rgb(255 255 255 / 0.6) 50%,
+      rgb(255 255 255 / 0) 100%
+    );
+    animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  }
+}
+
+/* Barre la pieza en el primer 60 % del ciclo y descansa el resto: un brillo que
+   pasa, no un parpadeo continuo. */
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  60%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Con movimiento reducido el esqueleto queda gris y quieto. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    display: none;
+  }
+}

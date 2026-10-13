@@ -10,6 +10,7 @@ export default function AuthorMobileFilter({
   onViewAuthorBio,
   onFilterByAuthor,
   onClearFilter,
+  pending = false,
 }) {
   return (
     <div className="lg:hidden border-b border-gray-200 py-4 px-6">
@@ -18,10 +19,19 @@ export default function AuthorMobileFilter({
         {authors.map((author) => (
           <div
             key={author.id}
+            // En espera de la navegación del filtro, el chip entero es una pieza
+            // de esqueleto: conserva su caja y su contenido, invisible, así que
+            // mide exactamente lo mismo (la X del seleccionado incluida) sin
+            // calcular nada. `*:invisible` saca además los botones del orden de
+            // tabulación y de los clics. El fondo lo pone `.skeleton`; las
+            // clases `bg-*` se quitan porque, como utilidades, le ganarían.
+            aria-hidden={pending || undefined}
             className={classNames(
-              selectedAuthorSlug && selectedAuthorSlug === author.slug
-                ? 'bg-gray-200 text-gray-900'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-50 hover:text-gray-900',
+              pending
+                ? 'skeleton select-none *:invisible'
+                : selectedAuthorSlug && selectedAuthorSlug === author.slug
+                  ? 'bg-gray-200 text-gray-900'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-50 hover:text-gray-900',
               'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold whitespace-nowrap shrink-0'
             )}
           >

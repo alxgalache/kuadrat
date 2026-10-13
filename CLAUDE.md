@@ -224,6 +224,7 @@ El porqué detallado de cada área vive en `.claude/rules/`, una regla por tema,
 * [`frontend/lcp-listados.md`](.claude/rules/frontend/lcp-listados.md) — LCP de `/galeria` y `/tienda`: rejilla servida por ISR, semilla sorteada en el servidor, Stripe `pure`, Inter autoalojada y `BrandLogo`.
 * [`frontend/critical-path.md`](.claude/rules/frontend/critical-path.md) — Ruta crítica: CSS en línea, interfaz bajo demanda (`useOnDemandComponent`), Replay tras `load`, analítica sin precarga y lecturas sin preflight.
 * [`frontend/og-image.md`](.claude/rules/frontend/og-image.md) — Imagen social por defecto: el logotipo en la zona segura del recorte central; cambiarla es publicarla con otro nombre.
+* [`frontend/author-filter-skeleton.md`](.claude/rules/frontend/author-filter-skeleton.md) — Esqueleto del filtro de autor: espera de `useTransition` sobre `router.push`, pintado por los mismos componentes con `pending`, `py-12` común y sin pie de rejilla durante la espera.
 
 ### Infraestructura y operación
 

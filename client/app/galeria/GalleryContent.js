@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { artAPI, getArtImageUrl } from '@/lib/api'
 import AuthorModal from '@/components/LazyAuthorModal'
 import AuthorSidebar from '@/components/AuthorSidebar'
@@ -11,9 +10,9 @@ import GridLoadMore from '@/components/GridLoadMore'
 import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
 import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
+import { useAuthorFilterNavigation } from '@/hooks/useAuthorFilterNavigation'
 
 export default function GalleryContent({ initialCatalog = null, initialAuthors = null }) {
-  const router = useRouter()
   // Esta ruta NO filtra: el filtro por artista vive en su propia URL
   // (`/galeria/autor/[slug]`) y tiene su propio componente. Aquí era
   // `useSearchParams().get('author')`, y ese único uso sacaba TODO el árbol a
@@ -32,22 +31,13 @@ export default function GalleryContent({ initialCatalog = null, initialAuthors =
   const restoration = useGridScrollRestoration()
   const { authors } = useGalleryAuthors('art', selectedAuthorSlug, initialAuthors)
   const { products, loading, error, page, isFading, loadMoreProps } = useGalleryProducts(artAPI, selectedAuthorSlug, restoration, initialCatalog)
+  // La navegación del filtro y su espera, que pinta el esqueleto de la lista y
+  // de la rejilla hasta que llega el destino.
+  const { isPending, filterByAuthor, clearFilter } = useAuthorFilterNavigation('/galeria', selectedAuthorSlug)
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)
     setModalOpen(true)
-  }
-
-  const handleFilterByAuthor = (authorSlug) => {
-    if (selectedAuthorSlug === authorSlug) {
-      router.push('/galeria')
-    } else {
-      router.push(`/galeria/autor/${authorSlug}`)
-    }
-  }
-
-  const handleClearFilter = () => {
-    router.push('/galeria')
   }
 
   if (loading && page === 1) {
@@ -94,8 +84,9 @@ export default function GalleryContent({ initialCatalog = null, initialAuthors =
         authors={authors}
         selectedAuthorSlug={selectedAuthorSlug}
         onViewAuthorBio={handleViewAuthorBio}
-        onFilterByAuthor={handleFilterByAuthor}
-        onClearFilter={handleClearFilter}
+        onFilterByAuthor={filterByAuthor}
+        onClearFilter={clearFilter}
+        pending={isPending}
       />
 
       <div className="mx-auto max-w-7xl lg:px-8">
@@ -104,11 +95,12 @@ export default function GalleryContent({ initialCatalog = null, initialAuthors =
             authors={authors}
             selectedAuthorSlug={selectedAuthorSlug}
             onViewAuthorBio={handleViewAuthorBio}
-            onFilterByAuthor={handleFilterByAuthor}
-            onClearFilter={handleClearFilter}
+            onFilterByAuthor={filterByAuthor}
+            onClearFilter={clearFilter}
+            pending={isPending}
           />
 
-          <main className="flex-1" ref={productListRef}>
+          <main className="flex-1" ref={productListRef} aria-busy={isPending || undefined}>
             <div className="py-12">
               <ProductGrid
                 products={products}
@@ -118,8 +110,13 @@ export default function GalleryContent({ initialCatalog = null, initialAuthors =
                 onProductOpen={restoration.onProductOpen}
                 authors={authors}
                 onViewAuthorBio={handleViewAuthorBio}
+                pending={isPending}
+                variant="art"
               />
-              <GridLoadMore {...loadMoreProps} variant="art" gridName="galeria" />
+              {/* Fuera durante la espera: describe una rejilla que ya no está en
+                  pantalla, y al encogerse la página su centinela pediría la
+                  página siguiente del listado que se abandona. */}
+              {!isPending && <GridLoadMore {...loadMoreProps} variant="art" gridName="galeria" />}
             </div>
           </main>
         </div>

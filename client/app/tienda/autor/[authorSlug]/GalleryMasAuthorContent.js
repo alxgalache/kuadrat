@@ -1,7 +1,6 @@
 'use client'
 
 import { use, useState, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { othersAPI, getOthersImageUrl } from '@/lib/api'
 import AuthorModal from '@/components/LazyAuthorModal'
 import AuthorSidebar from '@/components/AuthorSidebar'
@@ -11,9 +10,9 @@ import GridLoadMore from '@/components/GridLoadMore'
 import { useGalleryAuthors } from '@/hooks/useGalleryAuthors'
 import { useGalleryProducts } from '@/hooks/useGalleryProducts'
 import { useGridScrollRestoration } from '@/hooks/useGridScrollRestoration'
+import { useAuthorFilterNavigation } from '@/hooks/useAuthorFilterNavigation'
 
 export default function GalleryMasAuthorContent({ params, initialProducts = null, initialAuthors = null }) {
-  const router = useRouter()
   const resolvedParams = use(params)
   const authorSlug = resolvedParams.authorSlug
   const [selectedAuthorForBio, setSelectedAuthorForBio] = useState(null)
@@ -25,22 +24,13 @@ export default function GalleryMasAuthorContent({ params, initialProducts = null
   const restoration = useGridScrollRestoration()
   const { authors } = useGalleryAuthors('other', authorSlug, initialAuthors)
   const { products, loading, error, page, isFading, loadMoreProps } = useGalleryProducts(othersAPI, authorSlug, restoration, { products: initialProducts })
+  // La navegación del filtro y su espera, que pinta el esqueleto de la lista y
+  // de la rejilla hasta que llega el destino.
+  const { isPending, filterByAuthor, clearFilter } = useAuthorFilterNavigation('/tienda', authorSlug)
 
   const handleViewAuthorBio = (author) => {
     setSelectedAuthorForBio(author)
     setModalOpen(true)
-  }
-
-  const handleFilterByAuthor = (authorSlugParam) => {
-    if (authorSlug === authorSlugParam) {
-      router.push('/tienda')
-    } else {
-      router.push(`/tienda/autor/${authorSlugParam}`)
-    }
-  }
-
-  const handleClearFilter = () => {
-    router.push('/tienda')
   }
 
   if (loading && page === 1) {
@@ -62,7 +52,7 @@ export default function GalleryMasAuthorContent({ params, initialProducts = null
   if (products.length === 0) {
     return (
       <div className="bg-white">
-        <div className="flex items-center justify-center px-6 py-16">
+        <div className="flex items-center justify-center px-6 py-12">
           <div className="text-center">
             <h2 className="text-2xl font-semibold text-gray-900 sm:text-3xl">
               No hay productos disponibles
@@ -87,8 +77,9 @@ export default function GalleryMasAuthorContent({ params, initialProducts = null
         authors={authors}
         selectedAuthorSlug={authorSlug}
         onViewAuthorBio={handleViewAuthorBio}
-        onFilterByAuthor={handleFilterByAuthor}
-        onClearFilter={handleClearFilter}
+        onFilterByAuthor={filterByAuthor}
+        onClearFilter={clearFilter}
+        pending={isPending}
       />
 
       <div className="mx-auto max-w-7xl lg:px-8">
@@ -97,12 +88,13 @@ export default function GalleryMasAuthorContent({ params, initialProducts = null
             authors={authors}
             selectedAuthorSlug={authorSlug}
             onViewAuthorBio={handleViewAuthorBio}
-            onFilterByAuthor={handleFilterByAuthor}
-            onClearFilter={handleClearFilter}
+            onFilterByAuthor={filterByAuthor}
+            onClearFilter={clearFilter}
+            pending={isPending}
           />
 
-          <main className="flex-1" ref={productListRef}>
-            <div className="py-16">
+          <main className="flex-1" ref={productListRef} aria-busy={isPending || undefined}>
+            <div className="py-12">
               <ProductGrid
                 products={products}
                 isFading={isFading}
@@ -111,8 +103,13 @@ export default function GalleryMasAuthorContent({ params, initialProducts = null
                 onProductOpen={restoration.onProductOpen}
                 authors={authors}
                 onViewAuthorBio={handleViewAuthorBio}
+                pending={isPending}
+                variant="other"
               />
-              <GridLoadMore {...loadMoreProps} variant="other" gridName="tienda-autor" />
+              {/* Fuera durante la espera: describe una rejilla que ya no está en
+                  pantalla, y al encogerse la página su centinela pediría la
+                  página siguiente del listado que se abandona. */}
+              {!isPending && <GridLoadMore {...loadMoreProps} variant="other" gridName="tienda-autor" />}
             </div>
           </main>
         </div>

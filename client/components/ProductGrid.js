@@ -7,6 +7,7 @@ import { PlusIcon } from '@heroicons/react/20/solid'
 import { authorsAPI } from '@/lib/api'
 import useImageLoaded from '@/hooks/useImageLoaded'
 import ImageLoadingPlaceholder from '@/components/ImageLoadingPlaceholder'
+import { DEFAULT_PAGE_SIZE, AUTHOR_FILTER_LOADING_COPY } from '@/lib/constants'
 
 // Cuántas imágenes de la rejilla se marcan como prioritarias.
 //
@@ -126,6 +127,55 @@ function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen, onAut
   )
 }
 
+// Anchuras de las barras de texto del esqueleto: autor, título y precio. Las del
+// destino no se conocen hasta que llega, así que salen de un patrón fijo que se
+// recorre por índice. Nunca al azar en el render: cualquier re-render durante la
+// espera volvería a sortear y las barras temblarían. Cinco patrones con dos y
+// con cuatro columnas: dos celdas apiladas nunca repiten el mismo.
+const ANCHOS_ESQUELETO = [
+  ['w-1/2', 'w-3/4', 'w-1/3'],
+  ['w-2/5', 'w-3/5', 'w-1/4'],
+  ['w-3/5', 'w-4/5', 'w-1/3'],
+  ['w-1/2', 'w-2/3', 'w-1/4'],
+  ['w-2/5', 'w-3/4', 'w-1/3'],
+]
+
+/**
+ * Celda en espera de la navegación del filtro de autor.
+ *
+ * Mismo `<li>` y mismo bloque que `ProductGridItem`, así que la caja coincide:
+ * el cuadrado tiene el tamaño y el redondeo del hueco de la imagen, y el bloque
+ * de texto conserva el `mt-6` y una caja por línea con la altura de la línea
+ * real (`text-sm` → 20 px para el autor, `text-base` → 24 px para el título y el
+ * precio, con sus `mt-1`). Dentro de cada caja, una barra centrada más baja que
+ * la línea. Coincide con la celda cuyos textos caben en una línea. Un nombre o
+ * un título que salta de línea hace la celda real más alta (a 1024 px, con
+ * celdas de 148 px, pasa con los largos), y eso no se puede saber antes de que
+ * llegue el destino.
+ */
+function ProductGridItemSkeleton({ index }) {
+  const [autor, titulo, precio] = ANCHOS_ESQUELETO[index % ANCHOS_ESQUELETO.length]
+
+  return (
+    <li className="inline-flex w-full flex-col text-center" aria-hidden="true">
+      <div className="relative">
+        <div className="skeleton aspect-square w-full rounded-md" />
+        <div className="mt-6">
+          <div className="flex h-5 items-center justify-center">
+            <div className={`skeleton h-3 rounded ${autor}`} />
+          </div>
+          <div className="mt-1 flex h-6 items-center justify-center">
+            <div className={`skeleton h-3.5 rounded ${titulo}`} />
+          </div>
+          <div className="mt-1 flex h-6 items-center justify-center">
+            <div className={`skeleton h-3.5 rounded ${precio}`} />
+          </div>
+        </div>
+      </div>
+    </li>
+  )
+}
+
 /**
  * Rejilla de productos.
  *
@@ -138,6 +188,13 @@ function ProductGridItem({ product, getImageUrl, baseRoute, onProductOpen, onAut
  * la red— y solo cae en `authorsAPI.getBySlug` si el autor todavía no está: el
  * listado y los productos se cargan en peticiones independientes y durante ese
  * hueco un clic no puede quedarse sin respuesta.
+ *
+ * `pending` sustituye las celdas por `DEFAULT_PAGE_SIZE` celdas de esqueleto
+ * DENTRO del mismo `<ul>`, mientras dura la navegación del filtro de autor (ver
+ * `useAuthorFilterNavigation`): las columnas, las separaciones y los márgenes
+ * son los de la rejilla real porque son los mismos nodos. Doce es el máximo que
+ * puede pintar la primera página de cualquier destino. `variant` (`art` u
+ * `other`) elige el texto del anuncio para lectores de pantalla.
  */
 export default function ProductGrid({
   products,
@@ -147,6 +204,8 @@ export default function ProductGrid({
   onProductOpen,
   authors,
   onViewAuthorBio,
+  pending = false,
+  variant = 'art',
 }) {
   const authorsBySlug = useMemo(() => {
     const map = new Map()
@@ -171,6 +230,12 @@ export default function ProductGrid({
 
   return (
     <div className="relative">
+      {/* Siempre montada y vacía fuera de la espera: una región viva que nace
+          con el texto ya puesto no la anuncian todos los lectores. Un único
+          anuncio para toda la rejilla, no uno por celda. */}
+      <p role="status" className="sr-only">
+        {pending ? (AUTHOR_FILTER_LOADING_COPY[variant] ?? AUTHOR_FILTER_LOADING_COPY.art) : ''}
+      </p>
       <div
         className="relative w-full transition-opacity duration-300"
         style={{ opacity: isFading ? 0 : 1 }}
@@ -179,17 +244,21 @@ export default function ProductGrid({
           role="list"
           className="px-6 grid grid-cols-2 gap-4 sm:px-6 sm:gap-8 lg:px-0 lg:grid-cols-4"
         >
-          {products.map((product, i) => (
-            <ProductGridItem
-              key={product.id}
-              product={product}
-              getImageUrl={getImageUrl}
-              baseRoute={baseRoute}
-              onProductOpen={onProductOpen}
-              onAuthorClick={onViewAuthorBio ? handleAuthorClick : null}
-              priority={i < IMAGENES_PRIORITARIAS}
-            />
-          ))}
+          {pending
+            ? Array.from({ length: DEFAULT_PAGE_SIZE }, (_, i) => (
+                <ProductGridItemSkeleton key={i} index={i} />
+              ))
+            : products.map((product, i) => (
+                <ProductGridItem
+                  key={product.id}
+                  product={product}
+                  getImageUrl={getImageUrl}
+                  baseRoute={baseRoute}
+                  onProductOpen={onProductOpen}
+                  onAuthorClick={onViewAuthorBio ? handleAuthorClick : null}
+                  priority={i < IMAGENES_PRIORITARIAS}
+                />
+              ))}
         </ul>
       </div>
     </div>
