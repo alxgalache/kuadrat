@@ -56,13 +56,14 @@ function HalfTile({ camera }) {
 /**
  * The stage cover (agora-stage-covers): one still image over everything —
  * cameras, corner tiles, screen and whiteboard — below the theater button
- * only. Contained on white, the covers' own background, so a phone in
- * landscape theater letterboxes it cleanly. Exported for the host console,
- * which shows the same picture in its video panel.
+ * only. Contained on black — the dark covers' own background and the
+ * stage's — so a phone in landscape theater letterboxes it with no band of
+ * another colour. Exported for the host console, which shows the same picture
+ * in its video panel.
  */
 export function StageCoverImage({ cover, className = 'absolute inset-0 z-[15]' }) {
   return (
-    <div className={`${className} bg-white`}>
+    <div className={`${className} bg-black`}>
       <Image src={cover.src} alt={cover.alt} fill sizes="100vw" className="object-contain" draggable={false} />
     </div>
   )

@@ -7,16 +7,18 @@
  * The images are JPGs in client/public, served from CLIENT_URL: the browsers
  * paint them over the stage, and Agora Cloud Recording downloads the same URL
  * as the composite canvas background (it documents JPG and BMP, not PNG).
- * A published file is never overwritten: a new design ships as `-v2` and the
- * two catalogues move to it. The sources are the PNGs in docs/cortinillas/.
+ * A published file is never overwritten: a new design ships as the next `-vN`
+ * and the two catalogues move to it. In use: `-v2`, the dark version of the
+ * designs (docs/cortinillas/oscura/, sources in docs/cortinillas/html/). The
+ * white `-v1` blended into the white page and stays published, unused.
  */
 
 const config = require('../config/env');
 
 const STAGE_COVERS = Object.freeze({
-  inicio: Object.freeze({ file: 'cortinillas/inicio-v1.jpg', headline: 'Empezamos en breve' }),
-  intermedio: Object.freeze({ file: 'cortinillas/intermedio-v1.jpg', headline: 'Volvemos enseguida' }),
-  final: Object.freeze({ file: 'cortinillas/final-v1.jpg', headline: 'Gracias por acompañarnos' }),
+  inicio: Object.freeze({ file: 'cortinillas/inicio-v2.jpg', headline: 'Empezamos en breve' }),
+  intermedio: Object.freeze({ file: 'cortinillas/intermedio-v2.jpg', headline: 'Volvemos enseguida' }),
+  final: Object.freeze({ file: 'cortinillas/final-v2.jpg', headline: 'Gracias por acompañarnos' }),
 });
 
 // The recording canvas background when no cover is up. Every layout sent to

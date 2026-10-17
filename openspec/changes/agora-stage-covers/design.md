@@ -118,9 +118,34 @@ Si `event-auto-start` ya está aplicado, va en su función de inicio compartida.
 
 ### 12. Presentación
 
-**`BroadcastStage`:** la portada es su **último** hijo, `absolute inset-0`, por encima de los recuadros (`z-10`) y por debajo del botón del teatro (`z-20`). Es un `<img>` con `object-contain` sobre `bg-white`, porque las portadas tienen fondo blanco y el teatro en un móvil apaisado no es 16:9. Las capas de abajo no se desmontan, por las reglas de «una pista, un contenedor» y de la pizarra como primer hijo.
+**`BroadcastStage`:** la portada es su **último** hijo, `absolute inset-0`, por encima de los recuadros (`z-10`) y por debajo del botón del teatro (`z-20`). Es un `<img>` con `object-contain` sobre `bg-black`, el fondo de las portadas oscuras (Decisión 13), porque el teatro en un móvil apaisado no es 16:9. Las capas de abajo no se desmontan, por las reglas de «una pista, un contenedor» y de la pizarra como primer hijo.
 
 **Menú:** `StageCoverMenu` (escritorio) y unas opciones compartidas, `StageCoverOptions`, que reutilizan la consola y la hoja compacta, igual que `VideoEffectsMenu` con `VideoEffectsOptions`. A diferencia de «Efectos», se muestra en móvil, porque no procesa nada.
+
+### 13. Portadas oscuras, no blancas (decisión del operador tras probar en preproducción)
+
+**El problema:** con las portadas `-v1`, de fondo blanco, la escena era un rectángulo blanco sobre la página blanca. No se distinguía la ventana de la retransmisión, y la portada parecía parte de la maquetación. Además, el fondo negro de la escena asomaba en sus esquinas redondeadas. En el móvil en vertical era peor: la escena va de lado a lado, entre una barra superior blanca y la fila de participantes, también blanca.
+
+**Alternativas comparadas con maquetas** (escritorio y móvil en vertical):
+
+1. Borde y sombra en CSS: separa poco, y en el móvil casi nada.
+2. Paspartú negro, en CSS o integrado en la imagen.
+3. Portadas en negro.
+4. Portadas en gris claro: el contraste es demasiado sutil.
+5. Portadas con bandas negras.
+
+Las finalistas fueron la 2 y la 3, ambas exportadas desde los diseños originales (`docs/cortinillas/`).
+
+**Decisión:** la 3, como opción fija, sin ajuste por evento ni varias opciones en el menú. Es una decisión de imagen de marca, no de contenido, y duplicar el catálogo duplicaría también cada cambio de texto y cada verificación. Cambiarla más adelante es barato: se publica la otra versión con otro nombre y se cambian los dos catálogos. El paspartú queda listo en `docs/cortinillas/paspartu/`.
+
+**Cómo se hicieron:** el marcado y los estilos del artboard de cada `.dc.html` exportado, sin el visor de la herramienta, con la paleta oscura de Tailwind:
+
+- fondo `#000000` y titular blanco;
+- textos secundarios en gris-400, separador en gris-800;
+- etiquetas en verde, ámbar y gris de modo oscuro;
+- el logo SVG con su único relleno cambiado a blanco.
+
+La reconstrucción del original coincide con el PNG del diseñador (diferencia media de 0,28/255). El fondo de `StageCoverImage` pasa a negro, así que en el teatro y en horizontal no aparecen franjas de otro color. La grabación no cambia de lógica: descarga la URL nueva.
 
 ## Risks / Trade-offs
 

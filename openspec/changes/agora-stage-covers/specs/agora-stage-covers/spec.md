@@ -2,7 +2,7 @@
 
 ### Requirement: Catálogo de portadas
 
-El sistema SHALL ofrecer exactamente tres portadas, identificadas por `inicio`, `intermedio` y `final`, con las etiquetas es-ES «Inicio», «Intermedio» y «Final». Cada una SHALL ser un JPG de 1920 × 1080 publicado en `client/public/cortinillas/<id>-v1.jpg`, generado a partir de su original PNG en `docs/cortinillas/`. Además SHALL existir un fondo neutro para la grabación, `client/public/grabacion/fondo-negro-v1.jpg`: un JPG negro de 1920 × 1080.
+El sistema SHALL ofrecer exactamente tres portadas, identificadas por `inicio`, `intermedio` y `final`, con las etiquetas es-ES «Inicio», «Intermedio» y «Final». Cada una SHALL ser un JPG de 1920 × 1080 en su versión oscura, publicado en `client/public/cortinillas/<id>-v2.jpg` y generado a partir de `docs/cortinillas/oscura/<id>.png` (fuente: `docs/cortinillas/html/oscura/`). Es la maqueta del diseño original con fondo negro, texto blanco y el logo invertido. Sobre una web blanca, el negro hace que la escena se lea como una pantalla y no como parte de la maquetación. Los `-v1` claros quedan publicados sin uso: un fichero publicado no se borra ni se sobrescribe. Además SHALL existir un fondo neutro para la grabación, `client/public/grabacion/fondo-negro-v1.jpg`: un JPG negro de 1920 × 1080.
 
 El catálogo SHALL vivir en `api/utils/stageCovers.js`, con un espejo en `client/lib/stageCovers.js` que tenga los mismos identificadores y ficheros. La URL pública de un fichero SHALL ser `<CLIENT_URL>/<ruta>`, construida solo en esos módulos.
 
@@ -10,7 +10,7 @@ Un fichero publicado NO SHALL sobrescribirse nunca: un diseño nuevo se publica 
 
 #### Scenario: URL de la portada de inicio
 - **WHEN** la API construye la URL pública de `inicio` con `CLIENT_URL = https://140d.art`
-- **THEN** SHALL obtener `https://140d.art/cortinillas/inicio-v1.jpg`
+- **THEN** SHALL obtener `https://140d.art/cortinillas/inicio-v2.jpg`
 
 #### Scenario: Identificador desconocido
 - **WHEN** se pide la portada `descanso`
@@ -66,7 +66,7 @@ Un reinicio de la API pierde la portada. Los clientes convergen a «sin portada�
 
 ### Requirement: La portada en la escena
 
-`client/components/events/BroadcastStage.js` SHALL recibir la portada activa y, si la hay, pintar su imagen sobre todas las capas de la escena: cámaras, recuadros de esquina, pantalla compartida y pizarra. La imagen SHALL ocupar el marco entero, con `object-contain` sobre fondo blanco, y solo el botón del teatro SHALL quedar por encima. SHALL verse igual para host, co-presentador y audiencia, en escritorio, en la vista compacta, en horizontal y en el teatro. Mientras haya portada NO SHALL mostrarse el aviso «Esperando al host».
+`client/components/events/BroadcastStage.js` SHALL recibir la portada activa y, si la hay, pintar su imagen sobre todas las capas de la escena: cámaras, recuadros de esquina, pantalla compartida y pizarra. La imagen SHALL ocupar el marco entero, con `object-contain` sobre fondo negro, el de las portadas y el de la escena, y solo el botón del teatro SHALL quedar por encima. SHALL verse igual para host, co-presentador y audiencia, en escritorio, en la vista compacta, en horizontal y en el teatro. Mientras haya portada NO SHALL mostrarse el aviso «Esperando al host».
 
 La capa de portada SHALL añadirse como un hijo más. NO SHALL desmontar ni mover las capas existentes: la pizarra sigue siendo el primer hijo y ningún `AgoraVideo` se vuelve a montar.
 
@@ -80,7 +80,7 @@ La imagen SHALL llevar como `alt` el titular de su portada: «Empezamos en breve
 
 #### Scenario: Teatro
 - **WHEN** un asistente abre el teatro con la portada `intermedio` puesta
-- **THEN** el teatro muestra la portada entera, centrada sobre blanco
+- **THEN** el teatro muestra la portada entera, centrada sobre negro y sin franjas de otro color
 
 #### Scenario: Se quita la portada
 - **WHEN** la portada pasa a `null` con la cámara del host ya publicada

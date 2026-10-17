@@ -18,7 +18,7 @@ const config = require('../config/env');
 
 // Every composite layout carries an explicit canvas image (agora-stage-covers).
 const BLANK = `${config.clientUrl}/grabacion/fondo-negro-v1.jpg`;
-const COVER_URL = (id) => `${config.clientUrl}/cortinillas/${id}-v1.jpg`;
+const COVER_URL = (id) => `${config.clientUrl}/cortinillas/${id}-v2.jpg`;
 const stage = (screenSharing = false, cover = null) => () => ({ screenSharing, cover });
 const setupEventSocket = require('../socket/eventSocket');
 const { isRecordingEligible, recordingModeFor } = require('../utils/eventRecording');

@@ -112,3 +112,13 @@ En preproducción, con un evento Agora `broadcast` de prueba con grabación acti
 - [x] 9.3 Actualizar `.claude/rules/agora/recording.md` (diseño del lienzo, lector `getStageState`, `applied_cover`) y `.claude/rules/agora/interviews-cohost.md` (el co-presentador tiene «Portadas»).
 - [x] 9.4 Actualizar `docs/grabaciones-eventos.md` con la portada en la grabación y la cámara apagada en negro. Añadir una guía corta para el operador, `docs/eventos-portadas.md`: cuándo usar cada portada, qué se apaga, y cómo sustituir una imagen publicando `-v2`.
 - [x] 9.5 Ejecutar `node scripts/check-claude-rules.mjs` y la suite completa (`npm test` en `api/`).
+
+## 10. Portadas oscuras (decisión tras probar en preproducción)
+
+- [x] 10.1 Publicar `client/public/cortinillas/{inicio,intermedio,final}-v2.jpg` desde `docs/cortinillas/oscura/*.png` (1920 × 1080, calidad 88). Los `-v1` se quedan publicados.
+- [x] 10.2 Cambiar los dos catálogos a `-v2`: `api/utils/stageCovers.js` y `client/lib/stageCovers.js`.
+- [x] 10.3 `client/components/events/BroadcastStage.js` → `StageCoverImage`: fondo `bg-black` en lugar de `bg-white`, con su comentario.
+- [x] 10.4 `api/tests/agoraRecording.test.js`: la URL esperada de la portada pasa a `-v2`. Ejecutar la suite completa.
+- [x] 10.5 Lint y build de `client/`.
+- [x] 10.6 Actualizar la regla `.claude/rules/agora/stage-covers.md`, `docs/eventos-portadas.md` y `docs/cortinillas/README.md` (versión en uso: la oscura). Ejecutar `node scripts/check-claude-rules.mjs`.
+- [ ] 10.7 Verificación en preproducción: la portada oscura en la escena, el teatro, el móvil en vertical y horizontal, la consola del host y la grabación MP4.

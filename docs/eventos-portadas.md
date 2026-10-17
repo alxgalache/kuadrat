@@ -6,7 +6,7 @@ Guía operativa del menú «Portadas» de los eventos en directo de Agora en mod
 
 ## 1. Qué son
 
-Tres imágenes que tapan la escena entera, igual para todo el público, en la sala y en la grabación:
+Tres imágenes oscuras (fondo negro, texto blanco) que tapan la escena entera, igual para todo el público, en la sala y en la grabación. Son negras para que se lean como la pantalla de la retransmisión y no como parte de la página, que es blanca:
 
 | Portada | Texto | Cuándo |
 |---|---|---|
@@ -59,7 +59,7 @@ Detalle en `docs/grabaciones-eventos.md`.
 
 Las imágenes publicadas **nunca se sobrescriben**: los navegadores y Agora las guardan en caché.
 
-1. Exporta la nueva imagen en 1920 × 1080 y guarda la fuente PNG en `docs/cortinillas/`.
-2. Conviértela a JPG (calidad 85-90) con un nombre nuevo: `client/public/cortinillas/intermedio-v2.jpg`.
+1. Edita su HTML en `docs/cortinillas/html/oscura/` y regenera el PNG en `docs/cortinillas/oscura/`. El `README.md` de esa carpeta tiene la orden de Chrome.
+2. Conviértelo a JPG (calidad 85-90) con el siguiente número de versión: `client/public/cortinillas/intermedio-v3.jpg`.
 3. Cambia el fichero en los dos catálogos, `api/utils/stageCovers.js` y `client/lib/stageCovers.js`, y el titular si cambia el texto.
-4. Despliega API y cliente juntos. No borres el `-v1`: una grabación en curso podría estar usándolo.
+4. Despliega API y cliente juntos. No borres la versión anterior: una grabación en curso podría estar usándola.
