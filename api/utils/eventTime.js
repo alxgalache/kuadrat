@@ -147,6 +147,20 @@ function formatEventWhenEs(event) {
   return `el ${parts.weekday} ${parts.day} de ${parts.month} a las ${timeFormatterEs.format(start)}`;
 }
 
+/**
+ * The event's calendar date in EVENT_TIME_ZONE as «AAAAMMDD» («20261017»), or
+ * null if event_datetime is unreadable — never a throw. It names the folder
+ * of the event's recordings in S3 (readable-recording-folders), where a throw
+ * would cost the recording itself.
+ */
+function eventDateStamp(event) {
+  const start = eventStartUtc(event);
+  if (!start) return null;
+  const parts = {};
+  for (const { type, value } of partsFormatter.formatToParts(start)) parts[type] = value;
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
 module.exports = {
   EVENT_TIME_ZONE,
   wallTimeToUtc,
@@ -154,4 +168,5 @@ module.exports = {
   eventEndUtc,
   formatEventDateTimeEs,
   formatEventWhenEs,
+  eventDateStamp,
 };

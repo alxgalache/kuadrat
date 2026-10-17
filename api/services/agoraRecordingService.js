@@ -35,6 +35,7 @@ const {
   STAGE_COVERS, STAGE_COVER_RECORDING_BLANK, isStageCover, stageCoverPublicUrl,
 } = require('../utils/stageCovers');
 const { sqlUtcTimestamp, parseSqlUtcDate } = require('../utils/passwordSecurity');
+const { eventDateStamp } = require('../utils/eventTime');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -65,6 +66,10 @@ const RECORDER_TOKEN_MARGIN_SECONDS = 900;
 const RECORDING_PREFIX_ROOT = 'eventos';
 // Agora's fileNamePrefix: letters and digits only, 128 chars in total.
 const FILE_NAME_PREFIX_MAX = 128;
+// Longest event folder (readable-recording-folders). A cap for readability in
+// the S3 console, not Agora's limit: the whole prefix stays far below 128.
+const EVENT_FOLDER_MAX = 64;
+const RECORDING_PART_PREFIX = 'parte';
 // The screen share is the most detailed source recorded (1792 × 1008), so the
 // canvas is 1080p. Agora bills recording by the streams recorded, not by the
 // canvas, so this only costs storage (verified on the first invoice).
@@ -229,13 +234,53 @@ function alphanumeric(id) {
   return String(id).replace(/[^A-Za-z0-9]/g, '');
 }
 
+const EVENT_FOLDER_PATTERN = new RegExp(`^[A-Za-z0-9]{1,${EVENT_FOLDER_MAX}}$`);
+
 /**
- * `['eventos', <event id>, <recording id>]` without the UUID hyphens: each
- * element may only hold letters and digits, and a hyphen here is a 400 on the
- * very first real `start`.
+ * The event's folder, readable by a person: its date in Madrid and the words
+ * of its slug in CamelCase — «20261017ConversacionConMariaGarcia1f3a9c2e».
+ *
+ * Agora forbids every symbol in a prefix element (underscores and hyphens
+ * included), so the case changes are the only separators. The slug is the
+ * identity: unique, fixed once the event is published (and only a started
+ * event records), and its last segment is the random suffix that tells apart
+ * two events with the same title on the same day. That suffix is never cut;
+ * the words before it are, to fit EVENT_FOLDER_MAX.
+ *
+ * Never throws: anything that does not give a valid name falls back to the
+ * event id without hyphens, because a throw here would cost the recording.
  */
-function buildFileNamePrefix(eventId, recordingId) {
-  const parts = [RECORDING_PREFIX_ROOT, alphanumeric(eventId), alphanumeric(recordingId)];
+function eventFolderFor(event) {
+  const segments = String(event?.slug ?? '')
+    .split('-')
+    .map(alphanumeric)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1));
+  const fallback = alphanumeric(event?.id ?? '');
+  if (segments.length === 0) return fallback;
+
+  const date = eventDateStamp(event) || '';
+  const suffix = segments.pop();
+  const room = Math.max(0, EVENT_FOLDER_MAX - date.length - suffix.length);
+  const folder = `${date}${segments.join('').slice(0, room)}${suffix}`.slice(0, EVENT_FOLDER_MAX);
+  return EVENT_FOLDER_PATTERN.test(folder) ? folder : fallback;
+}
+
+/** «parte01» … «parte10»: attempt + 1, the «Parte N» of the admin panel. */
+function partFolderFor(attempt) {
+  return `${RECORDING_PART_PREFIX}${String(Number(attempt) + 1).padStart(2, '0')}`;
+}
+
+/**
+ * `['eventos', <event folder>, <part folder>]`, for instance
+ * `['eventos', '20261017ConversacionConMariaGarcia1f3a9c2e', 'parte01']`.
+ * Each element may only hold letters and digits: a hyphen or an underscore
+ * here is a 400 on the very first real `start`. Nothing reads the path back
+ * from these pieces — the row keeps it in `s3_prefix` — so older rows with
+ * `eventos/<event id>/<recording id>/` keep working as they are.
+ */
+function buildFileNamePrefix(event, attempt) {
+  const parts = [RECORDING_PREFIX_ROOT, eventFolderFor(event), partFolderFor(attempt)];
   for (const part of parts) {
     if (!/^[A-Za-z0-9]+$/.test(part)) {
       throw new Error(`Invalid fileNamePrefix element: "${part}"`);
@@ -451,7 +496,7 @@ function describeError(err) {
 
 async function loadEvent(eventId) {
   const result = await db.execute({
-    sql: `SELECT id, title, status, provider, format, interaction_mode,
+    sql: `SELECT id, title, slug, event_datetime, status, provider, format, interaction_mode,
                  recording_enabled, agora_channel_name
           FROM events WHERE id = ?`,
     args: [eventId],
@@ -478,7 +523,9 @@ function isUniqueViolation(err) {
 async function startTask(event, attempt, windowStartMs, { getStageState } = {}) {
   const mode = recordingModeFor(event);
   const id = randomUUID();
-  const fileNamePrefix = buildFileNamePrefix(event.id, id);
+  // The folder is named for a person (event date + slug, then «parteNN»); the
+  // id above stays the row's key and the panel's reference.
+  const fileNamePrefix = buildFileNamePrefix(event, attempt);
   const storage = storageSettings();
   const recorderUid = recorderUidFor(attempt);
   const cname = event.agora_channel_name;
@@ -867,6 +914,8 @@ module.exports = {
   // pure builders
   mixLayoutFor,
   buildFileNamePrefix,
+  eventFolderFor,
+  partFolderFor,
   s3PrefixFor,
   buildStorageConfig,
   buildRecordingConfig,

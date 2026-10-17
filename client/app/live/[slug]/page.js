@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { fetchEvent, fetchEventPayload, truncateText, SITE_URL } from '@/lib/serverApi'
 import { buildOpenGraph, buildTwitter, socialImageUrl } from '@/lib/metadata'
+import { eventListImageUrl, eventDetailImageUrl } from '@/lib/eventImages'
 import JsonLd from '@/components/JsonLd'
 import EventDetail from './EventDetail'
 
@@ -56,6 +57,7 @@ export async function generateMetadata({ params }) {
     160,
   )
   const canonical = `/live/${event.slug}`
+  const socialImage = eventListImageUrl(event)
 
   // Evento de prueba (event-video-cdn-delivery): fuera del calendario y del
   // sitemap por la API, y aquí fuera de los buscadores. Se llega solo por el
@@ -69,16 +71,18 @@ export async function generateMetadata({ params }) {
     alternates: {
       canonical,
     },
-    // `cover_image_url` es una columna TEXT libre y puede traer una URL de
-    // cualquier host. `socialImageUrl` sólo pasa por el optimizador los hosts
-    // que están en `images.remotePatterns`; con cualquier otro devolvería 400 y
-    // el evento se quedaría sin imagen, así que ahí deja la URL intacta.
+    // Las imágenes del evento son columnas TEXT libres y pueden traer una URL
+    // de cualquier host. `socialImageUrl` sólo pasa por el optimizador los
+    // hosts que están en `images.remotePatterns`; con cualquier otro devolvería
+    // 400 y el evento se quedaría sin imagen, así que ahí deja la URL intacta.
+    // Una sola `og:image` (.claude/rules/frontend/og-image.md): la del
+    // listado, la apaisada, o la de la ficha si es la única que hay.
     openGraph: buildOpenGraph({
       title: `${event.title} | 140d Live`,
       description: metaDescription,
       path: canonical,
-      images: event.cover_image_url
-        ? [{ url: socialImageUrl(event.cover_image_url), alt: event.title }]
+      images: socialImage
+        ? [{ url: socialImageUrl(socialImage), alt: event.title }]
         : [],
     }),
     // La condición anterior (`summary` sin portada) dejaba la tarjeta pequeña
@@ -87,7 +91,7 @@ export async function generateMetadata({ params }) {
     twitter: buildTwitter({
       title: `${event.title} | 140d Live`,
       description: metaDescription,
-      images: event.cover_image_url ? [socialImageUrl(event.cover_image_url)] : [],
+      images: socialImage ? [socialImageUrl(socialImage)] : [],
     }),
   }
 }
@@ -104,6 +108,7 @@ export default async function EventDetailPage({ params }) {
   // Un evento de prueba no declara datos estructurados: no debe aparecer en
   // ningún resultado enriquecido
   const isTestEvent = Number(event.is_test) === 1
+  const eventImages = [...new Set([eventListImageUrl(event), eventDetailImageUrl(event)].filter(Boolean))]
   const eventSchema = event && !isTestEvent ? {
     '@context': 'https://schema.org',
     '@type': 'Event',
@@ -132,7 +137,10 @@ export default async function EventDetailPage({ params }) {
         name: event.host_name,
       },
     } : {}),
-    ...(event.cover_image_url ? { image: event.cover_image_url } : {}),
+    // Las dos imágenes, sin repetir: Google pide varias proporciones para los
+    // resultados enriquecidos de eventos, y la del listado es apaisada y la de
+    // la ficha cuadrada.
+    ...(eventImages.length ? { image: eventImages.length === 1 ? eventImages[0] : eventImages } : {}),
     offers: event.access_type === 'paid' ? {
       '@type': 'Offer',
       price: event.price,

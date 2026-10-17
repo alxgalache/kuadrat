@@ -94,6 +94,8 @@ const createEventSchema = z.object({
     duration_minutes: z.union([z.number(), z.string()]).optional().nullable(),
     host_user_id: z.union([z.number(), z.string()]).refine(v => !!v, 'Host es obligatorio'),
     cover_image_url: z.string().optional().nullable(),
+    // Imagen de la ficha del evento; vacía, la ficha usa la del listado.
+    detail_image_url: z.string().optional().nullable(),
     access_type: z.string().optional(),
     price: z.union([z.number(), z.string()]).optional().nullable(),
     currency: z.string().optional(),
@@ -187,6 +189,8 @@ const updateEventSchema = z.object({
     duration_minutes: z.union([z.number(), z.string()]).optional().nullable(),
     host_user_id: z.union([z.number(), z.string()]).optional(),
     cover_image_url: z.string().optional().nullable(),
+    // Imagen de la ficha del evento; vacía, la ficha usa la del listado.
+    detail_image_url: z.string().optional().nullable(),
     access_type: z.string().optional(),
     price: z.union([z.number(), z.string()]).optional().nullable(),
     currency: z.string().optional(),

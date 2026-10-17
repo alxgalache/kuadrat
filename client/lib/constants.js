@@ -1143,6 +1143,13 @@ export const EVENT_VIDEO_ERRORS = {
 export const EVENT_AUTO_START_HINT =
   'A esta hora el evento se iniciará automáticamente. Puedes iniciarlo antes con «Iniciar» en el listado.'
 
+// Under the two image fields of the event form. Each view falls back to the
+// other image when its own is empty (client/lib/eventImages.js).
+export const EVENT_IMAGE_HELP = {
+  list: 'Se muestra en el listado de /live, en franja apaisada a la derecha de la tarjeta, en los emails del evento y al compartir su enlace. Si la dejas vacía, se usa la de la ficha.',
+  detail: 'Se muestra en la ficha del evento, en formato cuadrado. Si la dejas vacía, se usa la del listado. Puede ser la misma URL.',
+}
+
 export const EVENT_VIDEO_FORM_COPY = {
   mp4Label: 'URL del vídeo (MP4 H.264)',
   av1Label: 'URL de la versión AV1 (opcional)',

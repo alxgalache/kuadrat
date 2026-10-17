@@ -92,6 +92,9 @@ async function createEvent(overrides = {}) {
     interaction_mode: 'broadcast',
     recording_enabled: 1,
     title: 'Charla grabada',
+    // The shape generateSlug gives: the title's words plus 8 random hex.
+    slug: `charla-grabada-${id.slice(0, 8)}`,
+    event_datetime: '2026-10-01 18:00:00',
     ...overrides,
   };
   await db.execute({
@@ -100,7 +103,7 @@ async function createEvent(overrides = {}) {
              status, provider, format, interaction_mode, recording_enabled, agora_channel_name)
           VALUES (?, ?, ?, ?, ?, 'free', 'charla', ?, ?, ?, ?, ?, ?)`,
     args: [
-      id, fields.title, `grabada-${id}`, '2026-10-01 18:00:00', hostId,
+      id, fields.title, fields.slug, fields.event_datetime, hostId,
       fields.status, fields.provider, fields.format, fields.interaction_mode,
       fields.recording_enabled, `event-${id}`,
     ],
@@ -202,14 +205,59 @@ describe('request builders', () => {
     expect(svc.mixLayoutFor({ cover: 'descanso' })).toEqual(svc.mixLayoutFor({}));
   });
 
-  test('fileNamePrefix drops the UUID hyphens and fits in 128 characters', () => {
-    const eventId = randomUUID();
-    const recordingId = randomUUID();
-    const parts = svc.buildFileNamePrefix(eventId, recordingId);
-    expect(parts[0]).toBe('eventos');
+  // readable-recording-folders: the folder names are for a person browsing the
+  // bucket, built from letters and digits only (Agora forbids every symbol).
+  const namedEvent = (overrides = {}) => ({
+    id: randomUUID(),
+    slug: 'conversacion-con-maria-garcia-1f3a9c2e',
+    event_datetime: '2026-10-17T19:00',
+    ...overrides,
+  });
+
+  test('fileNamePrefix names the event by its date and slug, and the part by its number', () => {
+    const parts = svc.buildFileNamePrefix(namedEvent(), 0);
+    expect(parts).toEqual(['eventos', '20261017ConversacionConMariaGarcia1f3a9c2e', 'parte01']);
+    expect(svc.s3PrefixFor(parts)).toBe('eventos/20261017ConversacionConMariaGarcia1f3a9c2e/parte01/');
+  });
+
+  test('fileNamePrefix carries no symbol at all, from the slug or from the UUID', () => {
+    const event = namedEvent({ slug: 'taller-de-grabado-ab12cd34' });
+    expect(event.id).toContain('-');
+    const parts = svc.buildFileNamePrefix(event, 3);
     for (const part of parts) expect(part).toMatch(/^[A-Za-z0-9]+$/);
+    expect(parts[1]).toBe('20261017TallerDeGrabadoAb12cd34');
     expect(`${parts.join('/')}/`.length).toBeLessThanOrEqual(128);
-    expect(svc.s3PrefixFor(parts)).toBe(`eventos/${eventId.replace(/-/g, '')}/${recordingId.replace(/-/g, '')}/`);
+  });
+
+  test('the part folder is attempt + 1 on two digits, up to parte10', () => {
+    expect(svc.partFolderFor(0)).toBe('parte01');
+    expect(svc.partFolderFor(1)).toBe('parte02');
+    expect(svc.partFolderFor(9)).toBe('parte10');
+    expect(svc.buildFileNamePrefix(namedEvent(), 9)[2]).toBe('parte10');
+  });
+
+  test('a long title is cut to 64 characters, keeping the date and the whole slug suffix', () => {
+    const words = Array.from({ length: 20 }, (_, i) => `palabra${i}`).join('-');
+    const folder = svc.eventFolderFor(namedEvent({ slug: `${words}-9f8e7d6c` }));
+    expect(folder).toHaveLength(64);
+    expect(folder.startsWith('20261017Palabra0Palabra1')).toBe(true);
+    expect(folder.endsWith('9f8e7d6c')).toBe(true);
+  });
+
+  test('a slug with no letters or digits falls back to the event id', () => {
+    const event = namedEvent({ slug: '---' });
+    expect(svc.eventFolderFor(event)).toBe(event.id.replace(/-/g, ''));
+  });
+
+  test('an unreadable date leaves only the words of the slug', () => {
+    expect(svc.eventFolderFor(namedEvent({ event_datetime: 'nope' })))
+      .toBe('ConversacionConMariaGarcia1f3a9c2e');
+  });
+
+  test('a missing slug never throws: the folder is the event id', () => {
+    const event = namedEvent({ slug: null });
+    expect(() => svc.buildFileNamePrefix(event, 0)).not.toThrow();
+    expect(svc.buildFileNamePrefix(event, 0)[1]).toBe(event.id.replace(/-/g, ''));
   });
 
   test('a broadcast is recorded as one composite MP4 of everything published', () => {
@@ -299,7 +347,8 @@ describe('reconciler', () => {
       mode: 'mix', attempt: 0, recorder_uid: 3, status: 'recording',
       resource_id: 'res-1', sid: 'sid-1', applied_layout: 'adaptive', s3_bucket: 'test-recordings',
     });
-    expect(task.s3_prefix).toMatch(/^eventos\/[0-9a-f]{32}\/[0-9a-f]{32}\/$/);
+    // The slug suffix comes capitalised like every other segment («Ab12cd34»).
+    expect(task.s3_prefix).toMatch(/^eventos\/20261001CharlaGrabada[0-9A-F][0-9a-f]{7}\/parte01\/$/);
     expect(fake.count('acquire')).toBe(1);
     expect(fake.count('start')).toBe(1);
 
@@ -443,6 +492,10 @@ describe('reconciler', () => {
       [1, 'recording', 4],
     ]);
     expect(tasks[0].s3_prefix).not.toBe(tasks[1].s3_prefix);
+    // Both parts live under the same event folder.
+    const eventFolder = tasks[0].s3_prefix.replace(/parte01\/$/, '');
+    expect(tasks[0].s3_prefix).toBe(`${eventFolder}parte01/`);
+    expect(tasks[1].s3_prefix).toBe(`${eventFolder}parte02/`);
     expect(outboxSubjects()).toEqual([expect.stringContaining('se ha interrumpido')]);
   });
 

@@ -30,7 +30,7 @@ function generateSlug(title) {
 
 async function createEvent({
   title, description, event_datetime, duration_minutes, host_user_id,
-  cover_image_url, access_type, price, currency, format, content_type,
+  cover_image_url, detail_image_url, access_type, price, currency, format, content_type,
   category, video_url, video_url_av1, max_attendees, status, provider, interaction_mode,
   allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
   recording_enabled, is_test,
@@ -40,14 +40,14 @@ async function createEvent({
 
   await db.execute({
     sql: `INSERT INTO events (id, title, slug, description, event_datetime, duration_minutes,
-          host_user_id, cover_image_url, access_type, price, currency, format, content_type,
+          host_user_id, cover_image_url, detail_image_url, access_type, price, currency, format, content_type,
           category, video_url, video_url_av1, max_attendees, status, provider, interaction_mode,
           allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
           recording_enabled, is_test)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id, title, slug, description || null, event_datetime, duration_minutes || 60,
-      host_user_id, cover_image_url || null, access_type || 'free',
+      host_user_id, cover_image_url || null, detail_image_url || null, access_type || 'free',
       price || null, currency || 'EUR', format || 'live', content_type || 'streaming',
       category, video_url || null, video_url_av1 || null, max_attendees || null, status || 'draft',
       provider || 'livekit', interaction_mode || 'broadcast',
@@ -68,7 +68,7 @@ async function updateEvent(id, fields) {
 
   const allowedFields = [
     'title', 'description', 'event_datetime', 'duration_minutes', 'host_user_id',
-    'cover_image_url', 'access_type', 'price', 'currency', 'format', 'content_type',
+    'cover_image_url', 'detail_image_url', 'access_type', 'price', 'currency', 'format', 'content_type',
     'category', 'video_url', 'video_url_av1', 'max_attendees', 'status', 'provider', 'interaction_mode',
     'allow_mobile_host_console', 'allow_host_video_quality', 'host_echo_cancellation',
     'recording_enabled', 'is_test',
@@ -149,7 +149,8 @@ async function listActiveVideoEvents() {
  */
 async function listScheduledEvents() {
   const result = await db.execute({
-    sql: `SELECT id, title, slug, event_datetime, duration_minutes, cover_image_url, access_type
+    sql: `SELECT id, title, slug, event_datetime, duration_minutes, cover_image_url, detail_image_url,
+                 access_type
           FROM events WHERE status = 'scheduled'`,
     args: [],
   });

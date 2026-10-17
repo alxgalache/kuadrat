@@ -13,6 +13,7 @@ const {
   eventEndUtc,
   formatEventDateTimeEs,
   formatEventWhenEs,
+  eventDateStamp,
 } = require('../utils/eventTime');
 
 const iso = (value) => wallTimeToUtc(value)?.toISOString() ?? null;
@@ -108,6 +109,37 @@ describe('eventTime', () => {
         // 00:30 in Madrid is still the previous day in UTC and Los Angeles.
         expect(formatEventWhenEs({ event_datetime: '2026-07-11T00:30' }))
           .toBe('el sábado 11 de julio a las 00:30');
+      }
+    } finally {
+      process.env.TZ = original;
+    }
+  });
+
+  // readable-recording-folders: the date that names a recording's S3 folder.
+  it('stamps the wall date of the event as AAAAMMDD', () => {
+    expect(eventDateStamp({ event_datetime: '2026-10-17T19:00' })).toBe('20261017');
+    expect(eventDateStamp({ event_datetime: '2026-10-17 19:00:00' })).toBe('20261017');
+  });
+
+  it('stamps a value with a zone by its date in Madrid', () => {
+    // 23:30 UTC is already 01:30 of the next day in Madrid (summer time).
+    expect(eventDateStamp({ event_datetime: '2026-10-17T23:30:00Z' })).toBe('20261018');
+  });
+
+  it('stamps nothing when the date is unreadable or missing', () => {
+    expect(eventDateStamp({ event_datetime: 'nope' })).toBeNull();
+    expect(eventDateStamp({ event_datetime: null })).toBeNull();
+    expect(eventDateStamp({})).toBeNull();
+    expect(eventDateStamp(null)).toBeNull();
+  });
+
+  it('stamps the same date whatever TZ the process runs in', () => {
+    const original = process.env.TZ;
+    try {
+      for (const tz of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo']) {
+        process.env.TZ = tz;
+        // 00:30 in Madrid is still the previous day in UTC and Los Angeles.
+        expect(eventDateStamp({ event_datetime: '2026-07-11T00:30' })).toBe('20260711');
       }
     } finally {
       process.env.TZ = original;

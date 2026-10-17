@@ -9,6 +9,7 @@ import { eventsAPI, authorsAPI } from '@/lib/api'
 import EventCalendar from '@/components/EventCalendar'
 import EventCountdown from '@/components/EventCountdown'
 import AuthorModal from '@/components/LazyAuthorModal'
+import { eventListImageUrl } from '@/lib/eventImages'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -279,8 +280,8 @@ export default function EspaciosPage() {
 
               {/* Imagen. El degradado de tres paradas la funde con el texto de
                   forma gradual; con dos, el corte se veía. */}
-              {event.cover_image_url && (
-                <EventCardImage src={event.cover_image_url} alt={event.title} />
+              {eventListImageUrl(event) && (
+                <EventCardImage src={eventListImageUrl(event)} alt={event.title} />
               )}
             </div>
           </div>

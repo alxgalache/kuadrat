@@ -36,6 +36,7 @@ import {
 } from '@/lib/constants'
 import { getStoredSession, storeSession, clearStoredSession } from '@/lib/eventSession'
 import { pickVideoSource } from '@/lib/eventVideoSource'
+import { eventDetailImageUrl } from '@/lib/eventImages'
 
 // Dynamic imports for browser-only components
 const EventLiveRoom = dynamic(
@@ -156,7 +157,9 @@ export default function EventDetail({
 
   // Arriba con el resto de hooks: más abajo hay un retorno temprano para el
   // evento que no carga, y detrás de él ya no se puede llamar a ninguno.
-  const coverLoader = useImageLoaded(event?.cover_image_url ?? null)
+  // La imagen de la ficha, o la del listado si el evento no tiene una propia.
+  const detailImageUrl = eventDetailImageUrl(event)
+  const coverLoader = useImageLoaded(detailImageUrl)
 
   // Disposición compacta de la sala (openspec/changes/live-event-mobile-layout).
   // useSyncExternalStore con valor de servidor `false`: la hidratación de esta
@@ -842,10 +845,10 @@ export default function EventDetail({
           {/* Left column: Cover image */}
           <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-200 relative">
             <ImageLoadingPlaceholder show={coverLoader.showLoader} />
-            {event.cover_image_url ? (
+            {detailImageUrl ? (
               <Image
                 ref={coverLoader.ref}
-                src={event.cover_image_url}
+                src={detailImageUrl}
                 alt={event.title}
                 fill
                 priority

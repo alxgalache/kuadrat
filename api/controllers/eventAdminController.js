@@ -38,7 +38,7 @@ const createEvent = async (req, res, next) => {
   try {
     const {
       title, description, event_datetime, duration_minutes, host_user_id,
-      cover_image_url, access_type, price, currency, format, content_type,
+      cover_image_url, detail_image_url, access_type, price, currency, format, content_type,
       category, video_url, video_url_av1, max_attendees, status, provider, interaction_mode,
       allow_mobile_host_console, allow_host_video_quality, host_echo_cancellation,
       recording_enabled, is_test,
@@ -81,7 +81,7 @@ const createEvent = async (req, res, next) => {
 
     const event = await eventService.createEvent({
       title, description, event_datetime, duration_minutes, host_user_id,
-      cover_image_url, access_type, price, currency, format, content_type,
+      cover_image_url, detail_image_url, access_type, price, currency, format, content_type,
       category, video_url, video_url_av1, max_attendees, status, provider, interaction_mode,
       allow_mobile_host_console: toFlag(allow_mobile_host_console),
       allow_host_video_quality: toFlag(allow_host_video_quality),

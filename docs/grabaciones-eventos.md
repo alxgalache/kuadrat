@@ -379,6 +379,34 @@ En la ficha del evento de admin, sección **«Grabaciones»**: una **Parte** por
 cada tarea, con su estado, inicio, fin, motivo de parada y «Disponible hasta el
 …».
 
+### Cómo se llaman las carpetas
+
+Cada parte se guarda en `eventos/<carpeta del evento>/<carpeta de la parte>/`:
+
+```
+eventos/20261017ConversacionConMariaGarcia1f3a9c2e/parte01/
+```
+
+- **Carpeta del evento:** la fecha del evento (`AAAAMMDD`, hora de Madrid)
+  seguida del slug del evento con la inicial de cada palabra en mayúscula. La
+  consola de S3 ordena por nombre, así que los eventos salen en orden
+  cronológico, y «Buscar por prefijo» acepta el principio de una fecha
+  (`202610` para octubre de 2026).
+- **El final es el código del slug** (`1f3a9c2e`): distingue dos eventos con el
+  mismo título el mismo día y sirve para encontrar el evento, en la URL
+  `/live/<slug>` o en la base de datos con `slug LIKE '%-1f3a9c2e'`. Si el
+  título es largo se acortan sus palabras, nunca el código; la carpeta mide como
+  mucho 64 caracteres.
+- **Carpeta de la parte:** `parte01`, `parte02`… hasta `parte10`, el mismo
+  número que el panel muestra como «Parte N». Una parte que falló al arrancar
+  también gasta su número; si no llegó a escribir nada, su carpeta no existe.
+- **No hay guiones ni guiones bajos** porque Agora solo admite letras y dígitos
+  en cada carpeta: cualquier símbolo hace fallar el arranque de la grabación.
+- **Formato anterior:** las grabaciones hechas antes de este cambio están en
+  `eventos/<id del evento>/<id de la parte>/`, dos códigos de 32 caracteres
+  hexadecimales. El panel las sigue mostrando y descargando, y desaparecen solas
+  a los 30 días como el resto.
+
 ### Stream: MP4
 
 Botón **«Descargar»** en cada MP4. La URL se firma al pulsar, vale 15 minutos y
@@ -393,10 +421,10 @@ web. El panel muestra a cada participante con su nombre, sus pistas y el
 
 ```bash
 # Sesión completa
-aws s3 sync "s3://140d-event-recordings-pro/eventos/<evento>/<parte>/" "./grabacion-parte-1"
+aws s3 sync "s3://140d-event-recordings-pro/eventos/<AAAAMMDD><Evento>/parte01/" "./grabacion-parte-1"
 
 # Solo un participante (uid 101)
-aws s3 sync "s3://140d-event-recordings-pro/eventos/<evento>/<parte>/" "./grabacion-parte-1-uid-101" \
+aws s3 sync "s3://140d-event-recordings-pro/eventos/<AAAAMMDD><Evento>/parte01/" "./grabacion-parte-1-uid-101" \
   --exclude "*" --include "*__uid_s_101__*"
 ```
 
@@ -406,7 +434,7 @@ host; el resto son asistentes, y el panel los traduce a su nombre.
 
 ### Staging
 
-El panel muestra la ruta `s3://…/eventos/<evento>/<parte>/` de cada parte. Los
+El panel muestra la ruta `s3://…/eventos/<AAAAMMDD><Evento>/parteNN/` de cada parte. Los
 ficheros se consultan en la consola de S3.
 
 ---
@@ -438,7 +466,7 @@ administrador de AWS (la aplicación no borra):
 - **Reunión:** basta con borrar las pistas de su uid en cada parte. El panel da
   el uid junto a su nombre:
   ```bash
-  aws s3 rm "s3://140d-event-recordings-pro/eventos/<evento>/<parte>/" \
+  aws s3 rm "s3://140d-event-recordings-pro/eventos/<AAAAMMDD><Evento>/parteNN/" \
     --recursive --exclude "*" --include "*__uid_s_<uid>__*"
   ```
 - **Stream:** la mezcla es un único fichero, así que no se puede quitar a una
@@ -525,6 +553,7 @@ el lienzo. Si no fuera así, se baja a 1280×720 cambiando `MIX_CANVAS` en
 | Scheduler (cada 30 s) | `api/scheduler/recordingScheduler.js` |
 | Predicado «¿se graba este evento?» | `api/utils/eventRecording.js` y `client/lib/eventRecording.js` |
 | Regiones S3 aceptadas por Agora | `api/utils/agoraStorageRegions.js` |
+| Nombre de las carpetas (§9) | `eventFolderFor` y `partFolderFor` en `api/services/agoraRecordingService.js`; la fecha, `eventDateStamp` en `api/utils/eventTime.js` |
 | Endpoints de admin | `api/controllers/eventRecordingAdminController.js` |
 | Listado, URL firmada y lectura de reglas | `api/services/s3Service.js` |
 | Tabla de tareas | `event_recordings` en `api/config/database.js` |

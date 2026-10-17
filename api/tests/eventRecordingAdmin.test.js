@@ -50,6 +50,9 @@ async function createEvent(interactionMode) {
 
 async function insertTask(eventId, { mode, attempt = 0, startedAt = '2026-10-01 18:00:00', fileList = null } = {}) {
   const id = randomUUID();
+  // The format before readable-recording-folders, kept on purpose: the panel
+  // reads every part from its stored s3_prefix and never rebuilds the path, so
+  // these rows are what proves the older folders still list and download.
   const prefix = `eventos/${eventId.replace(/-/g, '')}/${id.replace(/-/g, '')}/`;
   await db.execute({
     sql: `INSERT INTO event_recordings

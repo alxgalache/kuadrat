@@ -205,6 +205,7 @@ El porqué detallado de cada área vive en `.claude/rules/`, una regla por tema,
 * [`events/confirmation-calendar-links.md`](.claude/rules/events/confirmation-calendar-links.md) — Email de confirmación de eventos: hora de Madrid a UTC en un módulo, enlaces directos a Google y Outlook (el sistema decide la app), `.ics` por id que no se retira, contraseña fuera del calendario y slug fijo al publicar.
 * [`events/auto-start.md`](.claude/rules/events/auto-start.md) — Inicio de los eventos: un solo camino (`eventStartService.startEvent`) para el botón y el planificador, transición guardada, intervalo del propio evento como ventana, alerta a los 2 minutos y `EVENT_AUTO_START_ENABLED` apagada en local.
 * [`events/reminder-email.md`](.claude/rules/events/reminder-email.md) — Recordatorio 48 h antes: planificador propio y no envíos programados de Resend, `confirmed_at` como corte, reclamo «como mucho una vez», rearme por cambio de fecha y `EVENT_REMINDERS_ENABLED` apagada en local.
+* [`events/event-images.md`](.claude/rules/events/event-images.md) — Imágenes del evento: la del listado (`cover_image_url`) y la de la ficha (`detail_image_url`), opcionales, cada vista cae a la otra y emails y vista previa social usan la del listado.
 
 ### Salas en directo
 

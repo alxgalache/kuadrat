@@ -613,7 +613,11 @@ async function initializeDatabase() {
         event_datetime DATETIME NOT NULL,
         duration_minutes INTEGER NOT NULL DEFAULT 60,
         host_user_id INTEGER NOT NULL,
+        -- Imagen del listado /live (y de los emails y la vista previa social)
         cover_image_url TEXT,
+        -- Imagen de la ficha /live/<slug>. Vacía, la ficha usa la del listado
+        -- y viceversa (client/lib/eventImages.js)
+        detail_image_url TEXT,
         access_type TEXT NOT NULL DEFAULT 'free' CHECK(access_type IN ('free', 'paid')),
         price REAL,
         currency TEXT DEFAULT 'EUR',
@@ -1031,6 +1035,9 @@ async function initializeDatabase() {
     await safeAlter('ALTER TABLE events ADD COLUMN video_duration_seconds REAL');
     await safeAlter('ALTER TABLE events ADD COLUMN agora_channel_name TEXT');
     await safeAlter('ALTER TABLE events ADD COLUMN whiteboard_room_uuid TEXT');
+    // Image of the detail page — no backfill: empty means "use the list image",
+    // so every pre-existing event keeps showing the image it has today.
+    await safeAlter('ALTER TABLE events ADD COLUMN detail_image_url TEXT');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN agora_uid INTEGER');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN speaker_granted INTEGER NOT NULL DEFAULT 0');
 

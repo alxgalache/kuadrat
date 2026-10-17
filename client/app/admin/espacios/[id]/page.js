@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminAPI, triggerDownload } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { MEETING_MAX_ATTENDEES, EVENT_VIDEO_ERRORS, EVENT_VIDEO_FORM_COPY, EVENT_AUTO_START_HINT } from '@/lib/constants'
+import { MEETING_MAX_ATTENDEES, EVENT_VIDEO_ERRORS, EVENT_VIDEO_FORM_COPY, EVENT_AUTO_START_HINT, EVENT_IMAGE_HELP } from '@/lib/constants'
 import { ArrowLeftIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid'
 import { SELLER_KIND_LABELS } from '@/lib/constants'
 import { sellerKindOf } from '@/lib/sellerCapabilities'
@@ -89,6 +89,7 @@ function EventDetailContent({ id }) {
     duration_minutes: ev.duration_minutes || 60,
     host_user_id: ev.host_user_id || '',
     cover_image_url: ev.cover_image_url || '',
+    detail_image_url: ev.detail_image_url || '',
     access_type: ev.access_type || 'free',
     price: ev.price || '',
     currency: ev.currency || 'EUR',
@@ -168,6 +169,7 @@ function EventDetailContent({ id }) {
         price: form.access_type === 'paid' ? parseFloat(form.price) : null,
         max_attendees: form.max_attendees ? parseInt(form.max_attendees, 10) : null,
         cover_image_url: form.cover_image_url || null,
+        detail_image_url: form.detail_image_url || null,
         provider: form.format === 'live' ? form.provider : 'livekit',
         interaction_mode: form.format === 'live' && form.provider === 'agora' ? form.interaction_mode : 'broadcast',
         video_url: (form.format === 'video' && videoSource === 'url') ? (form.video_url || null) : (form.video_url?.startsWith('uploaded:') ? form.video_url : null),
@@ -673,14 +675,31 @@ function EventDetailContent({ id }) {
                     )}
                   </div>
                 )}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">URL imagen de portada</label>
-                  <input
-                    type="url"
-                    value={form.cover_image_url}
-                    onChange={(e) => setForm({ ...form, cover_image_url: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-                  />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="edit-cover-image-url" className="block text-sm font-medium text-gray-700">URL imagen del listado</label>
+                    <input
+                      type="url"
+                      id="edit-cover-image-url"
+                      value={form.cover_image_url}
+                      onChange={(e) => setForm({ ...form, cover_image_url: e.target.value })}
+                      aria-describedby="edit-cover-image-url-help"
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                    />
+                    <p id="edit-cover-image-url-help" className="mt-1 text-xs text-gray-500">{EVENT_IMAGE_HELP.list}</p>
+                  </div>
+                  <div>
+                    <label htmlFor="edit-detail-image-url" className="block text-sm font-medium text-gray-700">URL imagen de la ficha</label>
+                    <input
+                      type="url"
+                      id="edit-detail-image-url"
+                      value={form.detail_image_url}
+                      onChange={(e) => setForm({ ...form, detail_image_url: e.target.value })}
+                      aria-describedby="edit-detail-image-url-help"
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                    />
+                    <p id="edit-detail-image-url-help" className="mt-1 text-xs text-gray-500">{EVENT_IMAGE_HELP.detail}</p>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">

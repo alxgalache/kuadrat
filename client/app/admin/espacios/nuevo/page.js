@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminAPI } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { MEETING_MAX_ATTENDEES, EVENT_VIDEO_ERRORS, EVENT_VIDEO_FORM_COPY, EVENT_AUTO_START_HINT } from '@/lib/constants'
+import { MEETING_MAX_ATTENDEES, EVENT_VIDEO_ERRORS, EVENT_VIDEO_FORM_COPY, EVENT_AUTO_START_HINT, EVENT_IMAGE_HELP } from '@/lib/constants'
 import { ArrowLeftIcon } from '@heroicons/react/20/solid'
 import { SELLER_KIND_LABELS } from '@/lib/constants'
 import { sellerKindOf } from '@/lib/sellerCapabilities'
@@ -22,6 +22,7 @@ function NewEventPageContent() {
   const [durationMinutes, setDurationMinutes] = useState(60)
   const [hostUserId, setHostUserId] = useState('')
   const [coverImageUrl, setCoverImageUrl] = useState('')
+  const [detailImageUrl, setDetailImageUrl] = useState('')
   const [accessType, setAccessType] = useState('free')
   const [price, setPrice] = useState('')
   const [currency, setCurrency] = useState('EUR')
@@ -118,6 +119,7 @@ function NewEventPageContent() {
         duration_minutes: parseInt(durationMinutes, 10),
         host_user_id: parseInt(hostUserId, 10),
         cover_image_url: coverImageUrl || null,
+        detail_image_url: detailImageUrl || null,
         access_type: accessType,
         price: accessType === 'paid' ? parseFloat(price) : null,
         currency,
@@ -571,18 +573,41 @@ function NewEventPageContent() {
               </div>
             )}
 
-            <div className="mt-4">
-              <label htmlFor="coverImageUrl" className="block text-sm font-medium text-gray-700">
-                URL de imagen de portada
-              </label>
-              <input
-                type="url"
-                id="coverImageUrl"
-                value={coverImageUrl}
-                onChange={(e) => setCoverImageUrl(e.target.value)}
-                placeholder="https://..."
-                className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
-              />
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="coverImageUrl" className="block text-sm font-medium text-gray-700">
+                  URL de imagen del listado
+                </label>
+                <input
+                  type="url"
+                  id="coverImageUrl"
+                  value={coverImageUrl}
+                  onChange={(e) => setCoverImageUrl(e.target.value)}
+                  placeholder="https://..."
+                  aria-describedby="coverImageUrl-help"
+                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                />
+                <p id="coverImageUrl-help" className="mt-1 text-xs text-gray-500">
+                  {EVENT_IMAGE_HELP.list}
+                </p>
+              </div>
+              <div>
+                <label htmlFor="detailImageUrl" className="block text-sm font-medium text-gray-700">
+                  URL de imagen de la ficha
+                </label>
+                <input
+                  type="url"
+                  id="detailImageUrl"
+                  value={detailImageUrl}
+                  onChange={(e) => setDetailImageUrl(e.target.value)}
+                  placeholder="https://..."
+                  aria-describedby="detailImageUrl-help"
+                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
+                />
+                <p id="detailImageUrl-help" className="mt-1 text-xs text-gray-500">
+                  {EVENT_IMAGE_HELP.detail}
+                </p>
+              </div>
             </div>
           </div>
 
