@@ -82,13 +82,13 @@
 
 En preproducción, con un evento Agora `broadcast` de prueba con grabación activada.
 
-- [ ] 8.1 Al pulsar «Iniciar», un asistente en otro navegador ve «Empezamos en breve» antes de que entre el host, y el menú del host marca «Inicio» al entrar.
-- [ ] 8.2 El host enciende la cámara: la portada desaparece para todos y el menú pasa a «Ninguna». Encender solo el micrófono no la quita.
-- [ ] 8.3 Con cámara, micrófono y pantalla activos, el host elige «Intermedio»: todo se apaga y todos ven la portada. Repetir con la pizarra.
-- [ ] 8.4 Con el admin como co-presentador: el admin elige «Final» y se apagan la cámara y la pantalla del host. Encender la cámara del admin quita la portada. Comprobar el menú del admin.
-- [ ] 8.5 Teatro, vista compacta en vertical y en horizontal, y la consola móvil del host: la portada ocupa la escena y el menú funciona sin portales.
-- [ ] 8.6 Un asistente que entra tarde ve la portada vigente. Al finalizar el evento con «Final» puesta, aparece el modal «Evento finalizado».
-- [ ] 8.7 Descargar la grabación MP4 y comprobar:
+- [x] 8.1 Al pulsar «Iniciar», un asistente en otro navegador ve «Empezamos en breve» antes de que entre el host, y el menú del host marca «Inicio» al entrar.
+- [x] 8.2 El host enciende la cámara: la portada desaparece para todos y el menú pasa a «Ninguna». Encender solo el micrófono no la quita.
+- [x] 8.3 Con cámara, micrófono y pantalla activos, el host elige «Intermedio»: todo se apaga y todos ven la portada. Repetir con la pizarra.
+- [x] 8.4 Con el admin como co-presentador: el admin elige «Final» y se apagan la cámara y la pantalla del host. Encender la cámara del admin quita la portada. Comprobar el menú del admin.
+- [x] 8.5 Teatro, vista compacta en vertical y en horizontal, y la consola móvil del host: la portada ocupa la escena y el menú funciona sin portales.
+- [x] 8.6 Un asistente que entra tarde ve la portada vigente. Al finalizar el evento con «Final» puesta, aparece el modal «Evento finalizado».
+- [x] 8.7 Descargar la grabación MP4 y comprobar:
   - «Inicio» de fondo al principio;
   - nadie delante durante las portadas, con la voz del host audible;
   - el paso a la cámara;
@@ -121,4 +121,4 @@ En preproducción, con un evento Agora `broadcast` de prueba con grabación acti
 - [x] 10.4 `api/tests/agoraRecording.test.js`: la URL esperada de la portada pasa a `-v2`. Ejecutar la suite completa.
 - [x] 10.5 Lint y build de `client/`.
 - [x] 10.6 Actualizar la regla `.claude/rules/agora/stage-covers.md`, `docs/eventos-portadas.md` y `docs/cortinillas/README.md` (versión en uso: la oscura). Ejecutar `node scripts/check-claude-rules.mjs`.
-- [ ] 10.7 Verificación en preproducción: la portada oscura en la escena, el teatro, el móvil en vertical y horizontal, la consola del host y la grabación MP4.
+- [x] 10.7 Verificación en preproducción: la portada oscura en la escena, el teatro, el móvil en vertical y horizontal, la consola del host y la grabación MP4.

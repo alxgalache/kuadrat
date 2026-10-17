@@ -63,10 +63,10 @@
 
 ## 6. Verificación manual (preproducción)
 
-- [ ] 6.1 Crear un evento Agora de prueba programado a 3 minutos vista. Sin tocar el panel, a su hora la ficha abierta en otro navegador entra en la sala, y el listado de admin lo muestra «En directo».
-- [ ] 6.2 Repetir con un pase de vídeo: empieza desde el segundo 0 a su hora.
-- [ ] 6.3 Pulsar «Iniciar» antes de la hora en otro evento: empieza en el acto y el planificador no lo vuelve a iniciar (un solo `event_started` en los logs).
-- [ ] 6.4 Un evento en borrador con la hora pasada sigue en borrador.
+- [x] 6.1 Crear un evento Agora de prueba programado a 3 minutos vista. Sin tocar el panel, a su hora la ficha abierta en otro navegador entra en la sala, y el listado de admin lo muestra «En directo».
+- [x] 6.2 Repetir con un pase de vídeo: empieza desde el segundo 0 a su hora.
+- [x] 6.3 Pulsar «Iniciar» antes de la hora en otro evento: empieza en el acto y el planificador no lo vuelve a iniciar (un solo `event_started` en los logs).
+- [x] 6.4 Un evento en borrador con la hora pasada sigue en borrador.
 
 ## 7. Conocimiento del proyecto
 

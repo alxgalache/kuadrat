@@ -68,9 +68,9 @@
 
 ## 7. Verificación manual (preproducción)
 
-- [ ] 7.1 Crear un evento de prueba a 48 h y 10 minutos vista, registrarse con un buzón propio y comprobar que el recordatorio llega en la primera pasada tras abrirse la ventana.
-- [ ] 7.2 Revisar el email en Gmail web, Gmail Android, Apple Mail iOS y Outlook: imagen, fecha, contraseña, botón y fila de calendario.
-- [ ] 7.3 Aplazar el evento un día y comprobar que el recordatorio vuelve a llegar 48 h antes de la nueva fecha.
+- [x] 7.1 Crear un evento de prueba a 48 h y 10 minutos vista, registrarse con un buzón propio y comprobar que el recordatorio llega en la primera pasada tras abrirse la ventana.
+- [x] 7.2 Revisar el email en Gmail web, Gmail Android, Apple Mail iOS y Outlook: imagen, fecha, contraseña, botón y fila de calendario.
+- [x] 7.3 Aplazar el evento un día y comprobar que el recordatorio vuelve a llegar 48 h antes de la nueva fecha.
 
 ## 8. Conocimiento del proyecto
 

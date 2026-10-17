@@ -1,6 +1,6 @@
 # Inicio automático de los eventos
 
-Guía operativa del inicio automático de los eventos de `/live`. Decisiones y motivos: `openspec/changes/event-auto-start` (archivado al terminar). Requisitos: `openspec/specs/event-auto-start`.
+Guía operativa del inicio automático de los eventos de `/live`. Decisiones y motivos: `openspec/changes/archive/2026-10-17-event-auto-start`. Requisitos: `openspec/specs/event-auto-start`.
 
 ---
 
