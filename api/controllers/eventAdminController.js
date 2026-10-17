@@ -6,6 +6,7 @@ const marketingEmailService = require('../services/marketingEmailService');
 const { validateVideoUrls } = require('../utils/eventVideoSources');
 const videoDurationService = require('../services/videoDurationService');
 const agoraRecordingService = require('../services/agoraRecordingService');
+const eventStartService = require('../services/eventStartService');
 const { promoteAgoraParticipant, demoteAgoraParticipant } = require('./eventController');
 const logger = require('../config/logger');
 
@@ -254,12 +255,17 @@ const deleteEvent = async (req, res, next) => {
 
 // ---------------------------------------------------------------------------
 // POST /api/admin/events/:id/start
-// Start an event and create the LiveKit room
+// Start an event now. The steps live in eventStartService, shared with the
+// auto-start scheduler (event-auto-start): this only maps the outcome.
 // ---------------------------------------------------------------------------
 const startEvent = async (req, res, next) => {
   try {
-    const current = await eventService.getEventById(req.params.id);
-    if (!current) {
+    const { result, event } = await eventStartService.startEvent(req.params.id, {
+      eventSocket: req.app.get('eventSocket'),
+      source: 'manual',
+    });
+
+    if (result === 'not_found') {
       return res.status(404).json({
         success: false,
         title: 'No encontrado',
@@ -267,7 +273,7 @@ const startEvent = async (req, res, next) => {
       });
     }
 
-    if (current.status !== 'scheduled') {
+    if (result === 'not_scheduled') {
       return res.status(400).json({
         success: false,
         title: 'No se puede iniciar',
@@ -275,51 +281,13 @@ const startEvent = async (req, res, next) => {
       });
     }
 
-    let event;
-
-    if (current.format === 'video') {
-      // The duration times the chat closing: measure it now if it is still
-      // missing (the video may have been uploaded after the event was saved)
-      if (current.video_url && !current.video_duration_seconds) {
-        await videoDurationService.refreshVideoDurationSafely(req.params.id);
-      }
-      // Video format: store the start timestamp, no LiveKit room needed
-      event = await eventService.startEvent(req.params.id, {
-        videoStartedAt: new Date().toISOString(),
+    if (result === 'room_failed') {
+      return res.status(500).json({
+        success: false,
+        title: 'Error de sala',
+        message: 'No se pudo crear la sala de streaming',
       });
-    } else if (current.provider === 'agora') {
-      // Agora channels are implicit — no external call, just fix the name
-      event = await eventService.startEvent(req.params.id, {
-        agoraChannelName: `event-${current.id}`,
-      });
-    } else {
-      // Live format: create LiveKit room
-      const roomName = `event-${current.id}`;
-      try {
-        await livekitService.createRoom(roomName, {
-          maxParticipants: current.max_attendees || 0,
-        });
-      } catch (lkError) {
-        logger.error({ err: lkError }, 'Error creating LiveKit room');
-        return res.status(500).json({
-          success: false,
-          title: 'Error de sala',
-          message: 'No se pudo crear la sala de streaming',
-        });
-      }
-      event = await eventService.startEvent(req.params.id, { livekitRoomName: roomName });
     }
-
-    // Notify clients waiting on the event detail page
-    const eventSocket = req.app.get('eventSocket');
-    if (eventSocket) {
-      eventSocket.broadcastEventStarted(req.params.id);
-    }
-
-    // Cloud recording (agora-event-recording): start it now rather than on the
-    // next reconciler pass. Never awaited — the event must not wait for Agora —
-    // and a no-op unless the event is recordable and recording is configured.
-    agoraRecordingService.triggerReconcile(req.params.id, { eventSocket });
 
     res.status(200).json({
       success: true,

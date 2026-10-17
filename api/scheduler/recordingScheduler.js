@@ -21,13 +21,14 @@ module.exports = function startRecordingScheduler(app) {
     return null;
   }
 
-  // The socket presence is the only source of the stage screen's state (host
-  // or co-presenter sharing on uid 2). Read it through the app on every call:
-  // never copied.
-  const isStageScreenSharing = (eventId) => {
+  // The socket presence is the only source of the stage's state: the screen
+  // the host or the co-presenter shares on uid 2, and the cover
+  // (agora-stage-covers). Read it through the app on every call: never copied.
+  const getStageState = (eventId) => {
     const eventSocket = app && typeof app.get === 'function' ? app.get('eventSocket') : null;
-    return !!(eventSocket && typeof eventSocket.isStageScreenSharing === 'function'
-      && eventSocket.isStageScreenSharing(eventId));
+    return eventSocket && typeof eventSocket.getStageState === 'function'
+      ? eventSocket.getStageState(eventId)
+      : { screenSharing: false, cover: null };
   };
 
   // The 30-day retention is kept by the bucket's lifecycle rule; check it once
@@ -41,7 +42,7 @@ module.exports = function startRecordingScheduler(app) {
     if (running) return;
     running = true;
     try {
-      await agoraRecordingService.reconcileAll({ isStageScreenSharing });
+      await agoraRecordingService.reconcileAll({ getStageState });
     } catch (err) {
       logger.error({ err }, '[recordingScheduler] Reconciliation pass failed');
     } finally {

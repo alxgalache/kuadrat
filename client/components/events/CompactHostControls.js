@@ -29,6 +29,7 @@ export default function CompactHostControls({ room, hostControls, endLabel, whit
     devices, videoEffect, deviceError, isEnding,
     toggleMic, toggleCamera, toggleScreenShare, selectDevice, endEvent,
     videoQuality, selectVideoQuality, screenShareSupported, speakerSelectionSupported,
+    stageCover, selectCover,
   } = hostControls
 
   const handleEnd = async () => {
@@ -75,6 +76,7 @@ export default function CompactHostControls({ room, hostControls, endLabel, whit
           ? { value: whiteboard.everyoneWrites, onChange: whiteboard.onEveryoneWritesChange }
           : null}
         hostView={hostView}
+        covers={selectCover ? { value: stageCover, onSelect: selectCover } : null}
       />
 
       <InlineConfirm

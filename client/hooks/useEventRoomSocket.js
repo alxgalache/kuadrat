@@ -63,6 +63,13 @@ export default function useEventRoomSocket({
   const [whiteboard, setWhiteboard] = useState({ active: false, everyoneWrites: false })
   // Broadcast stage camera layout ('split' | 'pip'), directed by the co-presenter
   const [stageLayout, setStageLayoutState] = useState(STAGE_LAYOUTS.SPLIT)
+  // Broadcast stage cover id ('inicio' | 'intermedio' | 'final') or null, set by
+  // the host or the co-presenter (agora-stage-covers)
+  const [stageCover, setStageCoverState] = useState(null)
+  // Ticks on every `stage_cover` broadcast and NEVER on the join ACK: the
+  // presenters empty the stage when a cover is put up live, not when they
+  // reload into a room that already has one (they publish nothing yet then).
+  const [stageCoverSignal, setStageCoverSignal] = useState({ cover: null, seq: 0 })
   const socketRef = useRef(null)
   const selfIdentityRef = useRef(null)
 
@@ -98,6 +105,7 @@ export default function useEventRoomSocket({
           everyoneWrites: !!response.whiteboard?.everyoneWrites,
         })
         setStageLayoutState(response.stageLayout === STAGE_LAYOUTS.PIP ? STAGE_LAYOUTS.PIP : STAGE_LAYOUTS.SPLIT)
+        setStageCoverState(response.stageCover || null)
         setJoined(true)
         setJoinVersion((version) => version + 1)
       })
@@ -143,6 +151,11 @@ export default function useEventRoomSocket({
 
     socket.on('stage_layout', ({ mode } = {}) => {
       if (mode === STAGE_LAYOUTS.SPLIT || mode === STAGE_LAYOUTS.PIP) setStageLayoutState(mode)
+    })
+
+    socket.on('stage_cover', ({ cover } = {}) => {
+      setStageCoverState(cover || null)
+      setStageCoverSignal((prev) => ({ cover: cover || null, seq: prev.seq + 1 }))
     })
 
     socket.on('room_join_denied', (denial) => {
@@ -197,6 +210,13 @@ export default function useEventRoomSocket({
     socketRef.current.emit('stage_layout', { mode })
   }, [])
 
+  // Host or co-presenter (server-validated). No optimistic update, like the
+  // layout: everyone, this client included, follows the server's broadcast.
+  const setStageCover = useCallback((cover) => {
+    if (!socketRef.current) return
+    socketRef.current.emit('stage_cover', { cover: cover || null })
+  }, [])
+
   return {
     joined,
     joinVersion,
@@ -207,6 +227,9 @@ export default function useEventRoomSocket({
     whiteboard,
     stageLayout,
     setStageLayout,
+    stageCover,
+    stageCoverSignal,
+    setStageCover,
     sendChatMessage,
     setHandRaised,
     setScreenSharing,

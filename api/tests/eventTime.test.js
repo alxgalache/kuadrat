@@ -12,6 +12,7 @@ const {
   eventStartUtc,
   eventEndUtc,
   formatEventDateTimeEs,
+  formatEventWhenEs,
 } = require('../utils/eventTime');
 
 const iso = (value) => wallTimeToUtc(value)?.toISOString() ?? null;
@@ -89,5 +90,27 @@ describe('eventTime', () => {
       .toBe('martes, 20 de octubre de 2026, 19:00');
     expect(formatEventDateTimeEs({ event_datetime: '2026-12-10T09:05' }))
       .toBe('jueves, 10 de diciembre de 2026, 09:05');
+  });
+
+  it('phrases the start for a sentence, without the comma Intl puts after the weekday', () => {
+    expect(formatEventWhenEs({ event_datetime: '2026-10-22T19:00' }))
+      .toBe('el jueves 22 de octubre a las 19:00');
+    expect(formatEventWhenEs({ event_datetime: '2026-12-10T09:05' }))
+      .toBe('el jueves 10 de diciembre a las 09:05');
+    expect(formatEventWhenEs({ event_datetime: 'nope' })).toBeNull();
+  });
+
+  it('phrases the start the same whatever TZ the process runs in', () => {
+    const original = process.env.TZ;
+    try {
+      for (const tz of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo']) {
+        process.env.TZ = tz;
+        // 00:30 in Madrid is still the previous day in UTC and Los Angeles.
+        expect(formatEventWhenEs({ event_datetime: '2026-07-11T00:30' }))
+          .toBe('el sábado 11 de julio a las 00:30');
+      }
+    } finally {
+      process.env.TZ = original;
+    }
   });
 });

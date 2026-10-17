@@ -6,7 +6,8 @@ const config = require('../config/env');
 
 // Import HTML escaping utilities to prevent XSS in email templates
 const { escapeHtml, escapeForEmail, stripHtml } = require('../utils/htmlEscape');
-const { formatEventDateTimeEs } = require('../utils/eventTime');
+const { formatEventDateTimeEs, formatEventWhenEs } = require('../utils/eventTime');
+const { eventCoverImageUrl } = require('../utils/eventCoverImage');
 const {
   eventPageUrl, buildCalendarEvent, googleCalendarUrl, outlookCalendarUrl, icsUrl,
 } = require('../utils/eventCalendar');
@@ -2806,6 +2807,61 @@ const eventCalendarRow = (event) => {
               <p style="color: #9ca3af; font-size: 12px; line-height: 1.5; margin: 0 0 24px;">Con «Apple» descargas el evento en un archivo .ics, que también abren Outlook de escritorio y la mayoría de calendarios.</p>`;
 };
 
+// Skeleton of the emails an event attendee receives (confirmation and the
+// 48 h reminder, event-reminder-email): logo header, content and footer, so a
+// change to one reaches both. `content` is the body HTML, written to sit at
+// the indentation of the cell it goes into. `footerNote` is an optional line
+// above the copyright.
+const eventEmailFooter = (footerNote) => (footerNote
+  ? `<p style="color: #6b7280; font-size: 12px; line-height: 1.5; margin: 32px 0 0; text-align: center;">${footerNote}</p>
+              <p style="color: #6b7280; font-size: 12px; margin-top: 8px; text-align: center;">\u00a9 ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>`
+  : `<p style="color: #6b7280; font-size: 12px; margin-top: 32px; text-align: center;">\u00a9 ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>`);
+
+const eventEmailDocument = ({ title, content, footerNote = null }) => `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>${title}</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 40px 40px;">
+              ${content}
+              ${eventEmailFooter(footerNote)}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+// The access password, in the box both emails show it in.
+const eventPasswordBox = (password, note) => `<div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 0 0 32px;">
+                <p style="color: #92400e; margin: 0 0 8px 0; font-weight: bold;">Tu contraseña de acceso:</p>
+                <p style="color: #92400e; margin: 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center;">${password}</p>
+                <p style="color: #92400e; margin: 8px 0 0 0; font-size: 12px;">${note}</p>
+              </div>`;
+
 /**
  * Registration confirmed for a /live event: password, date, link and «add to
  * calendar». Receives the event row (not just its title) because the date,
@@ -2827,54 +2883,17 @@ const sendEventConfirmationEmail = async ({ email, firstName, event, accessPassw
     ? `<p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Pago realizado: <strong>${amountPaid}\u00a0€</strong></p>`
     : '';
 
-  const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light only">
-  <meta name="supported-color-schemes" content="light only">
-  <title>Registro confirmado</title>
-  <style>
-    :root { color-scheme: light only; }
-    @media (prefers-color-scheme: dark) {
-      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
-    }
-  </style>
-</head>
-<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; background: #ffffff;">
-  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
-    <tr>
-      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
-        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
-          <tr>
-            <td align="center" style="padding: 40px 40px 20px;">
-              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 20px 40px 40px;">
-              <h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Registro confirmado</h1>
+  const html = eventEmailDocument({
+    title: 'Registro confirmado',
+    content: `<h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Registro confirmado</h1>
               <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Hola <strong>${escapeForEmail(firstName)}</strong>,</p>
               <p style="color: #374151; line-height: 1.6; margin: 0 0 ${dateText ? 16 : 24}px;">Tu registro en el evento <strong>${escapeForEmail(eventTitle)}</strong> ha sido confirmado.</p>
               ${dateLine}
               ${paymentLine}
-              <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 0 0 32px;">
-                <p style="color: #92400e; margin: 0 0 8px 0; font-weight: bold;">Tu contraseña de acceso:</p>
-                <p style="color: #92400e; margin: 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center;">${accessPassword}</p>
-                <p style="color: #92400e; margin: 8px 0 0 0; font-size: 12px;">Guarda esta contraseña. La necesitarás para acceder al evento desde otro dispositivo o si se borran los datos del navegador.</p>
-              </div>
+              ${eventPasswordBox(accessPassword, 'Guarda esta contraseña. La necesitarás para acceder al evento desde otro dispositivo o si se borran los datos del navegador.')}
               ${eventAccessSection(eventPageUrl(event))}
-              ${hasCalendar ? eventCalendarRow(event) : ''}
-              <p style="color: #6b7280; font-size: 12px; margin-top: 32px; text-align: center;">\u00a9 ${new Date().getFullYear()} 140d Galería de Arte. Todos los derechos reservados.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+              ${hasCalendar ? eventCalendarRow(event) : ''}`,
+  });
 
   try {
     const result = await sendMail({
@@ -2887,6 +2906,59 @@ const sendEventConfirmationEmail = async ({ email, firstName, event, accessPassw
     return { success: true, messageId: result.messageId };
   } catch (error) {
     logger.error({ err: error }, 'Error sending event confirmation email');
+    return { success: false };
+  }
+};
+
+/**
+ * 48 h reminder of a /live event (event-reminder-email): image, date,
+ * password, link and «add to calendar», with the design approved in
+ * openspec/changes/event-reminder-email/email-preview.html. Who gets it and
+ * when is decided by eventReminderService, which only calls this for events
+ * whose date can be read; the date line and the calendar row still degrade
+ * like the confirmation's. Never throws: `success: false` is what lets the
+ * caller release its claim and retry on the next pass.
+ */
+const sendEventReminderEmail = async ({ email, firstName, event, accessPassword }) => {
+  const logoAttachment = getLogoAttachment();
+  const dateText = formatEventDateTimeEs(event);
+  const when = formatEventWhenEs(event);
+  const hasCalendar = buildCalendarEvent(event) !== null;
+  const coverUrl = eventCoverImageUrl(event);
+
+  const coverBlock = coverUrl
+    ? `<img src="${hrefAttr(coverUrl).replace(/"/g, '&quot;')}" alt="${escapeForEmail(event.title)}" width="520" style="width: 100%; max-width: 520px; height: auto; display: block; border-radius: 8px; border: 1px solid #e5e7eb; margin: 0 0 24px;">`
+    : '';
+
+  const dateLine = dateText
+    ? `<p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Fecha y hora: <strong>${dateText}</strong> (hora peninsular española)</p>`
+    : '';
+
+  const html = eventEmailDocument({
+    title: 'Recordatorio',
+    content: `<h1 style="margin: 0 0 20px; font-size: 24px; font-weight: 600; color: #111827;">Tu evento se acerca</h1>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">Hola <strong>${escapeForEmail(firstName)}</strong>,</p>
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Te recordamos que tienes plaza en <strong>${escapeForEmail(event.title)}</strong>.</p>
+              ${coverBlock}
+              ${dateLine}
+              <p style="color: #374151; line-height: 1.6; margin: 0 0 24px;">Te recomendamos entrar unos minutos antes para comprobar el sonido y la conexión: el evento empezará a la hora indicada.</p>
+              ${eventPasswordBox(accessPassword, 'Es la misma que te enviamos al registrarte. La necesitarás si entras desde otro dispositivo o navegador.')}
+              ${eventAccessSection(eventPageUrl(event))}
+              ${hasCalendar ? eventCalendarRow(event) : ''}`,
+    footerNote: 'Recibes este email porque te registraste en este evento.',
+  });
+
+  try {
+    const result = await sendMail({
+      from: getFormattedSender(),
+      to: email,
+      subject: when ? `Recordatorio: «${event.title}» es ${when}` : `Recordatorio: «${event.title}»`,
+      html,
+      ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+    });
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    logger.error({ err: error, eventId: event.id }, 'Error sending event reminder email');
     return { success: false };
   }
 };
@@ -4174,6 +4246,91 @@ const sendRecordingAlertEmail = async ({ eventTitle, eventId, kind, detail }) =>
   return { success: true, messageId: info.messageId };
 };
 
+/**
+ * An event the auto-start scheduler has been unable to start for two minutes
+ * past its time (event-auto-start). Goes to the business inbox once per
+ * event: the audience is already waiting, and «Iniciar» is the way out.
+ */
+const sendEventAutoStartAlertEmail = async ({ eventTitle, eventId, scheduledAt, detail }) => {
+  const recipient = config.business.email;
+  if (!recipient) {
+    logger.warn('No BUSINESS_EMAIL/EMAIL_FROM configured, skipping auto-start alert email');
+    return { success: false, error: 'no recipient configured' };
+  }
+  const subject = 'Un evento no ha podido iniciarse automáticamente';
+  const clientUrl = config.clientUrl || 'http://localhost:3000';
+  const row = (label, value) =>
+    `<tr>
+      <td style="padding: 8px 12px; font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 1px solid #e5e7eb;">${escapeForEmail(label)}</td>
+      <td style="padding: 8px 12px; font-size: 14px; color: #374151; border-bottom: 1px solid #e5e7eb;">${escapeForEmail(value)}</td>
+    </tr>`;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>${escapeForEmail(subject)}</title>
+  <style>
+    :root { color-scheme: light only; }
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: #ffffff !important; color: #111827 !important; }
+    }
+  </style>
+</head>
+<body bgcolor="#ffffff" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; padding: 40px 20px;">
+    <tr>
+      <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">
+        <table width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px;">
+              <img src="${getLogoSrc()}" alt="140d Galería de Arte" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 40px 40px;">
+              <h1 style="margin: 0 0 20px; font-size: 22px; font-weight: 600; color: #111827;">${escapeForEmail(subject)}</h1>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #374151;">Han pasado más de dos minutos desde la hora del evento y el inicio automático sigue fallando. Se reintenta cada 30 segundos mientras dure el evento, pero el público ya está esperando.</p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 24px;">
+                <tbody>
+                  ${eventTitle ? row('Evento', eventTitle) : ''}
+                  ${scheduledAt ? row('Hora programada (UTC)', scheduledAt) : ''}
+                  ${eventId ? row('Ficha de admin', `${clientUrl}/admin/espacios/${eventId}`) : ''}
+                  ${row('Detalle', detail || '—')}
+                </tbody>
+              </table>
+              <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #374151;">Pulsa «Iniciar» en el listado de /admin/espacios. Si también falla, revisa los logs de la api y Sentry.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #ffffff; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 14px; color: #6b7280;">Este es un correo automático. Por favor no responder.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const logoAttachment = getLogoAttachment();
+  const info = await sendMail({
+    from: getFormattedSender(),
+    to: recipient,
+    subject: eventTitle ? `${subject}: ${eventTitle}` : subject,
+    html,
+    ...(logoAttachment ? { attachments: [logoAttachment] } : {}),
+  });
+  logger.info({ recipient, messageId: info.messageId, eventId }, 'Auto-start alert email sent');
+  return { success: true, messageId: info.messageId };
+};
+
 // Send an inquiry email to the commercial inbox when a visitor submits the
 // "request info / different payment / different shipping" form on an art
 // product detail page. The Reply-To header points at the visitor's email so
@@ -4447,6 +4604,7 @@ module.exports = {
   sendStaleSentAlertEmail,
   sendNewProductNotificationEmail,
   sendEventConfirmationEmail,
+  sendEventReminderEmail,
   sendEventVerificationEmail,
   sendShipmentSentEmail,
   sendShipmentDeliveredEmail,
@@ -4467,6 +4625,7 @@ module.exports = {
   // Database backups to S3
   sendBackupFailureEmail,
   sendRecordingAlertEmail,
+  sendEventAutoStartAlertEmail,
   // Test-only: inspect / reset the in-memory outbox filled by the `noop`
   // transport. Always defined, but only ever populated when sending is inert.
   __getOutbox,

@@ -265,6 +265,15 @@ const config = {
     creditGraceDays: optionalInt('EVENT_CREDIT_GRACE_DAYS', 1),
     creditSchedulerCron: optional('EVENT_CREDIT_SCHEDULER_CRON', '0 * * * *'),
     creditSchedulerEnabled: optionalBool('EVENT_CREDIT_SCHEDULER_ENABLED', true),
+    // 48 h reminder emails (event-reminder-email). Off unless set: local
+    // development points at the preproduction database and the real email
+    // provider, and must not email preproduction attendees on its own. Set
+    // in production and staging. Forced off under test — see below.
+    reminderSchedulerEnabled: false,
+    // Start scheduled events at their time (event-auto-start). Off unless set,
+    // for the same reason: local development points at the preproduction
+    // database. Set in production and staging. Forced off under test.
+    autoStartSchedulerEnabled: false,
   },
 
   // --- Business ---
@@ -462,6 +471,11 @@ config.useS3 = !!config.aws.s3Bucket;
 // must never dump a database to S3, whatever the env file says. The scheduler
 // additionally refuses to start without a bucket (see backupScheduler.js).
 config.backup.enabled = optionalBool('DB_BACKUP_ENABLED', false) && config.nodeEnv !== 'test';
+
+// Event reminders follow the same rule: opt-in, and never under test, whatever
+// the env file says (.env.test asks for them on purpose).
+config.events.reminderSchedulerEnabled = optionalBool('EVENT_REMINDERS_ENABLED', false) && config.nodeEnv !== 'test';
+config.events.autoStartSchedulerEnabled = optionalBool('EVENT_AUTO_START_ENABLED', false) && config.nodeEnv !== 'test';
 
 // --- Agora Cloud Recording (change: agora-event-recording) ---
 // Activation is by configuration being present, same criterion as the backups.

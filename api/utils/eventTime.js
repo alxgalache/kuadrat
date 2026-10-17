@@ -48,6 +48,13 @@ const timeFormatterEs = new Intl.DateTimeFormat('es-ES', {
   minute: '2-digit',
 });
 
+const dayFormatterEs = new Intl.DateTimeFormat('es-ES', {
+  timeZone: EVENT_TIME_ZONE,
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+});
+
 /** Offset of EVENT_TIME_ZONE from UTC at the instant `ms`, in ms. */
 function zoneOffsetMs(ms) {
   const seconds = Math.floor(ms / 1000) * 1000;
@@ -126,10 +133,25 @@ function formatEventDateTimeEs(event) {
   return `${dateFormatterEs.format(start)}, ${timeFormatterEs.format(start)}`;
 }
 
+/**
+ * «el jueves 22 de octubre a las 19:00», in EVENT_TIME_ZONE, or null — the
+ * phrase a sentence or an email subject can carry (event-reminder-email).
+ * Built from parts because Intl writes «jueves, 22 de octubre», and Spanish
+ * prose takes no comma after the weekday.
+ */
+function formatEventWhenEs(event) {
+  const start = eventStartUtc(event);
+  if (!start) return null;
+  const parts = {};
+  for (const { type, value } of dayFormatterEs.formatToParts(start)) parts[type] = value;
+  return `el ${parts.weekday} ${parts.day} de ${parts.month} a las ${timeFormatterEs.format(start)}`;
+}
+
 module.exports = {
   EVENT_TIME_ZONE,
   wallTimeToUtc,
   eventStartUtc,
   eventEndUtc,
   formatEventDateTimeEs,
+  formatEventWhenEs,
 };

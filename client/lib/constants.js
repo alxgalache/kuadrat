@@ -235,6 +235,15 @@ export const STAGE_COPY = {
   presenterHint: 'Activa tu cámara con el control de abajo',
 };
 
+// Portadas de la escena de un stream (agora-stage-covers). El catálogo de
+// imágenes vive en lib/stageCovers.js; aquí solo los textos de los controles.
+export const STAGE_COVER_COPY = {
+  menu: 'Portadas',
+  none: 'Ninguna',
+  hint: 'Al elegir una portada se apagan las cámaras, la pantalla, la pizarra y los micrófonos. Encender la cámara, la pantalla o la pizarra la quita.',
+  active: 'Portada en escena',
+};
+
 // Flujo reducido (dual stream) de las cámaras que se pintan en la esquina.
 //
 // EL DEFECTO DEL SDK ES 4:3. `setLowStreamParameter` sin llamar deja
@@ -1128,6 +1137,11 @@ export const EVENT_VIDEO_ERRORS = {
   EVENT_VIDEO_AV1_REQUIRES_MP4:
     'La versión AV1 necesita también la URL del MP4, que es la que se usa como alternativa.',
 };
+
+// Under the date field of the event form (event-auto-start): the api starts
+// every scheduled event at its time, exactly as the «Iniciar» button does.
+export const EVENT_AUTO_START_HINT =
+  'A esta hora el evento se iniciará automáticamente. Puedes iniciarlo antes con «Iniciar» en el listado.'
 
 export const EVENT_VIDEO_FORM_COPY = {
   mp4Label: 'URL del vídeo (MP4 H.264)',

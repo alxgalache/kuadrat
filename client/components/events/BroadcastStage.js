@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import AgoraVideo from '@/components/events/AgoraVideo'
 import {
   STAGE_LAYOUTS,
@@ -52,6 +53,21 @@ function HalfTile({ camera }) {
   )
 }
 
+/**
+ * The stage cover (agora-stage-covers): one still image over everything —
+ * cameras, corner tiles, screen and whiteboard — below the theater button
+ * only. Contained on white, the covers' own background, so a phone in
+ * landscape theater letterboxes it cleanly. Exported for the host console,
+ * which shows the same picture in its video panel.
+ */
+export function StageCoverImage({ cover, className = 'absolute inset-0 z-[15]' }) {
+  return (
+    <div className={`${className} bg-white`}>
+      <Image src={cover.src} alt={cover.alt} fill sizes="100vw" className="object-contain" draggable={false} />
+    </div>
+  )
+}
+
 // One camera floating over the stage: the co-presenter in picture-in-picture,
 // or the only camera on air while there is content.
 function FloatingTile({ camera, widthPct, bottomPx }) {
@@ -100,6 +116,8 @@ function CornerPair({ cameras, bottomPx }) {
  * @param {boolean} props.theaterOpen
  * @param {React.ReactNode} props.placeholder - Shown with no camera and no content
  * @param {React.ReactNode} [props.theaterButton] - Top-right, never over a tile
+ * @param {{src: string, alt: string}|null} [props.cover] - Stage cover over
+ *   every layer (agora-stage-covers); the layers below stay mounted
  * @param {{className: string, style?: object}|null} [props.frame] - Compact room
  *   16:9 frame (stageFrame in LiveRoomShell): edge to edge, capped or fitted to
  *   its cell. Corner tiles and the theater button stay relative to this frame.
@@ -113,6 +131,7 @@ export default function BroadcastStage({
   placeholder,
   theaterButton = null,
   frame: compactFrame = null,
+  cover = null,
 }) {
   // Host always first: left half, and left in the corner pair
   const cameras = [hostCamera, coHostCamera].filter((camera) => camera?.track)
@@ -146,7 +165,7 @@ export default function BroadcastStage({
         </div>
       )}
 
-      {!content && cameras.length === 0 && placeholder}
+      {!content && cameras.length === 0 && !cover && placeholder}
 
       {!content && cameras.length === 1 && (
         <AgoraVideo track={cameras[0].track} className="w-full h-full" fit="contain" mirror={cameras[0].mirror} />
@@ -177,6 +196,11 @@ export default function BroadcastStage({
       {theaterButton && (
         <div className="absolute top-2 right-2 z-20">{theaterButton}</div>
       )}
+
+      {/* The cover is the LAST child, a new slot: no layer above moves in the
+          React tree, so no AgoraVideo remounts and the whiteboard stays first.
+          z-[15]: over the corner tiles (z-10), under the theater button (z-20). */}
+      {cover && <StageCoverImage cover={cover} />}
     </div>
   )
 }

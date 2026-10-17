@@ -67,7 +67,7 @@ H264=lynda_blair_h264.mp4; AV1=lynda_blair_av1.mp4
 for f in "$H264" "$AV1"; do
   echo "── Midiendo $f (1 de cada 5 fotogramas)…"
   ffmpeg -hide_banner -v error -i "$f" -i "$SRC" -lavfi \
-    "[0:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[d];[1:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[r];[d][r]libvmaf=n_threads=8:n_subsample=5:feature=name=psnr:log_fmt=json:log_path=vmaf_${f%.mp4}.json" \
+    "[0:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[d];[1:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[r];[d][r]libvmaf=n_threads=8:ts_sync_mode=nearest:n_subsample=5:feature=name=psnr:log_fmt=json:log_path=vmaf_${f%.mp4}.json" \
     -f null -
 done
 fila() {
@@ -132,7 +132,7 @@ for CRF in 26 28 30 32; do
     "$OUT"
   echo "── AV1 CRF $CRF: midiendo…"
   ffmpeg -hide_banner -v error -i "$OUT" -ss "$SS" -t "$DUR" -i "$SRC" -lavfi \
-    "[0:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[d];[1:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[r];[d][r]libvmaf=n_threads=8:feature=name=psnr:log_fmt=json:log_path=${OUT%.mp4}.json" \
+    "[0:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[d];[1:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[r];[d][r]libvmaf=n_threads=8:ts_sync_mode=nearest:feature=name=psnr:log_fmt=json:log_path=${OUT%.mp4}.json" \
     -f null -
   KBPS=$(( $(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$OUT") / 1000 ))
   jq -r --arg c "$CRF" --arg k "$KBPS" '

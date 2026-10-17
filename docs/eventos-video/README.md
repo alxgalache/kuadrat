@@ -17,6 +17,10 @@ hay que poner en el evento. Detalle en la [guía 00](00-optimizacion-automatica.
 Después: subir los archivos (guía 03, paso 8) y crear el evento (guía 05,
 apartado 6).
 
+**¿Es la redifusión de un directo?** Recorta antes la grabación con la
+[guía 06](06-redifundir-un-directo.md). El script copiará la grabación como MP4
+y solo codificará el AV1.
+
 ## Todas las guías
 
 | # | Guía | Para qué | Dónde se hace |
@@ -27,6 +31,7 @@ apartado 6).
 | 03 | [Configurar AWS](03-configurar-aws.md) | Claves, CloudFront, función de guarda, subida y verificación | Consola de AWS + terminal |
 | 04 | [Alcance de la protección](04-alcance-de-la-proteccion.md) | Qué impide y qué no impide el sistema, y por qué | Solo lectura |
 | 05 | [Entornos, variables y pruebas](05-entornos-y-pruebas.md) | Configurar prod y preprod, probar y preparar el día del evento | Servidores + navegador |
+| 06 | [Redifundir un directo](06-redifundir-un-directo.md) | De la grabación de un directo a la redifusión: recortar sin recodificar, comprobar el corte y lanzar el script | Ubuntu, terminal |
 
 ## Orden la primera vez
 

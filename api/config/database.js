@@ -730,6 +730,17 @@ async function initializeDatabase() {
         -- sellerRoutes, and generateEventAttendeeInvoice. listAttendees does
         -- NOT filter it — the admin panel should show who was in the room.
         is_staff INTEGER NOT NULL DEFAULT 0,
+        -- First time the access password was issued, which is when the
+        -- confirmation email goes out (event-reminder-email). The 48 h
+        -- reminder skips anyone confirmed after its own instant, since their
+        -- confirmation already carries the date. NULL on rows confirmed before
+        -- this column existed, and NULL counts as confirmed long ago
+        confirmed_at DATETIME,
+        -- Claim of the reminder: set before sending, cleared again if the send
+        -- fails, and both reset when event_datetime changes
+        reminder_sent_at DATETIME,
+        -- Reminder sends tried, at most 3
+        reminder_attempts INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
       )
     `);
@@ -760,6 +771,12 @@ async function initializeDatabase() {
         s3_bucket TEXT NOT NULL,
         s3_prefix TEXT NOT NULL,
         applied_layout TEXT CHECK(applied_layout IN ('adaptive','screen')),
+        -- Portada aplicada al lienzo (agora-stage-covers): NULL o el id de la
+        -- portada del catálogo api/utils/stageCovers.js, que es quien valida el
+        -- valor. Columna aparte y sin CHECK porque el CHECK de applied_layout
+        -- no se puede ampliar en la tabla de producción, y SQLite no aplica a
+        -- las filas existentes un CHECK añadido con ALTER TABLE
+        applied_cover TEXT,
         upload_status TEXT,
         file_list TEXT,
         error TEXT,
@@ -1100,6 +1117,12 @@ async function initializeDatabase() {
     // now on authenticates nowhere, which is the point of the change.
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN verification_attempts INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE event_attendees ADD COLUMN verification_sent_at DATETIME');
+    // 48 h event reminder (event-reminder-email). No backfill: a NULL
+    // confirmed_at reads as "confirmed before the reminder", so attendees who
+    // registered before the deploy still get theirs.
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN confirmed_at DATETIME');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN reminder_sent_at DATETIME');
+    await safeAlter('ALTER TABLE event_attendees ADD COLUMN reminder_attempts INTEGER NOT NULL DEFAULT 0');
     await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN token_hash TEXT');
     await safeAlter('ALTER TABLE draw_email_verifications ADD COLUMN verified_at DATETIME');
     await safeAlter('ALTER TABLE auction_email_verifications ADD COLUMN token_hash TEXT');
@@ -1448,6 +1471,8 @@ async function initializeDatabase() {
     // safeAlter: if duplicates ever existed, startup must fail loudly rather
     // than run without the guarantee.
     await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_attendees_stripe_pi ON event_attendees(stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL`);
+    // agora-stage-covers — no backfill: a task running at deploy has no cover.
+    await safeAlter('ALTER TABLE event_recordings ADD COLUMN applied_cover TEXT');
     // agora-event-recording — at most ONE live task per event, enforced by the
     // database: the lifecycle transitions and the scheduler may try to start
     // the same recording at the same instant, and the losing INSERT must fail

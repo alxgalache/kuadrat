@@ -35,6 +35,29 @@ píxeles. Cópialos tal cual.
   los píxeles idénticos.
 - **No uses la codificación por hardware de la gráfica Intel** (QSV/VA-API). Es
   mucho más rápida, pero a igual tamaño da peor calidad que x264.
+- **No midas el VMAF sin `ts_sync_mode=nearest`.** Por defecto, el filtro
+  compara cada fotograma codificado con el último del original cuya marca de
+  tiempo es **menor o igual**. Si las marcas del original no caen exactas en la
+  rejilla, a veces coge el fotograma anterior. Pasa con una grabación de un
+  directo de Agora, que redondea las marcas al milisegundo (33, 33 y 34 ms),
+  mientras el codificador las pone en la rejilla exacta de 1/30 s:
+
+  ```
+  original         0    34    67   100   134   167   200
+  codificado       0  33,3  66,7   100 133,3 166,7   200
+  por defecto (≤)  0     0    34   100   100   134   200   ← compara con el anterior
+  nearest          0    34    67   100   134   167   200   ← siempre el suyo
+  ```
+
+  Con `entrevista_lorca`, el p1 salía en 48 con cualquier CRF, cuando medido
+  bien era 92. Con una exportación de Premiere, como la de esta guía, los dos
+  modos dan exactamente lo mismo. Los comandos de esta guía ya llevan la opción.
+- **Con un original de marcas irregulares, no dejes que ffmpeg elija la
+  frecuencia.** Sin `-r`, un MP4 se codifica a la frecuencia que ffmpeg
+  estima (`r_frame_rate`). En un clip de una grabación de Agora estimó 29,92
+  fps en lugar de 30, y quitó 29 fotogramas de 10 799. Añade `-r 30` (o la
+  frecuencia real) a la codificación. Con una exportación de Premiere la
+  estimación es exacta y no hace falta. El script la fija siempre.
 
 ---
 
@@ -134,7 +157,7 @@ for CRF in 18 20 22; do
     "$OUT"
   echo "── CRF $CRF: midiendo VMAF…"
   ffmpeg -hide_banner -v error -i "$OUT" -ss "$SS" -t "$DUR" -i "$SRC" -lavfi \
-    "[0:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[d];[1:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[r];[d][r]libvmaf=n_threads=8:feature=name=psnr:log_fmt=json:log_path=${OUT%.mp4}.json" \
+    "[0:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[d];[1:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[r];[d][r]libvmaf=n_threads=8:ts_sync_mode=nearest:feature=name=psnr:log_fmt=json:log_path=${OUT%.mp4}.json" \
     -f null -
   KBPS=$(( $(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$OUT") / 1000 ))
   jq -r --arg c "$CRF" --arg k "$KBPS" '
@@ -162,6 +185,10 @@ RESULTADO CRF 20: 5400 kb/s | VMAF media 96.8 | p1 93.1 | mín 90.2 | PSNR-Y 43.
   en VMAF y solo 22 dB en PSNR. Con los comandos de esta guía suele salir entre
   38 y 48 dB (menos en escenas oscuras con mucho ruido de sensor). **Si sale por
   debajo de 35, algo ha alterado el color: para y avísame.**
+- **Señal de alarma: un p1 que no sube al bajar el CRF.** Por ejemplo, 48,3 con
+  CRF 22 y 48,6 con CRF 16. No es ruido del original: la medición está
+  comparando fotogramas desalineados. Comprueba que el comando lleva
+  `ts_sync_mode=nearest`.
 
 **Regla de decisión:** elige **el CRF más alto** que cumpla, **en los dos
 fragmentos**, **media ≥ 95 y p1 ≥ 90** (y PSNR-Y por encima de 35 dB). Si ni el 18 cumple, prueba 16 y 17 (y
@@ -230,7 +257,7 @@ tarda un rato.
 
 ```bash
 ffmpeg -hide_banner -v error -stats -i lynda_blair_h264.mp4 -i "$SRC" -lavfi \
-  "[0:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[d];[1:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[r];[d][r]libvmaf=n_threads=8:n_subsample=5:feature=name=psnr:log_fmt=json:log_path=vmaf_h264_completo.json" \
+  "[0:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[d];[1:v]$TAG,format=yuv420p10le,setpts=PTS-STARTPTS[r];[d][r]libvmaf=n_threads=8:ts_sync_mode=nearest:n_subsample=5:feature=name=psnr:log_fmt=json:log_path=vmaf_h264_completo.json" \
   -f null -
 jq -r '([.frames[].metrics.vmaf]|sort) as $v | "VMAF media \(.pooled_metrics.vmaf.mean*100|round/100) | p1 \($v[(($v|length)/100|floor)]*100|round/100) | PSNR-Y \(.pooled_metrics.psnr_y.mean*10|round/10) dB"' vmaf_h264_completo.json
 ```

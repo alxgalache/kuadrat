@@ -16,6 +16,7 @@ const logger = require('../config/logger');
 const eventService = require('../services/eventService');
 const agoraRecordingService = require('../services/agoraRecordingService');
 const { isPassClosed } = require('../utils/videoPass');
+const { isStageCover, supportsStageCovers } = require('../utils/stageCovers');
 
 // Server-side spam thresholds. Keep in sync with SPAM_MAX_MESSAGES /
 // SPAM_WINDOW_MS in client/lib/constants.js (same values the LiveKit client
@@ -49,6 +50,13 @@ module.exports = function setupEventSocket(io) {
   // next reconnection.
   const eventStageLayouts = new Map();
 
+  // eventId → 'inicio' | 'intermedio' | 'final' — the cover over a broadcast
+  // stage (agora-stage-covers), set by the host or the co-presenter, or by the
+  // start of the event. Same lifecycle as eventStageLayouts: in memory, in the
+  // join ACK, dropped when the event ends. A process restart loses it and the
+  // stage falls back to no cover; the host puts it back.
+  const eventStageCovers = new Map();
+
   const roomName = (eventId) => `event-room-${eventId}`;
 
   function getRoom(eventId) {
@@ -73,6 +81,19 @@ module.exports = function setupEventSocket(io) {
 
   function isStageScreenSharing(eventId) {
     return getStageScreenSharer(eventId) !== null;
+  }
+
+  // What the cloud recording composes the canvas from: the shared screen and
+  // the cover. One reader for both, so no caller can pass half the stage and
+  // revert the other half (agora-stage-covers).
+  function getStageState(eventId) {
+    return { screenSharing: isStageScreenSharing(eventId), cover: eventStageCovers.get(eventId) || null };
+  }
+
+  function setStageCover(eventId, cover) {
+    if (cover) eventStageCovers.set(eventId, cover);
+    else eventStageCovers.delete(eventId);
+    io.to(roomName(eventId)).emit('stage_cover', { cover: cover || null });
   }
 
   function publicPresence(entry) {
@@ -318,6 +339,8 @@ module.exports = function setupEventSocket(io) {
 
         socket.data.eventRoomId = eventId;
         socket.data.identity = entry.identity;
+        // interaction_mode cannot change once the event is active
+        socket.data.stageCoversAllowed = supportsStageCovers(result.event);
         socket.join(roomName(eventId));
 
         if (!existing) {
@@ -332,6 +355,7 @@ module.exports = function setupEventSocket(io) {
             presence: presenceList(eventId),
             whiteboard: eventWhiteboards.get(eventId) || { active: false, everyoneWrites: false },
             stageLayout: eventStageLayouts.get(eventId) || DEFAULT_STAGE_LAYOUT,
+            stageCover: eventStageCovers.get(eventId) || null,
           });
         }
       } catch (err) {
@@ -404,7 +428,24 @@ module.exports = function setupEventSocket(io) {
       // The cloud recording of a broadcast puts the shared screen in the big
       // window: reconcile now instead of waiting for the next 30 s pass. Never
       // awaited, never throws, no-op when recording is not enabled.
-      agoraRecordingService.triggerReconcile(eventRoomId, { isStageScreenSharing });
+      agoraRecordingService.triggerReconcile(eventRoomId, { getStageState });
+    });
+
+    // Stage cover of a broadcast (agora-stage-covers): the host or the
+    // co-presenter puts one up or takes it down, and everybody — the sender
+    // included — gets the echo. The echo is what empties the stage: each
+    // presenter turns off their own camera, screen and microphone when it
+    // arrives. Anything else is ignored silently.
+    socket.on('stage_cover', ({ cover } = {}) => {
+      const { eventRoomId, identity, stageCoversAllowed } = socket.data || {};
+      if (!eventRoomId || !identity || !stageCoversAllowed) return;
+      const next = cover === null || cover === undefined ? null : cover;
+      if (next !== null && !isStageCover(next)) return;
+      const sender = eventRooms.get(eventRoomId)?.get(identity);
+      if (!sender || (!sender.isHost && !sender.coHost)) return;
+      setStageCover(eventRoomId, next);
+      // The recording shows the cover as its canvas background: converge now.
+      agoraRecordingService.triggerReconcile(eventRoomId, { getStageState });
     });
 
     // In-room host moderation: ask a participant to mute (soft mute, meeting
@@ -466,6 +507,7 @@ module.exports = function setupEventSocket(io) {
       eventRooms.delete(eventId);
       eventWhiteboards.delete(eventId);
       eventStageLayouts.delete(eventId);
+      eventStageCovers.delete(eventId);
     },
 
     // ── Agora event-room moderation helpers (called from controllers) ──
@@ -484,6 +526,23 @@ module.exports = function setupEventSocket(io) {
      */
     isStageScreenSharing(eventId) {
       return isStageScreenSharing(eventId);
+    },
+
+    /**
+     * The stage the cloud recording composes from: `{ screenSharing, cover }`
+     * (agora-stage-covers). The reconciler's only reader of the stage.
+     */
+    getStageState(eventId) {
+      return getStageState(eventId);
+    },
+
+    /**
+     * Put a cover up (or take it down with null) from the server — the start
+     * of a broadcast puts «inicio». Stores it and tells the room; the caller
+     * reconciles the recording.
+     */
+    setStageCover(eventId, cover) {
+      setStageCover(eventId, cover);
     },
 
     /**

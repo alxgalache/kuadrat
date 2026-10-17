@@ -29,6 +29,12 @@ grabación pasa a un diseño con la pantalla en la ventana grande y las cámaras
 en columna; al dejar de compartir vuelve al reparto normal. Hay una sola
 pantalla en escena: mientras la comparte uno, el otro no puede.
 
+**Portadas.** Mientras hay una portada puesta («Inicio», «Intermedio» o
+«Final», ver `docs/eventos-portadas.md`), la grabación muestra esa imagen a
+pantalla completa sin nadie delante, con el audio de quien hable. Agora tarda
+unos segundos en aplicarla la primera vez. **Cámara apagada sin portada:** a
+los 3,5 s se ve negro, no el último fotograma congelado.
+
 **Pantalla con sonido.** Para que el vídeo o la música que se proyecta suene en
 el directo y en la grabación, quien comparte debe marcar la casilla de audio
 del selector de Chrome: «Compartir audio de la pestaña» (lo más fiable) o
@@ -499,9 +505,13 @@ el lienzo. Si no fuera así, se baja a 1280×720 cambiando `MIX_CANVAS` en
 - **El diseño de la pantalla compartida depende de la presencia de quien
   comparte** (host o co-presentador), que vive en memoria: tras un reinicio de
   la api la vuelve a declarar al reconectar. Si no pudiera, la pantalla se sigue grabando, solo que más pequeña.
-- **La geometría exacta de los diseños** (adaptativo y vertical) no está
-  documentada por Agora con cifras. Se comprueba con la primera grabación de
-  cada tipo en staging.
+- **La geometría exacta de los diseños** (adaptativo, vertical y portada) no
+  está documentada por Agora con cifras. Se comprueba con la primera grabación
+  de cada tipo en staging. Si el diseño de portada (17 regiones transparentes)
+  dejara ver a alguien delante, el respaldo es el diseño flotante con la misma
+  imagen de fondo: se cambia solo en `mixLayoutFor`.
+- **La portada vive en memoria**, como la pantalla compartida: un reinicio de
+  la api la quita, en la sala y en la grabación, hasta que se vuelva a poner.
 - **El cliente no tiene tests automáticos**: el formulario y el panel de admin se
   verifican a mano. Que las respuestas públicas no lleven el dato sí tiene test.
 

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminAPI, triggerDownload } from '@/lib/api'
 import AuthGuard from '@/components/AuthGuard'
-import { MEETING_MAX_ATTENDEES, EVENT_VIDEO_ERRORS, EVENT_VIDEO_FORM_COPY } from '@/lib/constants'
+import { MEETING_MAX_ATTENDEES, EVENT_VIDEO_ERRORS, EVENT_VIDEO_FORM_COPY, EVENT_AUTO_START_HINT } from '@/lib/constants'
 import { ArrowLeftIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid'
 import { SELLER_KIND_LABELS } from '@/lib/constants'
 import { sellerKindOf } from '@/lib/sellerCapabilities'
@@ -408,6 +408,7 @@ function EventDetailContent({ id }) {
                       onChange={(e) => setForm({ ...form, event_datetime: e.target.value })}
                       className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-base text-gray-900 placeholder:text-gray-400 focus:border-black focus:ring-2 focus:ring-black sm:text-sm/6"
                     />
+                    <p className="mt-1 text-xs text-gray-500">{EVENT_AUTO_START_HINT}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Duración (min)</label>

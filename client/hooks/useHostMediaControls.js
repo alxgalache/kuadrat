@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { eventsAPI } from '@/lib/api'
 import useAgoraDevices from '@/hooks/useAgoraDevices'
 import useAgoraVideoEffect from '@/hooks/useAgoraVideoEffect'
@@ -34,12 +34,22 @@ import { AGORA_VIDEO_QUALITIES, SCREEN_SHARE_COPY } from '@/lib/constants'
  *   sala). En un stream la pantalla de la escena es una sola (uid 2): mientras
  *   la tiene el otro, pedirla se rechaza aquí con el motivo, antes de abrir el
  *   selector del navegador. El servidor repite la comprobación (409).
+ * @param {object|null} [params.stageCovers=null] - Portadas de la escena de un
+ *   stream (agora-stage-covers): `{ cover, signal, setCover, turnOffWhiteboard }`
+ *   de `useEventRoomSocket`, o null donde no existen (reunión). `signal` cambia
+ *   solo con el evento `stage_cover`, nunca con el ACK de unión.
+ *   `turnOffWhiteboard` solo lo pasa el host, que es quien la controla.
  */
 export default function useHostMediaControls({
-  enabled, room, eventId, cameraEncoderConfig, videoQuality, screenShareHeldBy = null,
+  enabled, room, eventId, cameraEncoderConfig, videoQuality, screenShareHeldBy = null, stageCovers = null,
 }) {
   const [deviceError, setDeviceError] = useState('')
   const [isEnding, setIsEnding] = useState(false)
+
+  // Lo último de cada render, para los efectos y acciones que no deben
+  // volver a crearse con cada cambio de estado de la sala.
+  const latestRef = useRef({})
+  latestRef.current = { room, stageCovers }
 
   const devices = useAgoraDevices({
     enabled,
@@ -67,15 +77,26 @@ export default function useHostMediaControls({
     }
   }, [room, devices.activeMicId])
 
+  // Encender la cámara, la pantalla o la pizarra quita la portada, y solo
+  // cuando la acción sale bien: una cámara que no arranca no deja la escena
+  // vacía y sin portada (agora-stage-covers). La cámara es RTC y el servidor no
+  // la ve, así que esta regla vive aquí, en el cliente de quien actúa.
+  const clearCoverAfterVideo = useCallback(() => {
+    const covers = latestRef.current.stageCovers
+    if (covers?.cover) covers.setCover(null)
+  }, [])
+
   const toggleCamera = useCallback(async () => {
     setDeviceError('')
+    const turningOn = !room.camEnabled
     try {
-      await room.setCameraEnabled(!room.camEnabled, devices.activeCamId)
+      await room.setCameraEnabled(turningOn, devices.activeCamId)
+      if (turningOn) clearCoverAfterVideo()
     } catch (err) {
       console.warn('Camera error:', err)
       setDeviceError(cameraErrorMessage(err))
     }
-  }, [room, devices.activeCamId])
+  }, [room, devices.activeCamId, clearCoverAfterVideo])
 
   const toggleScreenShare = useCallback(async () => {
     setDeviceError('')
@@ -88,12 +109,46 @@ export default function useHostMediaControls({
         await room.stopScreenShare()
       } else {
         await room.startScreenShare()
+        clearCoverAfterVideo()
       }
     } catch (err) {
       console.warn('Screen share error:', err)
       setDeviceError(screenShareErrorMessage(err))
     }
-  }, [room, screenShareHeldBy])
+  }, [room, screenShareHeldBy, clearCoverAfterVideo])
+
+  // Elegir una portada solo la emite. Vaciar la escena es la reacción de cada
+  // presentador al recibirla —también el eco de la suya—, porque cuando la
+  // pone el co-presentador es el navegador del HOST el que tiene que apagar su
+  // cámara, su pantalla y la pizarra: un solo camino de código para los dos.
+  const selectCover = useCallback((cover) => {
+    latestRef.current.stageCovers?.setCover(cover || null)
+  }, [])
+
+  // Con una portada nada se ve delante, ni en la sala ni en la grabación: se
+  // apagan cámara, pantalla y pizarra. Y también el micrófono (decisión del
+  // operador): olvidarlo abierto en un intermedio emite y graba una
+  // conversación privada sin que el host lo note, mientras que volver a
+  // abrirlo para hablar sobre «Final» cuesta un clic y no quita la portada.
+  const coverSeq = stageCovers?.signal?.seq ?? 0
+  const handledCoverSeqRef = useRef(coverSeq)
+  useEffect(() => {
+    if (coverSeq === handledCoverSeqRef.current) return
+    handledCoverSeqRef.current = coverSeq
+    const { room: current, stageCovers: covers } = latestRef.current
+    if (!enabled || !covers?.signal?.cover) return
+    const emptyStage = async () => {
+      try {
+        if (current.camEnabled) await current.setCameraEnabled(false)
+        if (current.screenEnabled) await current.stopScreenShare()
+        if (current.micEnabled) await current.setMicrophoneEnabled(false)
+      } catch (err) {
+        console.warn('Stage cover: could not empty the stage', err)
+      }
+      covers.turnOffWhiteboard?.()
+    }
+    emptyStage()
+  }, [coverSeq, enabled])
 
   const selectDevice = useCallback((kind) => async (device) => {
     try {
@@ -175,6 +230,10 @@ export default function useHostMediaControls({
     selectVideoQuality: videoQuality?.enabled ? selectVideoQuality : null,
     screenShareSupported,
     speakerSelectionSupported,
+    // Portada de la escena y su selector; null donde no hay portadas, y así
+    // ninguna presentación pinta el menú (misma puerta que la calidad).
+    stageCover: stageCovers?.cover ?? null,
+    selectCover: stageCovers && enabled ? selectCover : null,
   }
 }
 

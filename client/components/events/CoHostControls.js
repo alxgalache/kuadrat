@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import DeviceDropdown from '@/components/events/DeviceDropdown'
 import ToggleSwitch from '@/components/events/ToggleSwitch'
+import StageCoverMenu from '@/components/events/StageCoverMenu'
 import { ControlIconButton, ControlsRow, ControlsSheet } from '@/components/events/CompactControls'
-import { STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY, LIVE_ROOM_COPY } from '@/lib/constants'
+import { STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY, STAGE_COVER_COPY, LIVE_ROOM_COPY } from '@/lib/constants'
 
 /**
  * Control bar of the co-presenter (the admin interviewing the host) in an
@@ -13,6 +14,11 @@ import { STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY, LIVE_ROOM_COPY } from '
  * Deliberately narrow: microphone, camera, speakers, screen share and the
  * camera layout. No whiteboard, effects, quality or "Finalizar stream" — two
  * people operating those at once produce incompatible states.
+ *
+ * The stage cover («Portadas», agora-stage-covers) is the other exception: it
+ * is one value on the server and the last change wins, so two operators cannot
+ * leave it in incompatible states — and the interviewer can put «Intermedio»
+ * up or take «Inicio» down if the host is late.
  *
  * Screen share is the exception because it cannot collide: the stage has ONE
  * screen (uid 2), whoever of the two takes it first holds it, and the other is
@@ -32,7 +38,10 @@ import { STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY, LIVE_ROOM_COPY } from '
  */
 export default function CoHostControls({ room, hostControls, layout, onLayoutChange, layoutLocked }) {
   const [openDeviceMenu, setOpenDeviceMenu] = useState(null)
-  const { devices, deviceError, toggleMic, toggleCamera, toggleScreenShare, selectDevice: selectDeviceFn } = hostControls
+  const {
+    devices, deviceError, toggleMic, toggleCamera, toggleScreenShare, selectDevice: selectDeviceFn,
+    stageCover, selectCover,
+  } = hostControls
 
   const selectDevice = (kind) => async (device) => {
     await selectDeviceFn(kind)(device)
@@ -66,6 +75,17 @@ export default function CoHostControls({ room, hostControls, layout, onLayoutCha
           onSelect={selectDevice('videoinput')}
         />
       </div>
+      {selectCover && (
+        <div className="relative flex items-center gap-x-2">
+          <span className="text-sm text-gray-700">{STAGE_COVER_COPY.menu}</span>
+          <StageCoverMenu
+            isOpen={openDeviceMenu === 'covers'}
+            onToggle={setOpenDeviceMenu}
+            cover={stageCover}
+            onSelect={selectCover}
+          />
+        </div>
+      )}
       <div className="flex items-center gap-x-2">
         <span className="text-sm text-gray-700">Pantalla</span>
         <ToggleSwitch checked={room.screenEnabled} onChange={toggleScreenShare} />
@@ -124,7 +144,7 @@ export function CompactCoHostControls({ room, hostControls, layout, onLayoutChan
   const [sheetOpen, setSheetOpen] = useState(false)
   const {
     devices, deviceError, toggleMic, toggleCamera, toggleScreenShare, selectDevice,
-    screenShareSupported, speakerSelectionSupported,
+    screenShareSupported, speakerSelectionSupported, stageCover, selectCover,
   } = hostControls
 
   return (
@@ -145,6 +165,7 @@ export function CompactCoHostControls({ room, hostControls, layout, onLayoutChan
         speakerSupported={speakerSelectionSupported}
         screenUnsupported={!screenShareSupported}
         stageLayout={{ value: layout, onChange: onLayoutChange, locked: layoutLocked }}
+        covers={selectCover ? { value: stageCover, onSelect: selectCover } : null}
       />
     </>
   )

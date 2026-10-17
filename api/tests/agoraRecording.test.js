@@ -14,6 +14,12 @@ const logger = require('../config/logger');
 const emailService = require('../services/emailService');
 const agoraService = require('../services/agoraService');
 const svc = require('../services/agoraRecordingService');
+const config = require('../config/env');
+
+// Every composite layout carries an explicit canvas image (agora-stage-covers).
+const BLANK = `${config.clientUrl}/grabacion/fondo-negro-v1.jpg`;
+const COVER_URL = (id) => `${config.clientUrl}/cortinillas/${id}-v1.jpg`;
+const stage = (screenSharing = false, cover = null) => () => ({ screenSharing, cover });
 const setupEventSocket = require('../socket/eventSocket');
 const { isRecordingEligible, recordingModeFor } = require('../utils/eventRecording');
 const jwt = require('jsonwebtoken');
@@ -164,14 +170,36 @@ describe('eligibility and mode', () => {
 
 describe('request builders', () => {
   test('mixLayoutFor: adaptive without screen, vertical with the screen (uid 2) big', () => {
-    expect(svc.mixLayoutFor(false)).toEqual({
+    expect(svc.mixLayoutFor({})).toEqual({
       layout: 'adaptive',
-      fields: { mixedVideoLayout: 1, backgroundColor: '#000000' },
+      cover: null,
+      fields: { mixedVideoLayout: 1, backgroundColor: '#000000', backgroundImage: BLANK },
     });
-    expect(svc.mixLayoutFor(true)).toEqual({
+    expect(svc.mixLayoutFor({ screenSharing: true })).toEqual({
       layout: 'screen',
-      fields: { mixedVideoLayout: 2, maxResolutionUid: '2', backgroundColor: '#000000' },
+      cover: null,
+      fields: { mixedVideoLayout: 2, maxResolutionUid: '2', backgroundColor: '#000000', backgroundImage: BLANK },
     });
+  });
+
+  test('mixLayoutFor: a cover is the canvas behind 17 transparent full-canvas regions, over a screen too', () => {
+    for (const screenSharing of [false, true]) {
+      const layout = svc.mixLayoutFor({ screenSharing, cover: 'intermedio' });
+      expect(layout.layout).toBe(screenSharing ? 'screen' : 'adaptive');
+      expect(layout.cover).toBe('intermedio');
+      expect(layout.fields).toMatchObject({
+        mixedVideoLayout: 3, backgroundColor: '#000000', backgroundImage: COVER_URL('intermedio'),
+      });
+      expect(layout.fields.maxResolutionUid).toBeUndefined();
+      expect(layout.fields.layoutConfig).toHaveLength(17);
+      for (const region of layout.fields.layoutConfig) {
+        expect(region).toEqual({ x_axis: 0, y_axis: 0, width: 1, height: 1, alpha: 0 });
+      }
+    }
+  });
+
+  test('mixLayoutFor: an unknown cover is no cover', () => {
+    expect(svc.mixLayoutFor({ cover: 'descanso' })).toEqual(svc.mixLayoutFor({}));
   });
 
   test('fileNamePrefix drops the UUID hyphens and fits in 128 characters', () => {
@@ -186,7 +214,7 @@ describe('request builders', () => {
 
   test('a broadcast is recorded as one composite MP4 of everything published', () => {
     const request = svc.buildStartClientRequest({
-      mode: 'mix', token: 't', layout: svc.mixLayoutFor(false), fileNamePrefix: ['eventos', 'a', 'b'], storage: STORAGE,
+      mode: 'mix', token: 't', layout: svc.mixLayoutFor({}), fileNamePrefix: ['eventos', 'a', 'b'], storage: STORAGE,
     });
     expect(request.recordingConfig).toEqual({
       channelType: 1,
@@ -198,7 +226,7 @@ describe('request builders', () => {
       audioProfile: 1,
       transcodingConfig: {
         width: 1920, height: 1080, fps: 30, bitrate: 3000,
-        mixedVideoLayout: 1, backgroundColor: '#000000',
+        mixedVideoLayout: 1, backgroundColor: '#000000', backgroundImage: BLANK,
       },
     });
     expect(request.recordingFileConfig).toEqual({ avFileType: ['hls', 'mp4'] });
@@ -227,7 +255,7 @@ describe('request builders', () => {
 
   test('acquire keeps the service in Europe and mirrors the start request', () => {
     const clientRequest = svc.buildStartClientRequest({
-      mode: 'mix', token: 't', layout: svc.mixLayoutFor(true), fileNamePrefix: ['eventos', 'a', 'b'], storage: STORAGE,
+      mode: 'mix', token: 't', layout: svc.mixLayoutFor({ screenSharing: true }), fileNamePrefix: ['eventos', 'a', 'b'], storage: STORAGE,
     });
     const body = svc.buildAcquireBody({ cname: 'event-x', uid: 3, startClientRequest: clientRequest });
     expect(body).toEqual({
@@ -574,24 +602,24 @@ describe('composite layout follows the screen share', () => {
     configure(fake);
     const eventId = await createEvent();
     let sharing = false;
-    const isStageScreenSharing = () => sharing;
-    await svc.reconcileEvent(eventId, { isStageScreenSharing });
+    const getStageState = () => ({ screenSharing: sharing, cover: null });
+    await svc.reconcileEvent(eventId, { getStageState });
 
     sharing = true;
     clock += 2 * MINUTE;
-    await svc.reconcileEvent(eventId, { isStageScreenSharing });
+    await svc.reconcileEvent(eventId, { getStageState });
     let update = fake.calls.filter((c) => c.kind === 'updateLayout').pop();
     expect(update.body).toEqual({
       cname: `event-${eventId}`,
       uid: '3',
-      clientRequest: { mixedVideoLayout: 2, maxResolutionUid: '2', backgroundColor: '#000000' },
+      clientRequest: { mixedVideoLayout: 2, maxResolutionUid: '2', backgroundColor: '#000000', backgroundImage: BLANK },
     });
     expect((await tasksOf(eventId))[0].applied_layout).toBe('screen');
 
     sharing = false;
-    await svc.reconcileEvent(eventId, { isStageScreenSharing });
+    await svc.reconcileEvent(eventId, { getStageState });
     update = fake.calls.filter((c) => c.kind === 'updateLayout').pop();
-    expect(update.body.clientRequest).toEqual({ mixedVideoLayout: 1, backgroundColor: '#000000' });
+    expect(update.body.clientRequest).toEqual({ mixedVideoLayout: 1, backgroundColor: '#000000', backgroundImage: BLANK });
     expect((await tasksOf(eventId))[0].applied_layout).toBe('adaptive');
   });
 
@@ -599,14 +627,14 @@ describe('composite layout follows the screen share', () => {
     const fake = createFakeAgora();
     configure(fake);
     const eventId = await createEvent();
-    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => false });
+    await svc.reconcileEvent(eventId, { getStageState: stage(false) });
     fake.handlers.updateLayout = () => ({ status: 500, body: {} });
 
-    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => true });
+    await svc.reconcileEvent(eventId, { getStageState: stage(true) });
     expect((await tasksOf(eventId))[0]).toMatchObject({ status: 'recording', applied_layout: 'adaptive' });
 
     fake.handlers.updateLayout = () => ({ status: 200, body: {} });
-    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => true });
+    await svc.reconcileEvent(eventId, { getStageState: stage(true) });
     expect((await tasksOf(eventId))[0].applied_layout).toBe('screen');
     expect(fake.count('updateLayout')).toBe(2);
   });
@@ -615,7 +643,7 @@ describe('composite layout follows the screen share', () => {
     const fake = createFakeAgora();
     configure(fake);
     const eventId = await createEvent();
-    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => true });
+    await svc.reconcileEvent(eventId, { getStageState: stage(true) });
     expect((await tasksOf(eventId))[0].applied_layout).toBe('screen');
 
     await svc.reconcileEvent(eventId);
@@ -627,12 +655,90 @@ describe('composite layout follows the screen share', () => {
     configure(fake);
     const eventId = await createEvent();
 
-    await svc.reconcileEvent(eventId, { isStageScreenSharing: () => true });
+    await svc.reconcileEvent(eventId, { getStageState: stage(true) });
 
     const start = fake.calls.find((c) => c.kind === 'start');
     expect(start.body.clientRequest.recordingConfig.transcodingConfig).toMatchObject({
       mixedVideoLayout: 2, maxResolutionUid: '2',
     });
+  });
+});
+
+describe('composite layout follows the stage cover (agora-stage-covers)', () => {
+  test('puts a cover up, changes it and takes it down', async () => {
+    const fake = createFakeAgora();
+    configure(fake);
+    const eventId = await createEvent();
+    let cover = null;
+    const getStageState = () => ({ screenSharing: false, cover });
+    await svc.reconcileEvent(eventId, { getStageState });
+    expect((await tasksOf(eventId))[0].applied_cover).toBeNull();
+
+    cover = 'intermedio';
+    clock += 2 * MINUTE;
+    await svc.reconcileEvent(eventId, { getStageState });
+    let update = fake.calls.filter((c) => c.kind === 'updateLayout').pop();
+    expect(update.body.clientRequest).toMatchObject({ mixedVideoLayout: 3, backgroundImage: COVER_URL('intermedio') });
+    expect(update.body.clientRequest.layoutConfig).toHaveLength(17);
+    expect((await tasksOf(eventId))[0]).toMatchObject({ applied_layout: 'adaptive', applied_cover: 'intermedio' });
+
+    cover = 'final';
+    await svc.reconcileEvent(eventId, { getStageState });
+    update = fake.calls.filter((c) => c.kind === 'updateLayout').pop();
+    expect(update.body.clientRequest.backgroundImage).toBe(COVER_URL('final'));
+    expect((await tasksOf(eventId))[0].applied_cover).toBe('final');
+
+    cover = null;
+    await svc.reconcileEvent(eventId, { getStageState });
+    update = fake.calls.filter((c) => c.kind === 'updateLayout').pop();
+    expect(update.body.clientRequest).toEqual({ mixedVideoLayout: 1, backgroundColor: '#000000', backgroundImage: BLANK });
+    expect((await tasksOf(eventId))[0].applied_cover).toBeNull();
+
+    // Same stage again: nothing to apply.
+    const before = fake.count('updateLayout');
+    await svc.reconcileEvent(eventId, { getStageState });
+    expect(fake.count('updateLayout')).toBe(before);
+  });
+
+  test('a task started with a cover up asks for the cover layout in its start', async () => {
+    const fake = createFakeAgora();
+    configure(fake);
+    const eventId = await createEvent();
+
+    await svc.reconcileEvent(eventId, { getStageState: stage(false, 'inicio') });
+
+    const start = fake.calls.find((c) => c.kind === 'start');
+    expect(start.body.clientRequest.recordingConfig.transcodingConfig).toMatchObject({
+      mixedVideoLayout: 3, backgroundImage: COVER_URL('inicio'),
+    });
+    expect((await tasksOf(eventId))[0]).toMatchObject({ applied_layout: 'adaptive', applied_cover: 'inicio' });
+    expect(fake.count('updateLayout')).toBe(0);
+  });
+
+  test('a failed updateLayout for a cover leaves both columns as they were', async () => {
+    const fake = createFakeAgora();
+    configure(fake);
+    const eventId = await createEvent();
+    await svc.reconcileEvent(eventId, { getStageState: stage(false) });
+    fake.handlers.updateLayout = () => ({ status: 500, body: {} });
+
+    await svc.reconcileEvent(eventId, { getStageState: stage(false, 'final') });
+
+    expect((await tasksOf(eventId))[0]).toMatchObject({
+      status: 'recording', applied_layout: 'adaptive', applied_cover: null,
+    });
+  });
+
+  test('without the reader a cover in progress is not reverted', async () => {
+    const fake = createFakeAgora();
+    configure(fake);
+    const eventId = await createEvent();
+    await svc.reconcileEvent(eventId, { getStageState: stage(false, 'intermedio') });
+
+    await svc.reconcileEvent(eventId);
+
+    expect(fake.count('updateLayout')).toBe(0);
+    expect((await tasksOf(eventId))[0].applied_cover).toBe('intermedio');
   });
 });
 
@@ -681,9 +787,9 @@ describe('screen_share in the authenticated event room', () => {
     host.send('screen_share', { active: true });
 
     expect(helpers.isStageScreenSharing(eventId)).toBe(true);
-    expect(trigger).toHaveBeenCalledWith(eventId, { isStageScreenSharing: expect.any(Function) });
-    const reader = trigger.mock.calls[0][1].isStageScreenSharing;
-    expect(reader(eventId)).toBe(true);
+    expect(trigger).toHaveBeenCalledWith(eventId, { getStageState: expect.any(Function) });
+    const reader = trigger.mock.calls[0][1].getStageState;
+    expect(reader(eventId)).toEqual({ screenSharing: true, cover: null });
     expect(helpers.isStageScreenSharing('no-such-event')).toBe(false);
   });
 });

@@ -27,6 +27,8 @@ const startEventCreditScheduler = require('./scheduler/eventCreditScheduler');
 const startBackupScheduler = require('./scheduler/backupScheduler');
 const startRecordingScheduler = require('./scheduler/recordingScheduler');
 const startVideoPassScheduler = require('./scheduler/videoPassScheduler');
+const startEventReminderScheduler = require('./scheduler/eventReminderScheduler');
+const startEventStartScheduler = require('./scheduler/eventStartScheduler');
 
 // Initialize database and start server
 async function startServer() {
@@ -80,6 +82,16 @@ async function startServer() {
       // Finish video passes five minutes after the video ends
       // (live-event-access-hardening).
       startVideoPassScheduler(app);
+
+      // Email attendees 48 h before their event (event-reminder-email).
+      // No-op unless EVENT_REMINDERS_ENABLED: off in local development, which
+      // points at the preproduction database and the real email provider.
+      startEventReminderScheduler();
+
+      // Start scheduled events at their time, exactly as «Iniciar» does
+      // (event-auto-start). No-op unless EVENT_AUTO_START_ENABLED: off in
+      // local development, which points at the preproduction database.
+      startEventStartScheduler(app);
     });
 
     // Register graceful shutdown

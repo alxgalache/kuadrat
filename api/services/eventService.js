@@ -3,6 +3,8 @@ const { randomUUID, randomBytes } = require('crypto');
 const slugify = require('slugify');
 const logger = require('../config/logger');
 const emailOtp = require('../utils/emailOtp');
+const { createBatch } = require('../utils/transaction');
+const { eventStartUtc } = require('../utils/eventTime');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -94,12 +96,30 @@ async function updateEvent(id, fields) {
   if (setClauses.length === 0) return current;
 
   args.push(id);
-  await db.execute({
-    sql: `UPDATE events SET ${setClauses.join(', ')} WHERE id = ?`,
-    args,
-  });
+  const batch = createBatch();
+  batch.add(`UPDATE events SET ${setClauses.join(', ')} WHERE id = ?`, args);
+
+  // A new date re-arms the 48 h reminder (event-reminder-email): the one
+  // already sent announced the old date. Compared as instants, not strings:
+  // the admin form sends back the stored value re-formatted, and a resave
+  // with the same date must not send everyone a second reminder.
+  if (fields.event_datetime !== undefined && eventDateTimeChanged(current.event_datetime, fields.event_datetime)) {
+    batch.add(
+      'UPDATE event_attendees SET reminder_sent_at = NULL, reminder_attempts = 0 WHERE event_id = ?',
+      [id]
+    );
+  }
+
+  await batch.execute();
 
   return getEventById(id);
+}
+
+function eventDateTimeChanged(before, after) {
+  const a = eventStartUtc({ event_datetime: before });
+  const b = eventStartUtc({ event_datetime: after });
+  if (!a || !b) return (before ?? null) !== (after ?? null);
+  return a.getTime() !== b.getTime();
 }
 
 // Written only by videoDurationService (live-event-access-hardening): no admin
@@ -115,6 +135,22 @@ async function setVideoDuration(id, seconds) {
 async function listActiveVideoEvents() {
   const result = await db.execute({
     sql: "SELECT * FROM events WHERE status = 'active' AND format = 'video' AND video_started_at IS NOT NULL",
+    args: [],
+  });
+  return result.rows;
+}
+
+/**
+ * Scheduled events, with only what the 48 h reminder (event-reminder-email)
+ * and the auto-start (event-auto-start) need to decide — and, for the
+ * reminder, to write the email. Never video_url, video_url_av1 or
+ * recording_enabled: nothing read here can leak into an email. Reads through
+ * idx_events_status, so a pass costs the scheduled rows only.
+ */
+async function listScheduledEvents() {
+  const result = await db.execute({
+    sql: `SELECT id, title, slug, event_datetime, duration_minutes, cover_image_url, access_type
+          FROM events WHERE status = 'scheduled'`,
     args: [],
   });
   return result.rows;
@@ -492,6 +528,14 @@ async function getAttendeeCount(eventId) {
 // Event Lifecycle
 // ---------------------------------------------------------------------------
 
+/**
+ * The scheduled → active transition. Guarded on `status = 'scheduled'`
+ * because the «Iniciar» button and the auto-start scheduler race for this row
+ * (event-auto-start): only the caller whose UPDATE changes it may go on to
+ * announce the start and reconcile the recording.
+ *
+ * @returns {Promise<{ changed: boolean, event: object|null }>}
+ */
 async function startEvent(id, { livekitRoomName = null, videoStartedAt = null, agoraChannelName = null } = {}) {
   const setClauses = ["status = 'active'"];
   const args = [];
@@ -510,11 +554,11 @@ async function startEvent(id, { livekitRoomName = null, videoStartedAt = null, a
   }
 
   args.push(id);
-  await db.execute({
-    sql: `UPDATE events SET ${setClauses.join(', ')} WHERE id = ?`,
+  const result = await db.execute({
+    sql: `UPDATE events SET ${setClauses.join(', ')} WHERE id = ? AND status = 'scheduled'`,
     args,
   });
-  return getEventById(id);
+  return { changed: result.rowsAffected === 1, event: await getEventById(id) };
 }
 
 async function endEvent(id) {
@@ -805,11 +849,71 @@ async function verifyAttendeePassword(eventId, rawEmail, password) {
  * email_verified any more: it used to set it as a side effect, which let a
  * paid confirmation mark an email as verified that nobody had verified.
  * Only verifyEmailCode (and the admin's staff row) write that flag.
+ *
+ * Both callers issue the password exactly once, together with the
+ * confirmation email, so the same statement stamps confirmed_at — the moment
+ * the 48 h reminder compares against (event-reminder-email). COALESCE keeps
+ * the first stamp should a password ever be stored twice.
  */
 async function setAttendeePassword(attendeeId, password) {
   await db.execute({
-    sql: 'UPDATE event_attendees SET access_password = ? WHERE id = ?',
+    sql: `UPDATE event_attendees
+          SET access_password = ?, confirmed_at = COALESCE(confirmed_at, CURRENT_TIMESTAMP)
+          WHERE id = ?`,
     args: [password, attendeeId],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 48 h reminder (event-reminder-email)
+// ---------------------------------------------------------------------------
+
+const EVENT_REMINDER_MAX_ATTEMPTS = 3;
+
+/**
+ * Attendees still owed the reminder of an event: seat holders (verified, not
+ * staff — the admin sits in by their own route and holds no seat) whose
+ * password, and so whose confirmation email, was issued before
+ * `confirmedBefore` (a SQLite CURRENT_TIMESTAMP-format UTC string). A NULL
+ * confirmed_at predates the column and counts as before. Payment owed and
+ * event bans are filtered by the caller with requiresPayment and
+ * isEmailBanned, the single owners of those rules.
+ */
+async function listReminderRecipients(eventId, confirmedBefore) {
+  const result = await db.execute({
+    sql: `SELECT id, event_id, email, first_name, access_password, status, is_staff, reminder_attempts
+          FROM event_attendees
+          WHERE event_id = ? AND ${SEAT_HOLDER_CONDITION}
+            AND access_password IS NOT NULL
+            AND reminder_sent_at IS NULL
+            AND reminder_attempts < ?
+            AND (confirmed_at IS NULL OR confirmed_at < ?)
+          ORDER BY created_at ASC, id ASC`,
+    args: [eventId, EVENT_REMINDER_MAX_ATTEMPTS, confirmedBefore],
+  });
+  return result.rows;
+}
+
+/**
+ * Claim the reminder of one attendee before sending it. Only the caller whose
+ * UPDATE changes the row sends, so two concurrent passes never send twice.
+ * @returns {Promise<boolean>} true when this caller won the claim
+ */
+async function claimReminder(attendeeId) {
+  const result = await db.execute({
+    sql: `UPDATE event_attendees
+          SET reminder_sent_at = CURRENT_TIMESTAMP, reminder_attempts = reminder_attempts + 1
+          WHERE id = ? AND reminder_sent_at IS NULL AND reminder_attempts < ?`,
+    args: [attendeeId, EVENT_REMINDER_MAX_ATTEMPTS],
+  });
+  return result.rowsAffected === 1;
+}
+
+/** Undo a claim whose send failed, so the next pass retries it. */
+async function releaseReminder(attendeeId) {
+  await db.execute({
+    sql: 'UPDATE event_attendees SET reminder_sent_at = NULL WHERE id = ?',
+    args: [attendeeId],
   });
 }
 
@@ -854,6 +958,12 @@ module.exports = {
   verifyEmailCode,
   verifyAttendeePassword,
   setAttendeePassword,
+  // 48 h reminder
+  EVENT_REMINDER_MAX_ATTEMPTS,
+  listScheduledEvents,
+  listReminderRecipients,
+  claimReminder,
+  releaseReminder,
   // Exposed for token verification
   hashAccessToken,
 };

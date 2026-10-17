@@ -39,7 +39,7 @@ Monorepo with two independent apps, each with its own `package.json` (there is n
 * Request path: `routes/` → `validators/` (Zod, applied with `middleware/validate.js`) → `controllers/` → `services/`. Admin routes live in `routes/admin/`, whose `index.js` applies `authenticate` + `adminAuth` once for all of them.
 * `services/` — business logic and integrations: Stripe and Stripe Connect, Sendcloud and shipping (`services/shipping/`), Agora, LiveKit, email, S3, invoices, NTAG 424. Revolut is legacy.
 * `socket/` — `auctionSocket.js`, `drawSocket.js` and `eventSocket.js` (the authenticated per-event room: presence, chat, moderation, stage).
-* `scheduler/` — cron jobs: auction lifecycle, reservation release, Sendcloud auto-confirmation, shipment retries, event credits, Agora recording, video-pass closing, database backups. Started from `server.js` only, so never under test.
+* `scheduler/` — cron jobs: auction lifecycle, reservation release, Sendcloud auto-confirmation, shipment retries, event credits, event auto-start, event reminders, Agora recording, video-pass closing, database backups. Started from `server.js` only, so never under test.
 * `utils/` (shared helpers), `middleware/` (auth and roles, rate limiting, security filters for prototype pollution, command injection and user agents, ETag/Cache-Control, timeout), `scripts/` (operator commands: `npm run backup:now`, `npm run s3:cache-headers`), `tests/` (Jest).
 * `controllers/orders/index.js` and `services/email/index.js` are plain re-exports, kept as seams for a future split of the two largest files.
 
@@ -156,6 +156,7 @@ Reglas que, si se olvidan, rompen algo en silencio desde cualquier parte del có
 * **Los ids del catálogo de Meta son los del píxel** (`art_<id>`, `other_<id>_v<variante>`): `contentId()` de `client/lib/metaPixel.js` y `api/utils/metaContentId.js` cambian juntos o no cambian, porque cambiarlos borra todas las etiquetas de producto de Instagram. → `.claude/rules/catalog/meta-catalog.md`
 * **`access_token_hash` solo aparece en SQL dentro de `api/services/eventService.js`**, y un test lo vigila. → `.claude/rules/events/verification-gates.md`
 * **Ninguna respuesta pública revela `video_url`, `video_url_av1` ni `recording_enabled`** (los quita `toPublicEvent`). → `.claude/rules/events/video-cdn.md`, `.claude/rules/agora/recording.md`
+* **Iniciar un evento tiene un solo camino, `eventStartService.startEvent`**: el botón «Iniciar» y el planificador lo comparten, y un paso nuevo del inicio va ahí. → `.claude/rules/events/auto-start.md`
 * **`events.event_datetime` es hora de pared de `Europe/Madrid` sin zona:** se convierte a un instante solo con `api/utils/eventTime.js`, nunca con `new Date()` en el servidor, que corre en UTC. → `.claude/rules/events/confirmation-calendar-links.md`
 * **Nada dentro de la sala en directo ni de la consola del host se pinta con un portal a `document.body`** (el `ConfirmDialog` compartido lo hace). → `.claude/rules/agora/host-mobile-console.md`, `.claude/rules/live-room/compact-layout.md`
 * **Un track de Agora sin `encoderConfig` sale con los valores por defecto del SDK: cámara 4:3 y micrófono con calidad de llamada.** El perfil se elige por rol en `AgoraLiveRoom`. → `.claude/rules/agora/camera-aspect-ratio.md`, `.claude/rules/agora/host-audio.md`
@@ -202,6 +203,8 @@ El porqué detallado de cada área vive en `.claude/rules/`, una regla por tema,
 * [`events/video-cdn.md`](.claude/rules/events/video-cdn.md) — Vídeo pregrabado por CloudFront: URLs firmadas que nunca salen en la API pública, AV1 solo con decodificación por hardware y codificación.
 * [`events/video-pass-access.md`](.claude/rules/events/video-pass-access.md) — Sala del pase de vídeo: solo tras entrar en la sala autenticada, chat autenticado, un único horario de cierre y duración medida por la API.
 * [`events/confirmation-calendar-links.md`](.claude/rules/events/confirmation-calendar-links.md) — Email de confirmación de eventos: hora de Madrid a UTC en un módulo, enlaces directos a Google y Outlook (el sistema decide la app), `.ics` por id que no se retira, contraseña fuera del calendario y slug fijo al publicar.
+* [`events/auto-start.md`](.claude/rules/events/auto-start.md) — Inicio de los eventos: un solo camino (`eventStartService.startEvent`) para el botón y el planificador, transición guardada, intervalo del propio evento como ventana, alerta a los 2 minutos y `EVENT_AUTO_START_ENABLED` apagada en local.
+* [`events/reminder-email.md`](.claude/rules/events/reminder-email.md) — Recordatorio 48 h antes: planificador propio y no envíos programados de Resend, `confirmed_at` como corte, reclamo «como mucho una vez», rearme por cambio de fecha y `EVENT_REMINDERS_ENABLED` apagada en local.
 
 ### Salas en directo
 
@@ -216,6 +219,7 @@ El porqué detallado de cada área vive en `.claude/rules/`, una regla por tema,
 * [`agora/virtual-backgrounds.md`](.claude/rules/agora/virtual-backgrounds.md) — Fondos virtuales (solo cliente): carga diferida del procesador, orden `setOptions` → `enable` y cómo añadir un fondo.
 * [`agora/interviews-cohost.md`](.claude/rules/agora/interviews-cohost.md) — Entrevistas en `broadcast`: co-presentador admin, pantalla de escena en el uid 2 con exclusividad, composición de la escena y facturación por píxeles.
 * [`agora/host-mobile-console.md`](.claude/rules/agora/host-mobile-console.md) — Consola móvil del host: tres modos sobre un solo `useHostMediaControls`, el árbol normal se oculta sin desmontarse y nada va por portal.
+* [`agora/stage-covers.md`](.claude/rules/agora/stage-covers.md) — Portadas de un stream: superposición en cada navegador y no pista publicada, vaciado de la escena como reacción al eco (micrófonos incluidos), regiones transparentes en la grabación y JPG versionados.
 * [`agora/recording.md`](.claude/rules/agora/recording.md) — Grabación en la nube de Agora: el modo lo decide `interaction_mode`, el reconciliador es la autoridad, fusibles, retención en el bucket y nada visible al público.
 
 ### Frontend y rendimiento

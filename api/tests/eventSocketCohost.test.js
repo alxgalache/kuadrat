@@ -326,7 +326,7 @@ describe('stage screen share', () => {
     expect(helpers.isStageScreenSharing(eventId)).toBe(true);
     const update = broadcasts.find((b) => b.event === 'presence_updated')?.payload;
     expect(update).toMatchObject({ identity: `viewer-${session.attendeeId}`, coHost: true, screenSharing: true });
-    expect(trigger).toHaveBeenCalledWith(eventId, { isStageScreenSharing: expect.any(Function) });
+    expect(trigger).toHaveBeenCalledWith(eventId, { getStageState: expect.any(Function) });
 
     cohost.send('screen_share', { active: false });
     expect(helpers.getStageScreenSharer(eventId)).toBeNull();

@@ -7,9 +7,11 @@ import {
 import LiveRoomSheet, { LiveRoomSheetRow } from '@/components/events/LiveRoomSheet'
 import MobileDevicePicker from '@/components/events/MobileDevicePicker'
 import VideoEffectsOptions from '@/components/events/VideoEffectsOptions'
+import StageCoverOptions from '@/components/events/StageCoverOptions'
+import { stageCoverById } from '@/lib/stageCovers'
 import {
   LIVE_ROOM_COPY, AGORA_VIDEO_QUALITIES, HOST_VIEW_MODES, HOST_VIEW_MODE_LABELS,
-  STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY,
+  STAGE_LAYOUTS, STAGE_LAYOUT_LABELS, STAGE_COPY, STAGE_COVER_COPY,
 } from '@/lib/constants'
 
 function MicIcon({ off, className }) {
@@ -149,10 +151,11 @@ const activeDeviceLabel = (list, id) => list.find((d) => d.deviceId === id)?.lab
 export function ControlsSheet({
   open, onClose, devices, onSelectDevice, speakerSupported,
   screenUnsupported = false, quality = null, effects = null,
-  everyoneWrites = null, stageLayout = null, hostView = null,
+  everyoneWrites = null, stageLayout = null, hostView = null, covers = null,
 }) {
   const [picker, setPicker] = useState(null) // 'audioinput' | 'videoinput' | 'audiooutput'
   const [effectsOpen, setEffectsOpen] = useState(false)
+  const [coversOpen, setCoversOpen] = useState(false)
 
   const openPicker = (kind) => {
     onClose()
@@ -214,6 +217,18 @@ export function ControlsSheet({
         ) : (
           <LiveRoomSheetRow label={LIVE_ROOM_COPY.effects} disabled reason={LIVE_ROOM_COPY.cameraOffForEffects} />
         ))}
+        {/* Portadas (agora-stage-covers): never tied to the camera, unlike «Efectos» */}
+        {covers && (
+          <LiveRoomSheetRow
+            label={STAGE_COVER_COPY.menu}
+            detail={stageCoverById(covers.value)?.label || STAGE_COVER_COPY.none}
+            chevron
+            onClick={() => {
+              onClose()
+              setCoversOpen(true)
+            }}
+          />
+        )}
         {everyoneWrites && (
           <SwitchRow label={LIVE_ROOM_COPY.everyoneWrites} checked={everyoneWrites.value} onChange={everyoneWrites.onChange} />
         )}
@@ -250,6 +265,20 @@ export function ControlsSheet({
             onSelect={(next) => {
               effects.videoEffect.selectEffect(next)
               setEffectsOpen(false)
+            }}
+          />
+        </LiveRoomSheet>
+      )}
+
+      {covers && (
+        // A child sheet of the room like every other: never a portal
+        <LiveRoomSheet open={coversOpen} title={STAGE_COVER_COPY.menu} onClose={() => setCoversOpen(false)}>
+          <StageCoverOptions
+            large
+            cover={covers.value}
+            onSelect={(next) => {
+              covers.onSelect(next)
+              setCoversOpen(false)
             }}
           />
         </LiveRoomSheet>

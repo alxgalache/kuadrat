@@ -7,9 +7,10 @@ import { getStoredSession } from '@/lib/eventSession'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import DeviceDropdown from '@/components/events/DeviceDropdown'
 import VideoEffectsMenu from '@/components/events/VideoEffectsMenu'
+import StageCoverMenu from '@/components/events/StageCoverMenu'
 import AgoraVideo from '@/components/events/AgoraVideo'
 import ToggleSwitch from '@/components/events/ToggleSwitch'
-import BroadcastStage, { stageStreamTypes } from '@/components/events/BroadcastStage'
+import BroadcastStage, { stageStreamTypes, StageCoverImage } from '@/components/events/BroadcastStage'
 import CoHostControls, { CompactCoHostControls } from '@/components/events/CoHostControls'
 import LiveRoomShell, { roomCell, stageFrame } from '@/components/events/LiveRoomShell'
 import LiveRoomTopBar from '@/components/events/LiveRoomTopBar'
@@ -43,9 +44,10 @@ import {
   AGORA_MIC_ENCODER_HOST, AGORA_MIC_NO_PROCESSING,
   AGORA_HOST_UID, AGORA_HOST_SCREEN_UID, AGORA_LOW_STREAM_PARAMETER, AGORA_SCREEN_ENCODER_BROADCAST,
   BROADCAST_ROW_TILE_W_DESKTOP, BROADCAST_ROW_GAP_PX, BROADCAST_ROW_FALLBACK_CAPACITY,
-  STAGE_COPY, LIVE_ROOM_COPY,
+  STAGE_COPY, STAGE_COVER_COPY, LIVE_ROOM_COPY,
 } from '@/lib/constants'
 import useScreenWakeLock from '@/hooks/useScreenWakeLock'
+import { stageCoverById, supportsStageCovers } from '@/lib/stageCovers'
 
 // Fastboard is heavy — load it only when the host opens the whiteboard
 const WhiteboardPanel = dynamic(
@@ -541,8 +543,24 @@ export default function AgoraLiveRoom({
   // virtuales y la enumeración de dispositivos en cada cambio de vista. El
   // co-presentador consume la misma instancia con una presentación restringida
   // (CoHostControls); sin `videoQuality` habilitada no tiene selector.
+  // Portadas de la escena (agora-stage-covers): solo en un stream. El host,
+  // dueño de la pizarra, la apaga cuando se pone una portada; el co-presentador
+  // no la controla. Toda la lógica vive en el hook, una sola vez.
+  const coversSupported = supportsStageCovers({ provider: 'agora', interaction_mode: interactionMode, format: 'live' })
+  const turnOffWhiteboard = useCallback(() => {
+    if (socket.whiteboard.active) socket.toggleWhiteboard(false, socket.whiteboard.everyoneWrites)
+  }, [socket])
+  const stageCovers = coversSupported
+    ? {
+      cover: socket.stageCover,
+      signal: socket.stageCoverSignal,
+      setCover: socket.setStageCover,
+      turnOffWhiteboard: isHost ? turnOffWhiteboard : null,
+    }
+    : null
+
   const hostControls = useHostMediaControls({
-    enabled: isHost || coHostMode, room, eventId, cameraEncoderConfig, videoQuality, screenShareHeldBy,
+    enabled: isHost || coHostMode, room, eventId, cameraEncoderConfig, videoQuality, screenShareHeldBy, stageCovers,
   })
 
   // Staff cannot be moderated (the server answers 400): the chat menu is not
@@ -639,7 +657,10 @@ export default function AgoraLiveRoom({
   // Agora pinta el vídeo remoto en <video> silenciados, y con eso no se puede
   // contar con que el navegador mantenga la pantalla encendida. Sin nada que
   // ver («Esperando al host...») no se pide.
-  const hasSomethingToWatch = whiteboardState.active || room.remoteUsers.some((u) => !!u.videoTrack)
+  // Una portada también es algo que ver: quien espera el inicio o la vuelta de
+  // un intermedio no debe encontrarse el móvil bloqueado (agora-stage-covers).
+  const hasSomethingToWatch = whiteboardState.active || !!socket.stageCover
+    || room.remoteUsers.some((u) => !!u.videoTrack)
   useScreenWakeLock({ enabled: !eventEnded && (isHost || coHostMode || hasSomethingToWatch) })
   const [wbCreds, setWbCreds] = useState(null)
   const wbFetchingRef = useRef(false)
@@ -677,6 +698,8 @@ export default function AgoraLiveRoom({
         // Fetch first: creates the room lazily so attendees find it ready
         await fetchWhiteboardCreds()
         socket.toggleWhiteboard(true, whiteboardState.everyoneWrites)
+        // Content on stage takes the cover down (agora-stage-covers)
+        if (socket.stageCover) socket.setStageCover(null)
       } catch (err) {
         console.error('Error activando la pizarra:', err)
       }
@@ -880,6 +903,9 @@ function BroadcastArea({
 }) {
   const hostRemote = remoteByUid.get(AGORA_HOST_UID)
   const { compact, landscape, panelOpen, togglePanel } = layout
+  // The cover over the stage, the same for every role (agora-stage-covers)
+  const coverEntry = stageCoverById(socket.stageCover)
+  const stageCover = coverEntry ? { src: coverEntry.src, alt: coverEntry.headline } : null
   const stageCell = roomCell('stage', layout)
   const rowsCell = roomCell('rows', layout)
   const frame = stageFrame(layout)
@@ -1025,13 +1051,20 @@ function BroadcastArea({
   // Elemento de vídeo de los modos móviles. `stop()` sobre una pista LOCAL
   // detiene la reproducción, no la publicación: por eso mover el vídeo entre
   // modos no corta la emisión para los asistentes.
-  const overlayVideo = publishedHostTrack
-    ? <AgoraVideo track={publishedHostTrack} className="w-full h-full" fit="contain" mirror={false} />
-    : (
-      <div className="flex h-full items-center justify-center px-2 text-center">
-        <p className="text-xs text-gray-400">Activa tu cámara en los controles</p>
-      </div>
-    )
+  // With a cover up, the console shows what the audience sees: the cover, over
+  // the video rather than instead of it, so the video never remounts.
+  const overlayVideo = (
+    <div className="relative h-full w-full">
+      {publishedHostTrack
+        ? <AgoraVideo track={publishedHostTrack} className="w-full h-full" fit="contain" mirror={false} />
+        : (
+          <div className="flex h-full items-center justify-center px-2 text-center">
+            <p className="text-xs text-gray-400">Activa tu cámara en los controles</p>
+          </div>
+        )}
+      {stageCover && <StageCoverImage cover={stageCover} className="absolute inset-0 z-10" />}
+    </div>
+  )
 
   const modeSwitcher = isHost && allowMobileHostConsole ? (
     <HostViewModeSwitcher
@@ -1120,6 +1153,7 @@ function BroadcastArea({
           theaterOpen={theaterOpen}
           placeholder={stagePlaceholder}
           frame={frame}
+          cover={stageCover}
           theaterButton={compact && landscape && !theaterOpen ? (
             <StageChromeGroup visible={chrome.visible} panelOpen={panelOpen} onTogglePanel={togglePanel}>
               {showTheaterButton ? <TheaterButton onOpen={openTheater} /> : null}
@@ -1342,7 +1376,7 @@ function AgoraHostControls({ room, hostControls, endLabel, whiteboard }) {
   const {
     devices, videoEffect, deviceError, isEnding,
     toggleMic, toggleCamera, toggleScreenShare, selectDevice: selectDeviceFn, endEvent,
-    videoQuality, selectVideoQuality,
+    videoQuality, selectVideoQuality, stageCover, selectCover,
   } = hostControls
 
   // Same state as the device dropdowns, so only one menu is ever open. Opening
@@ -1403,6 +1437,19 @@ function AgoraHostControls({ room, hostControls, endLabel, whiteboard }) {
                 effect={videoEffect.effect}
                 applying={videoEffect.applying}
                 onSelect={videoEffect.selectEffect}
+              />
+            </div>
+          )}
+          {/* Portadas (agora-stage-covers): next to «Efectos», never tied to the
+              camera, and only where covers exist (selectCover is null otherwise) */}
+          {selectCover && (
+            <div className="relative flex items-center gap-x-2">
+              <span className="text-sm text-gray-700">{STAGE_COVER_COPY.menu}</span>
+              <StageCoverMenu
+                isOpen={openDeviceMenu === 'covers'}
+                onToggle={setOpenDeviceMenu}
+                cover={stageCover}
+                onSelect={selectCover}
               />
             </div>
           )}

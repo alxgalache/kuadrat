@@ -27,6 +27,7 @@ const logger = require('../config/logger');
 const { db } = require('../config/database');
 const { escapeForEmail, stripHtml } = require('../utils/htmlEscape');
 const { productImageUrl } = require('../utils/productImageUrl');
+const { eventCoverImageUrl } = require('../utils/eventCoverImage');
 const auctionService = require('./auctionService');
 const drawService = require('./drawService');
 const eventService = require('./eventService');
@@ -85,13 +86,6 @@ const authorImageUrl = (profileImg) => {
   if (/^https?:\/\//i.test(profileImg)) return profileImg;
   if (config.cdnBaseUrl) return `${config.cdnBaseUrl}/authors/${encodeURIComponent(profileImg)}`;
   return `${config.siteApiBaseUrl}/api/users/authors/images/${encodeURIComponent(profileImg)}`;
-};
-
-const absoluteUrl = (value) => {
-  if (!value) return null;
-  if (/^https?:\/\//i.test(value)) return value;
-  const base = config.cdnBaseUrl || config.siteApiBaseUrl;
-  return `${base}/${String(value).replace(/^\/+/, '')}`;
 };
 
 const fmtDate = (v) => {
@@ -294,7 +288,7 @@ async function buildEvent(eventId) {
     logger.debug({ eventId }, 'Test event — announcement skipped');
     return null;
   }
-  const imageUrl = absoluteUrl(event.cover_image_url);
+  const imageUrl = eventCoverImageUrl(event);
   const description = event.description ? stripHtml(event.description) : '';
   const tokens = {
     ...baseTokens(`Nuevo evento en directo en 140d: ${event.title}`),

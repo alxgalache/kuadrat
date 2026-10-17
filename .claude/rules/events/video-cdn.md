@@ -43,8 +43,23 @@ Un evento `format = 'video'` se sirve desde `cdn.140d.art` con **URLs firmadas d
   * `eventService.getEventsByDateRange` los excluye, y con él desaparecen de `/live` y del sitemap.
 
   `getEventBySlug` **no** filtra (el enlace directo de quien prueba tiene que funcionar), y la página lleva `noindex` y no declara JSON-LD. Desmarcar la casilla en un evento programado pide confirmación, porque ese guardado envía el anuncio.
-* **Codificación: `node scripts/video/optimizar-video.mjs <video>`** genera el `_h264.mp4`, el `_av1.mp4` y un informe junto al original, eligiendo el CRF con VMAF. Tres reglas medidas, que no se tocan sin volver a medir:
+* **Codificación: `node scripts/video/optimizar-video.mjs <video>`** genera el `_h264.mp4`, el `_av1.mp4` y un informe junto al original, eligiendo el CRF con VMAF. Cinco reglas medidas, que no se tocan sin volver a medir:
   * **Etiquetar el color con `setparams`**, nunca con `-colorspace`/`-color_*` como opciones de salida: con un original sin etiquetar, esas opciones convierten los colores (22 dB de PSNR).
   * **La misma etiqueta en las dos entradas del VMAF**: si no, ffmpeg convierte una antes de comparar y el resultado sale falso.
   * **La PSNR de luma como vigilante del color**: VMAF puntuaba 100 un vídeo con el color alterado.
+  * **Emparejar por la marca más cercana** (`ts_sync_mode=nearest` en `measure()` y en los comandos de las guías 01 y 02).
+    * Las grabaciones de Agora redondean las marcas al milisegundo (33, 33, 34 ms) y el codificador las pone en la rejilla exacta de 1/30 s.
+    * Con el modo por defecto («≤»), uno o dos de cada tres fotogramas se comparaban con el anterior. El p1 se quedaba en 48 con cualquier CRF, y `entrevista_lorca` salió a CRF 16 con 2,4 GB para una grabación de 1,5 GB, sin ningún error.
+    * Con un original en rejilla exacta (Premiere), los dos modos dan cifras idénticas.
+    * `findFfmpeg()` exige la opción. Cambiar `MEASURE_VERSION` descarta lo medido por una ejecución interrumpida.
+  * **Frecuencia de salida fijada con `-r`** en la estándar más cercana a `avg_frame_rate` (≤ 1,5 %). Sin ella, ffmpeg codifica el MP4 a la frecuencia que estima (`r_frame_rate`).
+    * En un clip de Agora estimó 359/12 (29,92 fps) y quitó 29 fotogramas de 10 799: VMAF 73 con cualquier CRF, aun emparejando por la marca más cercana.
+    * La estimación depende de dónde empiece el corte: con la entrevista completa salió 30/1.
+* **Modo copia: el MP4 puede ser el original copiado** (`-c copy`, color con `-bsf:v h264_metadata`, `+faststart`), nunca recodificado. Hace falta que se cumpla todo esto:
+  * H.264 High/Main, `yuv420p`, ≤ 1080 px y nivel ≤ 4.1/4.2, con audio AAC;
+  * que empiece con un fotograma clave en 0, sin paquetes `D` de una lista de edición;
+  * fotogramas clave cada ≤ 2,5 s: Agora llega a 2,099 s porque pierde fotogramas sueltos;
+  * que el CRF elegido ahorre **menos de un 10 %** frente al original en los mismos fragmentos.
+
+  El AV1 sigue apuntando al CRF elegido, nunca a la copia: VMAF da 98,2 al comparar la copia consigo misma, y «±1 de la copia» llevaría al CRF mínimo. La medición completa solo mide el AV1, con el listón absoluto ≥ 94 / p1 ≥ 90. Las grabaciones se recortan con `docs/eventos-video/06-redifundir-un-directo.md`, en el instante exacto de un fotograma clave: con `-ss 44` a secas, el corte arranca en el clave de 42 s con una lista de edición.
 * **Punto ciego conocido:** `client/` sigue sin runner de tests. La selección de fuente, la recuperación, el formulario y la confirmación se verifican a mano con la lista de `docs/eventos-video/05-entornos-y-pruebas.md`. El servidor está cubierto por `cloudfrontSigner`, `eventVideoSources`, `eventVideoDelivery` y `eventTestMode`.

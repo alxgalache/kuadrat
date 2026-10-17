@@ -7,7 +7,8 @@
  *   node scripts/video/optimizar-video.mjs /ruta/al/video_final.mp4
  *
  * Deja junto al original:
- *   <nombre>_h264.mp4     versión que se sube SIEMPRE
+ *   <nombre>_h264.mp4     versión que se sube SIEMPRE (una copia del original si
+ *                         ya es apto para la web y recodificarlo no lo aligera)
  *   <nombre>_av1.mp4      versión AV1 (el informe dice si compensa subirla)
  *   <nombre>_informe.md   mediciones, decisiones y siguiente paso
  * (<nombre> es el del original sin el sufijo «_final», si lo tiene.)
@@ -23,6 +24,12 @@
  *     ffmpeg convierte una antes de comparar y el VMAF sale falso.
  *   · VMAF no ve un desplazamiento de color (puntuaba 100 un vídeo con el color
  *     alterado): por eso se mide también la PSNR de luma y se aborta si cae.
+ *   · Cada fotograma se compara con el del original de marca de tiempo MÁS
+ *     CERCANA (`ts_sync_mode=nearest`), nunca con el modo por defecto («≤»).
+ *     Las grabaciones de Agora llevan marcas al milisegundo (33, 33, 34 ms) y
+ *     el codificador las pone en la rejilla exacta de 1/30 s. Con «≤», uno o
+ *     dos de cada tres fotogramas se comparaban con el anterior del original:
+ *     p1 de 48 con cualquier CRF (medido el 16/10/2026 con entrevista_lorca).
  *   · El audio se copia si ya es AAC: es música, no se recomprime.
  *
  * Sin dependencias: solo Node y un ffmpeg con libx264, libsvtav1 y libvmaf
@@ -40,6 +47,9 @@ import path from 'node:path';
 // Parámetros del proceso
 // --------------------------------------------------------------------------
 const TAG = 'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv';
+// La misma etiqueta para una copia sin recodificar: va en la VUI del flujo
+// H.264, como la escribe x264, y no solo en el contenedor.
+const H264_BT709_BSF = 'h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1:video_full_range_flag=0';
 const H264_PRESET = 'slow';
 const H264_CRFS = [22, 20, 18, 16];      // de menos a más calidad: se elige el primero que cumple
 const H264_MAXRATE = '8M';
@@ -58,6 +68,10 @@ const AV1_MIN_SAVINGS = 0.25;            // por debajo, no compensa subirlo
 const AUDIO_FALLBACK_BITRATE = '256k';   // solo si el original no trae AAC
 const MAX_HEIGHT = 1080;
 const NICE = 10;                         // el escritorio sigue respondiendo
+const MEASURE_VERSION = 3;               // 2: emparejamiento por la marca más cercana; 3: frecuencia de salida fijada. Cambiarla descarta lo ya medido
+const MP4_COPY_MIN_SAVINGS = 0.10;       // recodificar cuesta una generación y el paso más largo: por debajo, se copia el original
+const COPY_KEYINT_TOLERANCE = 0.5;       // s sobre el GOP del script: Agora pierde fotogramas sueltos y llega a 2,099 s
+const STANDARD_RATES = ['24000/1001', '24', '25', '30000/1001', '30', '50', '60000/1001', '60'];   // candidatas a frecuencia de salida
 
 // --------------------------------------------------------------------------
 // Utilidades
@@ -145,6 +159,9 @@ async function findFfmpeg() {
       const enc = (await run(ffmpeg, ['-hide_banner', '-encoders'])).stdout;
       const fil = (await run(ffmpeg, ['-hide_banner', '-filters'])).stdout;
       if (/libx264/.test(enc) && /libsvtav1/.test(enc) && /libvmaf/.test(fil)) {
+        // Sin `ts_sync_mode`, la primera medición fallaría tras minutos de análisis.
+        const vmafHelp = (await run(ffmpeg, ['-hide_banner', '-h', 'filter=libvmaf'])).stdout;
+        if (!/ts_sync_mode/.test(vmafHelp)) continue;
         const version = (await run(ffmpeg, ['-hide_banner', '-version'])).stdout.split('\n')[0];
         return { ffmpeg, ffprobe, version };
       }
@@ -180,6 +197,41 @@ function moovBeforeMdat(file) {
 }
 
 // --------------------------------------------------------------------------
+// Paquetes de vídeo: lo que decide si el original se puede publicar tal cual
+// --------------------------------------------------------------------------
+/**
+ * Un solo recorrido de los paquetes (segundos para una hora de vídeo, sin
+ * decodificar). Devuelve si el primero es un fotograma clave y su marca, si
+ * alguno lleva la marca de descarte de una lista de edición (`D`), el
+ * intervalo máximo entre claves y los bytes de vídeo de cada fragmento.
+ */
+async function scanVideoPackets(file, windows) {
+  const csv = (await run(ffprobe, ['-v', 'error', '-select_streams', 'v:0',
+    '-show_entries', 'packet=pts_time,size,flags', '-of', 'csv=p=0', file])).stdout;
+  const scan = { firstKey: null, firstPts: null, discard: false, maxKeyint: 0, bytes: windows.map(() => 0) };
+  let lastKey = null;
+  let lastPts = null;
+  for (const line of csv.split('\n')) {
+    if (!line) continue;
+    const [ptsText, sizeText, flags = ''] = line.split(',');   // ffprobe las escribe en este orden
+    const t = Number(ptsText);
+    const key = flags.includes('K');
+    if (scan.firstKey === null) { scan.firstKey = key; scan.firstPts = t; }
+    if (flags.includes('D')) scan.discard = true;
+    if (!Number.isFinite(t)) continue;
+    if (key) {
+      if (lastKey !== null) scan.maxKeyint = Math.max(scan.maxKeyint, t - lastKey);
+      lastKey = t;
+    }
+    lastPts = lastPts === null ? t : Math.max(lastPts, t);
+    windows.forEach((w, i) => { if (t >= w.start && t < w.start + w.len) scan.bytes[i] += Number(sizeText); });
+  }
+  // El último GOP también cuenta: un vídeo con una sola clave no tiene GOP corto
+  if (lastKey !== null && lastPts !== null) scan.maxKeyint = Math.max(scan.maxKeyint, lastPts - lastKey);
+  return scan;
+}
+
+// --------------------------------------------------------------------------
 // Preparación
 // --------------------------------------------------------------------------
 const input = path.resolve(positional[0]);
@@ -200,7 +252,7 @@ console.log(c.bold(`Optimización de vídeo para eventos — ${path.basename(inp
 step(1, 'Herramientas');
 const tools = await findFfmpeg();
 if (!tools) {
-  fail(`No encuentro un ffmpeg con libx264, libsvtav1 y libvmaf.
+  fail(`No encuentro un ffmpeg con libx264, libsvtav1 y libvmaf (con la opción ts_sync_mode).
   Instálalo (una sola vez):
     mkdir -p ~/opt && cd ~/opt
     wget https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
@@ -211,13 +263,14 @@ tools.version = tools.version.replace(/\s+Copyright.*$/, '');
 ok(tools.version);
 ok(`${threads} hilos · prioridad baja (nice ${NICE}) para no bloquear el escritorio`);
 
-// Carpeta de trabajo, invalidada si el original cambia
+// Carpeta de trabajo, invalidada si el original cambia o si se midió con otra
+// versión de la medición (sus cifras ya no serían comparables)
 const sourceStat = fs.statSync(input);
-const fingerprint = { size: sourceStat.size, mtimeMs: sourceStat.mtimeMs };
+const fingerprint = { size: sourceStat.size, mtimeMs: sourceStat.mtimeMs, measure: MEASURE_VERSION };
 const fpFile = path.join(workDir, 'fuente.json');
 if (fs.existsSync(fpFile)) {
   const prev = JSON.parse(fs.readFileSync(fpFile, 'utf8'));
-  if (prev.size !== fingerprint.size || prev.mtimeMs !== fingerprint.mtimeMs) {
+  if (prev.size !== fingerprint.size || prev.mtimeMs !== fingerprint.mtimeMs || prev.measure !== fingerprint.measure) {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
@@ -241,6 +294,17 @@ if (!vs) fail('El archivo no tiene pista de vídeo.');
 const duration = Number(probe.format.duration);
 const [fpsNum, fpsDen] = String(vs.avg_frame_rate || vs.r_frame_rate).split('/').map(Number);
 const fps = fpsDen ? fpsNum / fpsDen : fpsNum;
+// Un MP4 se codifica a frecuencia constante, y sin `-r` ffmpeg toma la de
+// `r_frame_rate`, que es una estimación sacada de las primeras marcas. En una
+// grabación de Agora (marcas al milisegundo) salió 359/12 (29,92 fps) según
+// dónde empezaba el corte: ffmpeg retemporizó el vídeo y quitó 29 fotogramas
+// de 10 799. Se fija la frecuencia estándar más cercana a la media real, y si
+// ninguna lo es (más de un 1,5 % de diferencia) se deja a ffmpeg, como antes.
+const outRate = STANDARD_RATES
+  .map((r) => ({ r, value: r.includes('/') ? Number(r.split('/')[0]) / Number(r.split('/')[1]) : Number(r) }))
+  .filter(({ value }) => Math.abs(value - fps) / value <= 0.015)
+  .sort((a, b) => Math.abs(a.value - fps) - Math.abs(b.value - fps))[0]?.r ?? null;
+const rateArgs = outRate ? ['-r', outRate] : [];
 const gop = Math.round(fps * 2);
 const keyintMin = Math.round(fps);
 const unknownOr = (v, ...ok) => !v || v === 'unknown' || v === 'unspecified' || ok.includes(v);
@@ -248,6 +312,12 @@ const unknownOr = (v, ...ok) => !v || v === 'unknown' || v === 'unspecified' || 
 info(`${vs.codec_name} ${vs.profile || ''} · ${vs.width}×${vs.height} · ${round(fps, 3)} fps · ${vs.pix_fmt} · ${fmtDuration(duration)}`);
 info(`color: primaries=${vs.color_primaries || '—'} trc=${vs.color_transfer || '—'} matrix=${vs.color_space || '—'} range=${vs.color_range || '—'}`);
 info(as ? `audio: ${as.codec_name} · ${as.sample_rate} Hz · ${as.channels} canales · ${Math.round(Number(as.bit_rate || 0) / 1000)} kb/s` : 'sin audio');
+if (outRate) {
+  const guessed = vs.r_frame_rate === outRate || vs.r_frame_rate === `${outRate}/1`;
+  info(`frecuencia de salida: ${outRate} fps${guessed ? '' : ` (ffmpeg estimaba ${vs.r_frame_rate}: se fija la real)`}`);
+} else {
+  warn(`La frecuencia media (${round(fps, 3)} fps) no es estándar: las codificaciones usan la estimación de ffmpeg (${vs.r_frame_rate}).`);
+}
 
 if (vs.field_order && !['progressive', 'unknown'].includes(vs.field_order)) {
   fail(`Vídeo entrelazado (${vs.field_order}). Exporta una versión progresiva desde el editor.`);
@@ -363,7 +433,7 @@ async function measure(distorted, refArgs, { subsample = 1 } = {}) {
   const log = path.join(vmafTmp, `vmaf-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
   const lavfi = `[0:v]${TAG},format=yuv420p10le,setpts=PTS-STARTPTS[d];` +
     `[1:v]${vfBase},format=yuv420p10le,setpts=PTS-STARTPTS[r];` +
-    `[d][r]libvmaf=n_threads=${threads}${subsample > 1 ? `:n_subsample=${subsample}` : ''}:feature=name=psnr:log_fmt=json:log_path=${log}`;
+    `[d][r]libvmaf=n_threads=${threads}${subsample > 1 ? `:n_subsample=${subsample}` : ''}:ts_sync_mode=nearest:feature=name=psnr:log_fmt=json:log_path=${log}`;
   await run(ffmpeg, ['-hide_banner', '-v', 'error', ...(subsample > 1 ? ['-stats'] : []),
     '-i', distorted, ...refArgs, '-lavfi', lavfi, '-an', '-f', 'null', '-'], { niced: true, live: subsample > 1 });
   const j = JSON.parse(fs.readFileSync(log, 'utf8'));
@@ -380,11 +450,11 @@ async function measure(distorted, refArgs, { subsample = 1 } = {}) {
 function h264VideoArgs(crf) {
   return ['-vf', vfBase, '-c:v', 'libx264', '-preset', H264_PRESET, '-crf', String(crf), '-profile:v', 'high',
     ...(h264Level ? ['-level', h264Level] : []), '-maxrate', H264_MAXRATE, '-bufsize', H264_BUFSIZE,
-    '-pix_fmt', 'yuv420p', '-g', String(gop), '-keyint_min', String(keyintMin)];
+    '-pix_fmt', 'yuv420p', '-g', String(gop), '-keyint_min', String(keyintMin), ...rateArgs];
 }
 function av1VideoArgs(crf) {
   return ['-vf', `${vfBase},format=yuv420p10le`, '-c:v', 'libsvtav1', '-preset', String(AV1_PRESET),
-    '-crf', String(crf), '-g', String(gop)];
+    '-crf', String(crf), '-g', String(gop), ...rateArgs];
 }
 const SVT_ENV = { SVT_LOG: '2' };   // sin las líneas Svt[info]
 
@@ -455,6 +525,48 @@ if (h264Crf === null) {
   ok(`CRF elegido: ${h264Crf}`);
 }
 
+// ¿Copiar el original como MP4? Solo si ya es apto para la web y recodificarlo
+// no lo aligera lo suficiente en los mismos fragmentos. Es el caso de las
+// grabaciones de los directos (Agora: H.264 High a 3 Mb/s, GOP de 2 s).
+function copyEligibility(scan) {
+  if (vs.codec_name !== 'h264') return { ok: false, reason: `el vídeo es ${vs.codec_name}, no H.264` };
+  if (!['High', 'Main'].includes(vs.profile)) return { ok: false, reason: `el perfil H.264 es ${vs.profile}, no High ni Main` };
+  if (vs.pix_fmt !== 'yuv420p') return { ok: false, reason: `el formato de píxel es ${vs.pix_fmt}, no yuv420p` };
+  if (scaleDown) return { ok: false, reason: `mide ${vs.height} px de alto y hay que reducirlo` };
+  if (!h264Level) return { ok: false, reason: `tiene ${round(fps, 3)} fps, más de los que admite el MP4 web` };
+  if (Number(vs.level) > Math.round(Number(h264Level) * 10)) return { ok: false, reason: `su nivel H.264 es ${vs.level / 10}, por encima del ${h264Level}` };
+  if (as && as.codec_name !== 'aac') return { ok: false, reason: `el audio es ${as.codec_name}, no AAC` };
+  if (scan.discard) return { ok: false, reason: 'tiene una lista de edición que descarta fotogramas: recórtalo en un fotograma clave exacto (guía 06)' };
+  if (!scan.firstKey || !(scan.firstPts >= 0)) return { ok: false, reason: 'no empieza con un fotograma clave en el instante 0: recórtalo en un fotograma clave exacto (guía 06)' };
+  const maxKeyint = gop / fps + COPY_KEYINT_TOLERANCE;
+  if (scan.maxKeyint > maxKeyint) {
+    return { ok: false, reason: `hay hasta ${round(scan.maxKeyint, 1)} s entre dos fotogramas clave (el máximo es ${round(gop / fps, 1)} s): el pase buscaría peor` };
+  }
+  return { ok: true, reason: null };
+}
+
+const scan = await scanVideoPackets(input, windows);
+const encodedKbps = h264Results.reduce((sum, r) => sum + r.kbps, 0);
+const sourceKbps = windows.reduce((sum, w, i) => sum + Math.round((scan.bytes[i] * 8) / w.len / 1000), 0);
+const mp4Savings = sourceKbps > 0 ? 1 - encodedKbps / sourceKbps : 0;
+const eligibility = copyEligibility(scan);
+const mp4Mode = eligibility.ok && mp4Savings < MP4_COPY_MIN_SAVINGS ? 'copy' : 'encode';
+// «10607 kb/s en los fragmentos con CRF 20, frente a 9012 kb/s del original (un 17.7 % más)»
+const mp4Comparison = `${encodedKbps} kb/s en los fragmentos con CRF ${h264Crf}, frente a ${sourceKbps} kb/s del original ` +
+  `(un ${(Math.abs(mp4Savings) * 100).toFixed(1)} % ${mp4Savings >= 0 ? 'menos' : 'más'})`;
+const notEnough = `recodificar no ahorra al menos un ${MP4_COPY_MIN_SAVINGS * 100} %`;
+let mp4Text;
+if (mp4Mode === 'copy') {
+  mp4Text = `**MP4: copia del original.** Recodificado pesaría ${mp4Comparison}.`;
+  ok(`Se copia el original como MP4: recodificado pesaría ${mp4Comparison}`);
+} else if (!eligibility.ok && mp4Savings < MP4_COPY_MIN_SAVINGS) {
+  mp4Text = `**MP4: codificado.** No se copia el original aunque ${notEnough}, porque ${eligibility.reason}. Pesa ${mp4Comparison}.`;
+  warn(`No se copia el original aunque ${notEnough}, porque ${eligibility.reason}.`);
+} else {
+  mp4Text = `**MP4: codificado.** Pesa ${mp4Comparison}.`;
+  info(`Se recodifica: pesa ${mp4Comparison}`);
+}
+
 // --------------------------------------------------------------------------
 async function encodeFinal(codec, crf, out) {
   if (fs.existsSync(out) && !flag('--forzar')) {
@@ -470,8 +582,23 @@ async function encodeFinal(codec, crf, out) {
   ok(`${path.basename(out)} · ${fmtMB(fs.statSync(out).size)}`);
 }
 
-step(5, `H.264: codificación final (CRF ${h264Crf})`);
-await encodeFinal('h264', h264Crf, outH264);
+// La copia se rehace siempre (tarda segundos): así un MP4 codificado en una
+// ejecución anterior nunca pasa por copia.
+async function copyOriginal(out) {
+  const partial = out.replace(/\.mp4$/, '.partial.mp4');
+  await run(ffmpeg, ['-hide_banner', '-v', 'error', '-y', '-i', input, '-map', '0:v:0', ...audioArgs,
+    '-c:v', 'copy', '-bsf:v', H264_BT709_BSF, '-movflags', '+faststart', partial], { niced: true });
+  fs.renameSync(partial, out);
+  ok(`${path.basename(out)} · ${fmtMB(fs.statSync(out).size)} · copia del original`);
+}
+
+if (mp4Mode === 'copy') {
+  step(5, 'MP4: copia del original (sin recodificar)');
+  await copyOriginal(outH264);
+} else {
+  step(5, `H.264: codificación final (CRF ${h264Crf})`);
+  await encodeFinal('h264', h264Crf, outH264);
+}
 
 // --------------------------------------------------------------------------
 let av1Crf = null;
@@ -514,7 +641,15 @@ async function verify(file, codec) {
   const name = path.basename(file);
   const check = (cond, text) => { checks.push({ ok: !!cond, text: `${name}: ${text}` }); (cond ? ok : warn)(`${name}: ${text}`); };
   if (codec === 'h264') {
-    check(v.codec_name === 'h264' && v.profile === 'High', `H.264 High (nivel ${v.level / 10})`);
+    // Una copia conserva el perfil del original, que la aptitud admite High o Main
+    const profiles = mp4Mode === 'copy' ? ['High', 'Main'] : ['High'];
+    check(v.codec_name === 'h264' && profiles.includes(v.profile), `H.264 ${v.profile} (nivel ${v.level / 10})`);
+    if (mp4Mode === 'copy' && vs.nb_frames) {
+      const same = Number(v.nb_frames) === Number(vs.nb_frames);
+      check(same, same
+        ? `mismos fotogramas que el original (${v.nb_frames})`
+        : `${v.nb_frames} fotogramas frente a ${vs.nb_frames} del original: la copia no está completa`);
+    }
   } else {
     check(v.codec_name === 'av1' && v.profile === 'Main' && v.pix_fmt === 'yuv420p10le', `AV1 Main 10 bits (nivel ${v.level})`);
     check(v.level === 8, v.level === 8
@@ -533,10 +668,13 @@ if (withAv1) finals.av1 = await verify(outAv1, 'av1');
 
 // --------------------------------------------------------------------------
 let full = null;
-if (!flag('--rapido')) {
+// Una copia es el original: compararla consigo misma no dice nada
+const toMeasure = { ...(mp4Mode === 'encode' ? { h264: outH264 } : {}), ...(withAv1 ? { av1: outAv1 } : {}) };
+if (!flag('--rapido') && Object.keys(toMeasure).length) {
   step(withAv1 ? 9 : 7, 'Calidad del archivo completo frente al original (1 de cada 5 fotogramas)');
+  if (mp4Mode === 'copy') info('El MP4 es una copia del original: solo se mide el AV1.');
   full = {};
-  for (const [codec, file] of Object.entries(withAv1 ? { h264: outH264, av1: outAv1 } : { h264: outH264 })) {
+  for (const [codec, file] of Object.entries(toMeasure)) {
     const cacheFile = path.join(workDir, `completo_${codec}.json`);
     const fileStat = fs.statSync(file);
     const cached = fs.existsSync(cacheFile) ? JSON.parse(fs.readFileSync(cacheFile, 'utf8')) : null;
@@ -558,15 +696,24 @@ if (!flag('--rapido')) {
 let av1Verdict = null;
 if (withAv1) {
   const savings = 1 - finals.av1.size / finals.h264.size;
-  const qualityOk = full ? full.av1.mean >= full.h264.mean - AV1_MAX_VMAF_DROP : true;
+  // Sin un H.264 completo medido (copia), el listón es el del H.264 traducido:
+  // un punto por debajo de la media exigida y el mismo p1.
+  const av1MinMean = VMAF_MIN_MEAN - AV1_MAX_VMAF_DROP;
+  const qualityOk = !full ? true
+    : mp4Mode === 'copy'
+      ? full.av1.mean >= av1MinMean && full.av1.p1 >= VMAF_MIN_P1
+      : full.av1.mean >= full.h264.mean - AV1_MAX_VMAF_DROP;
   const use = savings >= AV1_MIN_SAVINGS && qualityOk;
+  const mp4Name = mp4Mode === 'copy' ? 'el MP4' : 'el H.264';
   av1Verdict = {
     savings, qualityOk, use,
     text: use
-      ? `**Súbelo.** Pesa un ${(savings * 100).toFixed(1)} % menos que el H.264 con la misma calidad.`
+      ? `**Súbelo.** Pesa un ${(savings * 100).toFixed(1)} % menos que ${mp4Name} ${mp4Mode === 'copy' ? 'y cumple el listón de calidad' : 'con la misma calidad'}.`
       : !qualityOk
-        ? `**No lo subas.** Su calidad queda más de ${AV1_MAX_VMAF_DROP} punto VMAF por debajo del H.264.`
-        : `**No compensa.** Solo pesa un ${(savings * 100).toFixed(1)} % menos que el H.264 (el mínimo es ${AV1_MIN_SAVINGS * 100} %). Sube solo el MP4 y deja vacío el campo AV1.`,
+        ? mp4Mode === 'copy'
+          ? `**No lo subas.** Su calidad (VMAF ${full.av1.mean}, p1 ${full.av1.p1}) queda por debajo del listón: media ≥ ${av1MinMean} y p1 ≥ ${VMAF_MIN_P1}.`
+          : `**No lo subas.** Su calidad queda más de ${AV1_MAX_VMAF_DROP} punto VMAF por debajo del H.264.`
+        : `**No compensa.** Solo pesa un ${(savings * 100).toFixed(1)} % menos que ${mp4Name} (el mínimo es ${AV1_MIN_SAVINGS * 100} %). Sube solo el MP4 y deja vacío el campo AV1.`,
   };
 }
 
@@ -606,21 +753,21 @@ ${windows.map((w) => `| ${w.kind} | ${fmtClock(w.start)}–${fmtClock(w.start + 
 ${testRows}
 
 - **H.264: CRF ${h264Crf}**, ${h264Fallback ? `el de más calidad probado: ninguno cumplió VMAF media ≥ ${VMAF_MIN_MEAN} y p1 ≥ ${VMAF_MIN_P1} en todos los fragmentos (ver avisos).` : `el de menos peso que cumple VMAF media ≥ ${VMAF_MIN_MEAN} y p1 ≥ ${VMAF_MIN_P1} en todos los fragmentos.`}
-${withAv1 ? `- **AV1: CRF ${av1Crf}**, el de menos peso que queda a ±${AV1_MAX_VMAF_DROP} punto VMAF del H.264 en cada fragmento (p1 ≥ ${VMAF_MIN_P1}).\n` : ''}
+- ${mp4Text}
+${withAv1 ? `- **AV1: CRF ${av1Crf}**, el de menos peso que queda a ±${AV1_MAX_VMAF_DROP} punto VMAF del H.264 CRF ${h264Crf} en cada fragmento (p1 ≥ ${VMAF_MIN_P1}).\n` : ''}
 ## Resultado
 
 | Versión | Archivo | Tamaño | Vídeo | VMAF media | VMAF p1 | PSNR-Y |
 |---|---|---|---|---|---|---|
 | Original | \`${path.basename(input)}\` | ${fmtMB(sourceStat.size)} | ${Math.round(Number(vs.bit_rate || 0) / 1000)} kb/s | — | — | — |
-${row('H.264', outH264, full?.h264, finals.h264.size, finals.h264.vkbps)}
+${row(mp4Mode === 'copy' ? 'H.264 (copia del original)' : 'H.264', outH264, full?.h264, finals.h264.size, finals.h264.vkbps)}
 ${withAv1 ? row('AV1', outAv1, full?.av1, finals.av1.size, finals.av1.vkbps) : ''}
 
-- Ahorro H.264 frente al original: **${((1 - finals.h264.size / sourceStat.size) * 100).toFixed(1)} %**
-${withAv1 ? `- Ahorro AV1 frente al original: **${((1 - finals.av1.size / sourceStat.size) * 100).toFixed(1)} %**
-- Ahorro AV1 frente al H.264: **${(av1Verdict.savings * 100).toFixed(1)} %**
+${mp4Mode === 'copy' ? '' : `- Ahorro H.264 frente al original: **${((1 - finals.h264.size / sourceStat.size) * 100).toFixed(1)} %**\n`}${withAv1 ? `- Ahorro AV1 frente al original: **${((1 - finals.av1.size / sourceStat.size) * 100).toFixed(1)} %**
+- Ahorro AV1 frente al ${mp4Mode === 'copy' ? 'MP4' : 'H.264'}: **${(av1Verdict.savings * 100).toFixed(1)} %**
 
 **Versión AV1:** ${av1Verdict.text}
-` : ''}${full ? '' : '\n_Medición del archivo completo omitida (`--rapido`)._\n'}
+` : ''}${full || !flag('--rapido') ? '' : '\n_Medición del archivo completo omitida (`--rapido`)._\n'}
 ## Verificaciones
 
 ${checks.map((k) => `- ${k.ok ? '✓' : '⚠'} ${k.text}`).join('\n')}
@@ -640,9 +787,9 @@ if (!flag('--conservar')) fs.rmSync(workDir, { recursive: true, force: true });
 fs.rmSync(vmafTmp, { recursive: true, force: true });
 
 console.log(`\n${c.bold('Hecho')} en ${fmtDuration(elapsed)}.`);
-info(`${path.basename(outH264)} · ${fmtMB(finals.h264.size)}${full ? ` · VMAF ${full.h264.mean}` : ''}`);
+info(`${path.basename(outH264)} · ${fmtMB(finals.h264.size)}${mp4Mode === 'copy' ? ' · copia del original' : full?.h264 ? ` · VMAF ${full.h264.mean}` : ''}`);
 if (withAv1) {
-  info(`${path.basename(outAv1)} · ${fmtMB(finals.av1.size)}${full ? ` · VMAF ${full.av1.mean}` : ''} · ${(av1Verdict.savings * 100).toFixed(1)} % menos que el H.264`);
+  info(`${path.basename(outAv1)} · ${fmtMB(finals.av1.size)}${full ? ` · VMAF ${full.av1.mean}` : ''} · ${(av1Verdict.savings * 100).toFixed(1)} % menos que ${mp4Mode === 'copy' ? 'el MP4' : 'el H.264'}`);
   info(`AV1: ${av1Verdict.text.replace(/\*\*/g, '')}`);
 }
 info(`Informe: ${outReport}`);

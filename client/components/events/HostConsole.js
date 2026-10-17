@@ -3,7 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import MobileDevicePicker from '@/components/events/MobileDevicePicker'
 import InlineConfirm from '@/components/events/InlineConfirm'
-import { HOST_CONSOLE_COPY, HOST_VIEW_MODES, HOST_VIEW_MODE_LABELS, AGORA_VIDEO_QUALITIES } from '@/lib/constants'
+import StageCoverOptions from '@/components/events/StageCoverOptions'
+import { stageCoverById } from '@/lib/stageCovers'
+import {
+  HOST_CONSOLE_COPY, HOST_VIEW_MODES, HOST_VIEW_MODE_LABELS, AGORA_VIDEO_QUALITIES, STAGE_COVER_COPY,
+} from '@/lib/constants'
 
 const MIC_LEVEL_POLL_MS = 100
 
@@ -40,12 +44,13 @@ export default function HostConsole({
 }) {
   const [showEndConfirm, setShowEndConfirm] = useState(false)
   const [picker, setPicker] = useState(null) // 'audioinput' | 'videoinput' | 'audiooutput'
+  const [coversOpen, setCoversOpen] = useState(false)
 
   const {
     devices, deviceError, isEnding,
     toggleMic, toggleCamera, toggleScreenShare, selectDevice, endEvent,
     screenShareSupported, speakerSelectionSupported,
-    videoQuality, selectVideoQuality,
+    videoQuality, selectVideoQuality, stageCover, selectCover,
   } = hostControls
 
   const handleEndStream = async () => {
@@ -122,6 +127,9 @@ export default function HostConsole({
             disabledReason={HOST_CONSOLE_COPY.screenUnsupported}
             onToggle={toggleScreenShare}
           />
+          {selectCover && (
+            <CoverCard cover={stageCover} onOpen={() => setCoversOpen(true)} />
+          )}
         </div>
       </div>
 
@@ -145,6 +153,18 @@ export default function HostConsole({
         onSelect={picker ? handlePick(picker) : () => {}}
         onClose={() => setPicker(null)}
       />
+
+      {selectCover && (
+        <ConsoleCoverPicker
+          open={coversOpen}
+          cover={stageCover}
+          onSelect={(next) => {
+            selectCover(next)
+            setCoversOpen(false)
+          }}
+          onClose={() => setCoversOpen(false)}
+        />
+      )}
 
       {/* Confirmación PROPIA de la consola, no el ConfirmDialog compartido.
           Aquél usa Headless UI, que renderiza en un portal colgado de
@@ -306,6 +326,69 @@ function ControlCard({ label, active, onToggle, onPickSource, disabled = false, 
           </svg>
         </button>
       )}
+    </div>
+  )
+}
+
+/**
+ * «Portadas» (agora-stage-covers): una tarjeta más de la rejilla, con la
+ * portada en escena como estado. Un toque abre el selector; nunca actúa sola.
+ */
+function CoverCard({ cover, onOpen }) {
+  const active = stageCoverById(cover)
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`flex min-h-[3.5rem] flex-col justify-center rounded-md px-3 py-2 text-left ${active ? 'bg-white/15' : 'bg-gray-800'}`}
+    >
+      <span className="truncate text-sm font-medium text-white">{STAGE_COVER_COPY.menu}</span>
+      <span className={`truncate text-[11px] ${active ? 'text-green-400' : 'text-gray-400'}`}>
+        {active ? active.label : STAGE_COVER_COPY.none}
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Selector de portadas de la consola: hijo directo de la superposición, como
+ * MobileDevicePicker y por la misma razón que InlineConfirm. Un portal a
+ * `document.body` quedaría fuera de la pantalla completa nativa y por debajo
+ * de su `z-[60]`.
+ */
+function ConsoleCoverPicker({ open, cover, onSelect, onClose }) {
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  return (
+    <div
+      className="absolute inset-0 z-30 flex flex-col bg-black/80 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      onClick={onClose}
+    >
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 px-3 py-2">
+          <span className="text-sm font-semibold text-gray-900">{STAGE_COVER_COPY.menu}</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 min-w-11 items-center justify-center rounded-md px-3 text-sm text-gray-600 hover:bg-gray-100"
+          >
+            {HOST_CONSOLE_COPY.close}
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <StageCoverOptions large cover={cover} onSelect={onSelect} />
+        </div>
+      </div>
     </div>
   )
 }
