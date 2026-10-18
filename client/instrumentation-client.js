@@ -38,14 +38,16 @@ Sentry.init({
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
 
-  // --- Ruido de navegadores in-app (Instagram / Facebook en Android) ---
+  // --- Ruido de navegadores in-app (Instagram / Facebook, Android e iOS) ---
   //
   // Estos navegadores inyectan sus propios scripts de telemetría en la página
-  // y los comunican con la app nativa a través del puente JS<->Java del
-  // WebView (`@JavascriptInterface`). Cuando ese puente se rompe —el objeto
-  // Java se ha recolectado, o su método lanza— el script inyectado lanza una
-  // excepción que acaba en `window.onerror` o dentro de un listener que
-  // nuestro SDK envuelve, y Sentry la atribuye a la página que la hospeda.
+  // y los comunican con la app nativa a través de un puente: el JS<->Java del
+  // WebView en Android (`@JavascriptInterface`) y `window.webkit.messageHandlers`
+  // del WKWebView en iOS. Cuando ese puente se rompe —el objeto Java se ha
+  // recolectado, su método lanza, o el manejador de iOS no está registrado— el
+  // script inyectado lanza una excepción que acaba en `window.onerror` o dentro
+  // de un listener que nuestro SDK envuelve, y Sentry la atribuye a la página
+  // que la hospeda.
   //
   // No es un defecto nuestro y no tiene efecto observable para el usuario: lo
   // que falla es la propia instrumentación de Meta, no el render, la
@@ -63,6 +65,22 @@ Sentry.init({
     // 'postMessage' on 'Window': …"— y por eso el patrón va ANCLADO: no debe
     // casar con un error que sólo mencione postMessage por dentro.
     /^Error invoking postMessage:/,
+
+    // "undefined is not an object (evaluating 'window.webkit.messageHandlers')"
+    // "undefined is not an object (evaluating
+    //  'window.webkit.messageHandlers.<nombre>.postMessage')"
+    // El mismo ruido en iOS (visto con Instagram 426 en iOS 18.7). Allí Meta
+    // inyecta su código con `evaluateJavaScript` y WebKit lo atribuye a la URL
+    // de la propia página, línea 1, que el SDK reescribe a `app:///<ruta>`
+    // —tres barras, como nuestros frames—, así que el `denyUrls` de abajo no
+    // puede distinguirlo y hay que filtrar por mensaje. Es seguro porque
+    // JavaScriptCore copia en el mensaje el texto literal de la expresión que
+    // falló, y `webkit.messageHandlers` no aparece ni en el código del cliente
+    // ni en ningún chunk de producción. El patrón empieza en `(evaluating '`
+    // para casar sólo con el TypeError del motor, no con un mensaje que cite el
+    // puente por dentro. Si algún día la web se envuelve en una app iOS propia,
+    // ese puente será nuestro y esta entrada habrá que revisarla.
+    /\(evaluating '(?:window\.)?webkit\.messageHandlers/,
   ],
 
   denyUrls: [
