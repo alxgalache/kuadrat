@@ -14,6 +14,11 @@ services:
       context: ./api
       dockerfile: Dockerfile
     container_name: kuadrat-api-staging
+    # DNS explícito: el resolver interno de OrbStack se cuelga con las consultas AAAA
+    # de algunos hosts (p. ej. Turso → NLB de AWS sin IPv6) y Node/musl devuelve EAI_AGAIN.
+    dns:
+      - 192.168.50.1
+      - 1.1.1.1
     # Bind to localhost only - nginx will handle external traffic
     expose:
       - "3001"
