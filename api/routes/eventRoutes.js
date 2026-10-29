@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const eventController = require('../controllers/eventController');
+const eventIdentityController = require('../controllers/eventIdentityController');
 const { authenticate } = require('../middleware/authorization');
 const { validate } = require('../middleware/validate');
 const { cacheControl } = require('../middleware/cache');
@@ -9,7 +10,7 @@ const { sensitiveLimiter } = require('../middleware/rateLimiter');
 const {
   registerAttendeeSchema, createPaymentSchema, confirmPaymentSchema, getViewerTokenSchema, checkSessionSchema,
   sendVerificationSchema, verifyEmailSchema, verifyPasswordSchema, renewTokenSchema, screenTokenSchema,
-  whiteboardTokenSchema, whiteboardImageSchema,
+  whiteboardTokenSchema, whiteboardImageSchema, identityCompleteSchema,
 } = require('../validators/eventSchemas');
 
 // Multer configuration for whiteboard image uploads (PNG, JPG, WEBP) up to
@@ -37,6 +38,37 @@ router.get('/whiteboard-images/:basename', cacheControl({ maxAge: 86400 }), even
  * Get events by date range (for calendar view)
  */
 router.get('/', eventController.getEvents);
+
+// --- Access with a Google or Microsoft account (event-identity-provider-verification) ---
+// Declared before GET /:slug. `start` and `callback` are top-level navigations:
+// they validate inside the controller and answer only with redirects, never
+// JSON. No secret travels in any of these paths (redactUrl.js needs nothing).
+
+/**
+ * GET /api/events/identity/providers
+ * The providers whose card the access modal shows, in display order.
+ */
+router.get('/identity/providers', cacheControl({ maxAge: 300 }), eventIdentityController.listProviders);
+
+/**
+ * GET /api/events/:id/identity/:provider/start
+ * Sets the flow cookie (state + nonce) and redirects to Google or Microsoft.
+ */
+router.get('/:id/identity/:provider/start', eventIdentityController.start);
+
+/**
+ * POST /api/events/identity/:provider/callback
+ * The provider's form_post (id_token). Issues NO credential: it leaves a
+ * one-time proof and redirects to the event page with #acceso.
+ */
+router.post('/identity/:provider/callback', eventIdentityController.callback);
+
+/**
+ * POST /api/events/:id/identity/complete
+ * Redeems the proof (HttpOnly cookie) through the same verification as the
+ * email code; same response as /verify-email.
+ */
+router.post('/:id/identity/complete', sensitiveLimiter, validate(identityCompleteSchema), eventIdentityController.complete);
 
 /**
  * POST /api/events/:id/video-token

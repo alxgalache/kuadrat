@@ -1899,6 +1899,31 @@ export const eventsAPI = {
     });
   },
 
+  // --- Acceso con Google o Microsoft (event-identity-provider-verification) ---
+
+  // Proveedores activos, en el orden de las tarjetas: { providers: [...] }.
+  identityProviders: async () => {
+    return apiRequest('/events/identity/providers');
+  },
+
+  // URL absoluta de inicio del flujo. No es una petición: la tarjeta navega la
+  // página entera hasta ella (o la abre en el navegador real desde una app).
+  identityStartUrl: (eventId, provider) =>
+    `${API_URL}/events/${encodeURIComponent(eventId)}/identity/${encodeURIComponent(provider)}/start`,
+
+  // Canjea la prueba que la API dejó en la cookie HttpOnly `ev_idp_result`.
+  // `credentials: 'include'` es lo que la envía (140d.art y api.140d.art son el
+  // mismo sitio). Misma respuesta que verifyEmail, más firstName, lastName y
+  // email. Nunca responde 401, pero se marca igual: un fallo de verificación
+  // no debe cerrar la sesión de nadie.
+  completeIdentity: async (eventId) => {
+    return apiRequest(`/events/${eventId}/identity/complete`, {
+      method: 'POST',
+      credentials: 'include',
+      skipAuthHandling: true,
+    });
+  },
+
   verifyPassword: async (eventId, email, password) => {
     return apiRequest(`/events/${eventId}/verify-password`, {
       method: 'POST',

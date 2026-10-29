@@ -602,6 +602,62 @@ config.eventVideoCdn = (() => {
   }
 })();
 
+// --- Event access with Google / Microsoft (change: event-identity-provider-verification) ---
+// Each provider is enabled by its PUBLIC client id alone: no secret exists in
+// this design (OpenID Connect `id_token` + `form_post`, verified against the
+// provider's JWKS). One variable per provider means there is no half-configured
+// state; a malformed id fails startup, because a typo would otherwise surface
+// as an opaque error on Google's or Microsoft's screen in front of an attendee.
+//
+// The callback base is separate from SITE_API_BASE_URL on purpose: that one
+// defaults to preproduction even in local development (it feeds the links in
+// emails), and a local sign-in would come back to the preproduction API, which
+// does not hold the flow cookie. Locally it is http://localhost:3001.
+const GOOGLE_CLIENT_ID_PATTERN = /^[A-Za-z0-9-]+\.apps\.googleusercontent\.com$/;
+const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function resolveEventIdentity(env) {
+  const googleClientId = (env.GOOGLE_OIDC_CLIENT_ID || '').trim();
+  const microsoftClientId = (env.MICROSOFT_OIDC_CLIENT_ID || '').trim();
+  const rawBase = (env.IDENTITY_CALLBACK_BASE_URL || env.SITE_API_BASE_URL || 'https://api.pre.140d.art').trim();
+
+  if (googleClientId && !GOOGLE_CLIENT_ID_PATTERN.test(googleClientId)) {
+    throw new Error('GOOGLE_OIDC_CLIENT_ID must be a Google OAuth client id ending in .apps.googleusercontent.com');
+  }
+  if (microsoftClientId && !GUID_PATTERN.test(microsoftClientId)) {
+    throw new Error('MICROSOFT_OIDC_CLIENT_ID must be the Microsoft application (client) id, a GUID');
+  }
+
+  const callbackBaseUrl = rawBase.replace(/\/+$/, '');
+  if (googleClientId || microsoftClientId) {
+    let parsed;
+    try {
+      parsed = new URL(callbackBaseUrl);
+    } catch {
+      throw new Error(`IDENTITY_CALLBACK_BASE_URL is not a valid URL: "${rawBase}"`);
+    }
+    const isLocal = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+    if (parsed.protocol !== 'https:' && !(isLocal && parsed.protocol === 'http:')) {
+      throw new Error(`IDENTITY_CALLBACK_BASE_URL must be https (http only for localhost), got "${rawBase}"`);
+    }
+  }
+
+  return {
+    google: { clientId: googleClientId },
+    microsoft: { clientId: microsoftClientId },
+    callbackBaseUrl,
+  };
+}
+
+config.eventIdentity = (() => {
+  try {
+    return resolveEventIdentity(process.env);
+  } catch (err) {
+    console.error(`[ENV] ${err.message}`);
+    process.exit(1);
+  }
+})();
+
 /**
  * Returns the list of env var names that must be set before a fiscal export
  * can be generated (Change #4: stripe-connect-fiscal-report). Empty array
@@ -622,3 +678,4 @@ function assertBusinessConfigComplete() {
 module.exports = config;
 module.exports.assertBusinessConfigComplete = assertBusinessConfigComplete;
 module.exports.resolveEventVideoCdn = resolveEventVideoCdn;
+module.exports.resolveEventIdentity = resolveEventIdentity;

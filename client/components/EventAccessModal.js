@@ -7,12 +7,15 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import { eventsAPI } from '@/lib/api'
 import { getStripePromise, prefetchStripe } from '@/lib/stripe'
 import { storeSession } from '@/lib/eventSession'
-import { ACCESS_VERIFICATION_ERRORS } from '@/lib/constants'
+import { ACCESS_VERIFICATION_ERRORS, EVENT_VERIFICATION_COPY } from '@/lib/constants'
+import EventVerificationMethods from '@/components/EventVerificationMethods'
 
 const PHASE = {
   CHOOSE: 'choose',
+  METHOD: 'method',
   REGISTER: 'register',
   VERIFY_EMAIL: 'verify_email',
+  COMPLETING: 'completing',
   VERIFY_PASSWORD: 'verify_password',
   PAYMENT: 'payment',
   SUCCESS: 'success',
@@ -20,20 +23,48 @@ const PHASE = {
 
 /**
  * Modal for registering to access an event.
- * Flow: CHOOSE -> REGISTER -> VERIFY_EMAIL -> PAYMENT (paid) -> SUCCESS
+ * Flow: CHOOSE -> METHOD -> REGISTER -> VERIFY_EMAIL -> PAYMENT (paid) -> SUCCESS
+ *   or: CHOOSE -> METHOD -> (Google / Microsoft, full-page) … back with #acceso
+ *       -> COMPLETING -> PAYMENT (paid) -> SUCCESS
  *   or: CHOOSE -> VERIFY_PASSWORD -> direct access
  *
+ * METHOD (event-identity-provider-verification) holds the terms checkbox for
+ * all three methods. A provider return reopens the modal through `resume`
+ * (read by EventDetail from the URL fragment): COMPLETING redeems the proof the
+ * API left in an HttpOnly cookie, through the same verification as the code.
+ *
  * The session is written to localStorage ONLY once access is actually granted
- * — after verify-email for a free event, after confirm-payment for a paid one,
- * after verify-password. /register issues no credential: the access token is
- * born in verify-email (enforce-verification-gates). Storing anything earlier
- * is what made a reload during VERIFY_EMAIL read as «Ya tienes acceso».
+ * — after verify-email or identity/complete for a free event, after
+ * confirm-payment for a paid one, after verify-password. /register issues no
+ * credential: the access token is born in the verification (enforce-
+ * verification-gates). Storing anything earlier is what made a reload during
+ * VERIFY_EMAIL read as «Ya tienes acceso».
  */
+
+// The enabled providers, fetched once per page and shared by every opening.
+// A failure is not cached: the next opening asks again.
+let providersPromise = null
+function loadIdentityProviders() {
+  if (!providersPromise) {
+    providersPromise = eventsAPI.identityProviders()
+      .then((data) => (Array.isArray(data?.providers) ? data.providers : []))
+      .catch(() => {
+        providersPromise = null
+        return []
+      })
+  }
+  return providersPromise
+}
 
 /** es-ES text for an API error, by the machine code the API puts in `title`. */
 const errorText = (err, fallback) =>
   ACCESS_VERIFICATION_ERRORS[err?.title] || err?.message || fallback
-export default function EventAccessModal({ isOpen, onClose, event, onAccessGranted }) {
+/**
+ * @param {{ kind: 'complete' } | { kind: 'error', code: string } | { kind: 'open' } | null} resume
+ *   how to open after a Google / Microsoft return or a copied #acceder link
+ *   (client/lib/eventAccessFragment.js); null opens on CHOOSE as always.
+ */
+export default function EventAccessModal({ isOpen, onClose, event, onAccessGranted, resume = null }) {
   const [phase, setPhase] = useState(PHASE.CHOOSE)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -41,6 +72,14 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
+  // Informational line over the email form (not an error): a provider account
+  // whose mailbox the provider does not own falls back to the code.
+  const [registerNotice, setRegisterNotice] = useState('')
+  // The verified address, shown on PAYMENT and SUCCESS: with several methods,
+  // the attendee may not know which email Google or Microsoft used.
+  const [verifiedEmail, setVerifiedEmail] = useState('')
+  const [providers, setProviders] = useState(null)
+  const completionStartedRef = useRef(false)
 
   const [attendeeId, setAttendeeId] = useState(null)
   const [accessToken, setAccessToken] = useState(null)
@@ -69,7 +108,16 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
     if (isOpen) prefetchStripe()
   }, [isOpen])
 
-  // Reset when modal opens
+  // The verification methods, asked for as soon as the modal opens: by the
+  // time «Registrarme en el evento» is pressed they are usually there.
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    loadIdentityProviders().then((list) => { if (!cancelled) setProviders(list) })
+    return () => { cancelled = true }
+  }, [isOpen])
+
+  // Reset when modal opens — on CHOOSE, or where a provider return says.
   useEffect(() => {
     if (isOpen) {
       setPhase(PHASE.CHOOSE)
@@ -79,6 +127,8 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
       setError('')
       setLoading(false)
       setTermsAccepted(false)
+      setRegisterNotice('')
+      setVerifiedEmail('')
       setClientSecret(null)
       setAttendeeId(null)
       setAccessToken(null)
@@ -88,11 +138,41 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
       setOtpNotice('')
       setVerifyEmail('')
       setVerifyPasswordValue('')
+      completionStartedRef.current = false
+
+      // After #acceso or #acceso-error the terms count as accepted: the flow
+      // only starts from a card with the checkbox ticked. #acceder does not.
+      if (resume?.kind === 'complete') {
+        setTermsAccepted(true)
+        setPhase(PHASE.COMPLETING)
+      } else if (resume?.kind === 'error') {
+        const text = ACCESS_VERIFICATION_ERRORS[resume.code] || ACCESS_VERIFICATION_ERRORS.IDENTITY_FAILED
+        setTermsAccepted(true)
+        if (resume.code === 'IDENTITY_EMAIL_UNTRUSTED') {
+          setRegisterNotice(text)
+          setPhase(PHASE.REGISTER)
+        } else {
+          setError(text)
+          setPhase(PHASE.METHOD)
+        }
+      } else if (resume?.kind === 'open') {
+        setPhase(PHASE.METHOD)
+      }
     }
     return () => {
       if (resendTimerRef.current) clearTimeout(resendTimerRef.current)
     }
-  }, [isOpen])
+  }, [isOpen, resume])
+
+  // COMPLETING redeems the proof exactly once. The ref, not the phase, is the
+  // guard: StrictMode runs effects twice, and a second call would find the
+  // cookie already spent and overwrite a success with IDENTITY_PROOF_INVALID.
+  useEffect(() => {
+    if (!isOpen || phase !== PHASE.COMPLETING || completionStartedRef.current) return
+    completionStartedRef.current = true
+    handleCompleteIdentity()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, phase])
 
   const handleRegister = async () => {
     if (!firstName.trim() || !lastName.trim() || !email.trim()) {
@@ -100,8 +180,9 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
       return
     }
 
+    // Accepted in METHOD, the only way into this form; kept as a guard.
     if (!termsAccepted) {
-      setError('Debes aceptar las normas de participación')
+      setError(EVENT_VERIFICATION_COPY.termsRequired)
       return
     }
 
@@ -148,29 +229,55 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
 
   const nameInfo = () => ({ firstName: firstName.trim(), lastName: lastName.trim() })
 
+  // What follows a proven mailbox, by code or by provider: the two answer the
+  // same shape (the API shares one success branch).
+  const finishVerification = async (data, names) => {
+    setVerifiedEmail(data.email || email.trim().toLowerCase())
+    if (data.paymentRequired) {
+      // Keep the token in memory only: storing it now would claim access
+      // before the payment. It is written once confirm-payment succeeds.
+      setAccessToken(data.accessToken)
+      const payData = await eventsAPI.pay(event.id, data.attendeeId)
+      setClientSecret(payData.clientSecret)
+      setPhase(PHASE.PAYMENT)
+    } else {
+      storeSession(event.id, { attendeeId: data.attendeeId, accessToken: data.accessToken, ...names })
+      if (data.accessPassword) {
+        setSavedPassword(data.accessPassword)
+      }
+      onAccessGranted?.({ attendeeId: data.attendeeId, accessToken: data.accessToken })
+      setPhase(PHASE.SUCCESS)
+    }
+  }
+
   const handleVerifyOtp = async () => {
     setError('')
     setLoading(true)
     try {
       const data = await eventsAPI.verifyEmail(event.id, attendeeId, otpCode)
-
-      if (data.paymentRequired) {
-        // Keep the token in memory only: storing it now would claim access
-        // before the payment. It is written once confirm-payment succeeds.
-        setAccessToken(data.accessToken)
-        const payData = await eventsAPI.pay(event.id, attendeeId)
-        setClientSecret(payData.clientSecret)
-        setPhase(PHASE.PAYMENT)
-      } else {
-        storeSession(event.id, { attendeeId, accessToken: data.accessToken, ...nameInfo() })
-        if (data.accessPassword) {
-          setSavedPassword(data.accessPassword)
-        }
-        onAccessGranted?.({ attendeeId, accessToken: data.accessToken })
-        setPhase(PHASE.SUCCESS)
-      }
+      await finishVerification({ ...data, attendeeId }, nameInfo())
     } catch (err) {
       setError(errorText(err, 'Error al verificar código'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Back from Google or Microsoft: the proof is in an HttpOnly cookie the
+  // browser sends to identity/complete. The modal never saw the names or the
+  // email, so they come in the response.
+  const handleCompleteIdentity = async () => {
+    setError('')
+    setLoading(true)
+    try {
+      const data = await eventsAPI.completeIdentity(event.id)
+      setAttendeeId(data.attendeeId)
+      setFirstName(data.firstName || '')
+      setLastName(data.lastName || '')
+      await finishVerification(data, { firstName: data.firstName || '', lastName: data.lastName || '' })
+    } catch (err) {
+      setError(errorText(err, ACCESS_VERIFICATION_ERRORS.IDENTITY_FAILED))
+      setPhase(PHASE.METHOD)
     } finally {
       setLoading(false)
     }
@@ -232,6 +339,8 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
     setEmail('')
     setError('')
     setTermsAccepted(false)
+    setRegisterNotice('')
+    setVerifiedEmail('')
     setClientSecret(null)
     setSavedPassword(null)
     setOtpCode('')
@@ -250,7 +359,7 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
       <p className="text-sm text-gray-600">Selecciona una opción para continuar:</p>
       <button
         type="button"
-        onClick={() => { setError(''); setPhase(PHASE.REGISTER) }}
+        onClick={() => { setError(''); setPhase(PHASE.METHOD) }}
         className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700"
       >
         Registrarme en el evento
@@ -265,7 +374,8 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
     </div>
   )
 
-  const renderRegister = () => (
+  // Choose how to prove the email (event-identity-provider-verification).
+  const renderMethod = () => (
     <div className="space-y-4">
       <button
         type="button"
@@ -274,6 +384,44 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
       >
         <ArrowLeftIcon className="h-4 w-4" /> Volver
       </button>
+      {isPaid && (
+        <p className="text-sm text-gray-600">
+          El precio de este evento es {event.price} {event.currency}.
+        </p>
+      )}
+      <EventVerificationMethods
+        event={event}
+        providers={providers}
+        termsAccepted={termsAccepted}
+        onTermsAcceptedChange={(checked) => { setTermsAccepted(checked); if (checked) setError('') }}
+        onSelectEmail={() => { setError(''); setRegisterNotice(''); setPhase(PHASE.REGISTER) }}
+        error={error}
+        onError={setError}
+      />
+    </div>
+  )
+
+  // Back from Google or Microsoft, while identity/complete answers.
+  const renderCompleting = () => (
+    <div className="flex items-center justify-center py-8">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+      <span className="ml-2 text-sm text-gray-600">{EVENT_VERIFICATION_COPY.completing}</span>
+    </div>
+  )
+
+  // The email form. The terms were accepted in METHOD, so no checkbox here.
+  const renderRegister = () => (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={() => { setError(''); setRegisterNotice(''); setPhase(PHASE.METHOD) }}
+        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900"
+      >
+        <ArrowLeftIcon className="h-4 w-4" /> Volver
+      </button>
+      {registerNotice && (
+        <p className="rounded-md bg-gray-50 p-3 text-sm text-gray-700">{registerNotice}</p>
+      )}
       <p className="text-sm text-gray-600">
         {isPaid
           ? `Introduce tus datos para acceder a este evento. El precio es ${event.price} ${event.currency}.`
@@ -318,36 +466,6 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
           onChange={(e) => setEmail(e.target.value)}
           className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm sm:text-sm"
         />
-      </div>
-
-      <div className="flex items-start gap-x-2">
-        <input
-          type="checkbox"
-          id="termsAccepted"
-          checked={termsAccepted}
-          onChange={(e) => setTermsAccepted(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
-        />
-        <label htmlFor="termsAccepted" className="text-sm text-gray-600">
-          Acepto las{' '}
-          <a
-            href="/legal/normas-eventos"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-gray-900 underline hover:text-gray-700"
-          >
-            normas y términos para la participación en eventos en directo
-          </a>{' '}
-          y la{' '}
-          <a
-            href="/legal/politica-de-privacidad"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-gray-900 underline hover:text-gray-700"
-          >
-            política de privacidad
-          </a>
-        </label>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -461,6 +579,11 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
         <p className="text-sm text-gray-600">
           Completa el pago de {event.price} {event.currency} para acceder al evento.
         </p>
+        {verifiedEmail && (
+          <p className="text-sm text-gray-600">
+            {EVENT_VERIFICATION_COPY.payingAs} <strong>{verifiedEmail}</strong>
+          </p>
+        )}
         <Elements stripe={getStripePromise()} options={{ clientSecret, locale: 'es' }}>
           <StripeEventPayment
             eventId={event.id}
@@ -487,6 +610,11 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
       <p className="text-sm text-gray-600">
         Ya puedes acceder al evento cuando comience.
       </p>
+      {verifiedEmail && (
+        <p className="text-sm text-gray-600">
+          {EVENT_VERIFICATION_COPY.registeredAs} <strong>{verifiedEmail}</strong>
+        </p>
+      )}
       {savedPassword && (
         <div className="rounded-lg border-2 border-gray-900 bg-gray-50 p-4 text-left">
           <p className="text-sm font-semibold text-gray-900">Guarda esta contraseña</p>
@@ -510,8 +638,10 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
 
   const titles = {
     [PHASE.CHOOSE]: event?.status === 'active' ? 'Acceder al evento' : 'Registro en el evento',
+    [PHASE.METHOD]: 'Registro',
     [PHASE.REGISTER]: 'Registro',
     [PHASE.VERIFY_EMAIL]: 'Verificar email',
+    [PHASE.COMPLETING]: 'Registro',
     [PHASE.VERIFY_PASSWORD]: 'Acceder con contraseña',
     [PHASE.PAYMENT]: 'Pago',
     [PHASE.SUCCESS]: isPaid ? 'Pago completado' : 'Registro completado',
@@ -519,8 +649,10 @@ export default function EventAccessModal({ isOpen, onClose, event, onAccessGrant
 
   const renderContent = {
     [PHASE.CHOOSE]: renderChoose,
+    [PHASE.METHOD]: renderMethod,
     [PHASE.REGISTER]: renderRegister,
     [PHASE.VERIFY_EMAIL]: renderVerifyEmail,
+    [PHASE.COMPLETING]: renderCompleting,
     [PHASE.VERIFY_PASSWORD]: renderVerifyPassword,
     [PHASE.PAYMENT]: renderPayment,
     [PHASE.SUCCESS]: renderSuccess,

@@ -11,18 +11,38 @@ asistente se queda sin acceso. Decisiones y motivos:
 ## 1. El flujo del asistente
 
 ```
-«Acceder» ─▶ Registrarme ─▶ nombre + email ─▶ código por email ─▶ ¿de pago?
-                                                                    │
-                                              no ───────────────────┤
-                                                                    ▼
-                                                         «Registro completado»
-                                                         + contraseña de acceso
-                                              sí ─▶ pago ─▶ «Pago completado»
-                                                            + contraseña
+«Acceder» ─▶ Registrarme ─▶ Elige cómo confirmar tu email (+ casilla de normas)
+                 │
+                 ├─ Continuar con Google ─────┐  (página de Google o Microsoft,
+                 ├─ Continuar con Microsoft ──┤   vuelta a la ficha y
+                 │                            │   «Confirmando tu acceso…»)
+                 └─ Código por email ─▶ nombre + email ─▶ código ─┤
+                                                                 ▼
+                                                             ¿de pago?
+                                              no ─▶ «Registro completado» + contraseña
+                                              sí ─▶ pago ─▶ «Pago completado» + contraseña
 «Acceder» ─▶ Acceder con contraseña ─▶ email + contraseña ─▶ acceso
 ```
 
-- **El acceso nace al verificar el código**, nunca antes. Si el asistente
+- **Tres formas de confirmar el email, un solo final.** Con Google o Microsoft
+  el asistente no escribe nada: el nombre, el apellido y el email salen de su
+  cuenta. Después todo es igual que con el código (plaza, contraseña, email de
+  confirmación y pago). Solo pasan sin código las cuentas cuyo buzón gestiona
+  el propio proveedor:
+  - Gmail y Google Workspace;
+  - cuentas personales de Microsoft con email de Outlook, Hotmail, Live o MSN.
+
+  Cualquier otra cae al formulario del código, con un aviso. Configuración y
+  pruebas: [`docs/verificacion-proveedores/`](verificacion-proveedores/README.md).
+- **Desde Instagram o Facebook, la tarjeta de Google abre el navegador del
+  móvil**, porque Google no deja iniciar sesión dentro de esas apps. El
+  registro termina allí, y allí queda la sesión. Si la app no deja salir, la
+  tarjeta explica cómo abrir el navegador y ofrece «Copiar enlace». Microsoft y
+  el código funcionan dentro de la app.
+- **Con un email distinto en cada método, son dos asistentes**: Gmail un día y
+  Outlook otro ocupan dos plazas y, en un evento de pago, cobran dos veces. Por
+  eso el pago dice «Pagarás como <email>».
+- **El acceso nace al verificar**, con el código o con Google o Microsoft, nunca antes. Si el asistente
   recarga la página o cierra el modal en el paso del código, vuelve a ver
   «Acceder»: no tiene acceso ni ocupa plaza.
 - **Volver a registrarse con el mismo email** es la forma de recuperar el acceso

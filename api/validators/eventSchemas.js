@@ -336,6 +336,52 @@ const checkSessionSchema = z.object({
   }).strip(),
 });
 
+// --- Event access with Google / Microsoft (change: event-identity-provider-verification) ---
+const IDENTITY_PROVIDERS = ['google', 'microsoft'];
+
+/**
+ * GET /api/events/:id/identity/:provider/start
+ *
+ * A top-level navigation: a validation failure must never answer JSON in the
+ * attendee's browser. The controller runs this with safeParse and redirects
+ * with IDENTITY_FAILED instead of going through validate().
+ */
+const identityStartSchema = z.object({
+  params: z.object({
+    id: z.string().min(1).max(100),
+    provider: z.enum(IDENTITY_PROVIDERS),
+  }),
+});
+
+/**
+ * POST /api/events/identity/:provider/callback — the provider's form_post.
+ * Same rule as the start: safeParse in the controller, redirect on failure.
+ * `state` is optional here because its absence is answered as
+ * IDENTITY_SESSION_LOST, not as a validation error.
+ */
+const identityCallbackSchema = z.object({
+  params: z.object({
+    provider: z.enum(IDENTITY_PROVIDERS),
+  }),
+  body: z.object({
+    state: z.string().max(400).optional(),
+    id_token: z.string().max(20000).optional(),
+    error: z.string().max(200).optional(),
+    error_description: z.string().max(2000).optional(),
+  }).strip(),
+});
+
+/**
+ * POST /api/events/:id/identity/complete — the proof travels in the HttpOnly
+ * cookie ev_idp_result, never in the body.
+ */
+const identityCompleteSchema = z.object({
+  params: z.object({
+    id: z.string().min(1).max(100),
+  }),
+  body: z.object({}).strip().optional(),
+});
+
 /**
  * POST /api/events/:id/verify-password
  */
@@ -414,6 +460,9 @@ module.exports = {
   verifyEmailSchema,
   verifyPasswordSchema,
   checkSessionSchema,
+  identityStartSchema,
+  identityCallbackSchema,
+  identityCompleteSchema,
   markEventFinishedSchema,
   excludeEventCreditSchema,
   eventRecordingsSchema,

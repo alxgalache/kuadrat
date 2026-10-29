@@ -4,6 +4,8 @@ require('dotenv').config();
 // Import with `import * as Sentry from "@sentry/node"` if using ESM
 const Sentry = require('@sentry/node');
 const { nodeProfilingIntegration } = require('@sentry/profiling-node');
+// Pure and dependency-free: safe to load ahead of config/env.js (see below).
+const { scrubIdentityRequest } = require('./utils/sentryIdentityScrub');
 
 // This file reads process.env directly instead of requiring config/env.js, and
 // that is deliberate. It is loaded on the FIRST line of app.js so the
@@ -46,6 +48,12 @@ if (!isTest) {
 
         // Send default PII
         sendDefaultPii: true,
+
+        // ...except on the event identity routes, whose cookies and body carry
+        // a Google/Microsoft id_token and a one-time access proof
+        // (event-identity-provider-verification). See utils/sentryIdentityScrub.js.
+        beforeSend: scrubIdentityRequest,
+        beforeSendTransaction: scrubIdentityRequest,
 
         environment: process.env.NODE_ENV,
 

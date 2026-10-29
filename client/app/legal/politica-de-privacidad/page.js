@@ -29,7 +29,7 @@ export default function PrivacyPolicyPage() {
           Política de Privacidad
         </h1>
         <p className="mt-2 text-sm text-gray-500">
-          Última actualización: Septiembre 2026
+          Última actualización: Octubre 2026
         </p>
 
         <div className="mt-10 space-y-8 text-sm leading-7 text-gray-700">
@@ -106,8 +106,51 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
 
+          <section id="registro-en-eventos" className="scroll-mt-24">
+            <h2 className="text-lg font-semibold text-gray-900">7. Registro en Eventos en Directo</h2>
+            <p className="mt-3">
+              Para acceder a un evento en directo te registras con tu nombre, tus apellidos y tu dirección
+              de correo electrónico, y confirmas que ese email es tuyo de una de estas dos formas:
+            </p>
+            <ul className="mt-3 list-disc pl-5 space-y-1">
+              <li>
+                <strong>Con un código</strong> que te enviamos por email.
+              </li>
+              <li>
+                <strong>Con tu cuenta de Google o de Microsoft</strong> (en Microsoft, solo cuentas
+                personales). Al iniciar sesión, el proveedor nos envía un comprobante con tu nombre, tu
+                email y un identificador interno de tu cuenta; Google incluye además la dirección de tu
+                foto de perfil. Solo lo usamos para confirmar tu email: guardamos tu nombre y tu email,
+                y descartamos el resto. No guardamos ese
+                identificador, ni tu foto, ni el comprobante, ni qué proveedor usaste, y no creamos
+                ninguna cuenta en 140d. Google o Microsoft saben que has usado tu cuenta para acceder a
+                140d, conforme a sus propias políticas de privacidad.
+              </li>
+            </ul>
+            <p className="mt-3">Además de tu nombre y tu email, guardamos:</p>
+            <ul className="mt-3 list-disc pl-5 space-y-1">
+              <li>
+                la dirección IP desde la que te registras y confirmas tu email, para aplicar las
+                expulsiones previstas en las normas de los eventos;
+              </li>
+              <li>la contraseña de acceso al evento que te enviamos por email;</li>
+              <li>en los eventos de pago, la referencia del pago, que procesa Stripe.</li>
+            </ul>
+            <p className="mt-3">
+              Durante la verificación con Google o Microsoft usamos dos cookies técnicas en el dominio de
+              nuestro servidor (api.140d.art), que duran como máximo 10 minutos y se borran al terminar:
+              una relaciona la vuelta del proveedor con el navegador que la inició y la otra entrega el
+              resultado de la verificación. Son estrictamente necesarias para el servicio que solicitas
+              y no requieren tu consentimiento.
+            </p>
+            <p className="mt-3">
+              La finalidad es gestionar tu acceso y tu participación en el evento, y la base legal es la
+              prestación del servicio que solicitas al registrarte.
+            </p>
+          </section>
+
           <section id="grabacion-de-eventos" className="scroll-mt-24">
-            <h2 className="text-lg font-semibold text-gray-900">7. Grabación de Eventos en Directo</h2>
+            <h2 className="text-lg font-semibold text-gray-900">8. Grabación de Eventos en Directo</h2>
             <p className="mt-3">
               Los eventos en directo de 140d pueden grabarse. Te informamos de ello en esta política,
               que aceptas al registrarte en un evento; no se muestra un aviso distinto en cada evento.
@@ -149,7 +192,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">8. Tus Derechos</h2>
+            <h2 className="text-lg font-semibold text-gray-900">9. Tus Derechos</h2>
             <p className="mt-3">
               De conformidad con el Reglamento General de Protección de Datos (RGPD), tienes derecho a:
             </p>
@@ -167,7 +210,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">9. Cookies</h2>
+            <h2 className="text-lg font-semibold text-gray-900">10. Cookies</h2>
             <p className="mt-3">
               Nuestro sitio web utiliza cookies técnicas necesarias para el funcionamiento de la plataforma, y cookies
               para la gestión de métricas y analíticas de publicidad (Meta).
@@ -175,7 +218,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900">10. Modificaciones</h2>
+            <h2 className="text-lg font-semibold text-gray-900">11. Modificaciones</h2>
             <p className="mt-3">
               Nos reservamos el derecho de actualizar esta política de privacidad en cualquier momento.
               Cualquier cambio será publicado en esta página con la fecha de la última actualización.

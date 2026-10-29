@@ -807,6 +807,40 @@ async function verifyEmailCode(eventId, attendeeId, code) {
   return { valid: true, attendee: await getAttendeeById(attendeeId), accessToken };
 }
 
+/**
+ * The Google / Microsoft half of the email proof (change: event-identity-
+ * provider-verification). The provider has just vouched for the mailbox, so
+ * instead of mailing a code this writes a random one-time proof into the SAME
+ * columns the code uses. The browser then redeems it through verifyEmailCode
+ * (POST /identity/complete): the credential is still born in that one guarded
+ * UPDATE, with its capacity check, and nowhere else.
+ *
+ * In the same statement, an UNVERIFIED row takes the provider's names: someone
+ * else may have created it by typing this email. A verified row keeps its own.
+ * verification_sent_at is not touched (the 30 s cooldown measures emails only)
+ * and nothing filters is_staff, exactly like verifyEmailCode: an admin who
+ * verifies with Google behaves as if they had used the code.
+ *
+ * @returns {Promise<string|null>} the proof in clear (it travels only in an
+ *   HttpOnly cookie), or null when the row is not in this event.
+ */
+async function issueProviderProof(eventId, attendeeId, { first_name, last_name }) {
+  const proof = emailOtp.generateOpaqueToken();
+  const expiresAt = new Date(Date.now() + emailOtp.OTP_TTL_MS).toISOString();
+
+  const update = await db.execute({
+    sql: `UPDATE event_attendees
+          SET verification_code_hash = ?, verification_code_expires_at = ?,
+              verification_attempts = 0,
+              first_name = CASE WHEN email_verified = 1 THEN first_name ELSE ? END,
+              last_name = CASE WHEN email_verified = 1 THEN last_name ELSE ? END
+          WHERE id = ? AND event_id = ?`,
+    args: [emailOtp.sha256(proof), expiresAt, first_name, last_name, attendeeId, eventId],
+  });
+
+  return update.rowsAffected > 0 ? proof : null;
+}
+
 // ---------------------------------------------------------------------------
 // Password Access
 // ---------------------------------------------------------------------------
@@ -957,6 +991,7 @@ module.exports = {
   generateEventPassword,
   sendVerificationCode,
   verifyEmailCode,
+  issueProviderProof,
   verifyAttendeePassword,
   setAttendeePassword,
   // 48 h reminder

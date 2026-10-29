@@ -35,6 +35,7 @@ import {
   VIDEO_ROOM_DEFINITIVE_DENIALS,
 } from '@/lib/constants'
 import { getStoredSession, storeSession, clearStoredSession } from '@/lib/eventSession'
+import { readAccessFragment } from '@/lib/eventAccessFragment'
 import { pickVideoSource } from '@/lib/eventVideoSource'
 import { eventDetailImageUrl } from '@/lib/eventImages'
 
@@ -120,6 +121,10 @@ export default function EventDetail({
   const [error, setError] = useState('')
 
   const [modalOpen, setModalOpen] = useState(false)
+  // How the access modal reopens after a Google / Microsoft return or a copied
+  // #acceder link (event-identity-provider-verification); null = from CHOOSE.
+  const [accessResume, setAccessResume] = useState(null)
+  const accessFragmentReadRef = useRef(false)
   const [hasAccess, setHasAccess] = useState(false)
   // A session stored in this browser is only a claim until the server
   // confirms it (POST /session): while it is being checked the access section
@@ -401,6 +406,21 @@ export default function EventDetail({
     validateStoredSession()
   }, [validateStoredSession])
 
+  // Back from Google or Microsoft (#acceso, #acceso-error=…) or from a link
+  // copied in an app's browser (#acceder): open the modal where it says. The
+  // fragment is read once and removed (client/lib/eventAccessFragment.js), so
+  // a reload does not reopen it. #acceder is ignored when this browser already
+  // holds a session: the session check above decides what to show.
+  useEffect(() => {
+    if (!event?.id || accessFragmentReadRef.current) return
+    accessFragmentReadRef.current = true
+    const fragment = readAccessFragment()
+    if (!fragment) return
+    if (fragment.kind === 'open' && getStoredSession(event.id)) return
+    setAccessResume(fragment)
+    setModalOpen(true)
+  }, [event?.id])
+
   // Check if current user is the host
   useEffect(() => {
     if (!event) return
@@ -426,6 +446,7 @@ export default function EventDetail({
     setSessionNotice('')
     setHasAccess(true)
     setModalOpen(false)
+    setAccessResume(null)
     // If event is active and live format, connect to LiveKit immediately
     if (event.status === 'active' && event.format !== 'video') {
       connectAsViewer()
@@ -593,9 +614,10 @@ export default function EventDetail({
     <>
       <EventAccessModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { setModalOpen(false); setAccessResume(null) }}
         event={event}
         onAccessGranted={handleAccessGranted}
+        resume={accessResume}
       />
 
       <ConfirmDialog

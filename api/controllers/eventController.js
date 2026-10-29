@@ -1614,46 +1614,66 @@ const verifyEmail = async (req, res, next) => {
       throw new ApiError(OTP_FAILURE_STATUS[result.reason] || 400, result.error, result.reason);
     }
 
-    // The code proved the mailbox: this is the first moment the attendee has
-    // a credential, and the moment their IP is worth recording.
-    const { attendee, accessToken } = result;
-    await eventService.updateAttendeeIp(attendee.id, getClientIp(req));
-
-    const paymentRequired = requiresPayment(event, attendee);
-    if (paymentRequired) {
-      // The token travels now but the client keeps it in memory until the
-      // payment is confirmed; the password is issued by confirm-payment.
-      return res.status(200).json({
-        success: true, attendeeId: attendee.id, accessToken, paymentRequired: true,
-      });
-    }
-
-    // Reuse the password a returning attendee already has: generating a new
-    // one would silently kill the one in their earlier confirmation email.
-    const password = attendee.access_password || eventService.generateEventPassword();
-    if (!attendee.access_password) {
-      await eventService.setAttendeePassword(attendee.id, password);
-    }
-
-    sendEventConfirmationEmail({
-      email: attendee.email,
-      firstName: attendee.first_name,
-      event,
-      accessPassword: password,
-      ...(event.access_type === 'paid' && attendee.amount_paid ? { amountPaid: attendee.amount_paid } : {}),
-    }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
-
-    res.status(200).json({
-      success: true,
-      attendeeId: attendee.id,
-      accessToken,
-      paymentRequired: false,
-      accessPassword: password,
-    });
+    await respondEmailVerified(req, res, event, result);
   } catch (error) {
     next(error);
   }
 };
+
+/**
+ * Everything that follows a successful verifyEmailCode, shared by the two ways
+ * of proving the mailbox: the 6-digit code (POST /verify-email) and the
+ * Google / Microsoft proof (POST /identity/complete, change: event-identity-
+ * provider-verification). One branch, so the two can never disagree on the
+ * payment gate, the password or the confirmation email.
+ *
+ * `firstName`, `lastName` and `email` travel back because the provider path
+ * reaches this point without the modal ever having seen them: it needs them
+ * for the stored session and for «Te has registrado como …».
+ *
+ * @param {{ attendee: object, accessToken: string }} result  verifyEmailCode's success
+ */
+async function respondEmailVerified(req, res, event, { attendee, accessToken }) {
+  // The mailbox is proven: this is the first moment the attendee has a
+  // credential, and the moment their IP is worth recording.
+  await eventService.updateAttendeeIp(attendee.id, getClientIp(req));
+
+  const identity = {
+    attendeeId: attendee.id,
+    accessToken,
+    firstName: attendee.first_name,
+    lastName: attendee.last_name,
+    email: attendee.email,
+  };
+
+  if (requiresPayment(event, attendee)) {
+    // The token travels now but the client keeps it in memory until the
+    // payment is confirmed; the password is issued by confirm-payment.
+    return res.status(200).json({ success: true, ...identity, paymentRequired: true });
+  }
+
+  // Reuse the password a returning attendee already has: generating a new
+  // one would silently kill the one in their earlier confirmation email.
+  const password = attendee.access_password || eventService.generateEventPassword();
+  if (!attendee.access_password) {
+    await eventService.setAttendeePassword(attendee.id, password);
+  }
+
+  sendEventConfirmationEmail({
+    email: attendee.email,
+    firstName: attendee.first_name,
+    event,
+    accessPassword: password,
+    ...(event.access_type === 'paid' && attendee.amount_paid ? { amountPaid: attendee.amount_paid } : {}),
+  }).catch(err => logger.error({ err }, 'Error sending event confirmation email'));
+
+  return res.status(200).json({
+    success: true,
+    ...identity,
+    paymentRequired: false,
+    accessPassword: password,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/events/:id/session
@@ -1762,6 +1782,9 @@ module.exports = {
   verifyEmail,
   verifyPassword,
   checkSession,
+  // Shared success branch of the email proof (reused by eventIdentityController)
+  respondEmailVerified,
+  getClientIp,
   // Agora moderation helpers (reused by eventAdminController)
   promoteAgoraParticipant,
   demoteAgoraParticipant,

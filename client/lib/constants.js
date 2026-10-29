@@ -922,6 +922,78 @@ export const ACCESS_VERIFICATION_ERRORS = {
   OTP_RESEND_TOO_SOON: 'Ya te enviamos un código hace unos segundos. Revisa tu correo.',
   OTP_TOO_MANY_ATTEMPTS: 'Demasiados intentos. Solicita un nuevo código.',
   VERIFICATION_REQUIRED: 'Tu verificación ha caducado. Vuelve a verificar tu email para continuar.',
+  // Acceso con Google o Microsoft (event-identity-provider-verification). Llegan
+  // en el fragmento #acceso-error=<CÓDIGO> o en el `title` de /identity/complete.
+  IDENTITY_CANCELLED: 'Has cancelado el acceso. Elige otro método o vuelve a intentarlo.',
+  IDENTITY_SESSION_LOST: 'Tu navegador no conservó la verificación. Vuelve a intentarlo o recibe un código por email.',
+  IDENTITY_FAILED: 'No hemos podido confirmar tu cuenta. Vuelve a intentarlo o recibe un código por email.',
+  IDENTITY_EMAIL_UNTRUSTED: 'Tu cuenta usa un email que gestiona otro proveedor. Para confirmarlo te enviaremos un código: completa tus datos.',
+  IDENTITY_PROOF_INVALID: 'La verificación ha caducado o ya se usó. Vuelve a elegir un método.',
+  EVENT_CLOSED: 'El evento ya no acepta registros.',
+};
+
+// ─── Acceso a eventos con Google o Microsoft (event-identity-provider-verification) ───
+// Tarjetas del paso «Elige cómo confirmar tu email», en el orden en que la API
+// devuelve los proveedores activos. Colores y logotipos según las guías de
+// marca de cada proveedor (tema claro): no se cambian sin releerlas. Los
+// logotipos se sirven con caché inmutable: uno nuevo se publica con otro
+// nombre (-v2), nunca sobrescribiendo.
+export const IDENTITY_PROVIDER_CARDS = {
+  google: {
+    name: 'Google',
+    label: 'Continuar con Google',
+    logo: '/brand/proveedores/google-g-v1.png',
+    borderColor: '#747775',
+    textColor: '#1F1F1F',
+  },
+  microsoft: {
+    name: 'Microsoft',
+    label: 'Continuar con Microsoft',
+    logo: '/brand/proveedores/microsoft-v1.svg',
+    borderColor: '#8C8C8C',
+    textColor: '#5E5E5E',
+  },
+};
+
+export const EVENT_VERIFICATION_COPY = {
+  methodsIntro: 'Elige cómo confirmar tu email:',
+  emailCard: 'Recibir un código por email',
+  redirecting: 'Redirigiendo…',
+  loadingMethods: 'Cargando opciones…',
+  // El texto informativo nombra solo a los proveedores activos:
+  // providersInfo('Google o Microsoft').
+  providersInfo: (names) =>
+    `Solo usamos tu cuenta de ${names} para confirmar tu email. De ella guardamos tu nombre y tu email, y nada más: no creamos ninguna cuenta en 140d.`,
+  microsoftPersonalOnly: 'Con Microsoft, solo cuentas personales (Outlook, Hotmail o Live).',
+  termsRequired: 'Debes aceptar las normas de participación',
+  completing: 'Confirmando tu acceso…',
+  registeredAs: 'Te has registrado como',
+  payingAs: 'Pagarás como',
+};
+
+// Navegadores internos de las apps: Google bloquea su inicio de sesión dentro
+// de ellos, y la tarjeta de Google intenta abrir el navegador real
+// (client/lib/inAppBrowser.js). Estos textos son el respaldo cuando la app no
+// deja salir.
+export const IN_APP_BROWSER_COPY = {
+  openingBrowser: 'Abriendo tu navegador…',
+  continueInBrowser: 'Continúa en tu navegador. Cuando termines, el acceso quedará allí.',
+  googleBlocked: (appName) => `Google no permite iniciar sesión dentro de ${appName}.`,
+  thenRetry: 'Después vuelve a pulsar «Continuar con Google».',
+  copyLink: 'Copiar enlace',
+  linkCopied: 'Enlace copiado',
+  copyFallback: 'Copia este enlace y ábrelo en tu navegador:',
+  otherMethods: (names) => `También puedes continuar aquí con ${names}.`,
+};
+
+export const IN_APP_BROWSER_APPS = {
+  instagram: { name: 'Instagram', steps: 'Toca ⋯ arriba a la derecha y elige «Abrir en el navegador externo».' },
+  facebook: { name: 'Facebook', steps: 'Toca ⋯ y elige «Abrir en el navegador».' },
+  messenger: { name: 'Messenger', steps: 'Toca ⋯ y elige «Abrir en el navegador».' },
+  threads: { name: 'Threads', steps: 'Toca ⋯ y elige «Abrir en el navegador».' },
+  tiktok: { name: 'TikTok', steps: 'Toca ⋯ y elige «Abrir en el navegador».' },
+  linkedin: { name: 'LinkedIn', steps: 'Toca ⋯ y elige «Abrir en el navegador».' },
+  'android-webview': { name: 'esta app', steps: 'Abre el menú de la app y elige abrir la página en el navegador.' },
 };
 
 // ─── Identificador fiscal del comprador en el carrito ─────────────────────
