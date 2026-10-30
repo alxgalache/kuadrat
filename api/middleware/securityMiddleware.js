@@ -254,9 +254,23 @@ const userAgentFilter = (req, res, next) => {
 };
 
 /**
- * Request size limiter - prevents large payload attacks
+ * Tope de una petición ENTERA, no de cada fichero: un formulario de producto
+ * manda todas sus imágenes en un solo multipart, así que este número es lo que
+ * suman todas juntas. Se mide por `Content-Length`, antes de multer.
+ *
+ * `client/lib/constants.js` lo espeja en MAX_REQUEST_BYTES para avisar antes de
+ * enviar; cambiar uno obliga a cambiar el otro.
  */
-const requestSizeLimiter = (maxSizeBytes = 10 * 1024 * 1024) => {
+const MAX_REQUEST_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Request size limiter - prevents large payload attacks
+ *
+ * El rechazo lleva el código `REQUEST_TOO_LARGE` en `title`, y su texto es-ES
+ * vive en el cliente. Sin código, el formulario enseñaba un mensaje genérico
+ * que no decía qué hacer.
+ */
+const requestSizeLimiter = (maxSizeBytes = MAX_REQUEST_BYTES) => {
     return (req, res, next) => {
         const contentLength = parseInt(req.get('Content-Length') || '0', 10);
 
@@ -265,7 +279,9 @@ const requestSizeLimiter = (maxSizeBytes = 10 * 1024 * 1024) => {
             logger.warn({ contentLength, clientIP }, 'Oversized request blocked');
             return res.status(413).json({
                 success: false,
-                message: 'Request too large'
+                status: 413,
+                title: 'REQUEST_TOO_LARGE',
+                message: `La petición supera el tamaño máximo de ${Math.round(maxSizeBytes / (1024 * 1024))} MB`,
             });
         }
 
@@ -307,6 +323,7 @@ module.exports = {
     prototypePollutionGuard,
     userAgentFilter,
     requestSizeLimiter,
+    MAX_REQUEST_BYTES,
     suspiciousActivityLogger,
     // Export for testing
     containsPrototypePollution,

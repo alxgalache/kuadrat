@@ -6,39 +6,43 @@ import {useRouter} from 'next/navigation'
 import {sellerAPI, getArtImageUrl, getOthersImageUrl} from '@/lib/api'
 import {PhotoIcon, PlusIcon, XMarkIcon} from '@heroicons/react/24/solid'
 import {ChevronDownIcon} from '@heroicons/react/16/solid'
-import {SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, MAX_PRODUCT_IMAGES, PLATFORM_MARGIN_VAT_RATE, EDITION_COPY} from '@/lib/constants'
+import {SENDCLOUD_ENABLED_ART, SENDCLOUD_ENABLED_OTHERS, MAX_PRODUCT_IMAGES, PLATFORM_MARGIN_VAT_RATE, EDITION_COPY, PRODUCT_IMAGE_MIN_DIMENSION, PRODUCT_IMAGE_MAX_BYTES, MAX_REQUEST_BYTES, PRODUCT_IMAGE_COPY} from '@/lib/constants'
+import {decodeImage, optimizeImage, estimateFormDataBytes} from '@/lib/imageUpload'
 import {useDropzone} from 'react-dropzone'
 import {useNotification} from '@/contexts/NotificationContext'
 import QuillEditor from '@/components/QuillEditor'
 import 'quill/dist/quill.snow.css'
 
-// Async file validation: MIME + size + minimum dimensions. Returns the file on
-// success, throws an Error with a Spanish message on failure.
+// Async file validation + optimization: MIME, minimum dimensions of the
+// original, then resize and re-encode (lib/imageUpload.js). Returns the file
+// that will be uploaded with a preview of IT, not of the original; throws an
+// Error with a Spanish message on failure.
+//
+// The 10 MB limit applies to the optimized file, which is what multer receives:
+// a 14 MB camera photo leaves here at well under 1 MB, so rejecting it up front
+// would refuse an image the upload can carry.
 async function validateImageFile(file) {
     const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
         throw new Error('Solo se permiten imágenes PNG, JPG y WEBP')
     }
-    if (file.size > 10 * 1024 * 1024) {
-        throw new Error('La imagen debe ser de 10MB o menos')
-    }
-    const objectUrl = URL.createObjectURL(file)
+    let decoded
     try {
-        const img = new Image()
-        await new Promise((resolve, reject) => {
-            img.onload = resolve
-            img.onerror = reject
-            img.src = objectUrl
-        })
-        if (img.naturalWidth < 600 || img.naturalHeight < 600) {
-            URL.revokeObjectURL(objectUrl)
+        decoded = await decodeImage(file)
+    } catch {
+        throw new Error('No se pudo procesar el archivo de imagen')
+    }
+    try {
+        if (decoded.width < PRODUCT_IMAGE_MIN_DIMENSION || decoded.height < PRODUCT_IMAGE_MIN_DIMENSION) {
             throw new Error('La imagen debe tener una resolución de al menos 600x600 píxeles')
         }
-        return { file, previewUrl: objectUrl }
-    } catch (err) {
-        URL.revokeObjectURL(objectUrl)
-        if (err instanceof Error) throw err
-        throw new Error('No se pudo procesar el archivo de imagen')
+        const optimized = await optimizeImage(file, decoded.image)
+        if (optimized.size > PRODUCT_IMAGE_MAX_BYTES) {
+            throw new Error(PRODUCT_IMAGE_COPY.tooHeavyAfterOptimizing)
+        }
+        return { file: optimized, previewUrl: URL.createObjectURL(optimized) }
+    } finally {
+        decoded.release()
     }
 }
 
@@ -125,7 +129,7 @@ function ImageDropzoneSlot({ previewUrl, onDrop, onClear, isFirst }) {
                                 : 'Sube otra imagen'}
                     </p>
                 </div>
-                <p className="text-xs/5 text-gray-600">PNG, JPG o WEBP hasta 10MB, mínimo 600x600</p>
+                <p className="text-xs/5 text-gray-600">{PRODUCT_IMAGE_COPY.dropzoneHint}</p>
             </div>
         </div>
     )
@@ -233,6 +237,9 @@ export default function ProductForm({
         return [null]
     })
     const [loading, setLoading] = useState(false)
+    // Images still being resized/re-encoded. Submitting meanwhile would send the
+    // form without them, so the button waits.
+    const [processingImages, setProcessingImages] = useState(0)
     const [showDecimalWarning, setShowDecimalWarning] = useState(false)
     // Per-seller gallery commission rates (whole percentages). In create mode
     // they are fetched from the seller API; in edit mode the caller supplies
@@ -299,10 +306,19 @@ export default function ProductForm({
         'link'
     ]
 
+    const prepareImage = async (file) => {
+        setProcessingImages((n) => n + 1)
+        try {
+            return await validateImageFile(file)
+        } finally {
+            setProcessingImages((n) => n - 1)
+        }
+    }
+
     // Global image handlers
     const handleGlobalSlotDrop = async (slotIndex, file) => {
         try {
-            const entry = await validateImageFile(file)
+            const entry = await prepareImage(file)
             setImageSlots((prev) => {
                 const next = [...prev]
                 if (next[slotIndex]?.previewUrl) {
@@ -373,7 +389,7 @@ export default function ProductForm({
 
     const handleVariationSlotDrop = async (varIndex, slotIndex, file) => {
         try {
-            const entry = await validateImageFile(file)
+            const entry = await prepareImage(file)
             setVariations((prev) => {
                 const next = [...prev]
                 const slots = [...next[varIndex].imageSlots]
@@ -433,7 +449,7 @@ export default function ProductForm({
 
     const handleAddVariationSlotWithFile = async (varIndex, file) => {
         try {
-            const entry = await validateImageFile(file)
+            const entry = await prepareImage(file)
             setVariations((prev) => {
                 const next = [...prev]
                 if (next[varIndex].imageSlots.length >= MAX_PRODUCT_IMAGES) return prev
@@ -679,6 +695,15 @@ export default function ProductForm({
                         }
                     })
                 }
+            }
+
+            // Every image travels in this one request, and the API rejects the
+            // whole request above MAX_REQUEST_BYTES. Saying so here, with the
+            // real total, beats a 413 whose body the browser may not even read.
+            const requestBytes = estimateFormDataBytes(formData)
+            if (requestBytes > MAX_REQUEST_BYTES) {
+                showError(PRODUCT_IMAGE_COPY.requestTooLargeTitle, PRODUCT_IMAGE_COPY.requestTooLarge(requestBytes))
+                return
             }
 
             await onSubmit(formData, productCategory)
@@ -1269,12 +1294,14 @@ export default function ProductForm({
                         </button>
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || processingImages > 0}
                             className="rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-gray-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
                         >
-                            {isEdit
-                                ? (loading ? 'Guardando...' : 'Guardar cambios')
-                                : (loading ? 'Subiendo...' : 'Subir producto')}
+                            {processingImages > 0
+                                ? PRODUCT_IMAGE_COPY.processing
+                                : isEdit
+                                    ? (loading ? 'Guardando...' : 'Guardar cambios')
+                                    : (loading ? 'Subiendo...' : 'Subir producto')}
                         </button>
                     </div>
                 </form>

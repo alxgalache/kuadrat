@@ -47,6 +47,7 @@ const {
     prototypePollutionGuard,
     userAgentFilter,
     requestSizeLimiter,
+    MAX_REQUEST_BYTES,
     suspiciousActivityLogger,
 } = require('./middleware/securityMiddleware');
 
@@ -124,7 +125,7 @@ app.use((req, res, next) => {
   if (req.path.match(/^\/api\/admin\/events\/[^/]+\/upload-video$/)) {
     return next();
   }
-  return requestSizeLimiter(15 * 1024 * 1024)(req, res, next);
+  return requestSizeLimiter(MAX_REQUEST_BYTES)(req, res, next);
 });
 
 // Apply general rate limiter to all requests

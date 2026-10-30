@@ -178,6 +178,7 @@ El porqué detallado de cada área vive en `.claude/rules/`, una regla por tema,
 * [`catalog/limited-editions.md`](.claude/rules/catalog/limited-editions.md) — Ediciones limitadas: `is_sold` solo junto a `editions_sold`, un único punto de consumo por canal de venta y una sola vía de liberación.
 * [`catalog/merchant-feed.md`](.claude/rules/catalog/merchant-feed.md) — Feed de Google Merchant Center desde la base de datos: catálogo visible, envío cotizado por el checkout (el grupo más caro), imágenes del CDN y nunca un Perfil de Empresa.
 * [`catalog/meta-catalog.md`](.claude/rules/catalog/meta-catalog.md) — Tienda de Instagram y Facebook: catálogo compartido con Google, ids del píxel, JPEG cuadrado versionado y la URL de compra `/cesta`.
+* [`catalog/product-image-upload.md`](.claude/rules/catalog/product-image-upload.md) — Subida de imágenes de producto: reducción a 2000 px y WebP (JPEG en Safari) en el navegador, tope de 15 MB por petición espejado en el cliente y rechazo `REQUEST_TOO_LARGE`.
 
 ### Envíos
 

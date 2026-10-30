@@ -213,7 +213,11 @@ async function apiRequest(endpoint, options = {}) {
         // Create a structured error object
         const error = new Error(data?.message || 'Solicitud a la API fallida');
         error.status = data?.status || response.status;
-        error.title = data?.title || 'Error';
+        // A 413 may arrive without a readable body: nginx answers it in HTML,
+        // and the API answers it before the browser has finished uploading, so
+        // the browser can drop the connection along with the JSON. The status
+        // alone is enough to know which rejection it is.
+        error.title = data?.title || (response.status === 413 ? 'REQUEST_TOO_LARGE' : 'Error');
         error.message = data?.message || 'Solicitud a la API fallida';
         error.errors = data?.errors || null;
         error.response = data;

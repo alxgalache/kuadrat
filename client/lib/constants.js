@@ -73,6 +73,51 @@ export const NEWSLETTER_ENABLED = process.env.NEXT_PUBLIC_NEWSLETTER_ENABLED !==
 // Maximum number of images per product (global) and per variation (others)
 export const MAX_PRODUCT_IMAGES = 3;
 
+// ─── Subida de imágenes de producto (client/lib/imageUpload.js) ───────────
+// Cada imagen se reduce y se recodifica en el navegador antes de enviarla:
+// todas las de un producto viajan en UNA petición, y la API corta cualquier
+// petición de más de MAX_REQUEST_BYTES. Tres fotos de móvil a resolución
+// completa bastaban para superarlo.
+//
+// Lado largo máximo. Es lo que pide el detalle en una pantalla grande; el
+// optimizador de Next nunca amplía, así que una pantalla retina de 4K recibe
+// 2000 px en lugar de 3840.
+export const PRODUCT_IMAGE_MAX_DIMENSION = 2000;
+// Lado corto mínimo. Espeja la comprobación de api/utils/productValidation.js:
+// reducir una imagen muy alargada nunca la deja por debajo.
+export const PRODUCT_IMAGE_MIN_DIMENSION = 600;
+// Calidad de codificación (WebP o, en Safari, JPEG).
+export const PRODUCT_IMAGE_QUALITY = 0.85;
+// Tope por imagen YA optimizada. Espeja `limits.fileSize` de multer en
+// api/routes/{art,others}Routes.js.
+export const PRODUCT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+// Tope de una petición entera. Espeja MAX_REQUEST_BYTES de
+// api/middleware/securityMiddleware.js: cambiar uno obliga a cambiar el otro.
+export const MAX_REQUEST_BYTES = 15 * 1024 * 1024;
+
+const formatMegabytes = (bytes) =>
+  (bytes / (1024 * 1024)).toLocaleString('es-ES', { maximumFractionDigits: 1 });
+
+export const PRODUCT_IMAGE_COPY = {
+  dropzoneHint: 'PNG, JPG o WEBP, mínimo 600x600. Se optimizan automáticamente al subirlas.',
+  processing: 'Procesando imágenes...',
+  tooHeavyAfterOptimizing: 'La imagen sigue pesando más de 10 MB después de optimizarla. Prueba con otra versión más ligera.',
+  requestTooLargeTitle: 'Imágenes demasiado pesadas',
+  requestTooLarge: (bytes) =>
+    `Las imágenes de este producto ocupan ${formatMegabytes(bytes)} MB en total y el máximo por envío es de ${formatMegabytes(MAX_REQUEST_BYTES)} MB. Quita alguna imagen o usa fotos más ligeras.`,
+};
+
+// Rechazos que puede devolver CUALQUIER endpoint, no uno concreto. Viajan con un
+// código de máquina en `title` y los traduce `showApiError`
+// (contexts/NotificationContext.js), para que ningún formulario enseñe el código
+// ni el texto genérico de lib/api.js.
+export const GLOBAL_API_ERRORS = {
+  REQUEST_TOO_LARGE: {
+    title: 'Archivos demasiado pesados',
+    message: `Lo que intentas subir supera los ${formatMegabytes(MAX_REQUEST_BYTES)} MB por envío. Usa archivos más ligeros o sube menos a la vez.`,
+  },
+};
+
 // Platform margin VAT (general rate) applied on top of the gallery's margin for
 // standard-regime art sales (cooperative artists). Mirrors VAT_RATE_STANDARD in
 // api/utils/vatCalculator.js — it is the gallery's own VAT, NOT the seller's

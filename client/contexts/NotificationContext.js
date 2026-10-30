@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, useCallback } from 'react'
+import { GLOBAL_API_ERRORS } from '@/lib/constants'
 
 const NotificationContext = createContext(undefined)
 
@@ -50,6 +51,16 @@ export function NotificationProvider({ children }) {
 
   // Helper to show API errors
   const showApiError = useCallback((error) => {
+    // Rejections any endpoint can return carry a machine code in `title`;
+    // without this the toast would print the code itself as its heading.
+    const code = error?.response?.title || error?.title
+    const knownError = code && Object.prototype.hasOwnProperty.call(GLOBAL_API_ERRORS, code)
+      ? GLOBAL_API_ERRORS[code]
+      : null
+    if (knownError) {
+      return showError(knownError.title, knownError.message)
+    }
+
     // Handle different error formats
     if (error.response) {
       // Error from API with response data
