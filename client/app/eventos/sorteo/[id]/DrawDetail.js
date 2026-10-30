@@ -189,7 +189,7 @@ export default function DrawDetail({ params }) {
                   <h3 className="sr-only">Descripción</h3>
                   <SafeProductDescription
                       html={draw.product_description}
-                      className="space-y-6 text-base text-gray-700 prose prose-sm max-w-none"
+                      className="product-description--detail text-base text-gray-700"
                   />
                 </div>
             )}

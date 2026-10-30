@@ -152,6 +152,69 @@ body {
   }
 }
 
+/* Descripción de producto (salida de Quill), aplicada por
+   `SafeProductDescription` y `CoaDescription`. Mismo problema de partida que
+   `.author-bio`: preflight quita viñetas y números a `ul`/`ol`, y sin
+   @tailwindcss/typography una lista hecha con la barra del editor se pintaba
+   como líneas sueltas sin viñeta.
+
+   Quill 2 guarda toda lista como `<ol>`: el tipo va en `data-list` de cada
+   `li`, y viñetas y números pueden compartir el mismo `<ol>`. Por eso el
+   marcador se dibuja como en el propio editor, con `::before` y un contador
+   que solo suman los elementos numerados. El marcador nativo no sirve: su
+   contador cuenta también las viñetas, y un «1.» detrás de dos viñetas
+   saldría como «3.». Los `:not([data-list])` cubren listas que no vengan de
+   Quill.
+
+   Los elementos de una lista van sin espacio entre ellos, y la sangría es la
+   del editor (1,5em de la lista más 1,5em del elemento). */
+@layer components {
+  .product-description ol,
+  .product-description ul {
+    padding-left: 1.5em;
+    counter-reset: product-description-list;
+  }
+
+  .product-description li {
+    padding-left: 1.5em;
+  }
+
+  .product-description li::before {
+    display: inline-block;
+    width: 1.2em;
+    margin-left: -1.5em;
+    margin-right: 0.3em;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .product-description li[data-list='bullet']::before,
+  .product-description ul > li:not([data-list])::before {
+    content: '\2022';
+  }
+
+  .product-description li[data-list='ordered'],
+  .product-description ol > li:not([data-list]) {
+    counter-increment: product-description-list;
+  }
+
+  .product-description li[data-list='ordered']::before,
+  .product-description ol > li:not([data-list])::before {
+    content: counter(product-description-list) '.';
+  }
+
+  /* Fichas de producto: los bloques se separan 24 px, salvo una lista, que
+     va pegada al párrafo que la introduce («Detalles:»). */
+  .product-description--detail > * + * {
+    margin-top: 1.5rem;
+  }
+
+  .product-description--detail > p + ol,
+  .product-description--detail > p + ul {
+    margin-top: 0;
+  }
+}
+
 /* Hide scrollbar for horizontal scroll */
 @layer utilities {
   .scrollbar-hide {

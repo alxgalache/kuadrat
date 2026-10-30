@@ -165,6 +165,7 @@ Reglas que, si se olvidan, rompen algo en silencio desde cualquier parte del có
 * **Un recurso publicado con caché inmutable nunca se sobrescribe: se publica con otro nombre** (medios de S3, vídeos de la portada, `og-image-vN.jpg`). → `.claude/rules/infra/production-load.md`, `.claude/rules/frontend/og-image.md`
 * **El régimen de IVA se congela por artículo en `art_order_items.vat_regime`**; facturas, monedero y exportación fiscal leen ese dato, no la tabla del producto. → `.claude/rules/fiscal/vat-regime.md`
 * **Desplegar el cliente exige purgar la caché de páginas de nginx cuando los contenedores ya responden**; `./deploy/deploy.sh` lo hace. → `.claude/rules/infra/production-load.md`
+* **Una página que llama a `notFound()` lee con `fetchDetail` de `client/lib/serverApi.js`**: `null` solo ante un 4xx, y cualquier otro fallo lanza. Un `null` por un fallo pasajero queda guardado como 404 en el ISR. → `.claude/rules/infra/production-load.md`
 * **`api/.env.test` define `DB_BACKUP_ENABLED=true` a propósito**, para que la comprobación de aislamiento signifique algo. → `.claude/rules/infra/db-backups.md`
 * **API y cliente se despliegan juntos**: varias rutas cambiaron de contrato a la vez en los dos lados (verificación de email, dirección de entrega, selección de envío).
 * **`client/` no tiene runner de tests, y el contenedor `api` solo monta `api/`**: ningún test de Jest puede leer código del cliente. Lo del cliente se verifica a mano.

@@ -144,13 +144,17 @@ export function SafeAuthorBio({ html, className = '' }) {
 }
 
 /**
- * SafeHTML for product descriptions - standard rich text
+ * SafeHTML for product descriptions - standard rich text.
+ *
+ * Always carries `.product-description` (globals.css), which draws the list
+ * markers. Detail pages add `product-description--detail` for the spacing
+ * between blocks.
  */
 export function SafeProductDescription({ html, className = '' }) {
   return (
     <SafeHTML
       html={html}
-      className={className}
+      className={className ? `product-description ${className}` : 'product-description'}
     />
   )
 }

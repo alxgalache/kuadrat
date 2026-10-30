@@ -67,7 +67,7 @@ function ArtPreview({ product, onApprove, approving }) {
               <h3 className="sr-only">Descripción</h3>
               <SafeProductDescription
                 html={product.description}
-                className="space-y-6 text-base text-gray-700 prose prose-sm max-w-none"
+                className="product-description--detail text-base text-gray-700"
               />
             </div>
 
@@ -181,7 +181,7 @@ function OthersPreview({ product, onApprove, approving }) {
               <h3 className="sr-only">Descripción</h3>
               <SafeProductDescription
                 html={product.description}
-                className="space-y-6 text-base text-gray-700 prose prose-sm max-w-none"
+                className="product-description--detail text-base text-gray-700"
               />
             </div>
 

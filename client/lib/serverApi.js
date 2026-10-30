@@ -23,36 +23,56 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://140d.art'
 
 export { API_URL, SITE_URL }
 
-export async function fetchArtProduct(idOrSlug) {
-  try {
-    const res = await fetch(`${DATA_API_URL}/art/${encodeURIComponent(idOrSlug)}`, {
-      next: { revalidate: 300 },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.product || null
-  } catch {
+/**
+ * Lectura de una ficha cuya página responde 404 cuando no existe: obra,
+ * producto, evento y autor. Distingue «no existe» de «no he podido preguntar».
+ *
+ * - Un 4xx de la API devuelve `null` y la página llama a `notFound()`. Es una
+ *   respuesta definitiva sobre esa URL: no existe, o la API rechaza el slug
+ *   (los filtros de seguridad contestan 400). Se exceptúan 408 y 429, que son
+ *   pasajeros.
+ * - Cualquier otro fallo LANZA: la API caída o arrancando, un 5xx, un 408 o un
+ *   429, un JSON roto.
+ *
+ * Devolvía `null` ante cualquier fallo, y en producción eso convertía un corte
+ * de segundos en fichas con 404 durante minutos: las páginas son ISR, y Next
+ * guarda el 404 de una revalidación como cualquier otro resultado. Lanzando,
+ * Next conserva la última versión buena y reintenta en la siguiente visita, y
+ * si no tiene ninguna responde 500, que nginx cubre con su copia
+ * (`proxy_cache_use_stale ... http_500`). Esas dos protecciones no cubren un
+ * 404. Pasaba también en cada despliegue, porque el cliente arrancaba antes que
+ * la API.
+ *
+ * Una respuesta que no es 200 no entra en la caché de datos de Next, así que
+ * un error no se queda guardado los 300 s.
+ */
+async function fetchDetail(path, revalidate) {
+  const res = await fetch(`${DATA_API_URL}${path}`, { next: { revalidate } })
+  if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
     return null
   }
+  if (!res.ok) throw new Error(`La API respondió ${res.status} a ${path}`)
+  return res.json()
+}
+
+export async function fetchArtProduct(idOrSlug) {
+  const data = await fetchDetail(`/art/${encodeURIComponent(idOrSlug)}`, 300)
+  return data?.product || null
 }
 
 export async function fetchOthersProduct(idOrSlug) {
-  try {
-    const res = await fetch(`${DATA_API_URL}/others/${encodeURIComponent(idOrSlug)}`, {
-      next: { revalidate: 300 },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.product || null
-  } catch {
-    return null
-  }
+  const data = await fetchDetail(`/others/${encodeURIComponent(idOrSlug)}`, 300)
+  return data?.product || null
 }
 
 // Lecturas SIN caché de datos, para `/cesta` (la URL de compra de Meta): allí
 // se decide si una obra se puede comprar AHORA, y la caché de 300 s de las
 // fichas podría anunciar disponible una obra vendida hace un minuto. Por id
 // numérico, el que viaja en los identificadores del catálogo de Meta.
+//
+// Siguen devolviendo `null` ante cualquier fallo, a diferencia de `fetchDetail`:
+// `/cesta` es dinámica y no se cachea, así que un fallo afecta solo a esa
+// visita, que marca la línea como no disponible en vez de romper la página.
 export async function fetchArtProductFresh(id) {
   try {
     const res = await fetch(`${DATA_API_URL}/art/${encodeURIComponent(id)}`, { cache: 'no-store' })
@@ -82,15 +102,7 @@ export async function fetchOthersProductFresh(id) {
 // Llamar a las dos en el mismo render NO duplica peticiones: Next deduplica los
 // fetch idénticos dentro de un render.
 export async function fetchEventPayload(slug) {
-  try {
-    const res = await fetch(`${DATA_API_URL}/events/${encodeURIComponent(slug)}`, {
-      next: { revalidate: 300 },
-    })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
+  return fetchDetail(`/events/${encodeURIComponent(slug)}`, 300)
 }
 
 export async function fetchEvent(slug) {
@@ -98,6 +110,9 @@ export async function fetchEvent(slug) {
   return data?.event || null
 }
 
+// Subasta y sorteo siguen devolviendo `null` ante cualquier fallo: sus páginas
+// no responden 404, pintan igualmente el componente de cliente y este pide los
+// datos por su cuenta al montar.
 export async function fetchAuction(id) {
   try {
     const res = await fetch(`${DATA_API_URL}/auctions/${encodeURIComponent(id)}`, {
@@ -125,16 +140,8 @@ export async function fetchDraw(id) {
 }
 
 export async function fetchAuthor(slug) {
-  try {
-    const res = await fetch(`${DATA_API_URL}/users/authors/${encodeURIComponent(slug)}`, {
-      next: { revalidate: 300 },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.author || null
-  } catch {
-    return null
-  }
+  const data = await fetchDetail(`/users/authors/${encodeURIComponent(slug)}`, 300)
+  return data?.author || null
 }
 
 // Listado de autores visibles. `category` filtra a los que tienen al menos una
@@ -203,8 +210,8 @@ export async function fetchAuthorOtherProducts(authorSlug, limit = 100) {
  * era una petición a la API —con su preflight— en cada visita, para obtener lo
  * que ya estaba en el HTML. Ver `useGalleryProducts`.
  *
- * Ante cualquier fallo devuelve una siembra vacía, como el resto del módulo, y
- * eso es deliberado: estas dos rutas se prerrenderizan en `docker build`, así
+ * Ante cualquier fallo devuelve una siembra vacía, al contrario que
+ * `fetchDetail`, y eso es deliberado: estas dos rutas se prerrenderizan en `docker build`, así
  * que un corte de la API durante la compilación tiene que degradar a «rejilla
  * sin sembrar» —el comportamiento anterior, que el cliente resuelve al montar—
  * y nunca romper el despliegue. Mismo criterio que el `generateStaticParams`

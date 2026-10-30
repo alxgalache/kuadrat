@@ -114,8 +114,19 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    # El cliente nuevo no arranca hasta que la API pasa su healthcheck, es decir,
+    # hasta que escucha: `/health` responde cuando `initializeDatabase()` ya ha
+    # terminado. Con `- api` a secas arrancaban a la vez, y durante los segundos
+    # en que la API inicializaba el esquema cada ficha pedida salía como 404.
+    # Ver `fetchDetail` en `client/lib/serverApi.js`.
+    #
+    # Coste: el primer chequeo llega a los 30 s (`interval`), así que el
+    # despliegue tarda eso más. Mientras tanto sigue sirviendo el cliente
+    # anterior. `start_interval` lo acortaría, pero exige Docker Engine 25+ y con
+    # uno anterior `docker compose up` falla.
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       - kuadrat-network
     healthcheck:

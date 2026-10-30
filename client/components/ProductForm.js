@@ -296,7 +296,16 @@ export default function ProductForm({
             [{ 'list': 'ordered'}, { 'list': 'bullet' }],
             ['link'],
             ['clean']
-        ]
+        ],
+        // Sin conversión automática a lista: Quill convierte «- », «* » y
+        // «1. » al principio de una línea en una lista, y quien escribe un
+        // guion quiere ver un guion. Las listas solo salen de los botones de
+        // la barra. Quill 2 no registra un atajo cuyo valor es null.
+        keyboard: {
+            bindings: {
+                'list autofill': null,
+            },
+        },
     }), [])
 
     const formats = [

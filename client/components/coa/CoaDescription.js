@@ -27,10 +27,11 @@ import SafeHTML from '@/components/SafeHTML'
 // dejando el memo sin efecto nunca. Mismo motivo que `AUTHOR_BIO_CONFIG`.
 //
 // La política de etiquetas es la que ya tenía el certificado: texto con
-// énfasis, listas y enlaces, nada más.
+// énfasis, listas y enlaces, nada más. `data-list` es lo que distingue en
+// Quill 2 una lista de viñetas de una numerada (ver `.product-description`).
 const COA_DESCRIPTION_CONFIG = {
   ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'a'],
-  ALLOWED_ATTR: ['href', 'target', 'rel'],
+  ALLOWED_ATTR: ['href', 'target', 'rel', 'data-list'],
 }
 
 export default function CoaDescription({ html }) {
@@ -38,9 +39,8 @@ export default function CoaDescription({ html }) {
     <SafeHTML
       html={html}
       config={COA_DESCRIPTION_CONFIG}
-      className="text-sm text-gray-600 leading-relaxed [&_p]:mb-3 [&_p:last-child]:mb-0
-                 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4
-                 [&_li]:mb-1 [&_strong]:font-semibold [&_em]:italic"
+      className="product-description text-sm text-gray-600 leading-relaxed
+                 [&>*]:mb-3 [&>*:last-child]:mb-0 [&_strong]:font-semibold [&_em]:italic"
     />
   )
 }
