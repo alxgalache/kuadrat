@@ -54,6 +54,9 @@ data/
 .claude/*
 !.claude/rules/
 
+# Agentes (codex)
+.agents/*
+
 # Gemini
 .gemini/
 
