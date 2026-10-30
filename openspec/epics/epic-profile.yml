@@ -1,0 +1,235 @@
+# Perfil del repo kuadrat (galería 140d) para el sistema de épicas de openspec-agents.
+#
+# Vive en `openspec/epics/epic-profile.yml` (versionado). Esta plantilla del plugin es la MISMA copia: si cambias
+# una, cambia la otra.
+#
+# Lo leen las skills (el LLM). Los scripts de Python NO lo leen: qué comando cuenta como validación lo decide
+# `skills/openspec-agent-propose/check-phase-graph.py` (bloque VALIDATION) y la pila de recursos de cada comando
+# (`api`, `client` u `otros`), `skills/openspec-epic-apply/epic-run.py`. Cambiar un comando aquí sin cambiarlo allí
+# deja al verificador y al runner con otra idea de lo que es una validación.
+#
+# El porqué de cada área del repo vive en CLAUDE.md (invariantes transversales) y en `.claude/rules/<área>/<tema>.md`.
+# Este perfil no lo repite: solo dice lo que el sistema de épicas necesita para cortar, paralelizar y validar.
+
+project:
+  stack_facts: >
+    Monorepo kuadrat (galería de arte online 140d) SIN package.json en la raíz: dos aplicaciones Node.js
+    independientes, cada una con su package.json y su package-lock.json (npm). `api/` es la API Express
+    (Node 20; servicio y contenedor `api`) y `client/` es el cliente Next.js 16 con App Router, React 19 y
+    TailwindCSS (servicio `client`). JavaScript puro: NO hay TypeScript, ni tsc, ni ficheros .ts/.tsx.
+    BD Turso (@libsql/client, compatible con SQLite) SIN ORM ni migraciones: el esquema entero vive en
+    `api/config/database.js` (`initializeDatabase()`, idempotente, que la API ejecuta en cada arranque).
+    API por capas: `api/routes/` (y `api/routes/admin/`, con authenticate + adminAuth aplicados una vez en su
+    index.js) → `api/validators/` (Zod, aplicado con `validate()`) → `api/controllers/` (lanzan `ApiError`,
+    responden con sendSuccess/sendPaginated/sendCreated) → `api/services/` (lógica e integraciones). Además
+    `api/utils/`, `api/middleware/`, `api/socket/` (Socket.IO) y `api/scheduler/` (cron, arrancado solo desde
+    server.js). `api/app.js` monta los routers y no tiene efectos secundarios; `api/server.js` es el proceso.
+    Configuración solo por `api/config/env.js`; logs con Pino (`api/config/logger.js`), nunca console.log.
+    Cliente: rutas en `client/app/` (galeria, tienda, eventos, live, admin, seller, orders, legal…),
+    `client/components/`, `client/hooks/`, `client/contexts/`, el cliente HTTP centralizado `client/lib/api.js`,
+    las constantes y TODO el texto es-ES en `client/lib/constants.js`, la CSP en `client/next.config.js` y el
+    middleware de Next 16 en `client/proxy.js`.
+    Desarrollo local en Docker: `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`
+    (api con nodemon, client con `next dev`). Cada contenedor monta su carpeta en `/app`: dentro de él las rutas
+    son relativas a `api/` o a `client/`. El compose NO tiene base de datos: la API local apunta a la BD Turso de
+    PREPRODUCCIÓN y al proveedor de email real.
+    Tests: solo la API tiene runner (Jest + supertest; ficheros planos `api/tests/<nombre>.test.js` que importan
+    `tests/helpers/app.js`, nunca server.js). Corren contra un SQLite local, `api/.tmp/test.db`, que CADA ejecución
+    de Jest borra y recrea, y con el email capturado en memoria. `client/` NO tiene tests: se comprueba con
+    `npm run lint` (ESLint) y `npm run build`.
+    Reglas del repo: CLAUDE.md y `.claude/rules/<área>/<tema>.md` (se lee la regla de cada área que toque un
+    change). UI solo en español (es-ES), tema claro, minimalismo con bloques de Tailwind UI sin modificar.
+
+conventions:
+  language: es                      # mensajes al usuario Y artefactos: mantener español (las regex lo esperan)
+
+agents:
+  default: general-purpose          # subagent_type de cada fase (el repo no tiene .claude/agents/)
+  model: sonnet                     # modelo de los subagentes delegados
+
+git:
+  base_branch: staging              # el trabajo diario va a `staging` (entorno de preproducción); `main` solo recibe
+                                    # lo que sale a producción (`deploy/deploy.sh` hace `git pull origin main`)
+  epic_branch_pattern: epic/<slug>
+  commit_convention: >
+    Como el historial del repo: mensaje en inglés, primera línea en imperativo que resume el cambio («Add …»,
+    «Fix …», «Implement …»), y si hace falta un párrafo con qué cambia y por qué. Sin prefijos `feat:`/`fix:`.
+    La línea de atribución, la que indique Claude Code.
+
+verification:
+  # Gate verde de cada nivel, en este orden. Los corre el subagente de validación, SOLO en su turno.
+  # Necesitan los contenedores levantados en modo local; si no lo están, la propia fase de validación los levanta
+  # con `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d` (que también cuenta como validación).
+  commands:
+    - docker compose exec -T api npm test          # Jest entero, con cobertura, contra api/.tmp/test.db
+    - docker compose exec -T client npm run lint   # client/Dockerfile.prod y .staging lo corren antes del build:
+                                                   # un lint en rojo rompe el despliegue
+    - docker compose exec -T client npm run build  # next build (escribe .next/ en el volumen client_next)
+    - node scripts/check-claude-rules.mjs          # en el host (necesita Node ≥ 22.5; el contenedor tiene Node 20):
+                                                   # reglas de .claude/rules, índice y presupuesto de CLAUDE.md
+  host_equivalents:                 # lo mismo fuera de Docker; cuenta igual como validación y comparte los mismos
+    - npm --prefix api test         # ficheros (api/.tmp/test.db, api/coverage/). El build del cliente NO tiene
+    - npm --prefix client run lint  # equivalente en el host: client/.next del host es de root.
+  scoped: "docker compose exec -T api npm test -- <ruta relativa a api/, p. ej. tests/orders.test.js>"
+                                    # alias `UNIT api <ruta>`. En kuadrat SÍ es validación (va sola): cualquier
+                                    # ejecución de Jest borra y recrea api/.tmp/test.db, así que dos a la vez, aunque
+                                    # cada una vaya acotada a su fichero, se rompen entre sí.
+  parallel_safe:                    # de solo lectura: cualquier fase, incluida una paralela, puede ejecutarlos
+    - node --check <fichero .js>                                        # sintaxis de un fichero de la API
+    - docker compose exec -T client npx eslint <rutas relativas a client/>   # ESLint acotado, SIN --fix
+    - openspec validate <change> --strict
+  ask_first:                        # ningún agente ni gate los lanza sin permiso explícito
+    - git push, PRs, merges a staging o main, ./deploy/deploy.sh y cualquier despliegue (producción o staging)
+    - docker compose down -v (borra los volúmenes node_modules y .next/)
+    - escribir en la BD Turso de preproducción o de producción fuera del arranque normal de la API (scripts con el
+      cliente de BD, borrados o backfills a mano, `npm run backup:now`)
+    - npm run s3:cache-headers y cualquier operación sobre S3 o CloudFront
+    - llamadas reales a Stripe, Sendcloud, Resend/SMTP, Agora, LiveKit, Meta, Google Merchant o S3 (los tests las
+      simulan) y cualquier envío de email fuera de los tests
+    - añadir una dependencia que el proposal del change no declare
+  shared_resources: >
+    api/.tmp/test.db y api/coverage/ (cualquier ejecución de Jest), los contenedores api y client y sus volúmenes
+    (api_node_modules, client_node_modules, client_next), los package-lock.json, los puertos 3000, 3001 y 9229, y
+    la BD Turso de PREPRODUCCIÓN a la que apunta la API local
+
+database:
+  schema: api/config/database.js    # única fuente del esquema; NUNCA un script de migración aparte
+  migration: >
+    En kuadrat «migración» = editar `api/config/database.js`: el CREATE TABLE (lo que recibe una BD nueva) y, si
+    las BD existentes deben ganar la columna, un `safeAlter('ALTER TABLE … ADD COLUMN …')` junto a los demás. Un
+    CHECK solo vive en el CREATE TABLE (SQLite no lo aplica con ALTER a filas ya escritas): el valor se valida
+    también con Zod. Un comentario `--` dentro de un CREATE TABLE nunca acaba en `;` ni lleva barras invertidas
+    (lo vigila api/tests/dbDump.test.js). `has_migration: true` en el epic = el change edita este fichero.
+  side_effect: >
+    Con la API local en marcha (nodemon), GUARDAR database.js reinicia la API y aplica el esquema en la BD de
+    PREPRODUCCIÓN. Aditivo (CREATE TABLE/INDEX IF NOT EXISTS, ADD COLUMN) = reversible a efectos del epic.
+    Destructivo (DROP, RENAME, recrear una tabla para cambiar un CHECK, UPDATE/DELETE de backfill) = irreversible:
+    va en su propia fase con `gate: human` y el change lleva rollback.md.
+
+decomposition:
+  unit_name: área funcional
+  # kuadrat está organizado por CAPAS, no por módulos: un área funcional son sus ficheros en cada capa, que
+  # comparten prefijo de nombre (event → eventRoutes.js, eventSchemas.js, eventController.js, eventService.js,
+  # eventSocket.js, event*.test.js), más sus rutas y componentes del cliente. Áreas reales: catálogo (art, others,
+  # products, product_images), pedidos y pagos (orders, payments, stripe), envíos (shipping, sendcloud), eventos en
+  # directo (events, live, agora, livekit), subastas (auctions), sorteos (draws), vendedor y monedero (seller,
+  # stripeConnect, withdrawals), autenticación y usuarios (auth, users), certificados NFC (coa), feeds de catálogo
+  # (feeds), marketing y newsletter, facturación y fiscalidad (invoices, fiscal), admin.
+  unit_globs:
+    - api/routes/<área>Routes.js
+    - api/routes/admin/<área>Routes.js
+    - api/validators/<área>Schemas.js
+    - api/controllers/<área>Controller.js
+    - api/services/<área>Service.js
+    - api/services/shipping/**      # el área de envíos tiene carpeta propia
+    - api/socket/<área>Socket.js
+    - api/scheduler/<área>Scheduler.js
+    - api/tests/<área>*.test.js
+    - client/app/<ruta>/**
+    - client/app/admin/<ruta>/**
+    - client/app/seller/<ruta>/**
+    - client/components/<área>/**   # events/, shipping/, seller/, admin/, coa/
+  layer_order:                      # de la más interna a la más externa (y el orden de openspec/config.yaml)
+    - esquema (api/config/database.js)
+    - validadores Zod (api/validators/)
+    - servicios y utilidades (api/services/, api/utils/)
+    - controladores (api/controllers/)
+    - rutas y su montaje (api/routes/, api/app.js, api/routes/admin/index.js)
+    - cliente HTTP (client/lib/api.js) y textos (client/lib/constants.js)
+    - hooks y contextos (client/hooks/, client/contexts/)
+    - componentes y páginas (client/components/, client/app/)
+    - regla del área (.claude/rules/<área>/<tema>.md) y documentación (docs/)
+  shared_layer_globs:               # tocarlos con efecto en varias áreas = foundation
+    - api/config/**
+    - api/middleware/**
+    - api/utils/response.js
+    - api/utils/transaction.js
+    - api/utils/productImages.js
+    - api/services/emailService.js
+    - api/services/email/**
+    - api/tests/helpers/**
+    - api/tests/setup/**
+    - client/lib/**
+    - client/hooks/**
+    - client/contexts/**
+    - client/components/LayoutWrapper.js
+    - client/components/Navbar.js
+    - client/components/Footer.js
+    - client/components/ConfirmDialog.js
+    - client/components/ErrorBoundary.js
+  shared_registry_paths:            # ficheros «imán» a los que cada change añade líneas: UNA fase de cableado,
+                                    # `parallel: no`, nunca repartidos entre fases
+    - api/config/database.js        # esquema (CREATE TABLE, safeAlter, índices)
+    - api/config/env.js             # toda variable de entorno nueva
+    - api/.env.example
+    - api/.env.test                 # valores ficticios de test (nunca una credencial real)
+    - .env.example                  # raíz: variables que lee docker compose
+    - client/.env.example
+    - api/app.js                    # montaje de routers y de los sockets
+    - api/routes/admin/index.js     # montaje de las rutas de admin
+    - api/server.js                 # arranque de schedulers y tareas de inicio
+    - api/utils/redactUrl.js        # prefijo de toda ruta con un secreto en el path
+    - api/tests/setup/seed.js
+    - api/package.json
+    - api/package-lock.json
+    - client/package.json
+    - client/package-lock.json
+    - client/lib/api.js             # un método por endpoint nuevo
+    - client/lib/constants.js       # textos es-ES, códigos de rechazo y constantes
+    - client/next.config.js         # CSP: todo origen de terceros nuevo
+    - client/proxy.js
+    - client/app/layout.js          # proveedores globales
+    - client/app/sitemap.js
+    - client/components/Navbar.js   # menú principal
+    - client/app/admin/layout.js    # menú del admin
+    - client/app/seller/layout.js   # menú del vendedor
+    - client/Dockerfile.staging     # ARG/ENV de cada NEXT_PUBLIC_* nueva
+    - client/Dockerfile.prod
+    - docker-compose.yml
+    - docker-compose.local.yml
+    - docker-compose.prod.yml
+    - docker-compose.pre2.yml
+    - CLAUDE.md                     # índice de reglas e invariantes transversales
+
+external_surfaces:
+  - esquema en las BD Turso de preproducción y producción (se aplica al arrancar la API; en local, al guardar
+    api/config/database.js con nodemon)
+  - variables de entorno y secretos (api/config/env.js valida al arrancar; una NEXT_PUBLIC_* se toca en cuatro
+    sitios, el .env.example raíz, client/.env.example, los dos Dockerfile de build del cliente y los dos compose
+    de build)
+  - CSP del cliente (client/next.config.js): un origen de terceros que falta solo falla en el navegador
+  - despliegue (deploy/deploy.sh, imágenes Docker, purga de la caché de nginx) y entorno de staging
+  - pagos y cobros (Stripe, Stripe Connect; Revolut heredado)
+  - envíos (Sendcloud)
+  - email (Resend o SMTP vía sendMail())
+  - streaming (Agora, LiveKit), grabación en la nube de Agora y vídeo por CloudFront
+  - almacenamiento S3 y CloudFront (los objetos con caché inmutable no se sobrescriben)
+  - catálogos y medición externos (Meta: píxel, Conversions API y catálogo; Google Merchant Center; Plausible)
+  - Sentry (cliente y servidor)
+  - copias de seguridad de Turso a S3
+
+audience_axes:
+  - rol (comprador anónimo, comprador registrado, vendedor artista o ponente — `users.seller_kind` —, admin)
+  - asistente de un evento (sin verificar, verificado por email o por Google/Microsoft, staff `is_staff`)
+  - dispositivo (escritorio; móvil y la vista compacta de las salas, por debajo de 1024 px de ancho o 500 de alto)
+  - navegador dentro de apps de Meta (Instagram/Facebook) frente a navegador normal
+
+review:                             # criterios de la revisión final de openspec-agent-apply
+  - Contrato cliente-servidor coherente - lo que consume client/lib/api.js es lo que expone la API (rutas,
+    payloads, códigos de estado); los rechazos llevan un código máquina en `title` y su texto es-ES en
+    client/lib/constants.js
+  - API por capas - Zod con validate() en la ruta, ApiError en el controlador, helpers de respuesta (nunca
+    res.json a pelo), createBatch() para escrituras multi-tabla, config solo por config/env.js, logger de Pino
+  - Invariantes transversales de CLAUDE.md - dinero en céntimos enteros, is_sold solo junto a editions_sold,
+    password_hash solo junto a password_changed_at, una sola resolución de zona de envío, is_staff decidido en
+    cada consulta sobre event_attendees, nada de video_url ni recording_enabled en respuestas públicas
+  - Esquema - solo en api/config/database.js (CREATE TABLE + safeAlter); CHECK también validado con Zod
+  - Cliente Next.js - server/client components bien separados; ningún secreto fuera de NEXT_PUBLIC_*; texto en
+    client/lib/constants.js; origen nuevo en la CSP; nada de localStorage en un inicializador de useState de los
+    proveedores del layout; `@stripe/stripe-js/pure`; nada de portales a document.body en las salas en directo
+  - Seguridad - entrada validada, authN/authZ correctas (adminAuth, propiedad del recurso), sin secretos en el repo
+    ni en logs (rutas con secreto en api/utils/redactUrl.js)
+  - Tests - los de la API importan tests/helpers/app.js, nunca server.js; ninguno sale a la red ni a una BD remota;
+    el email se comprueba con emailService.__getOutbox(); sin dependencia del orden
+  - Conocimiento - el porqué no evidente del change queda en su .claude/rules/<área>/<tema>.md (nunca como sección
+    nueva de CLAUDE.md) y `node scripts/check-claude-rules.mjs` pasa
